@@ -131,24 +131,52 @@ function bjtBody(npn: boolean): string {
   return structure + arrow;
 }
 
+/**
+ * NE555 as a functional IC symbol: a rectangular body with 24-unit leads on all
+ * four sides. Each lead carries its DIP-8 pin number just outside the body and
+ * its pin name just inside, both driven by the catalog port list so the
+ * drawing can never disagree with where the wires attach.
+ */
 function ne555Body(): string {
-  const { width, height } = COMPONENT_CATALOG[ComponentType.Ne555].symbol;
+  const { symbol, ports } = COMPONENT_CATALOG[ComponentType.Ne555];
+  const { width, height } = symbol;
+  /** Lead length (symbol units) from the box edge to the IC body. */
+  const LEAD = 24;
+  const PIN_FONT = 9;
+  const NAME_FONT = 10;
   const parts: string[] = [
-    `<rect x="24" y="8" width="84" height="168" rx="10" />`,
-    `<path d="M56 8 a10 10 0 0 0 20 0" />`,
+    `<rect x="${LEAD}" y="${LEAD}" width="${width - 2 * LEAD}" height="${height - 2 * LEAD}" rx="4" />`,
   ];
-  for (let k = 1; k <= 7; k++) {
-    const y = (height * k) / 8;
-    // Left side: pins 1..7 (top → bottom).
-    parts.push(`<line x1="0" y1="${y}" x2="24" y2="${y}" />`);
-    parts.push(
-      `<text x="30" y="${y + 4}" text-anchor="start" fill="currentColor" stroke="none" font-size="11">${k}</text>`,
-    );
-    // Right side: pins 14..8 (top → bottom).
-    parts.push(`<line x1="${width - 24}" y1="${y}" x2="${width}" y2="${y}" />`);
-    parts.push(
-      `<text x="${width - 30}" y="${y + 4}" text-anchor="end" fill="currentColor" stroke="none" font-size="11">${15 - k}</text>`,
-    );
+  const text = (x: number, y: number, anchor: string, size: number, value: string) =>
+    `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="currentColor" stroke="none" font-size="${size}">${value}</text>`;
+
+  for (const port of ports) {
+    const x = port.cx * width;
+    const y = port.cy * height;
+    const pin = port.pin ?? '';
+    const name = port.name ?? '';
+    switch (port.side) {
+      case 'left':
+        parts.push(`<line x1="0" y1="${y}" x2="${LEAD}" y2="${y}" />`);
+        parts.push(text(LEAD / 2, y - 4, 'middle', PIN_FONT, pin));
+        parts.push(text(LEAD + 6, y + 4, 'start', NAME_FONT, name));
+        break;
+      case 'right':
+        parts.push(`<line x1="${width - LEAD}" y1="${y}" x2="${width}" y2="${y}" />`);
+        parts.push(text(width - LEAD / 2, y - 4, 'middle', PIN_FONT, pin));
+        parts.push(text(width - LEAD - 6, y + 4, 'end', NAME_FONT, name));
+        break;
+      case 'top':
+        parts.push(`<line x1="${x}" y1="0" x2="${x}" y2="${LEAD}" />`);
+        parts.push(text(x + 5, LEAD - 6, 'start', PIN_FONT, pin));
+        parts.push(text(x, LEAD + 14, 'middle', NAME_FONT, name));
+        break;
+      case 'bottom':
+        parts.push(`<line x1="${x}" y1="${height - LEAD}" x2="${x}" y2="${height}" />`);
+        parts.push(text(x + 5, height - LEAD + 12, 'start', PIN_FONT, pin));
+        parts.push(text(x, height - LEAD - 8, 'middle', NAME_FONT, name));
+        break;
+    }
   }
   return parts.join('');
 }
