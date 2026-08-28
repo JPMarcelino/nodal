@@ -2,7 +2,7 @@
 // the edge-split hit test that turns a drop-on-wire into a junction insertion
 // point. No ng-diagram state — unit-testable in isolation.
 
-import type { Edge, Node, Point } from 'ng-diagram';
+import type { Edge, Node, Point, PortSide } from 'ng-diagram';
 
 /** Two flow-space points within rounding tolerance count as the same point. */
 export const POSITION_TOLERANCE_PX = 1;
@@ -22,14 +22,15 @@ export function segmentAxis(a: Point, b: Point): 'horizontal' | 'vertical' | nul
 }
 
 // Mirrors ng-diagram's internal side-anchored port placement. Returns null when
-// the node/port isn't measured yet.
+// the node/port isn't measured yet. The measured port box is already in the
+// rotated frame; only the anchored side has to be rotated with the node.
 export function portWorldPosition(node: Node | null, portId: string): Point | null {
   if (!node?.measuredPorts) return null;
   const port = node.measuredPorts.find((measured) => measured.id === portId);
   if (!port?.position || !port?.size) return null;
   const left = node.position.x + port.position.x;
   const top = node.position.y + port.position.y;
-  switch (port.side) {
+  switch (rotatedSide(port.side, node.angle ?? 0)) {
     case 'left':
       return { x: left, y: top + port.size.height / 2 };
     case 'right':
@@ -41,6 +42,15 @@ export function portWorldPosition(node: Node | null, portId: string): Point | nu
     default:
       return { x: left, y: top };
   }
+}
+
+const SIDES_CLOCKWISE = ['top', 'right', 'bottom', 'left'] as const;
+
+/** Side a port faces after its node is rotated by `angleDeg` (mirrors ng-diagram). */
+export function rotatedSide(side: PortSide, angleDeg: number): PortSide {
+  const quarterTurns = ((Math.round(angleDeg / 90) % 4) + 4) % 4;
+  const index = SIDES_CLOCKWISE.indexOf(side);
+  return index === -1 ? side : SIDES_CLOCKWISE[(index + quarterTurns) % 4];
 }
 
 export interface EdgeSplitHit {

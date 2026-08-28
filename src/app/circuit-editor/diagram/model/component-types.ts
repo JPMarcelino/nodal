@@ -47,8 +47,10 @@ export interface PortDef {
   cx: number;
   /** Vertical position within the symbol box (0 = top, 1 = bottom). */
   cy: number;
-  /** Optional pin number rendered inside the symbol (used by ICs). */
+  /** Optional pin number rendered beside the pin lead (used by ICs). */
   pin?: string;
+  /** Optional pin name rendered inside the symbol body (used by ICs). */
+  name?: string;
 }
 
 /** Editable specification field shown in the properties sidebar. */

@@ -1,10 +1,12 @@
-# ng-diagram Circuit Editor Template
+# ngDiagram Circuit Editor Template
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://opensource.org/licenses/MIT)
 
-**Live demo:** https://synergycodes.github.io/ng-diagram-electric-circuit/
+**Live demo:** [ngdiagram.dev/templates/electric-circuit](https://www.ngdiagram.dev/templates/electric-circuit/)
 
-Interactive circuit / schematic editor built with Angular 21 and [ng-diagram](https://www.npmjs.com/package/ng-diagram). Use this project as a starting point for building your own schematic capture tool, node-based editor, or component-library-driven diagram. Lean dependencies: Angular, ng-diagram, and [html-to-image](https://www.npmjs.com/package/html-to-image) (for JPEG export) — no opinionated third-party UI libraries.
+![Circuit editor — drag a capacitor and a ground from the library, wire them, draw a wire from the capacitor into an existing wire to create a junction, reshape the wire, export to DXF](docs/assets/demo.gif)
+
+Interactive circuit / schematic editor built with Angular and [ngDiagram](https://www.ngdiagram.dev/). Use this project as a starting point for building your own schematic capture tool, node-based editor, or component-library-driven diagram. Lean dependencies: Angular, ngDiagram, and [html-to-image](https://www.npmjs.com/package/html-to-image) (for JPEG export) — no opinionated third-party UI libraries.
 
 Features:
 
@@ -38,14 +40,16 @@ and a `@case` to the [symbol component](src/app/circuit-editor/diagram/node/symb
 
 ## Getting Started
 
-**Prerequisites:** Node.js v20.19+ or v22.12+, npm 10+
+Built against Angular 19.2 and ngDiagram 1.3 (see `package.json`); Node.js 18.19+, 20.11+ or 22 and npm 10+.
 
 ```bash
+git clone https://github.com/synergycodes/ng-diagram-electric-circuit.git
+cd ng-diagram-electric-circuit
 npm install
 npm start
 ```
 
-Open http://localhost:4200.
+Open [http://localhost:4200](http://localhost:4200) — a sample circuit loads: the classic NE555 astable multivibrator blinking an LED at about 1 Hz (13 components, 4 junctions, 19 wires). Try dragging a resistor from the library onto the canvas, wiring it into the circuit, then dropping a wire onto another wire to create a junction; right-click a component to rotate it. The sample circuit is seed data — replace it in [`diagram/data.ts`](src/app/circuit-editor/diagram/data.ts).
 
 ## Scripts
 
@@ -59,24 +63,24 @@ Open http://localhost:4200.
 | `npm run format`       | Format sources with Prettier      |
 | `npm run format:check` | Check formatting without writing  |
 
-## ng-diagram APIs demonstrated
+## ngDiagram APIs demonstrated
 
-| Concern             | API                                                                                     |
-| ------------------- | --------------------------------------------------------------------------------------- |
-| Bootstrap           | `provideNgDiagram()`                                                                    |
-| Diagram surface     | `<ng-diagram>`, `<ng-diagram-background>`                                               |
-| Node template       | `NgDiagramNodeTemplate`, `NgDiagramNodeTemplateMap`                                     |
-| Edge template       | `NgDiagramEdgeTemplate`, `NgDiagramEdgeTemplateMap`, `NgDiagramBaseEdgeComponent`       |
-| Ports               | `<ng-diagram-port>`                                                                     |
-| Palette (drag/drop) | `<ng-diagram-palette-item>`, `<ng-diagram-palette-item-preview>`, `paletteItemDropped`  |
-| Minimap             | `<ng-diagram-minimap>`                                                                  |
-| Model               | `initializeModel()`, `NgDiagramModelService` (`getConnectedEdges`, awaitable `addEdges`) |
-| Selection           | `NgDiagramSelectionService`                                                             |
-| Viewport            | `NgDiagramViewportService` (awaitable `zoomToFit`, `zoom`, `scale`)                     |
-| Linking config      | `NgDiagramConfig.linking` (`validateConnection`, `finalEdgeDataBuilder`)                |
-| Edge routing        | `NgDiagramConfig.edgeRouting` (orthogonal) + `routingMode: 'manual'` for reshaped wires |
-| Middleware          | `createMiddlewares()` — custom junction port-routing middleware                         |
-| Events              | `diagramInit`, `edgeDrawEnded`, `selectionMoved`, `selectionRemoved`                    |
+| Concern             | API                                                                                      | Where in this repo                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Bootstrap           | `provideNgDiagram()`                                                                     | `pages/circuit-editor-page.component.ts`                                                              |
+| Diagram surface     | `<ng-diagram>`, `<ng-diagram-background>`                                                | `diagram/diagram.component.html`                                                                      |
+| Node template       | `NgDiagramNodeTemplate`, `NgDiagramNodeTemplateMap`                                      | `diagram/diagram.component.ts`, `diagram/node/circuit-node.component.ts`                              |
+| Edge template       | `NgDiagramEdgeTemplate`, `NgDiagramEdgeTemplateMap`, `NgDiagramBaseEdgeComponent`        | `diagram/diagram.component.ts`, `diagram/wire/wire.component.ts`                                      |
+| Ports               | `<ng-diagram-port>`                                                                      | `diagram/node/circuit-node.component.html`, `diagram/wire/junction/node.component.ts`                 |
+| Palette (drag/drop) | `<ng-diagram-palette-item>`, `<ng-diagram-palette-item-preview>`, `paletteItemDropped`   | `library-sidebar/components/palette-tile/palette-tile.component.ts`, `diagram/diagram.component.html` |
+| Minimap             | `<ng-diagram-minimap>`                                                                   | `minimap-bar/minimap-bar.component.html`                                                              |
+| Model               | `initializeModel()`, `NgDiagramModelService` (`getConnectedEdges`, awaitable `addEdges`) | `diagram/diagram.component.ts`, `diagram/wire/junction/topology/`                                     |
+| Selection           | `NgDiagramSelectionService`                                                              | `diagram/editor-actions.service.ts`                                                                   |
+| Viewport            | `NgDiagramViewportService` (awaitable `zoomToFit`, `zoom`, `scale`)                      | `diagram/diagram.component.ts`, `diagram/editor-actions.service.ts`                                   |
+| Linking config      | `NgDiagramConfig.linking` (`validateConnection`, `finalEdgeDataBuilder`)                 | `diagram/diagram.component.ts`                                                                        |
+| Edge routing        | `NgDiagramConfig.edgeRouting` (orthogonal) + `routingMode: 'manual'` for reshaped wires  | `diagram/diagram.component.ts`, `diagram/wire/interactions/reshape/`                                  |
+| Middleware          | `createMiddlewares()` — custom junction port-routing middleware                          | `diagram/diagram.component.ts`                                                                        |
+| Events              | `diagramInit`, `edgeDrawEnded`, `selectionMoved`, `selectionRemoved`                     | `diagram/diagram.component.html`                                                                      |
 
 ## Architecture
 
@@ -105,7 +109,7 @@ src/
     ├── properties-sidebar/            # selection-driven properties form
     ├── minimap-bar/                   # bottom-right zoom + collapsible minimap
     ├── context-menu/                  # node & background right-click menus
-    ├── export/                        # SVG + JPEG + JSON export (service + dropdown)
+    ├── export/                        # DXF + SVG + JPEG + JSON export (service + dropdown)
     └── top-navbar/                    # logo, filename, export, theme toggle
 ```
 
@@ -114,7 +118,7 @@ src/
 Every color is a `--ce-*` token defined per theme in
 [`circuit-theme.css`](src/circuit-theme.css), taken straight from the Figma
 color sheets (names and values for both dark and light modes). The base
-`--ngd-*` tokens ship with ng-diagram itself, so that file only adds the `--ce-*`
+`--ngd-*` tokens ship with ngDiagram itself, so that file only adds the `--ce-*`
 tokens and remaps the few `--ngd-*` variables that drive the on-canvas look —
 grid background (major line every 10 minor cells), violet port rings, and the
 white-50% wire stroke.
@@ -133,9 +137,10 @@ white-50% wire stroke.
 ## Export format
 
 [`export.service.ts`](src/app/circuit-editor/export/export.service.ts) offers
-three formats: an **editable SVG** (vector schematic built from the model,
-black-on-white for print), a **JPEG** raster snapshot of the canvas, and
-**JSON**. The JSON is a documented `ng-diagram-circuit` document — a `components`
+four formats: **DXF** (vector, with layer mapping and text styles, for AutoCAD /
+BricsCAD / LibreCAD — renderers in [`export/dxf-circuit/`](src/app/circuit-editor/export/dxf-circuit/)),
+an **editable SVG** (vector schematic built from the model, black-on-white for
+print), a **JPEG** raster snapshot of the canvas, and **JSON**. The JSON is a documented `ng-diagram-circuit` document — a `components`
 array (type, reference, value, specs, position, rotation) plus a `connections`
 array (port-to-port). The connectivity standard for circuits is a **SPICE
 netlist**, but these generic illustrative components don't map cleanly to SPICE
@@ -143,28 +148,28 @@ device cards, so a clean JSON format is used instead.
 
 ## Known limitations / notes
 
-- **NE555 footprint:** the symbol follows the design's stylized **14-pin DIP**
-  drawing rather than the real 8-pin DIP-8 package.
 - **Composite components:** the catalog ships single-primitive components only.
   Composite parts (e.g. a bridge rectifier — an assembly of diodes plus internal
   wiring) are out of scope, since each catalog entry maps to one schematic symbol.
 
 ## Tech stack
 
-- [Angular 21](https://angular.dev) (standalone, signals, zoneless-ready)
-- [ng-diagram](https://www.ngdiagram.dev)
+- [Angular 19](https://angular.dev) (standalone, signals, zoneless via `provideExperimentalZonelessChangeDetection`)
+- **ngDiagram** ([`ng-diagram`](https://www.npmjs.com/package/ng-diagram) on npm)
 - [html-to-image](https://www.npmjs.com/package/html-to-image) (JPEG export)
 - Plain CSS with a custom design-token system (no UI framework)
 - Poppins (Google Fonts)
 
-## Contributing
+## Support
 
-Contributions are welcome. Install dependencies with `npm install`, then use
-`npm start` to run the dev server and `npm run lint`, `npm run format:check`,
-and `npm test` before opening a pull request. Please also read the
-[Code of Conduct](CODE_OF_CONDUCT.md). To report a vulnerability, see the
-[Security Policy](SECURITY.md).
+- **Issues**: [GitHub Issues](https://github.com/synergycodes/ng-diagram-electric-circuit/issues)
+- **ngDiagram Discussions**: [GitHub Discussions](https://github.com/synergycodes/ng-diagram/discussions), [Discord](https://discord.gg/FDMjRuarFb)
+- **ngDiagram Documentation**: [ngdiagram.dev/docs](https://www.ngdiagram.dev/docs)
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+Built with ❤️ by the [Synergy Codes](https://www.synergycodes.com/) team

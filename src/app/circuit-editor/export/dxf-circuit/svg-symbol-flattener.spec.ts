@@ -54,9 +54,11 @@ describe('flattenSvgBody', () => {
     expect(flat.texts.length).toBeGreaterThan(0);
     const pin1 = flat.texts.find((t) => t.text === '1');
     expect(pin1).toBeDefined();
-    expect(pin1?.halign).toBe(0); // text-anchor="start"
-    const pin14 = flat.texts.find((t) => t.text === '14');
-    expect(pin14?.halign).toBe(2); // text-anchor="end"
+    expect(pin1?.halign).toBe(0); // text-anchor="start" (bottom lead)
+    const pin7 = flat.texts.find((t) => t.text === '7');
+    expect(pin7?.halign).toBe(1); // text-anchor="middle" (left lead)
+    const outName = flat.texts.find((t) => t.text === 'OUT');
+    expect(outName?.halign).toBe(2); // text-anchor="end" (right-side pin name)
   });
 
   it('turns a circle into a closed polygon (switch contact dot)', () => {
