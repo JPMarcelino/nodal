@@ -836,7 +836,7 @@ kbd {
 
 .field {
   display: grid;
-  grid-template-columns: 96px 1fr;
+  grid-template-columns: 96px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   min-height: 30px;
@@ -920,10 +920,15 @@ select.input {
   background: var(--panel-2);
   border: 1px solid var(--border);
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .segmented button {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 4px 6px;
   border-radius: 6px;
   color: var(--text-dim);
@@ -1855,7 +1860,7 @@ select.input {
 }
 
 .se-side .field {
-  grid-template-columns: 90px 1fr;
+  grid-template-columns: 90px minmax(0, 1fr);
 }
 
 .se-preview {

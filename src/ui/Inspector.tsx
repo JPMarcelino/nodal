@@ -19,7 +19,7 @@ import {
   Ungroup,
 } from 'lucide-react';
 import { useMemo } from 'react';
-import { measureText } from '../canvas/Scene';
+import { defaultHeadSize, measureText } from '../canvas/Scene';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { computeNets, netOfWire } from '../model/netlist';
 import { getSymbol } from '../model/registry';
@@ -34,13 +34,32 @@ const DASHES: { value: Dash; label: string }[] = [
   { value: 'dotted', label: 'Dotted' },
 ];
 
-const HEAD_KINDS: { value: HeadKind; label: string; title?: string }[] = [
-  { value: 'none', label: 'None', title: 'Plain end' },
-  { value: 'open', label: 'Open', title: 'Two-stroke V arrowhead' },
-  { value: 'filled', label: 'Solid', title: 'Filled triangle arrowhead' },
-  { value: 'circle', label: 'Dot', title: 'Filled dot' },
-  { value: 'bar', label: 'Bar', title: 'Perpendicular tick' },
-];
+const HEAD_TITLES: Record<HeadKind, string> = {
+  none: 'None — plain end',
+  open: 'Open — V arrowhead',
+  filled: 'Solid — filled triangle',
+  circle: 'Dot',
+  bar: 'Bar — perpendicular tick',
+};
+
+/** Tiny preview of an arrowhead; `flip` points it left (for the start end). */
+function HeadIcon({ kind, flip }: { kind: HeadKind; flip?: boolean }) {
+  const head =
+    kind === 'open' ? <path d="M15 2.5L20 6L15 9.5" fill="none" /> :
+    kind === 'filled' ? <path d="M14.5 2.5L20.5 6L14.5 9.5Z" fill="currentColor" /> :
+    kind === 'circle' ? <circle cx="18.5" cy="6" r="2.5" fill="currentColor" stroke="none" /> :
+    kind === 'bar' ? <path d="M20 2v8" /> :
+    null;
+  return (
+    <svg width={22} height={12} viewBox="0 0 22 12" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', margin: '0 auto', transform: flip ? 'scaleX(-1)' : undefined }}>
+      <path d={`M2 6H${kind === 'filled' ? 16 : kind === 'circle' ? 17 : 20}`} />
+      {head}
+    </svg>
+  );
+}
+
+const headOptions = (flip: boolean) =>
+  (Object.keys(HEAD_TITLES) as HeadKind[]).map((k) => ({ value: k, label: <HeadIcon kind={k} flip={flip} />, title: HEAD_TITLES[k] }));
 
 function ArrangeBar({ count }: { count: number }) {
   return (
@@ -468,14 +487,14 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
           </Field>
           {isLine && (
             <>
-              <Field label="Start arrowhead">
-                <Segmented value={first.headStart ?? 'none'} options={HEAD_KINDS} onChange={(v) => upd((s) => (s.headStart = v))} />
+              <Field label="Start">
+                <Segmented value={first.headStart ?? 'none'} options={headOptions(true)} onChange={(v) => upd((s) => (s.headStart = v))} />
               </Field>
-              <Field label="End arrowhead">
-                <Segmented value={first.headEnd ?? (first.kind === 'arrow' ? 'open' : 'none')} options={HEAD_KINDS} onChange={(v) => upd((s) => (s.headEnd = v))} />
+              <Field label="End">
+                <Segmented value={first.headEnd ?? (first.kind === 'arrow' ? 'open' : 'none')} options={headOptions(false)} onChange={(v) => upd((s) => (s.headEnd = v))} />
               </Field>
-              <Field label="Arrowhead size">
-                <NumberInput value={first.headSize ?? Math.max(8, first.strokeWidth * 4)} min={2} max={80} suffix="px" onChange={(v) => upd((s) => (s.headSize = v))} />
+              <Field label="Head size">
+                <NumberInput value={first.headSize ?? defaultHeadSize(first.strokeWidth)} min={2} max={80} suffix="px" onChange={(v) => upd((s) => (s.headSize = v))} />
               </Field>
             </>
           )}

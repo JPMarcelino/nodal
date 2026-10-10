@@ -64,25 +64,37 @@ const BADGE_GLYPHS: Partial<Record<Tool, string>> = {
   text: '<text x="6.5" y="9.8" font-family="sans-serif" font-size="9" fill="#1f2433" text-anchor="middle" stroke="none">T</text>',
 };
 
+const CURSOR_THEMES = {
+  light: { ink: '#1f2433', halo: '#ffffff', badge: '#ffffff', border: '#cfd4e0' },
+  dark: { ink: '#d5dbef', halo: '#10141e', badge: '#1a1f2c', border: '#3a4258' },
+};
+
 const cursorCache = new Map<string, string | null>();
 
-/** CSS cursor with a small tool badge in the corner; hotspot stays on the crosshair centre. */
-export function badgeCursor(t: Tool | 'plus' | 'area'): string | null {
-  if (cursorCache.has(t)) return cursorCache.get(t)!;
+/**
+ * Crosshair cursor with a small themed tool badge tucked away at the
+ * bottom-right, clear of the hotspot so it never hides what is being clicked.
+ */
+export function badgeCursor(t: Tool | 'plus' | 'area', theme: 'light' | 'dark'): string | null {
+  const key = `${theme}:${t}`;
+  if (cursorCache.has(key)) return cursorCache.get(key)!;
   const glyph = t === 'plus' ? PLUS_GLYPH : t === 'area' ? AREA_GLYPH : BADGE_GLYPHS[t];
   if (!glyph) {
-    cursorCache.set(t, null);
+    cursorCache.set(key, null);
     return null;
   }
+  const c = CURSOR_THEMES[theme];
+  const arms = '<path d="M10 1v6M10 13v6M1 10h6M13 10h6" stroke-linecap="round"/>';
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">`
-    + `<g stroke="#ffffff" stroke-width="2.6" opacity="0.55"><path d="M12 0v8M12 16v8M0 12h8M16 12h8" stroke-linecap="round"/></g>`
-    + `<g stroke="#6b7280" stroke-width="1.4"><path d="M12 0v8M12 16v8M0 12h8M16 12h8" stroke-linecap="round"/></g>`
-    + `<rect x="0.75" y="0.75" width="13" height="13" rx="3.25" fill="#ffffff" stroke="#555f89" stroke-width="1"/>`
-    + glyph
-    + `</svg>`;
-  const css = `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
-  cursorCache.set(t, css);
+    `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">`
+    + `<g stroke="${c.halo}" stroke-width="3" opacity="0.8">${arms}</g>`
+    + `<g stroke="${c.ink}" stroke-width="1.3">${arms}</g>`
+    + `<g transform="translate(18 18)">`
+    + `<rect x="0.5" y="0.5" width="13" height="13" rx="3.5" fill="${c.badge}" stroke="${c.border}"/>`
+    + glyph.replaceAll('#1f2433', c.ink)
+    + `</g></svg>`;
+  const css = `url("data:image/svg+xml,${encodeURIComponent(svg)}") 10 10, crosshair`;
+  cursorCache.set(key, css);
   return css;
 }
 
@@ -892,13 +904,13 @@ export function Canvas() {
         ? 'grabbing'
         : 'grab'
       : exportAreaJob
-        ? badgeCursor('area') ?? 'crosshair'
+        ? badgeCursor('area', prefs.theme) ?? 'crosshair'
         : g?.kind === 'move'
           ? 'move'
           : placing || tool !== 'select'
-            ? badgeCursor(tool === 'select' ? 'plus' : tool) ?? 'crosshair'
+            ? badgeCursor(tool === 'select' ? 'plus' : tool, prefs.theme) ?? 'crosshair'
             : g?.kind === 'wire'
-              ? badgeCursor(tool) ?? 'crosshair'
+              ? badgeCursor(tool, prefs.theme) ?? 'crosshair'
               : hover.port
                 ? 'crosshair'
                 : hover.item
