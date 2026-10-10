@@ -359,8 +359,8 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           <Segmented
             value={first.routing ?? 'ortho'}
             options={[
-              { value: 'ortho', label: 'Orthogonal' },
-              { value: 'straight', label: 'Direct' },
+              { value: 'ortho', label: 'Elbows', title: 'Right-angle elbows only' },
+              { value: 'straight', label: 'Direct', title: 'Allow diagonal segments' },
             ]}
             onChange={(v) => mutate((d) => ids.forEach((id) => ((d.items[id] as WireItem).routing = v)))}
           />
@@ -369,9 +369,9 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           <Segmented
             value={first.hopOver === undefined ? 'default' : first.hopOver ? 'over' : 'under'}
             options={[
-              { value: 'default', label: 'Default' },
-              { value: 'over', label: 'Hop over' },
-              { value: 'under', label: 'Stay under' },
+              { value: 'default', label: 'Auto', title: 'Document default: the more horizontal wire hops' },
+              { value: 'over', label: 'Over', title: 'This wire hops over the wires it crosses' },
+              { value: 'under', label: 'Under', title: 'This wire stays flat; crossing wires hop over it' },
             ]}
             onChange={(v) =>
               mutate((d) =>
@@ -523,8 +523,8 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
           <Segmented
             value={first.layer}
             options={[
-              { value: 'below', label: 'Behind wires' },
-              { value: 'above', label: 'Above all' },
+              { value: 'below', label: 'Behind', title: 'Behind wires and components' },
+              { value: 'above', label: 'On top', title: 'Above everything' },
             ]}
             onChange={(v) => upd((s) => (s.layer = v))}
           />

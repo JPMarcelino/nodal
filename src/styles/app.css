@@ -915,6 +915,8 @@ select.input {
 
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap;
+  gap: 1px;
   padding: 2px;
   border-radius: 8px;
   background: var(--panel-2);
@@ -925,10 +927,8 @@ select.input {
 }
 
 .segmented button {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* never truncate: share the width, and wrap to a second row if it really doesn't fit */
+  flex: 1 0 auto;
   padding: 4px 6px;
   border-radius: 6px;
   color: var(--text-dim);
