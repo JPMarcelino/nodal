@@ -107,8 +107,12 @@ export interface ComponentItem extends ItemBase {
   showValue: boolean;
   color?: string;
   /** Label offset relative to the component centre (unrotated). */
+  /** Reference label offset (also the value's, until the value is moved on its own). */
   labelDx?: number;
   labelDy?: number;
+  /** Value label offset when it has been dragged separately from the reference. */
+  valueDx?: number;
+  valueDy?: number;
 }
 
 export interface WireItem extends ItemBase {

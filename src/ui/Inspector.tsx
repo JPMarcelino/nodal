@@ -300,9 +300,20 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
             </span>
           </Field>
         )}
-        {(c.labelDx || c.labelDy) && (
-          <button className="secondary-btn full" onClick={() => upd((x) => ((x.labelDx = 0), (x.labelDy = 0)))}>
-            Reset label position
+        {!!(c.labelDx || c.labelDy || c.valueDx || c.valueDy) && (
+          <button
+            className="secondary-btn full"
+            title="Put the reference and value labels back in their default spots"
+            onClick={() =>
+              upd((x) => {
+                delete x.labelDx;
+                delete x.labelDy;
+                delete x.valueDx;
+                delete x.valueDy;
+              })
+            }
+          >
+            Reset label positions
           </button>
         )}
       </Section>

@@ -77,10 +77,24 @@ export function computeSceneData(doc: CircuitDoc): SceneData {
 /* Components                                                          */
 /* ------------------------------------------------------------------ */
 
+/** Offset of each label: the reference uses labelDx/Dy, the value its own offset or else the reference's. */
+export const labelOffsets = (c: ComponentItem) => ({
+  ref: { x: c.labelDx ?? 0, y: c.labelDy ?? 0 },
+  value: { x: c.valueDx ?? c.labelDx ?? 0, y: c.valueDy ?? c.labelDy ?? 0 },
+});
+
 export function labelLayout(c: ComponentItem, def: SymbolDef) {
+  const L = baseLabelLayout(c, def);
+  const o = labelOffsets(c);
+  const shift = <T extends { x: number; y: number } | null>(p: T, d: { x: number; y: number }): T => (p ? { ...p, x: p.x + d.x, y: p.y + d.y } : p);
+  return { ...L, ref: shift(L.ref, o.ref), value: shift(L.value, o.value) };
+}
+
+/** Default label spots, before any dragging. */
+function baseLabelLayout(c: ComponentItem, def: SymbolDef) {
   const b = componentBounds(c, def);
-  const dx = c.labelDx ?? 0;
-  const dy = c.labelDy ?? 0;
+  const dx = 0;
+  const dy = 0;
   if (def.valueIsLabel) {
     if (LABEL_SYMBOLS.test(def.id)) {
       // text sits inside the flag body, away from the connection point
