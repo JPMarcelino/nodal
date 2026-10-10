@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, drawOrder, makeComponent, makeShape, normalizeDoc, uid } from '../model/doc';
-import { clampTitleOffset, shapeTitle } from '../canvas/Scene';
+import { clampTitleOffset, labelLayout, shapeTitle } from '../canvas/Scene';
+import { getSymbol } from '../model/registry';
 import { clipPolylineToRect, simplify } from '../model/geometry';
 import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, reorderItem, rotateItems, solderPinToWire, translateDetached, translateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
 import { computeHotSpots } from '../model/hotspots';
@@ -432,5 +433,23 @@ describe('layer order', () => {
     expect(reorderItem(doc, a.id, b.id, 'after')).toBe(true);
     expect(list()).toEqual([c.id, b.id, a.id]);
     expect(reorderItem(doc, a.id, a.id, 'after')).toBe(false);
+  });
+});
+
+describe('part labels', () => {
+  it('moves the reference and value labels independently', () => {
+    const doc = createDoc();
+    const c = makeComponent(doc, 'resistor', 100, 100);
+    const def = getSymbol(doc, c.symbol);
+    const base = labelLayout(c, def);
+    // old files: one offset moves both
+    const both = labelLayout({ ...c, labelDx: 10, labelDy: 5 }, def);
+    expect(both.ref!.x - base.ref!.x).toBe(10);
+    expect(both.value!.x - base.value!.x).toBe(10);
+    // the value moved on its own stays put when the reference moves
+    const split = labelLayout({ ...c, labelDx: 10, labelDy: 5, valueDx: -20, valueDy: 0 }, def);
+    expect(split.ref!.x - base.ref!.x).toBe(10);
+    expect(split.value!.x - base.value!.x).toBe(-20);
+    expect(split.value!.y).toBe(base.value!.y);
   });
 });

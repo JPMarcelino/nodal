@@ -8,7 +8,7 @@ import { buildWirePath, endpointInfo, hitWire, moveWireNode, snapOnSegment, wire
 import { runAreaExport } from '../io/fileActions';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, inkColor, labelLayout, measureText, shapeTitle, useSceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, inkColor, labelLayout, labelOffsets, measureText, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { HotSpotMenu } from './HotSpotMenu';
 import { applySolder, solderActionFor } from './solder';
@@ -45,7 +45,7 @@ type Gesture =
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
   | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
-  | { kind: 'label'; id: string; start: Point; base: { dx: number; dy: number } }
+  | { kind: 'label'; id: string; which: 'ref' | 'value'; start: Point; base: { dx: number; dy: number } }
   | { kind: 'shapeTitle'; id: string; start: Point; base: { dx: number; dy: number } };
 
 const ORTHO_EPS = 0.01;
@@ -335,8 +335,8 @@ export function Canvas() {
     [data],
   );
 
-  /** Selected component whose reference / value *text* is under the pointer (dragging it moves the labels). */
-  const hitLabel = useCallback((p: Point): string | null => {
+  /** Selected component label (reference or value *text*) under the pointer; dragging it moves just that label. */
+  const hitLabel = useCallback((p: Point): { id: string; which: 'ref' | 'value' } | null => {
     const d = S().doc;
     for (const id of S().selection) {
       const c = d.items[id];
@@ -344,14 +344,14 @@ export function Canvas() {
       const def = getSymbol(d, c.symbol);
       if (def.valueIsLabel) continue;
       const L = labelLayout(c, def);
-      const texts: [{ x: number; y: number; anchor: 'start' | 'middle' | 'end' } | null | undefined, string, number][] = [];
-      if (c.showRef) texts.push([L.ref, c.ref, 11]);
-      if (c.showValue && c.value) texts.push([L.value, c.value, 10.5]);
-      for (const [at, text, size] of texts) {
+      const texts: [{ x: number; y: number; anchor: 'start' | 'middle' | 'end' } | null | undefined, string, number, 'ref' | 'value'][] = [];
+      if (c.showRef) texts.push([L.ref, c.ref, 11, 'ref']);
+      if (c.showValue && c.value) texts.push([L.value, c.value, 10.5, 'value']);
+      for (const [at, text, size, which] of texts) {
         if (!at) continue;
         const m = measureText(text, size);
         const x = at.anchor === 'start' ? at.x : at.anchor === 'middle' ? at.x - m.w / 2 : at.x - m.w;
-        if (pointInRect(p, { x, y: at.y - size, w: m.w, h: size * 1.3 }, 2)) return c.id;
+        if (pointInRect(p, { x, y: at.y - size, w: m.w, h: size * 1.3 }, 2)) return { id: c.id, which };
       }
     }
     return null;
@@ -798,10 +798,11 @@ export function Canvas() {
     }
     const labelOf = hitLabel(w);
     const hit = hitItem(w);
-    if (labelOf && (!hit || hit === labelOf || S().doc.items[hit]?.type !== 'component')) {
-      const c = S().doc.items[labelOf] as ComponentItem;
+    if (labelOf && (!hit || hit === labelOf.id || S().doc.items[hit]?.type !== 'component')) {
+      const c = S().doc.items[labelOf.id] as ComponentItem;
+      const o = labelOffsets(c)[labelOf.which];
       beginGesture();
-      setGesture({ kind: 'label', id: labelOf, start: w, base: { dx: c.labelDx ?? 0, dy: c.labelDy ?? 0 } });
+      setGesture({ kind: 'label', id: labelOf.id, which: labelOf.which, start: w, base: { dx: o.x, dy: o.y } });
       return;
     }
     if (hit) {
@@ -1011,8 +1012,16 @@ export function Canvas() {
         const dy = Math.round(w.y - g.start.y);
         gestureUpdate((d) => {
           const c = d.items[g.id] as ComponentItem;
-          c.labelDx = g.base.dx + dx;
-          c.labelDy = g.base.dy + dy;
+          if (g.which === 'value') {
+            c.valueDx = g.base.dx + dx;
+            c.valueDy = g.base.dy + dy;
+          } else {
+            // moving the reference alone: pin the value where it is if it was still following
+            if (c.valueDx === undefined) c.valueDx = c.labelDx ?? 0;
+            if (c.valueDy === undefined) c.valueDy = c.labelDy ?? 0;
+            c.labelDx = g.base.dx + dx;
+            c.labelDy = g.base.dy + dy;
+          }
         });
         break;
       }
