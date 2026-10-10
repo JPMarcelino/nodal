@@ -9,17 +9,36 @@ import { S, set, setPrefs, useStore } from '../store/store';
 import { Field, Kbd, Segmented, Toggle } from './controls';
 import { Logo } from './Logo';
 
-export function Modal({ title, onClose, children, width = 560, className }: { title?: ReactNode; onClose: () => void; children: ReactNode; width?: number; className?: string }) {
+export function Modal({
+  title,
+  onClose,
+  onEscape,
+  children,
+  width = 560,
+  className,
+}: {
+  title?: ReactNode;
+  onClose: () => void;
+  /** Called on Esc before closing; return true when the content used the key (the modal stays open). */
+  onEscape?: () => boolean;
+  children: ReactNode;
+  width?: number;
+  className?: string;
+}) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
+        const t = e.target as HTMLElement;
+        // Esc in a text field just leaves the field
+        if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return t.blur();
+        if (onEscape?.()) return;
         onClose();
       }
     };
     window.addEventListener('keydown', k, true);
     return () => window.removeEventListener('keydown', k, true);
-  }, [onClose]);
+  }, [onClose, onEscape]);
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`modal ${className ?? ''}`} style={{ width }} role="dialog">
