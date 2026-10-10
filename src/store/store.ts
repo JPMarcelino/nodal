@@ -174,7 +174,11 @@ let gestureBase: CircuitDoc | null = null;
 
 export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: string[]) {
   const s = S();
-  const next = produce(s.doc, recipe);
+  // the recipe's return value is ignored on purpose: Immer would otherwise use it as the new
+  // document (e.g. `(d) => (d.settings.hops = 'arc')` returns 'arc' when nothing changed)
+  const next = produce(s.doc, (d) => {
+    recipe(d);
+  });
   if (next === s.doc) {
     if (selection) set({ selection });
     return;
@@ -197,7 +201,11 @@ export function beginGesture() {
 export function gestureUpdate(recipe: (d: Draft<CircuitDoc>, base: CircuitDoc) => void) {
   if (!gestureBase) return;
   const base = gestureBase;
-  set({ doc: produce(base, (d) => recipe(d, base)) });
+  set({
+    doc: produce(base, (d) => {
+      recipe(d, base);
+    }),
+  });
 }
 
 export function endGesture(commit = true) {
@@ -319,8 +327,11 @@ useStore.subscribe((s, prev) => {
   if (s.doc === prev.doc || !s.prefs.autosave) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
+    const doc = S().doc;
+    // never overwrite the last good autosave with something that isn't a circuit
+    if (!doc || typeof doc !== 'object' || doc.format !== 'nodal' || typeof doc.items !== 'object' || !doc.settings) return;
     try {
-      localStorage.setItem(LS.doc, JSON.stringify(S().doc));
+      localStorage.setItem(LS.doc, JSON.stringify(doc));
     } catch {
       /* quota exceeded — ignore */
     }

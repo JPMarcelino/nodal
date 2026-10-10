@@ -28,10 +28,19 @@ import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './controls';
 
-const DASHES: { value: Dash; label: string }[] = [
-  { value: 'solid', label: 'Solid' },
-  { value: 'dashed', label: 'Dashed' },
-  { value: 'dotted', label: 'Dotted' },
+/** Small sample of a line style (fits narrow panels better than words). */
+function DashIcon({ dash }: { dash: Dash }) {
+  return (
+    <svg width={28} height={10} viewBox="0 0 28 10" style={{ display: 'block', margin: '0 auto' }}>
+      <line x1={2} y1={5} x2={26} y2={5} stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeDasharray={dash === 'dashed' ? '6 4' : dash === 'dotted' ? '0.01 4' : undefined} />
+    </svg>
+  );
+}
+
+const DASHES: { value: Dash; label: JSX.Element; title: string }[] = [
+  { value: 'solid', label: <DashIcon dash="solid" />, title: 'Solid' },
+  { value: 'dashed', label: <DashIcon dash="dashed" />, title: 'Dashed' },
+  { value: 'dotted', label: <DashIcon dash="dotted" />, title: 'Dotted' },
 ];
 
 const HEAD_TITLES: Record<HeadKind, string> = {
