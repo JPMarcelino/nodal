@@ -187,7 +187,7 @@ export function Segmented<T extends string | number>({
   return (
     <span className="segmented">
       {options.map((o) => (
-        <button key={String(o.value)} type="button" title={o.title} className={o.value === value ? 'active' : ''} onClick={() => onChange(o.value)}>
+        <button key={String(o.value)} type="button" title={o.title ?? (typeof o.label === 'string' ? o.label : undefined)} className={o.value === value ? 'active' : ''} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
       ))}
