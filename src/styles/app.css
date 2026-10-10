@@ -1033,10 +1033,14 @@ select.input {
 .swatch-pop {
   position: absolute;
   top: calc(100% + 6px);
+  /* as wide as the colour field so it never spills out of the panel; swatches wrap */
   left: 0;
+  right: 0;
+  min-width: 150px;
   z-index: 50;
   display: grid;
-  grid-template-columns: repeat(7, 22px);
+  grid-template-columns: repeat(auto-fill, 22px);
+  justify-content: space-between;
   gap: 6px;
   padding: 10px;
   background: var(--panel);
@@ -2175,22 +2179,88 @@ select.input {
   color: var(--text);
 }
 
-.cross-pop-solder {
-  margin-top: 8px;
-  width: 100%;
-  height: 30px;
+
+
+.hot-actions {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: 0.88em;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
 }
 
-.cross-pop-solder:hover {
+.cross-pop-sub + .hot-actions {
+  margin-top: 4px;
+}
+
+.hot-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.hot-item:hover {
   background: var(--accent-soft);
-  border-color: var(--accent);
   color: var(--text);
+}
+
+.hot-item.danger:hover {
+  background: rgba(224, 68, 94, 0.14);
+  color: var(--danger);
+}
+
+.hot-item-label {
+  font-size: 0.9em;
+}
+
+.hot-item-hint {
+  margin-left: auto;
+  font-size: 0.75em;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* hover-menu hint rings on the canvas */
+
+.hot-ring {
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.hot-ring-base {
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-opacity: 0.7;
+}
+
+.hot-ring.pending .hot-ring-base,
+.hot-ring.open .hot-ring-base {
+  stroke: var(--accent);
+  stroke-opacity: 0.35;
+}
+
+.hot-ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+/* fills up while the pointer rests: the menu opens when the circle closes */
+.hot-ring.pending .hot-ring-fill {
+  animation: hot-fill 0.55s linear forwards;
+}
+
+@keyframes hot-fill {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { keysFor, prettyKey } from '../store/commands';
 
 export const SWATCHES = ['#000000', '#3ddc97', '#7aa2f7', '#bb9af7', '#f7768e', '#ff9e64', '#e0af68', '#9ece6a', '#2ac3de', '#c0caf5', '#565f89', '#1f2433', '#ffffff'];
@@ -137,8 +137,18 @@ export function Slider({ value, onChange, min, max, step = 0.01 }: { value: numb
 export function ColorInput({ value, onChange, allowNone }: { value: string; onChange: (v: string) => void; allowNone?: boolean }) {
   const [open, setOpen] = useState(false);
   const isNone = !value || value === 'none';
+  const ref = useRef<HTMLSpanElement>(null);
+  // close when clicking anywhere outside the picker
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, [open]);
   return (
-    <span className="color-input">
+    <span className="color-input" ref={ref}>
       <button type="button" className={isNone ? 'swatch none' : 'swatch'} style={{ background: isNone ? undefined : value }} onClick={() => setOpen(!open)} />
       <TextInput value={isNone ? '' : value} onChange={(v) => onChange(v || (allowNone ? '' : value))} placeholder={allowNone ? 'auto' : ''} mono />
       {open && (

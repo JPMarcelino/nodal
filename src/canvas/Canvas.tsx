@@ -10,7 +10,8 @@ import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, useStore } from '../store/store';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, dashArray, inkColor, measureText, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
-import { CrossingPopup } from './CrossingPopup';
+import { HotSpotMenu } from './HotSpotMenu';
+import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
 
 /* ------------------------------------------------------------------ */
 /* Targets                                                             */
@@ -119,50 +120,81 @@ export function Canvas() {
   const [spaceDown, setSpaceDown] = useState(false);
   const [editingText, setEditingText] = useState<string | null>(null);
   const lastClick = useRef<{ t: number; p: Point }>({ t: 0, p: { x: 0, y: 0 } });
-  // crossing-order popup: opens after the pointer rests on a crossing, closes shortly after leaving it
-  const [crossPop, setCrossPop] = useState<Point | null>(null);
-  const crossTimers = useRef<{ open?: number; close?: number; pending?: Point }>({});
+  // hover menus: open after the pointer rests on a hot spot, close shortly after leaving it
+  const [hotMenu, setHotMenu] = useState<HotSpot | null>(null);
+  const [hotPending, setHotPending] = useState<string | null>(null);
+  const hotTimers = useRef<{ open?: number; close?: number }>({});
 
   const setGesture = useCallback((g: Gesture | null) => {
     gRef.current = g;
     setGestureState(g);
   }, []);
 
-  const clearCrossTimer = (k: 'open' | 'close') => {
-    window.clearTimeout(crossTimers.current[k]);
-    crossTimers.current[k] = undefined;
+  const HOT_DWELL = 550;
+  const clearHotTimer = (k: 'open' | 'close') => {
+    window.clearTimeout(hotTimers.current[k]);
+    hotTimers.current[k] = undefined;
   };
-  const closeCrossPop = () => {
-    clearCrossTimer('open');
-    clearCrossTimer('close');
-    crossTimers.current.pending = undefined;
-    setCrossPop(null);
+  const closeHotMenu = () => {
+    clearHotTimer('open');
+    clearHotTimer('close');
+    setHotPending(null);
+    setHotMenu(null);
   };
-  const scheduleCrossClose = () => {
-    if (crossTimers.current.close === undefined) crossTimers.current.close = window.setTimeout(closeCrossPop, 300);
+  const scheduleHotClose = () => {
+    if (hotTimers.current.close === undefined) hotTimers.current.close = window.setTimeout(closeHotMenu, 300);
   };
-  useEffect(() => () => closeCrossPop(), []);
+  useEffect(() => () => closeHotMenu(), []);
 
-  /** Tracks the pointer resting on a wire crossing (only while idle in the select / edit points tools). */
-  const trackCrossing = (w: Point) => {
-    const tol = 6 / S().view.zoom;
-    const c = tool === 'select' || tool === 'node' ? data.crossings.find((x) => dist(x.pt, w) < tol) : undefined;
-    if (!c) {
-      clearCrossTimer('open');
-      crossTimers.current.pending = undefined;
-      if (crossPop) scheduleCrossClose();
+  const hotSpots = useMemo(() => computeHotSpots(doc, data.polys, data.crossings), [doc, data]);
+
+  /** Nearest hot spot under the pointer (crossings get a little extra reach for their hop arcs). */
+  const hotSpotAt = (w: Point): HotSpot | null => {
+    const z = S().view.zoom;
+    let best: HotSpot | null = null;
+    let bd = Infinity;
+    for (const h of hotSpots) {
+      const tol = h.kind === 'crossing' ? Math.max(8 / z, doc.settings.hopSize + 2) : 7 / z;
+      const d = dist(h.pt, w);
+      if (d < tol && d < bd) {
+        best = h;
+        bd = d;
+      }
+    }
+    return best;
+  };
+
+  /** Tracks the pointer resting on a hot spot (only while idle in the select / edit points tools). */
+  const trackHotSpot = (w: Point) => {
+    const h = tool === 'select' || tool === 'node' ? hotSpotAt(w) : null;
+    if (!h) {
+      clearHotTimer('open');
+      setHotPending(null);
+      if (hotMenu) scheduleHotClose();
       return;
     }
-    clearCrossTimer('close');
-    if (crossPop && eq(crossPop, c.pt)) return;
-    const pending = crossTimers.current.pending;
-    if (pending && eq(pending, c.pt)) return;
-    clearCrossTimer('open');
-    crossTimers.current.pending = c.pt;
-    crossTimers.current.open = window.setTimeout(() => {
-      crossTimers.current.pending = undefined;
-      setCrossPop(c.pt);
-    }, 550);
+    clearHotTimer('close');
+    const key = hotSpotKey(h);
+    if ((hotMenu && hotSpotKey(hotMenu) === key) || hotPending === key) return;
+    clearHotTimer('open');
+    setHotPending(key);
+    hotTimers.current.open = window.setTimeout(() => {
+      setHotPending(null);
+      setHotMenu(h);
+    }, HOT_DWELL);
+  };
+
+  /** "Continue wire" from a loose end: click-to-click wiring starting at that end. */
+  const continueWire = (wire: string, end: 'a' | 'b') => {
+    const w = S().doc.items[wire];
+    if (!w || w.type !== 'wire' || w[end].kind !== 'free') return;
+    const ep = w[end] as Extract<Endpoint, { kind: 'free' }>;
+    const pts = data.polys.get(wire) ?? [];
+    const nb = end === 'a' ? pts[1] : pts[pts.length - 2];
+    const horizLeg = !!nb && Math.abs(nb.y - ep.y) < ORTHO_EPS;
+    const start: Target = { kind: 'wireEnd', wire, end, pt: { x: ep.x, y: ep.y } };
+    // keep going in the same direction first
+    setGesture({ kind: 'wire', start, pts: [], hFirst: horizLeg, fromDrag: false, downClient: { x: 0, y: 0 }, cur: start, dragging: false });
   };
 
   const grid = doc.settings.grid;
@@ -432,6 +464,8 @@ export function Canvas() {
       case 'wireEnd': {
         const w = d.items[t.wire] as WireItem | undefined;
         if (!w) return { kind: 'free', ...t.pt };
+        // already connected earlier in this same commit (a loop closing where it started)
+        if (w[t.end].kind !== 'free') return w[t.end];
         const jid = uid('j');
         d.items[jid] = { id: jid, type: 'junction', x: t.pt.x, y: t.pt.y, group: w.group };
         w.pts = wirePolyline(d, w).slice(1, -1);
@@ -463,7 +497,15 @@ export function Canvas() {
     const last = g.pts.length ? g.pts[g.pts.length - 1] : start;
     const c = g.cur.pt;
     const out = [start, ...g.pts];
-    if (Math.abs(last.x - c.x) > ORTHO_EPS && Math.abs(last.y - c.y) > ORTHO_EPS) out.push(g.hFirst ? { x: c.x, y: last.y } : { x: last.x, y: c.y });
+    if (Math.abs(last.x - c.x) > ORTHO_EPS && Math.abs(last.y - c.y) > ORTHO_EPS) {
+      let elbow = g.hFirst ? { x: c.x, y: last.y } : { x: last.x, y: c.y };
+      // never run back over the leg just drawn: take the other elbow instead
+      const prev = out.length >= 2 ? out[out.length - 2] : null;
+      if (prev && (elbow.x - last.x) * (last.x - prev.x) + (elbow.y - last.y) * (last.y - prev.y) < 0) {
+        elbow = g.hFirst ? { x: last.x, y: c.y } : { x: c.x, y: last.y };
+      }
+      out.push(elbow);
+    }
     out.push(c);
     return simplify(out);
   };
@@ -471,7 +513,8 @@ export function Canvas() {
   const commitWire = (g: Extract<Gesture, { kind: 'wire' }>, end: Target) => {
     const pts = wirePreview({ ...g, cur: end });
     if (pts.length < 2 || (pts.length === 2 && eq(pts[0], pts[1]))) return false;
-    if (sameTarget(g.start, end)) return false;
+    // same start and end is only fine when the wire goes somewhere and comes back (a loop)
+    if (sameTarget(g.start, end) && pts.length < 4) return false;
     const brush = S().wireBrush;
     let newId = '';
     mutate((dd) => {
@@ -506,7 +549,9 @@ export function Canvas() {
    */
   const reachesEnd = (g: Extract<Gesture, { kind: 'wire' }>, cur: Target): boolean => {
     const last = g.pts.length ? g.pts[g.pts.length - 1] : g.start.pt;
-    if (eq(cur.pt, last) || sameTarget(g.start, cur)) return false;
+    if (eq(cur.pt, last)) return false;
+    // back at the start: closes a loop once there is more than one leg
+    if (eq(cur.pt, g.start.pt)) return g.pts.length >= 2;
     switch (cur.kind) {
       case 'wireEnd':
       case 'junction':
@@ -516,7 +561,7 @@ export function Canvas() {
       case 'wire':
         return (data.polys.get(cur.wire) ?? []).some((q) => eq(q, cur.pt));
       case 'grid':
-        return [g.start.pt, ...g.pts.slice(0, -1)].some((q) => eq(q, cur.pt));
+        return g.pts.slice(0, -1).some((q) => eq(q, cur.pt));
     }
   };
 
@@ -543,8 +588,8 @@ export function Canvas() {
 
   useEffect(() => {
     canvasKeys.handle = (combo: string) => {
-      if (crossPop && combo === 'Escape') {
-        closeCrossPop();
+      if (hotMenu && combo === 'Escape') {
+        closeHotMenu();
         return true;
       }
       if (S().exportArea) {
@@ -613,7 +658,7 @@ export function Canvas() {
     const w = toWorldPt(e.clientX, e.clientY);
     const client = { x: e.clientX, y: e.clientY };
     set({ contextMenu: null });
-    closeCrossPop();
+    closeHotMenu();
     if (e.button === 2) return;
     const v = S().view;
     if (e.button === 1 || spaceDown || tool === 'pan') {
@@ -796,7 +841,7 @@ export function Canvas() {
         const item = pi ? null : hitItem(w);
         if (pi?.comp !== hover.port?.comp || pi?.port !== hover.port?.port || item !== hover.item) setHover({ port: pi, item });
       }
-      if (!placing && !S().exportArea) trackCrossing(w);
+      if (!placing && !S().exportArea) trackHotSpot(w);
       return;
     }
     const v = S().view;
@@ -1159,8 +1204,9 @@ export function Canvas() {
       onPointerUp={onPointerUp}
       onPointerLeave={() => {
         setHover({ item: null, port: null });
-        clearCrossTimer('open');
-        if (crossPop) scheduleCrossClose();
+        clearHotTimer('open');
+        setHotPending(null);
+        if (hotMenu) scheduleHotClose();
       }}
       onWheel={onWheel}
       onContextMenu={onContextMenu}
@@ -1249,6 +1295,26 @@ export function Canvas() {
               return [pts[0], pts[pts.length - 1]].map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={4.5 / z} className="handle" strokeWidth={1.5 / z} />);
             })()}
 
+          {/* hover-menu hints: faint rings on nearby hot spots; the one being rested on fills up */}
+          {(tool === 'select' || tool === 'node') && !g && !placing && !exportAreaJob &&
+            hotSpots.map((h) => {
+              const reach = 90 / z;
+              const d = dist(h.pt, cursor);
+              const key = hotSpotKey(h);
+              const open = hotMenu && hotSpotKey(hotMenu) === key;
+              const pending = hotPending === key;
+              if (d > reach && !open) return null;
+              const r = (h.kind === 'junction' ? Math.max(doc.settings.junctionSize + 3, 6 / z) : h.kind === 'end' ? 5 / z : 7 / z);
+              return (
+                <g key={key} className={open ? 'hot-ring open' : pending ? 'hot-ring pending' : 'hot-ring'} style={{ opacity: open || pending ? 1 : 0.55 * (1 - d / reach) }}>
+                  <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-base" strokeWidth={1.2 / z} />
+                  {(pending || open) && (
+                    <circle cx={h.pt.x} cy={h.pt.y} r={r} pathLength={1} className="hot-ring-fill" strokeWidth={1.6 / z} transform={`rotate(-90 ${h.pt.x} ${h.pt.y})`} />
+                  )}
+                </g>
+              );
+            })}
+
           {/* hovered port */}
           {hover.port && (!g || g.kind === 'wire') && <circle cx={hover.port.pt.x} cy={hover.port.pt.y} r={6 / z + 2} className="port-hover" strokeWidth={2 / z} />}
 
@@ -1292,8 +1358,16 @@ export function Canvas() {
       )}
       {editingText && <TextEditor id={editingText} onDone={() => setEditingText(null)} />}
       {prefs.showMinimap && <Minimap data={data} />}
-      {crossPop && !g && (
-        <CrossingPopup pt={crossPop} doc={doc} data={data} onEnter={() => clearCrossTimer('close')} onLeave={scheduleCrossClose} onClose={closeCrossPop} />
+      {hotMenu && !g && (
+        <HotSpotMenu
+          spot={hotMenu}
+          doc={doc}
+          data={data}
+          onEnter={() => clearHotTimer('close')}
+          onLeave={scheduleHotClose}
+          onClose={closeHotMenu}
+          onContinueWire={continueWire}
+        />
       )}
       {tool === 'node' && !g && !exportAreaJob && (
         <div className="canvas-hint">

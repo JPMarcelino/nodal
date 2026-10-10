@@ -4,6 +4,7 @@ import { eq, projectOnSegment, rotate, simplify, snap } from './geometry';
 import { getSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, WireItem } from './types';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
+import type { TouchTarget } from './hotspots';
 
 /** Deep copy that also works on immer drafts. */
 export const clone = <T,>(x: T): T => (isDraft(x) ? current(x) : structuredClone(x));
@@ -59,6 +60,93 @@ export function solderWires(doc: CircuitDoc, wireIds: string[], pt: Point): stri
   return jid;
 }
 
+/** Connects a loose wire end to whatever it is touching (see TouchTarget). Returns false if nothing changed. */
+export function solderTouch(doc: CircuitDoc, wireId: string, end: 'a' | 'b', target: TouchTarget): boolean {
+  const w = doc.items[wireId];
+  if (!w || w.type !== 'wire') return false;
+  const ep = w[end];
+  if (ep.kind !== 'free') return false;
+  const pt = { x: ep.x, y: ep.y };
+  // keep the drawn route; only the end's connection changes
+  w.pts = wirePolyline(doc, w).slice(1, -1);
+  switch (target.kind) {
+    case 'port':
+      w[end] = { kind: 'port', comp: target.comp, port: target.port };
+      return true;
+    case 'junction':
+      if (!doc.items[target.id]) return false;
+      w[end] = { kind: 'junction', id: target.id };
+      return true;
+    case 'end': {
+      const o = doc.items[target.wire];
+      if (!o || o.type !== 'wire') return false;
+      const jid = uid('j');
+      doc.items[jid] = { id: jid, type: 'junction', x: pt.x, y: pt.y, group: w.group };
+      o.pts = wirePolyline(doc, o).slice(1, -1);
+      o[target.end] = { kind: 'junction', id: jid };
+      w[end] = { kind: 'junction', id: jid };
+      return true;
+    }
+    case 'wire': {
+      const o = doc.items[target.wire];
+      if (!o || o.type !== 'wire') return false;
+      // re-find the segment: the stored index may be stale
+      const full = wirePolyline(doc, o);
+      const seg = full.findIndex((q, i) => i < full.length - 1 && projectOnSegment(pt, q, full[i + 1]).d < 0.5);
+      if (seg < 0) return false;
+      w[end] = { kind: 'junction', id: splitWire(doc, o.id, seg, pt) };
+      return true;
+    }
+  }
+}
+
+/**
+ * Undoes a solder junction: wires that run straight through it become one
+ * wire again (crossing, so they hop), any other branch is detached and left
+ * as a loose end touching the point. Returns how many wires were detached.
+ */
+export function unsolderJunction(doc: CircuitDoc, jid: string): { through: number; detached: number } | null {
+  const j = doc.items[jid];
+  if (!j || j.type !== 'junction') return null;
+  const ends: { w: WireItem; end: 'a' | 'b'; dir: Point }[] = [];
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'wire') continue;
+    const full = wirePolyline(doc, it);
+    if (full.length < 2) continue;
+    for (const end of ['a', 'b'] as const) {
+      if (!refersTo(it[end], jid)) continue;
+      const [p, q] = end === 'a' ? [full[0], full[1]] : [full[full.length - 1], full[full.length - 2]];
+      const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+      ends.push({ w: it, end, dir: { x: (q.x - p.x) / len, y: (q.y - p.y) / len } });
+    }
+  }
+  for (const e of ends) e.w.pts = wirePolyline(doc, e.w).slice(1, -1);
+  // pair up ends leaving in opposite directions: those wires ran straight through
+  const used = new Set<number>();
+  let through = 0;
+  for (let i = 0; i < ends.length; i++) {
+    if (used.has(i)) continue;
+    const k = ends.findIndex((e, n) => n > i && !used.has(n) && e.w !== ends[i].w && e.dir.x * ends[i].dir.x + e.dir.y * ends[i].dir.y < -0.99);
+    if (k < 0) continue;
+    used.add(i).add(k);
+    // a private two-way junction, merged into one wire by cleanup()
+    const nj = uid('j');
+    doc.items[nj] = { id: nj, type: 'junction', x: j.x, y: j.y, group: j.group };
+    ends[i].w[ends[i].end] = { kind: 'junction', id: nj };
+    ends[k].w[ends[k].end] = { kind: 'junction', id: nj };
+    through++;
+  }
+  let detached = 0;
+  ends.forEach((e, i) => {
+    if (used.has(i)) return;
+    e.w[e.end] = { kind: 'free', x: j.x, y: j.y };
+    detached++;
+  });
+  delete doc.items[jid];
+  cleanup(doc);
+  return { through, detached };
+}
+
 export function wireDegree(doc: CircuitDoc, id: string) {
   return attachedWires(doc, id).length;
 }
@@ -83,20 +171,26 @@ export function cleanup(doc: CircuitDoc) {
       }
     }
     for (const it of Object.values(doc.items)) {
-      if (it.type !== 'junction') continue;
+      if (it.type !== 'junction' || !doc.items[it.id]) continue;
+      // count wire *ends*: a loop with both ends here counts twice
       const ws = attachedWires(doc, it.id);
-      if (ws.length === 0) {
+      const ends = ws.reduce((n, id) => {
+        const w = doc.items[id] as WireItem;
+        return n + (refersTo(w.a, it.id) ? 1 : 0) + (refersTo(w.b, it.id) ? 1 : 0);
+      }, 0);
+      if (ends === 0) {
         delete doc.items[it.id];
         changed = true;
-      } else if (ws.length === 2 && ws[0] !== ws[1]) {
+      } else if (ends === 2 && ws.length === 2) {
+        // two wires simply continuing through: join them into one
         mergeAtJunction(doc, it.id, ws[0], ws[1]);
         changed = true;
-      } else if (ws.length === 1) {
-        // a dangling junction becomes a free wire end
+      } else if (ends <= 2) {
+        // a dangling junction, or a single loop closing on itself, becomes free wire ends
         const w = doc.items[ws[0]] as WireItem;
         const free: Endpoint = { kind: 'free', x: it.x, y: it.y };
         if (refersTo(w.a, it.id)) w.a = free;
-        if (refersTo(w.b, it.id)) w.b = free;
+        if (refersTo(w.b, it.id)) w.b = { ...free };
         delete doc.items[it.id];
         changed = true;
       }
