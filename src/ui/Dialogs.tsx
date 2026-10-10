@@ -208,7 +208,7 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
               ['Reshape a wire', 'Select it, then drag a segment'],
               ['Move bend points', 'Edit points tool (E): drag any bend or end · Alt drags freely · double-click adds/removes a bend'],
               ['Reconnect wire end', 'Select it, then drag an end handle'],
-              ['Switch hop side', 'Select wires, then Ctrl+Shift+U (or Crossings in the inspector)'],
+              ['Switch hop side', 'Hover a crossing to reorder the wires there, or select wires and press Ctrl+Shift+U'],
               ['Export selection', 'Ctrl+Alt+E exports the selected items as PNG'],
               ['Export an area', 'Ctrl+Alt+A, then drag a rectangle on the canvas'],
               ['Box select', 'Drag right → fully inside · drag left ← touching'],

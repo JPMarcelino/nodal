@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createDoc, makeComponent, uid } from '../model/doc';
+import { createDoc, makeComponent, normalizeDoc, uid } from '../model/doc';
 import { clipPolylineToRect, simplify } from '../model/geometry';
-import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, splitWire, ungroupItems } from '../model/ops';
+import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, solderWires, splitWire, ungroupItems } from '../model/ops';
 import { computeNets } from '../model/netlist';
 import type { CircuitDoc, WireItem } from '../model/types';
-import { buildWirePath, computeHops, hopPrefMap, moveWireNode, orthogonalize, wirePolyline } from '../model/wires';
+import { buildWirePath, computeHops, crossingStack, hopLayerMap, moveWireNode, orthogonalize, restack, wireCrossings, wirePolyline } from '../model/wires';
 
 function freeWire(doc: CircuitDoc, ax: number, ay: number, bx: number, by: number): WireItem {
   const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: ax, y: ay }, b: { kind: 'free', x: bx, y: by }, pts: [] };
@@ -12,7 +12,7 @@ function freeWire(doc: CircuitDoc, ax: number, ay: number, bx: number, by: numbe
   return w;
 }
 
-const idWire = (id: string, hopOver: boolean): { type: string; id: string; hopOver?: boolean } => ({ type: 'wire', id, hopOver });
+const idWire = (id: string, hopLayer: number) => ({ type: 'wire', id, hopLayer });
 
 describe('wire geometry', () => {
   it('inserts orthogonal elbows', () => {
@@ -38,18 +38,42 @@ describe('wire geometry', () => {
     expect(computeHops(polys, 5).size).toBe(0);
   });
 
-  it('honours an explicit hop preference per wire', () => {
+  it('honours wire stacking layers', () => {
     const polys = new Map([
       ['h', [{ x: 0, y: 50 }, { x: 100, y: 50 }]],
       ['v', [{ x: 50, y: 0 }, { x: 50, y: 100 }]],
     ]);
-    // vertical wire explicitly hops over the horizontal one
-    expect(computeHops(polys, 5, hopPrefMap([idWire('v', true)])).get('v')).toEqual([{ seg: 0, d: 50 }]);
-    expect(computeHops(polys, 5, hopPrefMap([idWire('v', true)])).get('h')).toBeUndefined();
-    // horizontal wire told to stay flat: the vertical one must hop instead
-    expect(computeHops(polys, 5, hopPrefMap([idWire('h', false)])).get('v')).toEqual([{ seg: 0, d: 50 }]);
-    // both flat: falls back to the default rule
-    expect(computeHops(polys, 5, hopPrefMap([idWire('h', false), idWire('v', false)])).get('h')).toEqual([{ seg: 0, d: 50 }]);
+    // vertical wire on a higher layer hops over the horizontal one
+    expect(computeHops(polys, 5, hopLayerMap([idWire('v', 1)])).get('v')).toEqual([{ seg: 0, d: 50 }]);
+    expect(computeHops(polys, 5, hopLayerMap([idWire('v', 1)])).get('h')).toBeUndefined();
+    // horizontal wire pushed below: the vertical one must hop instead
+    expect(computeHops(polys, 5, hopLayerMap([idWire('h', -1)])).get('v')).toEqual([{ seg: 0, d: 50 }]);
+    // equal layers: falls back to the geometric rule (horizontal hops)
+    expect(computeHops(polys, 5, hopLayerMap([idWire('h', -1), idWire('v', -1)])).get('h')).toEqual([{ seg: 0, d: 50 }]);
+    // lower of two "under" wires stays flat
+    expect(computeHops(polys, 5, hopLayerMap([idWire('h', -2), idWire('v', -1)])).get('v')).toEqual([{ seg: 0, d: 50 }]);
+  });
+
+  it('lists the wires stacked at a crossing, top first', () => {
+    const polys = new Map([
+      ['h', [{ x: 0, y: 50 }, { x: 100, y: 50 }]],
+      ['v', [{ x: 50, y: 0 }, { x: 50, y: 100 }]],
+    ]);
+    const cr = wireCrossings(polys);
+    expect(cr).toHaveLength(1);
+    expect(crossingStack(cr, { x: 51, y: 49 }, 5).map((s) => s.wire)).toEqual(['h', 'v']);
+    expect(crossingStack(cr, { x: 50, y: 50 }, 5, new Map([['v', 1]])).map((s) => s.wire)).toEqual(['v', 'h']);
+    expect(crossingStack(cr, { x: 0, y: 0 }, 5)).toEqual([]);
+  });
+
+  it('restacks wires into the requested order with minimal layer changes', () => {
+    // two "under" wires: put b on top
+    const m = restack(['b', 'a'], new Map([['a', -1], ['b', -1]]));
+    expect(m.get('b')).toBe(-1);
+    expect(m.get('a')).toBe(-2);
+    // three automatic wires
+    const n = restack(['c', 'a', 'b'], new Map());
+    expect([n.get('c'), n.get('a'), n.get('b')]).toEqual([0, -1, -2]);
   });
 
   it('rounds corners when a radius is set', () => {
@@ -182,5 +206,50 @@ describe('components & nets', () => {
     expect(new Set(refs).size).toBe(4);
     ungroupItems(doc, [a.id]);
     expect(doc.items[a.id].group).toBeUndefined();
+  });
+});
+
+describe('soldering and net names', () => {
+  it('solders two crossing wires into one net with a shared junction', () => {
+    const doc = createDoc();
+    const h = freeWire(doc, 0, 50, 100, 50);
+    const v = freeWire(doc, 50, 0, 50, 100);
+    expect(computeNets(doc)).toHaveLength(2);
+    const jid = solderWires(doc, [h.id, v.id], { x: 50, y: 50 });
+    expect(jid).toBeTruthy();
+    cleanup(doc);
+    expect(doc.items[jid!]).toBeTruthy();
+    const wires = Object.values(doc.items).filter((i) => i.type === 'wire');
+    expect(wires).toHaveLength(4);
+    expect(computeNets(doc)).toHaveLength(1);
+  });
+
+  it('refuses to solder where the wires do not pass', () => {
+    const doc = createDoc();
+    const h = freeWire(doc, 0, 50, 100, 50);
+    const v = freeWire(doc, 50, 0, 50, 100);
+    expect(solderWires(doc, [h.id, v.id], { x: 10, y: 10 })).toBeNull();
+  });
+
+  it('names every unnamed net net1, net2… by age', () => {
+    const doc = createDoc();
+    const a = freeWire(doc, 0, 0, 100, 0);
+    const b = freeWire(doc, 0, 50, 100, 50);
+    const nets = computeNets(doc);
+    expect(nets.find((n) => n.wires.includes(a.id))!.name).toBe('net1');
+    expect(nets.find((n) => n.wires.includes(b.id))!.name).toBe('net2');
+    // a newer net never renumbers the older ones
+    freeWire(doc, 0, 90, 100, 90);
+    expect(computeNets(doc).find((n) => n.wires.includes(a.id))!.name).toBe('net1');
+  });
+
+  it('upgrades the old hopOver flag to a stacking layer', () => {
+    const doc = createDoc();
+    const w = freeWire(doc, 0, 0, 100, 0) as WireItem & { hopOver?: boolean };
+    w.hopOver = false;
+    const loaded = normalizeDoc(JSON.parse(JSON.stringify(doc)));
+    const lw = loaded.items[w.id] as WireItem & { hopOver?: boolean };
+    expect(lw.hopLayer).toBe(-1);
+    expect(lw.hopOver).toBeUndefined();
   });
 });

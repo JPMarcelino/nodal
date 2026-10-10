@@ -45,6 +45,7 @@ export function clipAreaDoc(doc: CircuitDoc, rect: Rect): CircuitDoc {
         routing: 'straight',
         ...(it.style ? { style: { ...it.style } } : {}),
         ...(it.label ? { label: it.label } : {}),
+        ...(it.hopLayer ? { hopLayer: it.hopLayer } : {}),
       } as WireItem;
     }
   }

@@ -38,6 +38,18 @@ export function createDoc(name = 'Untitled circuit'): CircuitDoc {
 }
 
 /** Makes loaded documents safe to use (fills in settings added in later versions). */
+/** Upgrades older item fields in place (hopOver true/false → hopLayer +1/-1). */
+function migrateItems(items: Record<string, Item>): Record<string, Item> {
+  for (const it of Object.values(items)) {
+    const legacy = it as Item & { hopOver?: boolean };
+    if (legacy.type === 'wire' && typeof legacy.hopOver === 'boolean') {
+      if (legacy.hopLayer === undefined) legacy.hopLayer = legacy.hopOver ? 1 : -1;
+      delete legacy.hopOver;
+    }
+  }
+  return items;
+}
+
 export function normalizeDoc(raw: unknown): CircuitDoc {
   const d = raw as Partial<CircuitDoc>;
   if (!d || typeof d !== 'object' || d.format !== 'nodal' || typeof d.items !== 'object') {
@@ -48,7 +60,7 @@ export function normalizeDoc(raw: unknown): CircuitDoc {
     version: 1,
     name: d.name || 'Untitled circuit',
     settings: { ...structuredClone(DEFAULT_SETTINGS), ...d.settings, wire: { ...DEFAULT_SETTINGS.wire, ...d.settings?.wire } },
-    items: d.items ?? {},
+    items: migrateItems(d.items ?? {}),
     groups: d.groups ?? {},
     symbols: d.symbols ?? {},
   };

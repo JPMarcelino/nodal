@@ -10,6 +10,7 @@ import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, useStore } from '../store/store';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, dashArray, inkColor, measureText, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
+import { CrossingPopup } from './CrossingPopup';
 
 /* ------------------------------------------------------------------ */
 /* Targets                                                             */
@@ -118,11 +119,51 @@ export function Canvas() {
   const [spaceDown, setSpaceDown] = useState(false);
   const [editingText, setEditingText] = useState<string | null>(null);
   const lastClick = useRef<{ t: number; p: Point }>({ t: 0, p: { x: 0, y: 0 } });
+  // crossing-order popup: opens after the pointer rests on a crossing, closes shortly after leaving it
+  const [crossPop, setCrossPop] = useState<Point | null>(null);
+  const crossTimers = useRef<{ open?: number; close?: number; pending?: Point }>({});
 
   const setGesture = useCallback((g: Gesture | null) => {
     gRef.current = g;
     setGestureState(g);
   }, []);
+
+  const clearCrossTimer = (k: 'open' | 'close') => {
+    window.clearTimeout(crossTimers.current[k]);
+    crossTimers.current[k] = undefined;
+  };
+  const closeCrossPop = () => {
+    clearCrossTimer('open');
+    clearCrossTimer('close');
+    crossTimers.current.pending = undefined;
+    setCrossPop(null);
+  };
+  const scheduleCrossClose = () => {
+    if (crossTimers.current.close === undefined) crossTimers.current.close = window.setTimeout(closeCrossPop, 300);
+  };
+  useEffect(() => () => closeCrossPop(), []);
+
+  /** Tracks the pointer resting on a wire crossing (only while idle in the select / edit points tools). */
+  const trackCrossing = (w: Point) => {
+    const tol = 6 / S().view.zoom;
+    const c = tool === 'select' || tool === 'node' ? data.crossings.find((x) => dist(x.pt, w) < tol) : undefined;
+    if (!c) {
+      clearCrossTimer('open');
+      crossTimers.current.pending = undefined;
+      if (crossPop) scheduleCrossClose();
+      return;
+    }
+    clearCrossTimer('close');
+    if (crossPop && eq(crossPop, c.pt)) return;
+    const pending = crossTimers.current.pending;
+    if (pending && eq(pending, c.pt)) return;
+    clearCrossTimer('open');
+    crossTimers.current.pending = c.pt;
+    crossTimers.current.open = window.setTimeout(() => {
+      crossTimers.current.pending = undefined;
+      setCrossPop(c.pt);
+    }, 550);
+  };
 
   const grid = doc.settings.grid;
   const snapOn = doc.settings.snap;
@@ -502,6 +543,10 @@ export function Canvas() {
 
   useEffect(() => {
     canvasKeys.handle = (combo: string) => {
+      if (crossPop && combo === 'Escape') {
+        closeCrossPop();
+        return true;
+      }
       if (S().exportArea) {
         if (combo === 'Escape') {
           set({ exportArea: null });
@@ -568,6 +613,7 @@ export function Canvas() {
     const w = toWorldPt(e.clientX, e.clientY);
     const client = { x: e.clientX, y: e.clientY };
     set({ contextMenu: null });
+    closeCrossPop();
     if (e.button === 2) return;
     const v = S().view;
     if (e.button === 1 || spaceDown || tool === 'pan') {
@@ -750,6 +796,7 @@ export function Canvas() {
         const item = pi ? null : hitItem(w);
         if (pi?.comp !== hover.port?.comp || pi?.port !== hover.port?.port || item !== hover.item) setHover({ port: pi, item });
       }
+      if (!placing && !S().exportArea) trackCrossing(w);
       return;
     }
     const v = S().view;
@@ -1110,7 +1157,11 @@ export function Canvas() {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerLeave={() => setHover({ item: null, port: null })}
+      onPointerLeave={() => {
+        setHover({ item: null, port: null });
+        clearCrossTimer('open');
+        if (crossPop) scheduleCrossClose();
+      }}
       onWheel={onWheel}
       onContextMenu={onContextMenu}
       onDragOver={(e) => {
@@ -1241,6 +1292,9 @@ export function Canvas() {
       )}
       {editingText && <TextEditor id={editingText} onDone={() => setEditingText(null)} />}
       {prefs.showMinimap && <Minimap data={data} />}
+      {crossPop && !g && (
+        <CrossingPopup pt={crossPop} doc={doc} data={data} onEnter={() => clearCrossTimer('close')} onLeave={scheduleCrossClose} onClose={closeCrossPop} />
+      )}
       {tool === 'node' && !g && !exportAreaJob && (
         <div className="canvas-hint">
           Drag a bend or wire end to move it · <kbd>Alt</kbd> drag freely · double-click a bend to remove it{' '}

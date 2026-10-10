@@ -76,7 +76,15 @@ export function computeNets(doc: CircuitDoc): Net[] {
     }
   }
   const nets = [...groups.values()].filter((n) => n.pins.length || n.wires.length || n.name);
-  for (const n of nets) if (!n.name) n.name = `N$${auto++}`;
+  // every net gets a name: unnamed ones become net1, net2… numbered by their oldest item,
+  // so existing nets keep their number while new ones are appended
+  const order = new Map(Object.keys(doc.items).map((id, i) => [id, i]));
+  const age = (n: Net) => Math.min(Infinity, ...n.wires.map((w) => order.get(w) ?? Infinity), ...n.pins.map((p) => order.get(p.comp) ?? Infinity));
+  const taken = new Set(nets.map((n) => n.name).filter(Boolean));
+  for (const n of nets.filter((n) => !n.name).sort((a, b) => age(a) - age(b))) {
+    while (taken.has(`net${auto}`)) auto++;
+    n.name = `net${auto++}`;
+  }
   nets.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   return nets;
 }

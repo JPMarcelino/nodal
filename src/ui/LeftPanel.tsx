@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { computeNets } from '../model/netlist';
 import { getSymbol } from '../model/registry';
 import { BUILTIN_SYMBOLS, CATEGORY_ORDER } from '../model/symbols';
 import type { CircuitDoc, Item, SymbolDef } from '../model/types';
@@ -202,14 +203,14 @@ function Library() {
 /* Layers                                                              */
 /* ------------------------------------------------------------------ */
 
-function itemLabel(doc: CircuitDoc, it: Item): string {
+function itemLabel(doc: CircuitDoc, it: Item, netName?: string): string {
   switch (it.type) {
     case 'component': {
       const def = getSymbol(doc, it.symbol);
       return `${def.valueIsLabel ? it.value : it.ref} · ${def.name}`;
     }
     case 'wire':
-      return it.label ? `Wire “${it.label}”` : 'Wire';
+      return `Wire · ${netName ?? 'net?'}${it.label && it.label !== netName ? ` “${it.label}”` : ''}`;
     case 'junction':
       return 'Junction';
     case 'shape':
@@ -224,6 +225,12 @@ function Layers() {
   const selection = useStore((s) => s.selection);
   const [filter, setFilter] = useState<'all' | 'component' | 'wire' | 'shape'>('all');
   const sel = new Set(selection);
+  // wires are listed by their net's name (automatic netN when unnamed)
+  const netByWire = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of computeNets(doc)) for (const w of n.wires) m.set(w, n.name);
+    return m;
+  }, [doc]);
   const items = Object.values(doc.items).filter((i) => i.type !== 'junction' && (filter === 'all' || i.type === filter));
   const groups = Object.values(doc.groups);
   const childrenOf = (gid: string | undefined) => ({
@@ -246,8 +253,13 @@ function Layers() {
       onDoubleClick={() => A.fitView([it.id])}
     >
       <span className={`layer-icon ${it.type}`} />
-      <span className="layer-name">{itemLabel(doc, it)}</span>
+      <span className="layer-name">{itemLabel(doc, it, netByWire.get(it.id))}</span>
       {it.type === 'shape' && <span className="layer-tag">{it.layer === 'above' ? 'above' : 'below'}</span>}
+      {it.type === 'wire' && !!it.hopLayer && (
+        <span className="layer-tag" title={`Crossing layer ${it.hopLayer > 0 ? '+' : ''}${it.hopLayer}`}>
+          {it.hopLayer > 0 ? 'over' : 'under'}
+        </span>
+      )}
       <button className="layer-act" title={it.hidden ? 'Show' : 'Hide'} onClick={(e) => (e.stopPropagation(), A.toggleHidden([it.id]))}>
         {it.hidden ? <EyeOff size={12} /> : <Eye size={12} />}
       </button>

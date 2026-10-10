@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react';
 import { componentBounds, sideVector, toWorld } from '../model/geometry';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, ShapeItem, SymbolDef, WireItem } from '../model/types';
-import { buildWirePath, computeHops, hopPrefMap, portPosition, wirePolyline, wireStyle, type Hop } from '../model/wires';
+import { buildWirePath, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
 import { SymbolBody } from './SymbolGraphic';
 
 export interface Palette {
@@ -40,6 +40,10 @@ const LABEL_SYMBOLS = /^$/;
 export interface SceneData {
   polys: Map<string, Point[]>;
   hops: Map<string, Hop[]>;
+  /** Drawn wire crossings (empty when crossings are plain). */
+  crossings: Crossing[];
+  /** Wire stacking layers (hopLayer) of the wires that set one. */
+  layers: Map<string, number>;
   /** Number of wire ends at each port key "comp:port". */
   portDegree: Map<string, number>;
   junctionDegree: Map<string, number>;
@@ -61,8 +65,11 @@ export function computeSceneData(doc: CircuitDoc): SceneData {
       if (ep.kind === 'junction') junctionDegree.set(ep.id, (junctionDegree.get(ep.id) ?? 0) + 1);
     }
   }
-  const hops = doc.settings.hops === 'none' ? new Map() : computeHops(polys, doc.settings.hopSize, hopPrefMap(Object.values(doc.items)));
-  return { polys, hops, portDegree, junctionDegree };
+  // crossings only matter when they are drawn (hop arcs or gaps)
+  const crossings = doc.settings.hops === 'none' ? [] : wireCrossings(polys);
+  const layers = hopLayerMap(Object.values(doc.items));
+  const hops = hopsFromCrossings(crossings, doc.settings.hopSize, layers);
+  return { polys, hops, crossings, layers, portDegree, junctionDegree };
 }
 
 /* ------------------------------------------------------------------ */

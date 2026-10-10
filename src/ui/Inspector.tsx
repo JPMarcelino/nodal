@@ -367,7 +367,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
         </Field>
         <Field label="Crossings">
           <Segmented
-            value={first.hopOver === undefined ? 'default' : first.hopOver ? 'over' : 'under'}
+            value={!first.hopLayer ? 'default' : first.hopLayer > 0 ? 'over' : 'under'}
             options={[
               { value: 'default', label: 'Auto', title: 'Document default: the more horizontal wire hops' },
               { value: 'over', label: 'Over', title: 'This wire hops over the wires it crosses' },
@@ -377,8 +377,8 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
               mutate((d) =>
                 ids.forEach((id) => {
                   const w = d.items[id] as WireItem;
-                  if (v === 'default') delete w.hopOver;
-                  else w.hopOver = v === 'over';
+                  if (v === 'default') delete w.hopLayer;
+                  else w.hopLayer = v === 'over' ? 1 : -1;
                 }),
               )
             }
