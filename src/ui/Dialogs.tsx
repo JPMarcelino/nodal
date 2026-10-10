@@ -89,6 +89,14 @@ export function CommandPalette() {
   const [picker, setPicker] = useState<SymbolPopupState | null>(null);
   const docSymbols = useStore((s) => s.doc.symbols);
   const listRef = useRef<HTMLDivElement>(null);
+  // grace period so the pointer can travel from a row into its preview popup
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const clearClose = () => clearTimeout(closeTimer.current);
+  const scheduleClose = () => {
+    clearClose();
+    closeTimer.current = setTimeout(() => setPreview((p) => (p && !p.pinned ? null : p)), 200);
+  };
+  useEffect(() => () => clearClose(), []);
   const syms = useMemo(() => librarySymbols({ symbols: docSymbols }), [docSymbols]);
   const entries = useMemo<PaletteEntry[]>(() => {
     const query = q.trim().toLowerCase();
@@ -166,11 +174,12 @@ export function CommandPalette() {
               key={e.kind === 'cmd' ? e.cmd.id : `s:${e.def.id}`}
               className={i === idx ? 'palette-item active' : 'palette-item'}
               onMouseEnter={(ev) => {
+                clearClose();
                 setIdx(i);
                 if (e.kind === 'sym') hoverSym(e.def, ev.currentTarget);
                 else setPreview(null);
               }}
-              onMouseLeave={() => setPreview(null)}
+              onMouseLeave={scheduleClose}
               onClick={(ev) => run(e, ev.currentTarget)}
             >
               {e.kind === 'cmd' ? (
@@ -192,7 +201,7 @@ export function CommandPalette() {
         })}
         {!entries.length && <div className="empty-note">No matches</div>}
       </div>
-      {preview && <SymbolPopup {...preview} onPick={(d) => place(d)} onClose={() => setPreview(null)} />}
+      {preview && <SymbolPopup {...preview} onPick={(d) => place(d)} onClose={() => setPreview(null)} onEnter={clearClose} />}
       {picker && <SymbolPopup {...picker} onPick={(d) => place(d)} onClose={() => setPicker(null)} />}
     </Modal>
   );
