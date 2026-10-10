@@ -326,6 +326,12 @@ export function transformItems(
   rotateBy = 0,
   flip = false,
 ) {
+  transformNonWires(base, doc, ids, map, rotateBy, flip);
+  transformWires(base, doc, ids, map);
+}
+
+/** Components, junctions and shapes of a transform (wires are handled separately). */
+function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map: (p: Point) => Point, rotateBy = 0, flip = false) {
   for (const id of ids) {
     const b = base.items[id];
     const it = doc.items[id];
@@ -362,7 +368,21 @@ export function transformItems(
       }
     }
   }
-  // wires
+}
+
+/** Wires follow whatever they are attached to (rubber-banding the free side). */
+function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map: (p: Point) => Point) {
+  // loose wire ends resting exactly on a moving pin come along too, like real connections
+  const movingPins = new Set<string>();
+  for (const id of ids) {
+    const c = base.items[id];
+    if (c?.type !== 'component' || c.locked) continue;
+    for (const p of getSymbol(base, c.symbol).ports) {
+      const at = endpointInfo(base, { kind: 'port', comp: c.id, port: p.id });
+      if (at) movingPins.add(`${at.pt.x},${at.pt.y}`);
+    }
+  }
+  const onMovingPin = (ep: Endpoint) => ep.kind === 'free' && movingPins.has(`${ep.x},${ep.y}`);
   for (const b of Object.values(base.items)) {
     if (b.type !== 'wire') continue;
     const w = doc.items[b.id] as WireItem | undefined;
@@ -370,8 +390,8 @@ export function transformItems(
     const ownA = endpointOwner(b.a);
     const ownB = endpointOwner(b.b);
     const selfSel = ids.has(b.id);
-    const movesA = (ownA && ids.has(ownA)) || (!ownA && selfSel);
-    const movesB = (ownB && ids.has(ownB)) || (!ownB && selfSel);
+    const movesA = (ownA && ids.has(ownA)) || (!ownA && (selfSel || onMovingPin(b.a)));
+    const movesB = (ownB && ids.has(ownB)) || (!ownB && (selfSel || onMovingPin(b.b)));
     if (!movesA && !movesB) continue;
     const full = wirePolyline(base, b);
     if (full.length < 2) continue;
@@ -401,6 +421,40 @@ function endpointNow(doc: CircuitDoc, ep: Endpoint, fallback: Point): Point {
 
 export function translateItems(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, dx: number, dy: number) {
   transformItems(base, doc, ids, (p) => ({ x: p.x + dx, y: p.y + dy }));
+}
+
+/**
+ * Alt move: only the selection moves. Wires connecting the selection to
+ * anything else are cut there — unselected wires keep their shape with a
+ * loose end left behind, selected wires take their loose ends with them.
+ */
+export function translateDetached(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, dx: number, dy: number) {
+  const map = (p: Point) => ({ x: p.x + dx, y: p.y + dy });
+  transformNonWires(base, doc, ids, map);
+  for (const b of Object.values(base.items)) {
+    if (b.type !== 'wire' || b.locked) continue;
+    const w = doc.items[b.id] as WireItem | undefined;
+    if (!w) continue;
+    const full = wirePolyline(base, b);
+    if (full.length < 2) continue;
+    const last = full.length - 1;
+    const ownA = endpointOwner(b.a);
+    const ownB = endpointOwner(b.b);
+    if (ids.has(b.id)) {
+      const mapped = full.map(map);
+      w.pts = mapped.slice(1, -1);
+      // ends stay connected only to things that move along with the wire
+      w.a = ownA && ids.has(ownA) ? b.a : { kind: 'free', ...mapped[0] };
+      w.b = ownB && ids.has(ownB) ? b.b : { kind: 'free', ...mapped[last] };
+      continue;
+    }
+    const cutA = !!ownA && ids.has(ownA);
+    const cutB = !!ownB && ids.has(ownB);
+    if (!cutA && !cutB) continue;
+    w.pts = full.slice(1, -1);
+    if (cutA) w.a = { kind: 'free', ...full[0] };
+    if (cutB) w.b = { kind: 'free', ...full[last] };
+  }
 }
 
 /** Rotation pivot: centre of the selection snapped to the grid. */

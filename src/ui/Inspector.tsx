@@ -365,24 +365,8 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
             onChange={(v) => mutate((d) => ids.forEach((id) => ((d.items[id] as WireItem).routing = v)))}
           />
         </Field>
-        <Field label="Crossings">
-          <Segmented
-            value={!first.hopLayer ? 'default' : first.hopLayer > 0 ? 'over' : 'under'}
-            options={[
-              { value: 'default', label: 'Auto', title: 'Document default: the more horizontal wire hops' },
-              { value: 'over', label: 'Over', title: 'This wire hops over the wires it crosses' },
-              { value: 'under', label: 'Under', title: 'This wire stays flat; crossing wires hop over it' },
-            ]}
-            onChange={(v) =>
-              mutate((d) =>
-                ids.forEach((id) => {
-                  const w = d.items[id] as WireItem;
-                  if (v === 'default') delete w.hopLayer;
-                  else w.hopLayer = v === 'over' ? 1 : -1;
-                }),
-              )
-            }
-          />
+        <Field label="Crossings" hint="Rest the pointer on a crossing to choose which wire hops over, or to solder it">
+          <span className="muted small">{first.hopLayer ? `stacking layer ${first.hopLayer > 0 ? '+' : ''}${first.hopLayer}` : 'automatic'}</span>
         </Field>
         <div className="btn-row">
           <button className="secondary-btn" onClick={() => mutate((d) => ids.forEach((id) => delete (d.items[id] as WireItem).style))}>
