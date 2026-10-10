@@ -1,4 +1,5 @@
 import {
+  CircleDot,
   PenTool,
   ArrowUpRight,
   Circle,
@@ -195,6 +196,7 @@ const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string }[] = [
   { tool: 'node', icon: <PenTool size={17} />, label: 'Edit points', cmd: 'tool.node' },
   { tool: 'pan', icon: <Hand size={17} />, label: 'Pan', cmd: 'tool.pan' },
   { tool: 'wire', icon: <Spline size={17} />, label: 'Wire', cmd: 'tool.wire' },
+  { tool: 'solder', icon: <CircleDot size={17} />, label: 'Solder', cmd: 'tool.solder' },
   { tool: 'rect', icon: <Square size={17} />, label: 'Rectangle', cmd: 'tool.rect' },
   { tool: 'zone', icon: <RectangleHorizontal size={17} fill="currentColor" fillOpacity={0.35} />, label: 'Filled zone', cmd: 'tool.zone' },
   { tool: 'ellipse', icon: <Circle size={17} />, label: 'Ellipse', cmd: 'tool.ellipse' },
@@ -210,7 +212,7 @@ export function ToolRail() {
     <div className="tool-rail" onPointerDown={(e) => e.stopPropagation()}>
       {TOOLS.map((t, i) => (
         <span key={t.tool} style={{ display: 'contents' }}>
-          {(i === 3 || i === 4) && <span className="rail-sep" />}
+          {(i === 3 || i === 5) && <span className="rail-sep" />}
           <button
             className={tool === t.tool && !placing ? 'tool-btn active' : 'tool-btn'}
             onClick={() => A.setTool(t.tool)}

@@ -7,10 +7,11 @@ import type { CircuitDoc, ComponentItem, Endpoint, Point, Rect, ShapeItem, Shape
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, snapOnSegment, wirePolyline } from '../model/wires';
 import { runAreaExport } from '../io/fileActions';
 import * as A from '../store/actions';
-import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, useStore } from '../store/store';
+import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, dashArray, inkColor, measureText, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { HotSpotMenu } from './HotSpotMenu';
+import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
 
 /* ------------------------------------------------------------------ */
@@ -64,6 +65,7 @@ const BADGE_GLYPHS: Partial<Record<Tool, string>> = {
   ellipse: '<circle cx="6.5" cy="6.5" r="3.4" fill="none" stroke="#1f2433" stroke-width="1.4"/>',
   line: '<path d="M3 9.5L9.5 3.5" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round"/>',
   arrow: '<path d="M3 9.5L9 3.5M6.4 3.5H9v2.6" fill="none" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
+  solder: '<circle cx="6.5" cy="6.5" r="4.3" fill="none" stroke="#1f2433" stroke-width="1.1"/><circle cx="6.5" cy="6.5" r="2.3" fill="#1f2433"/>',
   text: '<text x="6.5" y="9.8" font-family="sans-serif" font-size="9" fill="#1f2433" text-anchor="middle" stroke="none">T</text>',
 };
 
@@ -124,6 +126,8 @@ export function Canvas() {
   const [hotMenu, setHotMenu] = useState<HotSpot | null>(null);
   const [hotPending, setHotPending] = useState<string | null>(null);
   const hotTimers = useRef<{ open?: number; close?: number }>({});
+  /** Set while the menu is busy (dragging a row): pointer movement must not close it. */
+  const hotHold = useRef(false);
 
   const setGesture = useCallback((g: Gesture | null) => {
     gRef.current = g;
@@ -136,12 +140,14 @@ export function Canvas() {
     hotTimers.current[k] = undefined;
   };
   const closeHotMenu = () => {
+    hotHold.current = false;
     clearHotTimer('open');
     clearHotTimer('close');
     setHotPending(null);
     setHotMenu(null);
   };
   const scheduleHotClose = () => {
+    if (hotHold.current) return;
     if (hotTimers.current.close === undefined) hotTimers.current.close = window.setTimeout(closeHotMenu, 300);
   };
   useEffect(() => () => closeHotMenu(), []);
@@ -729,6 +735,16 @@ export function Canvas() {
       onNodeDown(w, e, isDouble);
       return;
     }
+    if (tool === 'solder') {
+      const h = hotSpotAt(w);
+      if (!h || !solderActionFor(h)) return;
+      let err: string | null = null;
+      mutate((d) => {
+        err = applySolder(d as CircuitDoc, h, data);
+      });
+      if (err) toast(err, 'error');
+      return;
+    }
     if (tool !== 'select') {
       const p = sp(w);
       setGesture({ kind: 'shape', shape: tool as ShapeKind, start: p, cur: p });
@@ -1296,15 +1312,27 @@ export function Canvas() {
             })()}
 
           {/* hover-menu hints: faint rings on nearby hot spots; the one being rested on fills up */}
-          {(tool === 'select' || tool === 'node') && !g && !placing && !exportAreaJob &&
+          {tool === 'solder' && !g && !placing && (() => {
+            const h = hotSpotAt(cursor);
+            const act = h && solderActionFor(h);
+            if (!h || !act) return null;
+            const r = Math.max(doc.settings.junctionSize, 3);
+            return act === 'solder' ? (
+              <circle cx={h.pt.x} cy={h.pt.y} r={r} className="solder-preview" />
+            ) : (
+              <circle cx={h.pt.x} cy={h.pt.y} r={r + 3 / z} className="unsolder-preview" strokeWidth={1.5 / z} strokeDasharray={`${3 / z} ${2 / z}`} />
+            );
+          })()}
+          {(tool === 'select' || tool === 'node' || tool === 'solder') && !g && !placing && !exportAreaJob &&
             hotSpots.map((h) => {
+              if (tool === 'solder' && !solderActionFor(h)) return null;
               const reach = 90 / z;
               const d = dist(h.pt, cursor);
               const key = hotSpotKey(h);
               const open = hotMenu && hotSpotKey(hotMenu) === key;
               const pending = hotPending === key;
               if (d > reach && !open) return null;
-              const r = (h.kind === 'junction' ? Math.max(doc.settings.junctionSize + 3, 6 / z) : h.kind === 'end' ? 5 / z : 7 / z);
+              const r = h.kind === 'junction' ? Math.max(doc.settings.junctionSize + 3, 6 / z) : h.kind === 'end' ? 5 / z : 7 / z;
               return (
                 <g key={key} className={open ? 'hot-ring open' : pending ? 'hot-ring pending' : 'hot-ring'} style={{ opacity: open || pending ? 1 : 0.55 * (1 - d / reach) }}>
                   <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-base" strokeWidth={1.2 / z} />
@@ -1367,7 +1395,16 @@ export function Canvas() {
           onLeave={scheduleHotClose}
           onClose={closeHotMenu}
           onContinueWire={continueWire}
+          onHold={(hold) => {
+            hotHold.current = hold;
+            if (hold) clearHotTimer('close');
+          }}
         />
+      )}
+      {tool === 'solder' && !g && !exportAreaJob && (
+        <div className="canvas-hint">
+          Click a crossing, a touching end or a pin on a wire to <b>solder</b> · click a junction or wired pin to <b>unsolder</b> · <kbd>Esc</kbd> back to select
+        </div>
       )}
       {tool === 'node' && !g && !exportAreaJob && (
         <div className="canvas-hint">

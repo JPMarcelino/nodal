@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { HotSpot } from '../model/hotspots';
 import { computeNets, netOfWire } from '../model/netlist';
 import { attachedWires } from '../model/doc';
-import { cleanup, deleteItems, solderTouch, solderWires, unsolderJunction } from '../model/ops';
+import { deleteItems } from '../model/ops';
+import { applySolder } from './solder';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, WireItem } from '../model/types';
 import { crossingStack, restack, wireStyle } from '../model/wires';
@@ -23,6 +24,7 @@ export function HotSpotMenu({
   onLeave,
   onClose,
   onContinueWire,
+  onHold,
 }: {
   spot: HotSpot;
   doc: CircuitDoc;
@@ -31,6 +33,8 @@ export function HotSpotMenu({
   onLeave: () => void;
   onClose: () => void;
   onContinueWire: (wire: string, end: 'a' | 'b') => void;
+  /** Keeps the menu open while true (e.g. during a drag), whatever the pointer does. */
+  onHold: (hold: boolean) => void;
 }) {
   const view = S().view;
   const size = S().canvasSize;
@@ -71,9 +75,9 @@ export function HotSpotMenu({
         <>
           <Title>Crossing</Title>
           <Sub>Top wire hops over the ones below · drag to reorder</Sub>
-          <OrderList doc={doc} data={data} wires={stack.map((s) => s.wire)} names={dedupe(stack.map((s) => netName(s.wire)))} />
+          <OrderList doc={doc} data={data} wires={stack.map((s) => s.wire)} names={dedupe(stack.map((s) => netName(s.wire)))} onHold={onHold} />
           <Actions>
-            <Item icon={<CircleDot size={14} />} label="Solder here" hint="join into one net" onClick={() => run((d) => (solderWires(d, stack.map((s) => s.wire), spot.pt) ? (cleanup(d), null) : 'Could not solder here'), `Soldered ${stack.length} wires`)} />
+            <Item icon={<CircleDot size={14} />} label="Solder here" hint="join into one net" onClick={() => run((d) => applySolder(d, spot, data), `Soldered ${stack.length} wires`)} />
           </Actions>
         </>
       );
@@ -91,10 +95,7 @@ export function HotSpotMenu({
               label="Unsolder"
               hint="straight runs hop, branches detach"
               onClick={() =>
-                run((d) => {
-                  const r = unsolderJunction(d, spot.id);
-                  return r ? null : 'Could not unsolder';
-                }, 'Unsoldered — the wires cross without connecting')
+                run((d) => applySolder(d, spot, data), 'Unsoldered — the wires cross without connecting')
               }
             />
             {wires[0] && <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(wires[0])} />}
@@ -118,8 +119,51 @@ export function HotSpotMenu({
             {netName(spot.wire)} ends on {what}
           </Sub>
           <Actions>
-            <Item icon={<CircleDot size={14} />} label="Solder here" hint="connect" onClick={() => run((d) => (solderTouch(d, spot.wire, spot.end, t) ? (cleanup(d), null) : 'Could not solder here'), 'Soldered')} />
+            <Item icon={<CircleDot size={14} />} label="Solder here" hint="connect" onClick={() => run((d) => applySolder(d, spot, data), 'Soldered')} />
             <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(spot.wire)} />
+          </Actions>
+        </>
+      );
+      break;
+    }
+    case 'pinTouch':
+      body = (
+        <>
+          <Title>Pin on a wire, not connected</Title>
+          <Sub>
+            {pinLabel(doc, spot.comp, spot.port)} sits on {netName(spot.wire)}
+          </Sub>
+          <Actions>
+            <Item
+              icon={<CircleDot size={14} />}
+              label="Solder here"
+              hint="connect the pin"
+              onClick={() => run((d) => applySolder(d, spot, data), `Soldered ${pinLabel(doc, spot.comp, spot.port)}`)}
+            />
+            <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(spot.wire)} />
+          </Actions>
+        </>
+      );
+      break;
+    case 'pin': {
+      const wire = Object.values(doc.items).find((it) => it.type === 'wire' && [it.a, it.b].some((ep) => ep.kind === 'port' && ep.comp === spot.comp && ep.port === spot.port));
+      body = (
+        <>
+          <Title>
+            Pin {pinLabel(doc, spot.comp, spot.port)}
+            {wire ? ` · ${netName(wire.id)}` : ''}
+          </Title>
+          <Sub>
+            {spot.ends} wire{spot.ends === 1 ? '' : 's'} connected
+          </Sub>
+          <Actions>
+            <Item
+              icon={<Unlink size={14} />}
+              label="Unsolder"
+              hint="disconnect the pin"
+              onClick={() => run((d) => applySolder(d, spot, data), `Unsoldered ${pinLabel(doc, spot.comp, spot.port)}`)}
+            />
+            {wire && <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(wire.id)} />}
           </Actions>
         </>
       );
@@ -182,6 +226,10 @@ function spotStillValid(spot: HotSpot, doc: CircuitDoc, data: SceneData): boolea
       return crossingStack(data.crossings, spot.pt, 1).length >= 2;
     case 'junction':
       return !!doc.items[spot.id];
+    case 'pinTouch':
+      return !!doc.items[spot.comp] && !!doc.items[spot.wire];
+    case 'pin':
+      return Object.values(doc.items).some((it) => it.type === 'wire' && [it.a, it.b].some((ep) => ep.kind === 'port' && ep.comp === spot.comp && ep.port === spot.port));
     case 'touch':
     case 'end': {
       const w = doc.items[spot.wire];
@@ -190,6 +238,9 @@ function spotStillValid(spot: HotSpot, doc: CircuitDoc, data: SceneData): boolea
     }
   }
 }
+
+/** "C1.2"-style pin name. */
+const pinLabel = (doc: CircuitDoc, comp: string, port: string) => `${(doc.items[comp] as { ref?: string } | undefined)?.ref ?? '?'}.${portName(doc, comp, port)}`;
 
 const portName = (doc: CircuitDoc, comp: string, port: string) => {
   const c = doc.items[comp];
@@ -215,10 +266,13 @@ function Item({ icon, label, hint, danger, onClick }: { icon: ReactNode; label: 
   );
 }
 
+const ROW_H = 34; // row height + gap in the order list
+
 /** Reorderable stack of the wires at a crossing, top (hops over the rest) first. */
-function OrderList({ doc, data, wires, names }: { doc: CircuitDoc; data: SceneData; wires: string[]; names: string[] }) {
-  const [drag, setDrag] = useState<number | null>(null);
-  const [over, setOver] = useState<number | null>(null);
+function OrderList({ doc, data, wires, names, onHold }: { doc: CircuitDoc; data: SceneData; wires: string[]; names: string[]; onHold: (hold: boolean) => void }) {
+  // pointer-driven dragging (native drag-and-drop fires pointer-leave on the menu and is flaky in webviews)
+  const [drag, setDrag] = useState<{ from: number; startY: number; dy: number } | null>(null);
+  const target = drag ? Math.max(0, Math.min(wires.length - 1, drag.from + Math.round(drag.dy / ROW_H))) : null;
   const reorder = (from: number, to: number) => {
     if (from === to || to < 0 || to >= wires.length) return;
     const order = [...wires];
@@ -234,35 +288,36 @@ function OrderList({ doc, data, wires, names }: { doc: CircuitDoc; data: SceneDa
       }
     });
   };
+  const end = (commit: boolean) => {
+    if (drag && commit && target !== null) reorder(drag.from, target);
+    setDrag(null);
+    onHold(false);
+  };
   return (
     <ol className="cross-pop-list">
       {wires.map((id, i) => {
         const w = doc.items[id] as WireItem | undefined;
         const color = w ? inkColor(wireStyle(doc, w).color, EDITOR_PALETTE) : 'currentColor';
+        const dragging = drag?.from === i;
+        // rows between the dragged one and its target slide out of the way
+        const shift = drag && !dragging && target !== null ? (i > drag.from && i <= target ? -ROW_H : i < drag.from && i >= target ? ROW_H : 0) : 0;
         return (
           <li
             key={id}
-            className={['cross-pop-row', drag === i ? 'dragging' : '', over === i && drag !== null && drag !== i ? 'drop' : ''].join(' ')}
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.effectAllowed = 'move';
-              setDrag(i);
+            className={dragging ? 'cross-pop-row dragging' : 'cross-pop-row'}
+            style={{ transform: `translateY(${dragging ? drag!.dy : shift}px)` }}
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).closest('button')) return;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              onHold(true);
+              setDrag({ from: i, startY: e.clientY, dy: 0 });
             }}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOver(i);
+            onPointerMove={(e) => {
+              if (dragging) setDrag({ ...drag!, dy: e.clientY - drag!.startY });
             }}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (drag !== null) reorder(drag, i);
-              setDrag(null);
-              setOver(null);
-            }}
-            onDragEnd={() => {
-              setDrag(null);
-              setOver(null);
-            }}
-            onMouseEnter={() => set({ highlight: new Set([id]) })}
+            onPointerUp={() => dragging && end(true)}
+            onPointerCancel={() => dragging && end(false)}
+            onMouseEnter={() => !drag && set({ highlight: new Set([id]) })}
           >
             <GripVertical size={13} className="cross-pop-grip" />
             <span className="cross-pop-swatch" style={{ background: color }} />

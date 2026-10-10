@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, normalizeDoc, uid } from '../model/doc';
 import { clipPolylineToRect, simplify } from '../model/geometry';
-import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction } from '../model/ops';
+import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, solderPinToWire, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
 import { computeHotSpots } from '../model/hotspots';
 import { computeNets } from '../model/netlist';
 import type { CircuitDoc, WireItem } from '../model/types';
-import { buildWirePath, computeHops, crossingStack, hopLayerMap, moveWireNode, orthogonalize, restack, wireCrossings, wirePolyline } from '../model/wires';
+import { buildWirePath, computeHops, endpointInfo, crossingStack, hopLayerMap, moveWireNode, orthogonalize, restack, wireCrossings, wirePolyline } from '../model/wires';
 
 function freeWire(doc: CircuitDoc, ax: number, ay: number, bx: number, by: number): WireItem {
   const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: ax, y: ay }, b: { kind: 'free', x: bx, y: by }, pts: [] };
@@ -332,5 +332,29 @@ describe('solder / unsolder cycle', () => {
     expect(touch()).toBeTruthy();
     void top;
     void branch;
+  });
+});
+
+describe('pins on wires', () => {
+  it('solders a pin that lies on a wire, then unsolders it back', () => {
+    const doc = createDoc();
+    const c = makeComponent(doc, 'resistor', 100, 100);
+    doc.items[c.id] = c;
+    const def = c.symbol;
+    void def;
+    const pin = endpointInfo(doc, { kind: 'port', comp: c.id, port: '1' })!.pt;
+    // a vertical wire running straight through pin 1
+    const w = freeWire(doc, pin.x, pin.y - 100, pin.x, pin.y + 100);
+    const spots = () => computeHotSpots(doc, new Map([...Object.values(doc.items)].filter((i): i is WireItem => i.type === 'wire').map((x) => [x.id, wirePolyline(doc, x)])), []);
+    expect(spots().some((h) => h.kind === 'pinTouch')).toBe(true);
+    expect(solderPinToWire(doc, c.id, '1', w.id)).toBe(true);
+    cleanup(doc);
+    const attached = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire' && [i.a, i.b].some((ep) => ep.kind === 'port' && ep.comp === c.id && ep.port === '1'));
+    expect(attached).toHaveLength(2);
+    expect(spots().some((h) => h.kind === 'pin')).toBe(true);
+    // unsolder: the two halves run straight through, so they rejoin into one wire over the pin
+    expect(unsolderPort(doc, c.id, '1')).toEqual({ through: 1, detached: 0 });
+    expect(Object.values(doc.items).filter((i) => i.type === 'wire')).toHaveLength(1);
+    expect(spots().some((h) => h.kind === 'pinTouch')).toBe(true);
   });
 });

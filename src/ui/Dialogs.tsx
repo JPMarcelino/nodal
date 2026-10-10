@@ -206,6 +206,7 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
               ['Flip wire elbow', 'Space or / while wiring'],
               ['Remove last bend', 'Backspace while wiring'],
               ['Reshape a wire', 'Select it, then drag a segment'],
+              ['Solder / unsolder', 'Solder tool (S): click a crossing or a pin on a wire to solder, a junction or wired pin to unsolder'],
               ['Move bend points', 'Edit points tool (E): drag any bend or end · Alt drags freely · double-click adds/removes a bend'],
               ['Reconnect wire end', 'Select it, then drag an end handle'],
               ['Switch hop side', 'Hover a crossing to reorder the wires there, or select wires and press Ctrl+Shift+U'],
