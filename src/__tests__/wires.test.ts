@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createDoc, makeComponent, normalizeDoc, uid } from '../model/doc';
+import { createDoc, makeComponent, makeShape, normalizeDoc, uid } from '../model/doc';
+import { clampTitleOffset, shapeTitle } from '../canvas/Scene';
 import { clipPolylineToRect, simplify } from '../model/geometry';
 import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, solderPinToWire, translateDetached, translateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
 import { computeHotSpots } from '../model/hotspots';
@@ -394,5 +395,22 @@ describe('moving parts', () => {
     const w = doc.items[wired.id] as WireItem;
     expect(w.a).toEqual({ kind: 'free', x: pin.x, y: pin.y });
     expect((doc.items[c.id] as typeof c).y).toBe(150);
+  });
+});
+
+describe('zone titles', () => {
+  it('can sit anywhere inside, or just outside near the edge, but no further', () => {
+    const doc = createDoc();
+    const z = { ...makeShape(doc, 'zone', 0, 0, 200, 100), text: 'Power' };
+    // inside: unchanged
+    expect(clampTitleOffset(z, 60, 40)).toEqual({ dx: 60, dy: 40 });
+    // far away: pulled back to within the edge margin
+    const far = clampTitleOffset(z, 2000, -2000);
+    const t = shapeTitle({ ...z, textDx: far.dx, textDy: far.dy }).box;
+    expect(t.x + t.w / 2).toBeLessThanOrEqual(200 + 26.01);
+    expect(t.y + t.h / 2).toBeGreaterThanOrEqual(-26.01);
+    // just outside the top edge is allowed
+    const above = clampTitleOffset(z, 0, -30);
+    expect(above.dy).toBe(-30);
   });
 });
