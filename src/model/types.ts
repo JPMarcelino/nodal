@@ -89,6 +89,8 @@ interface ItemBase {
   group?: string;
   locked?: boolean;
   hidden?: boolean;
+  /** Front-to-back order within its kind (higher = in front); unset = creation order. */
+  z?: number;
 }
 
 export interface ComponentItem extends ItemBase {

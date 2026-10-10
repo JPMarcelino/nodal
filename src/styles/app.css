@@ -730,6 +730,77 @@ kbd {
   background: var(--panel-2);
 }
 
+.layer-row {
+  position: relative;
+  user-select: none;
+  touch-action: none;
+}
+
+.layer-row.is-hidden .layer-name {
+  opacity: 0.45;
+}
+
+.layer-row.dragging {
+  opacity: 0.5;
+}
+
+/* drop indicator line */
+.layer-row.drop-before::before,
+.layer-row.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.layer-row.drop-before::before {
+  top: -1px;
+}
+
+.layer-row.drop-after::after {
+  bottom: -1px;
+}
+
+.layer-act.on {
+  color: var(--text-dim);
+}
+
+/* locked: always visible, in red */
+.layer-act.locked,
+.layer-act.locked:hover {
+  color: var(--danger);
+  opacity: 1;
+}
+
+.layer-filter.secondary {
+  padding-top: 0;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.layer-filter.secondary button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  font-size: 0.8em;
+}
+
+.layer-filter-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+.layer-foot {
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--border);
+}
+
 .layer-row.selected {
   background: var(--accent-soft);
 }

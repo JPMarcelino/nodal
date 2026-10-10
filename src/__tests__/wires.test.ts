@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createDoc, makeComponent, makeShape, normalizeDoc, uid } from '../model/doc';
+import { createDoc, drawOrder, makeComponent, makeShape, normalizeDoc, uid } from '../model/doc';
 import { clampTitleOffset, shapeTitle } from '../canvas/Scene';
 import { clipPolylineToRect, simplify } from '../model/geometry';
-import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, solderPinToWire, translateDetached, translateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
+import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, reorderItem, rotateItems, solderPinToWire, translateDetached, translateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
 import { computeHotSpots } from '../model/hotspots';
 import { computeNets } from '../model/netlist';
 import type { CircuitDoc, WireItem } from '../model/types';
@@ -412,5 +412,25 @@ describe('zone titles', () => {
     // just outside the top edge is allowed
     const above = clampTitleOffset(z, 0, -30);
     expect(above.dy).toBe(-30);
+  });
+});
+
+describe('layer order', () => {
+  it('moves an item before / after another in the front-first list', () => {
+    const doc = createDoc();
+    const a = freeWire(doc, 0, 0, 10, 0);
+    const b = freeWire(doc, 0, 10, 10, 10);
+    const c = freeWire(doc, 0, 20, 10, 20);
+    const list = () => {
+      const o = drawOrder(doc);
+      return [a.id, b.id, c.id].sort((x, y) => o.get(y)! - o.get(x)!);
+    };
+    // default: newest in front
+    expect(list()).toEqual([c.id, b.id, a.id]);
+    expect(reorderItem(doc, a.id, c.id, 'before')).toBe(true);
+    expect(list()).toEqual([a.id, c.id, b.id]);
+    expect(reorderItem(doc, a.id, b.id, 'after')).toBe(true);
+    expect(list()).toEqual([c.id, b.id, a.id]);
+    expect(reorderItem(doc, a.id, a.id, 'after')).toBe(false);
   });
 });

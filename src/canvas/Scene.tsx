@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react';
 import { componentBounds, sideVector, toWorld } from '../model/geometry';
+import { drawOrder } from '../model/doc';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, ShapeItem, SymbolDef, WireItem } from '../model/types';
 import { buildWirePath, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
@@ -380,8 +381,11 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
   const shapes = items.filter((i): i is ShapeItem => i.type === 'shape').sort((a, b) => a.z - b.z);
   const below = shapes.filter((s) => s.layer === 'below');
   const above = shapes.filter((s) => s.layer === 'above');
-  const wires = items.filter((i): i is WireItem => i.type === 'wire');
-  const comps = items.filter((i): i is ComponentItem => i.type === 'component');
+  // front-to-back order from the layers panel (z, else creation order)
+  const order = drawOrder(doc);
+  const byOrder = (a: { id: string }, b: { id: string }) => order.get(a.id)! - order.get(b.id)!;
+  const wires = items.filter((i): i is WireItem => i.type === 'wire').sort(byOrder);
+  const comps = items.filter((i): i is ComponentItem => i.type === 'component').sort(byOrder);
   const dots: { x: number; y: number; color: string; key: string }[] = [];
   const js = doc.settings.junctionSize;
   for (const it of items) {
