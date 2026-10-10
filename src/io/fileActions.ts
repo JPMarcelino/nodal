@@ -1,0 +1,94 @@
+import { normalizeDoc } from '../model/doc';
+import { toBomCsv, toSpiceNetlist } from '../model/netlist';
+import { S, newDoc, replaceDoc, set, toast } from '../store/store';
+import { fitView } from '../store/actions';
+import { exportDxf, exportPng, exportSvg, printDoc, type SvgOptions } from './export';
+import { openTextFile, sanitizeName, saveFile } from './files';
+
+const NODAL_FILTER = [{ name: 'Nodal circuit', extensions: ['nodal', 'json'] }];
+
+async function confirmDiscard(): Promise<boolean> {
+  if (!S().dirty || !Object.keys(S().doc.items).length) return true;
+  return window.confirm('Discard unsaved changes to the current circuit?');
+}
+
+export async function fileNew() {
+  if (!(await confirmDiscard())) return;
+  newDoc();
+  setTimeout(() => fitView(), 0);
+}
+
+export async function fileOpen() {
+  if (!(await confirmDiscard())) return;
+  try {
+    const f = await openTextFile(NODAL_FILTER);
+    if (!f) return;
+    const doc = normalizeDoc(JSON.parse(f.text));
+    replaceDoc(doc, f.path);
+    setTimeout(() => fitView(), 0);
+    toast(`Opened ${f.name}`, 'success');
+  } catch (e) {
+    toast(`Could not open file: ${(e as Error).message}`, 'error');
+  }
+}
+
+export async function fileSave(saveAs = false) {
+  const { doc, filePath } = S();
+  try {
+    const res = await saveFile(JSON.stringify(doc, null, 1), `${sanitizeName(doc.name)}.nodal`, NODAL_FILTER, saveAs ? null : filePath);
+    if (res === false) return;
+    set({ dirty: false, filePath: res || filePath });
+    toast('Saved', 'success');
+  } catch (e) {
+    toast(`Save failed: ${(e as Error).message}`, 'error');
+  }
+}
+
+export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'bom' | 'json';
+
+export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { scale?: number } = {}) {
+  const { doc } = S();
+  const base = sanitizeName(doc.name);
+  const svgOpts: SvgOptions = { theme: 'light', background: true, padding: 20, ...opts };
+  try {
+    let res: string | null | false = null;
+    switch (kind) {
+      case 'svg':
+        res = await saveFile(exportSvg(doc, svgOpts).svg, `${base}.svg`, [{ name: 'SVG image', extensions: ['svg'] }]);
+        break;
+      case 'png':
+        res = await saveFile(await exportPng(doc, { ...svgOpts, scale: opts.scale ?? 3 }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
+        break;
+      case 'dxf':
+        res = await saveFile(exportDxf(doc), `${base}.dxf`, [{ name: 'AutoCAD DXF', extensions: ['dxf'] }]);
+        break;
+      case 'spice':
+        res = await saveFile(toSpiceNetlist(doc), `${base}.cir`, [{ name: 'SPICE netlist', extensions: ['cir', 'net', 'sp'] }]);
+        break;
+      case 'bom':
+        res = await saveFile(toBomCsv(doc), `${base}-bom.csv`, [{ name: 'CSV', extensions: ['csv'] }]);
+        break;
+      case 'json':
+        res = await saveFile(JSON.stringify(doc, null, 2), `${base}.json`, [{ name: 'JSON', extensions: ['json'] }]);
+        break;
+    }
+    if (res !== false) toast(`Exported ${kind.toUpperCase()}`, 'success');
+  } catch (e) {
+    toast(`Export failed: ${(e as Error).message}`, 'error');
+  }
+}
+
+export function filePrint() {
+  printDoc(S().doc);
+}
+
+export async function copyAsSvg() {
+  const { doc, selection } = S();
+  const { svg } = exportSvg(doc, { theme: 'light', background: false, padding: 10, ids: selection.length ? selection : undefined });
+  try {
+    await navigator.clipboard.writeText(svg);
+    toast('SVG copied to clipboard', 'success');
+  } catch {
+    toast('Clipboard is not available', 'error');
+  }
+}

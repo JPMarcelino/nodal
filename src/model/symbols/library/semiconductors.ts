@@ -1,0 +1,72 @@
+import { chip } from '../chip';
+import { sym } from '../dsl';
+
+const C = 'Semiconductors';
+const DIODE = 'L 0 20 20 20; GF 20 10 20 30 38 20; L 38 20 60 20';
+const BAR = 'W 2.5; L 38 10 38 30; W 2';
+const OUT_ARROWS = 'L 30 9 37 2; GF 38.5 0.5 32.9 2.6 36.4 6.1; L 38 11 45 4; GF 46.5 2.5 40.9 4.6 44.4 8.1';
+const IN_ARROWS = 'L 46 0 39 7; GF 37.5 8.5 39.6 2.9 43.1 6.4; L 54 2 47 9; GF 45.5 10.5 47.6 4.9 51.1 8.4';
+// BJT geometry (60×60): base left, collector top, emitter bottom
+const BJT = 'L 20 24 40 12 40 0; L 20 36 40 48 40 60; W 3; L 20 14 20 46; W 2';
+
+export const semiconductors = [
+  sym('diode', 'Diode', C, { w: 60, h: 40, prefix: 'D', value: '1N4148', fields: 'Package=SOD-123', keywords: 'rectifier signal', draw: `${DIODE}; ${BAR}`, ports: 'A:0,20 K:60,20' }),
+  sym('led', 'LED', C, { w: 60, h: 40, prefix: 'D', value: 'Red', fields: 'Forward voltage=2.0V, Current=20mA, Package=0805', keywords: 'light emitting diode lamp', draw: `${DIODE}; ${BAR}; ${OUT_ARROWS}`, ports: 'A:0,20 K:60,20' }),
+  sym('zener', 'Zener diode', C, { w: 60, h: 40, prefix: 'D', value: '5V1', keywords: 'voltage reference regulator', draw: `${DIODE}; W 2.5; L 33 33 38 30 38 10 43 7; W 2`, ports: 'A:0,20 K:60,20' }),
+  sym('schottky', 'Schottky diode', C, { w: 60, h: 40, prefix: 'D', value: 'BAT54', keywords: 'low drop fast', draw: `${DIODE}; W 2.5; L 33 26 33 30 38 30 38 10 43 10 43 14; W 2`, ports: 'A:0,20 K:60,20' }),
+  sym('tvs', 'TVS diode (bidirectional)', C, { w: 80, h: 40, prefix: 'D', value: 'SMBJ5.0CA', keywords: 'esd surge protection transient', draw: 'L 0 20 20 20; GF 20 10 20 30 40 20; GF 60 10 60 30 40 20; W 2.5; L 35 33 40 30 40 10 45 7; W 2; L 60 20 80 20', ports: '1:0,20 2:80,20' }),
+  sym('varactor', 'Varactor', C, { w: 60, h: 40, prefix: 'D', value: 'BB910', keywords: 'varicap tuning capacitance diode', draw: 'L 0 20 20 20; GF 20 10 20 30 36 20; W 2.5; L 36 10 36 30; L 42 10 42 30; W 2; L 42 20 60 20', ports: 'A:0,20 K:60,20' }),
+  sym('photodiode', 'Photodiode', C, { w: 60, h: 40, prefix: 'D', value: 'BPW34', keywords: 'light sensor optical', draw: `${DIODE}; ${BAR}; ${IN_ARROWS}`, ports: 'A:0,20 K:60,20' }),
+  sym('laser-diode', 'Laser diode', C, { w: 60, h: 40, prefix: 'D', value: '650nm', keywords: 'laser optical', draw: `${DIODE}; ${BAR}; L 27 8 27 1; GF 27 -1 24 5 30 5; L 33 8 33 1; GF 33 -1 30 5 36 5`, ports: 'A:0,20 K:60,20' }),
+  sym('diac', 'DIAC', C, { w: 60, h: 40, prefix: 'D', value: 'DB3', keywords: 'trigger thyristor', draw: 'L 0 20 22 20; W 2.5; L 22 6 22 34; L 38 6 38 34; W 2; GF 22 8 22 19 37 13.5; GF 38 21 38 32 23 26.5; L 38 20 60 20', ports: '1:0,20 2:60,20' }),
+  sym('bridge-rectifier', 'Bridge rectifier', C, {
+    w: 80, h: 80, prefix: 'D', value: 'DB107', keywords: 'full wave rectifier',
+    draw: 'G 40 6 74 40 40 74 6 40; GF 19 21 27 13 30 30; L 21 29 31 19; GF 61 21 53 13 50 30; L 59 29 49 19; GF 19 59 27 67 30 50; L 21 51 31 61; GF 61 59 53 67 50 50; L 59 51 49 61; L 40 0 40 6; L 40 74 40 80; L 0 40 6 40; L 74 40 80 40; T 56 10 9 m +; T 56 76 9 m −',
+    ports: 'AC1:40,0 AC2:40,80 -:0,40 +:80,40',
+  }),
+  sym('npn', 'NPN transistor', C, { w: 60, h: 60, prefix: 'Q', value: '2N3904', fields: 'Package=SOT-23', keywords: 'bjt bipolar', draw: `L 0 30 20 30; ${BJT}; GF 36 45.6 29.3 45.1 32.4 39.9`, ports: 'B:0,30 C:40,0 E:40,60' }),
+  sym('pnp', 'PNP transistor', C, { w: 60, h: 60, prefix: 'Q', value: '2N3906', fields: 'Package=SOT-23', keywords: 'bjt bipolar', draw: `L 0 30 20 30; ${BJT}; GF 24 21.6 30.7 21.1 27.6 15.9`, ports: 'B:0,30 E:40,0 C:40,60' }),
+  sym('npn-circle', 'NPN transistor (circled)', C, { w: 60, h: 60, prefix: 'Q', value: '2N2222', keywords: 'bjt bipolar', draw: `C 30 30 24; L 0 30 20 30; ${BJT}; GF 36 45.6 29.3 45.1 32.4 39.9`, ports: 'B:0,30 C:40,0 E:40,60' }),
+  sym('pnp-circle', 'PNP transistor (circled)', C, { w: 60, h: 60, prefix: 'Q', value: '2N2907', keywords: 'bjt bipolar', draw: `C 30 30 24; L 0 30 20 30; ${BJT}; GF 24 21.6 30.7 21.1 27.6 15.9`, ports: 'B:0,30 E:40,0 C:40,60' }),
+  sym('npn-darlington', 'Darlington (NPN)', C, {
+    w: 60, h: 60, prefix: 'Q', value: 'TIP120', keywords: 'darlington pair bjt',
+    draw: 'L 0 30 14 30; W 3; L 14 22 14 38; L 40 32 40 52; W 2; L 14 26 26 20 26 8; L 26 8 60 8 60 0; L 14 34 26 40 40 40; GF 24 39 18.4 39 20.6 34.6; L 40 36 52 28 52 8; L 40 48 54 56 60 56 60 60; GF 50 53.7 44.4 53.4 46.9 49',
+    ports: 'B:0,30 C:60,0 E:60,60',
+  }),
+  sym('phototransistor', 'Phototransistor', C, { w: 60, h: 60, prefix: 'Q', value: 'PT333', keywords: 'light sensor optical', draw: `${BJT}; GF 36 45.6 29.3 45.1 32.4 39.9; L 0 14 9 23; GF 11 25 5 23.5 9.5 19; L 0 26 9 35; GF 11 37 5 35.5 9.5 31`, ports: 'C:40,0 E:40,60' }),
+  sym('nmos', 'N-channel MOSFET', C, {
+    w: 60, h: 60, prefix: 'Q', value: '2N7002', fields: 'Vds=60V, Id=300mA, Package=SOT-23', keywords: 'mosfet fet enhancement',
+    draw: 'L 0 40 16 40; W 2.5; L 16 18 16 42; L 22 14 22 22; L 22 26 22 34; L 22 38 22 46; W 2; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 42; GF 23 30 30 26.5 30 33.5',
+    ports: 'G:0,40 D:40,0 S:40,60',
+  }),
+  sym('pmos', 'P-channel MOSFET', C, {
+    w: 60, h: 60, prefix: 'Q', value: 'AO3401', fields: 'Vds=-30V, Id=-4A, Package=SOT-23', keywords: 'mosfet fet enhancement',
+    draw: 'L 0 20 16 20; W 2.5; L 16 18 16 42; L 22 14 22 22; L 22 26 22 34; L 22 38 22 46; W 2; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 18; GF 39 30 32 26.5 32 33.5',
+    ports: 'G:0,20 S:40,0 D:40,60',
+  }),
+  sym('nmos-depletion', 'N-MOSFET (depletion)', C, {
+    w: 60, h: 60, prefix: 'Q', value: 'BSS139', keywords: 'mosfet depletion',
+    draw: 'L 0 40 16 40; W 2.5; L 16 18 16 42; L 22 14 22 46; W 2; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 42; GF 23 30 30 26.5 30 33.5',
+    ports: 'G:0,40 D:40,0 S:40,60',
+  }),
+  sym('njfet', 'N-channel JFET', C, { w: 60, h: 60, prefix: 'Q', value: 'J310', keywords: 'jfet fet', draw: 'L 0 30 20 30; GF 20 30 13 26.5 13 33.5; W 3; L 20 14 20 46; W 2; L 20 18 40 18 40 0; L 20 42 40 42 40 60', ports: 'G:0,30 D:40,0 S:40,60' }),
+  sym('pjfet', 'P-channel JFET', C, { w: 60, h: 60, prefix: 'Q', value: 'J175', keywords: 'jfet fet', draw: 'L 0 30 20 30; GF 6 30 13 26.5 13 33.5; W 3; L 20 14 20 46; W 2; L 20 18 40 18 40 0; L 20 42 40 42 40 60', ports: 'G:0,30 S:40,0 D:40,60' }),
+  sym('igbt', 'IGBT', C, {
+    w: 60, h: 60, prefix: 'Q', value: 'IRG4BC30', keywords: 'insulated gate bipolar power',
+    draw: 'L 0 40 14 40; W 2.5; L 14 18 14 42; L 20 14 20 46; W 2; L 20 22 40 12 40 0; L 20 38 40 48 40 60; GF 36 46.2 29.3 46.5 31.7 41.1',
+    ports: 'G:0,40 C:40,0 E:40,60',
+  }),
+  sym('scr', 'Thyristor (SCR)', C, { w: 60, h: 40, prefix: 'Q', value: 'BT151', keywords: 'thyristor scr silicon controlled rectifier', draw: `${DIODE}; ${BAR}; L 38 30 50 36 50 40`, ports: 'A:0,20 K:60,20 G:50,40' }),
+  sym('triac', 'TRIAC', C, {
+    w: 60, h: 60, prefix: 'Q', value: 'BT136', keywords: 'ac switch thyristor',
+    draw: 'L 30 0 30 18; W 2.5; L 14 18 46 18; L 14 42 46 42; W 2; GF 14 18 30 18 22 41; GF 30 42 46 42 38 19; L 30 42 30 60; L 22 42 12 52 0 52 0 50',
+    ports: 'MT2:30,0 MT1:30,60 G:0,50',
+  }),
+  sym('ujt', 'UJT', C, { w: 60, h: 60, prefix: 'Q', value: '2N2646', keywords: 'unijunction', draw: 'L 0 40 12 40 28 32; GF 28 32 21 32.4 24 37.3; W 3; L 30 14 30 46; W 2; L 30 18 40 18 40 0; L 30 42 40 42 40 60', ports: 'E:0,40 B2:40,0 B1:40,60' }),
+  sym('optocoupler', 'Optocoupler', C, {
+    w: 100, h: 80, prefix: 'U', value: 'PC817', keywords: 'opto isolator photocoupler',
+    draw: 'W 1.5; R 6 6 88 68 4; W 2; L 0 20 30 20 30 31; GF 22 31 38 31 30 45; W 2.5; L 22 45 38 45; W 2; L 30 45 30 60 0 60; L 42 34 52 34; GF 56 34 50 31 50 37; L 42 44 52 44; GF 56 44 50 41 50 47; W 3; L 64 26 64 54; W 2; L 64 34 82 24 82 20 100 20; L 64 46 82 56 82 60 100 60; GF 79 54.3 72.4 54 74.8 49',
+    ports: 'A:0,20 K:0,60 C:100,20 E:100,60',
+  }),
+  chip('mosfet-driver', 'Gate driver', C, { left: ['VCC', 'IN', 'GND'], right: ['OUT'], title: 'DRV', value: 'TC4420', keywords: 'mosfet gate driver' }),
+];
