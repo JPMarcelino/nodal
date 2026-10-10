@@ -1,175 +1,122 @@
-# ngDiagram Circuit Editor Template
+# Nodal — circuit & schematic designer
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/JPMarcelino/nodal/actions/workflows/ci.yml/badge.svg)](https://github.com/JPMarcelino/nodal/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/JPMarcelino/nodal)](https://github.com/JPMarcelino/nodal/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**Live demo:** [ngdiagram.dev/templates/electric-circuit](https://www.ngdiagram.dev/templates/electric-circuit/)
+Nodal is a fast, good-looking schematic editor. It's one React + TypeScript codebase that runs as:
 
-![Circuit editor — drag a capacitor and a ground from the library, wire them, draw a wire from the capacitor into an existing wire to create a junction, reshape the wire, export to DXF](docs/assets/demo.gif)
+- a **desktop app for Windows and Linux** (Tauri: small native installers, built by GitHub Actions), and
+- a **web app**: <https://jpmarcelino.github.io/nodal/>
 
-Interactive circuit / schematic editor built with Angular and [ngDiagram](https://www.ngdiagram.dev/). Use this project as a starting point for building your own schematic capture tool, node-based editor, or component-library-driven diagram. Lean dependencies: Angular, ngDiagram, and [html-to-image](https://www.npmjs.com/package/html-to-image) (for JPEG export) — no opinionated third-party UI libraries.
+![Nodal editor](docs/screenshot.png)
 
-Features:
+**Download:** [latest release](https://github.com/JPMarcelino/nodal/releases/latest). On Windows use the `.msi` or `-setup.exe`; on Linux use the `.AppImage` (`chmod +x`, then run it), `.deb` or `.rpm`.
 
-- Drag-and-drop component placement from a searchable, categorized library palette
-- A data-driven component catalog (resistor, capacitor, inductor, potentiometer, fuse, crystal, diode, LED, Zener, NPN/PNP transistors, NE555, switch, push button, battery, +5V, ground) rendered as crisp inline SVG
-- Free-form canvas: move, select, rotate, and wire components port-to-port
-- **Orthogonal wire editing** — reshape wires by dragging their segments, with grid snapping and port-anchored ends
-- **Wire junctions (link-to-link)** — drop or drag a wire onto another to create a solder-dot junction; branch from a wire, with junction port routing, merge-on-delete, and cleanup of orphaned junctions
-- Right-click **context menus** — copy / cut / paste / delete / rotate ±90° on a node, paste on the background
-- **Export** dropdown: **DXF** (vector, for AutoCAD / BricsCAD / LibreCAD — with layer mapping and text styles), editable SVG, JPEG snapshot of the canvas, or JSON (components + connections)
-- Properties sidebar with per-component-type specification fields (diagram-to-UI integration)
-- Minimap and zoom controls; full-height library / properties rails
-- Dark / light theme matching a dedicated design token system
-- Unique reference designators (R1, R2, C1…) auto-assigned on drop
+## Features
 
-## Component library
+### Symbol library (~200 parts)
+- **Passive:** resistors (US and IEC), variable resistors, potentiometers, trimmers, NTC thermistors, LDRs, varistors, capacitors (ceramic, polarized, variable), inductors, ferrite beads, transformers (including center-tapped), crystals, resonators, fuses, polyfuses, antennas
+- **Semiconductors:** diodes, LEDs, Zener, Schottky, TVS, varactor, photodiode, laser diode, DIAC, bridge rectifier, NPN/PNP (plain and circled), Darlington, phototransistor, N/P MOSFETs, depletion MOSFET, N/P JFETs, IGBT, SCR, TRIAC, UJT, optocoupler, gate driver
+- **ICs and analog:** op-amps, comparator, instrumentation amp, 555, linear and adjustable regulators, buck converter, generic 8/14/16-pin ICs, ATmega328P, generic MCU, EEPROM, ADC, DAC, H-bridge, USB-UART
+- **Logic:** AND/NAND/OR/NOR/XOR/XNOR (2 and 3 inputs), NOT, buffers, Schmitt triggers, tri-state, D/JK/T flip-flops, SR latch, multiplexers, demux, 3→8 decoder, adders, counter, 74HC595, clock source, tie-high/low
+- **Power and sources:** ground (signal, chassis, earth), supply rails, cells and batteries, DC/AC/pulse/current sources, dependent sources, solar cell, generator, power flag
+- **Switches and relays:** SPST, SPDT, DPST, DPDT, push buttons (NO/NC), reed, limit, rotary, DIP, relay coil, SPDT/DPDT/solid-state relays, breaker, contactor, thermal switch, e-stop
+- **Output and sensors:** lamp, RGB LED, 7-segment, buzzer, speaker, microphone, piezo, DC/AC/stepper motors, servo, solenoid, heater, fan, bell, headphones, thermocouple, Hall, temperature, PIR, ultrasonic, IMU, LCD 16×2, OLED
+- **Meters and test:** volt/am/ohm/watt meters, galvanometer, oscilloscope, frequency counter, function generator, test point, probe
+- **Connectors and labels:** net labels, global labels, in/out/bidirectional ports, off-page connector, no-connect flag, terminals, terminal blocks, pin headers (1×2 to 1×8, 2×5), DC jack, 3.5 mm audio jack, USB, USB-C, RJ45, BNC, plug and socket, banana jack, mounting hole, fiducial
 
-| Category            | Components                                                  |
-| ------------------- | ----------------------------------------------------------- |
-| Passive             | Resistor, Capacitor, Inductor, Potentiometer, Fuse, Crystal |
-| Semiconductors      | Diode, LED, Zener diode, NPN transistor, PNP transistor     |
-| Integrated circuits | NE555                                                       |
-| Electromechanical   | Switch, Push button                                         |
-| Power & Ground      | Battery, +5V source, GND                                    |
+You can search the library, mark favourites (★), and see recently used parts. Click a part to place it, or drag it onto the canvas.
 
-The library is fully **data-driven**: every component is one entry in
-[`component-catalog.ts`](src/app/circuit-editor/diagram/model/component-catalog.ts)
-describing its symbol size, connection ports, reference prefix, default value,
-and editable specification fields. Add a new component by adding a catalog entry
-and a `@case` to the [symbol component](src/app/circuit-editor/diagram/node/symbols/component-symbol.component.ts).
+### Making your own symbols
+Open the symbol editor with **Ctrl+Shift+N**, the **+ New** button, or **Customise symbol** on any part:
+- **Draw:** lines, polylines/polygons, rectangles, circles and text on a grid, plus pins that snap onto the symbol outline
+- **Chip / IC builder:** type the pin names for each side and the box, leads, labels and pin numbers are generated
+- **Import SVG:** paste or load an SVG; it is converted and scaled to fit
+- **Code:** a short text format, for precise edits
 
-## Getting Started
+Your symbols are kept in *My symbols*. Every circuit file also stores a copy of the symbols it uses, so files open correctly on other machines.
 
-Built against Angular 19.2 and ngDiagram 1.3 (see `package.json`); Node.js 18.19+, 20.11+ or 22 and npm 10+.
+### Wiring
+- Drag from any pin to draw a wire, or press **W** and click to add bends. Wires stay orthogonal; press **Space** to flip the elbow and **Backspace** to remove the last bend.
+- Ending a wire on another wire creates a **junction** automatically. **Alt-drag** on a wire starts a branch from it.
+- **Crossings hop:** where wires cross without connecting, a small arc is drawn (you can switch to a gap or a plain crossing).
+- Junction dots appear wherever three or more conductors meet. Deleting a branch merges the remaining wire back into one.
+- To reshape a selected wire, drag one of its segments. To reconnect it, drag an end handle.
+- **Wire style is fully customisable**, both per wire and as the document default: colour, thickness, sharp or rounded corners (with a radius), and solid/dashed/dotted lines. "Use for new wires" turns the current style into a brush, and "Apply style to whole net" restyles a net in one click.
+- Wire labels, net highlighting (**N**), and a list of the pins on each net
+- Unconnected pins are marked, so dangling connections are easy to spot
+
+### Zones, shapes and annotation
+- Outline **rectangles** (**B**) and **filled zones** (**Z**) for highlighting areas, each with an optional title. They sit **behind wires** by default; switch one to *Above all* (**Ctrl+Alt+L**) if needed.
+- Ellipses, lines, arrows and free text
+- Stroke, fill, opacity, corner radius and dash settings; z-ordering within each layer
+- Locking a zone lets clicks pass through it
+
+### Organising
+- **Groups** (**Ctrl+G** / **Ctrl+Shift+G**), including nested groups. Double-click a grouped item to enter the group.
+- **Layers** panel: tree of groups and items, with show/hide and lock
+- Align and distribute, rotate (**R**), flip (**X**/**Y**), nudge with the arrow keys
+- Copy/paste between windows (the clipboard holds JSON), duplicate, paste at cursor
+- Automatic reference designators (R1, C2…), plus a renumber command
+- Box select: drag right to select items fully inside, drag left to select anything touched
+
+### Files and export
+- Native open/save dialogs on desktop (`.nodal` files), with autosave and restore
+- Export to **PNG** (1–4×, light/dark), **SVG**, **DXF** (layered, for AutoCAD/LibreCAD), **SPICE netlist**, **bill of materials (CSV)** and **JSON**; print or save as PDF
+- Copy the selection as SVG to paste into other apps
+
+### Interface
+- Dark and light themes, compact/normal/large UI sizes, minimap, focus mode
+- **Command palette** (**Ctrl+K**): run any command or place any part by name
+- **Customisable keyboard shortcuts** (Settings → Keyboard shortcuts)
+
+## Keyboard shortcuts
+
+Press **?** in the app for the full list. You can rebind any shortcut in Settings.
+
+| Action | Keys | Action | Keys |
+| --- | --- | --- | --- |
+| Select / Pan tool | `V` / `H` (or hold `Space`) | Wire tool | `W` |
+| Rectangle / Zone | `B` / `Z` | Ellipse / Line / Arrow / Text | `O` / `L` / `A` / `T` |
+| Rotate / Rotate back | `R` / `Alt+R` | Flip horizontal / vertical | `X` / `Y` |
+| Group / Ungroup | `Ctrl+G` / `Ctrl+Shift+G` | Lock | `Ctrl+Shift+L` |
+| Copy / Cut / Paste / Duplicate | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` / `Ctrl+D` | Delete | `Del` / `Backspace` |
+| Undo / Redo | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Select all | `Ctrl+A` |
+| Place resistor / capacitor | `Shift+R` / `Shift+C` | Place ground / supply / net label | `Shift+G` / `Shift+V` / `Shift+L` |
+| Place last used part | `P` | Search library | `/` |
+| Zoom in / out / fit / 100% | `=` / `-` / `F` / `Ctrl+0` | Zoom to selection | `Shift+2` |
+| Grid / Snap | `G` / `Ctrl+'` | Minimap | `M` |
+| Zone above/behind wires | `Ctrl+Alt+L` | Bring forward / back | `Ctrl+]` / `Ctrl+[` |
+| Align left/right/top/bottom | `Alt+←/→/↑/↓` | Distribute H / V | `Alt+Shift+H` / `Alt+Shift+V` |
+| Highlight net | `N` | Re-route wire | `Shift+W` |
+| Command palette | `Ctrl+K` | Save / Open / Export | `Ctrl+S` / `Ctrl+O` / `Ctrl+E` |
+| New symbol | `Ctrl+Shift+N` | Library / Properties panel | `Ctrl+B` / `Ctrl+I` |
+
+## Development
 
 ```bash
-git clone https://github.com/synergycodes/ng-diagram-electric-circuit.git
-cd ng-diagram-electric-circuit
 npm install
-npm start
+npm run dev        # web app at http://localhost:1420
+npm test           # unit tests (geometry, junctions, symbol grid checks)
+npm run tauri dev  # desktop app (needs Rust + the Tauri system dependencies)
 ```
 
-Open [http://localhost:4200](http://localhost:4200) — a sample circuit loads: the classic NE555 astable multivibrator blinking an LED at about 1 Hz (13 components, 4 junctions, 19 wires). Try dragging a resistor from the library onto the canvas, wiring it into the circuit, then dropping a wire onto another wire to create a junction; right-click a component to rotate it. The sample circuit is seed data — replace it in [`diagram/data.ts`](src/app/circuit-editor/diagram/data.ts).
+Releases are built by GitHub Actions. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the Windows (MSI/NSIS) and Linux (AppImage/deb/rpm) installers and attaches them to a GitHub release. Every push to `main` redeploys the web app to GitHub Pages.
 
-## Scripts
+### Adding a built-in symbol
+Symbols use a small drawing language (see `src/model/symbols/dsl.ts`):
 
-| Script                 | Description                       |
-| ---------------------- | --------------------------------- |
-| `npm start`            | Start the dev server (`ng serve`) |
-| `npm run build`        | Production build (`ng build`)     |
-| `npm run watch`        | Development build in watch mode   |
-| `npm test`             | Run unit tests (Vitest)           |
-| `npm run lint`         | Lint with ESLint (`ng lint`)      |
-| `npm run format`       | Format sources with Prettier      |
-| `npm run format:check` | Check formatting without writing  |
-
-## ngDiagram APIs demonstrated
-
-| Concern             | API                                                                                      | Where in this repo                                                                                    |
-| ------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Bootstrap           | `provideNgDiagram()`                                                                     | `pages/circuit-editor-page.component.ts`                                                              |
-| Diagram surface     | `<ng-diagram>`, `<ng-diagram-background>`                                                | `diagram/diagram.component.html`                                                                      |
-| Node template       | `NgDiagramNodeTemplate`, `NgDiagramNodeTemplateMap`                                      | `diagram/diagram.component.ts`, `diagram/node/circuit-node.component.ts`                              |
-| Edge template       | `NgDiagramEdgeTemplate`, `NgDiagramEdgeTemplateMap`, `NgDiagramBaseEdgeComponent`        | `diagram/diagram.component.ts`, `diagram/wire/wire.component.ts`                                      |
-| Ports               | `<ng-diagram-port>`                                                                      | `diagram/node/circuit-node.component.html`, `diagram/wire/junction/node.component.ts`                 |
-| Palette (drag/drop) | `<ng-diagram-palette-item>`, `<ng-diagram-palette-item-preview>`, `paletteItemDropped`   | `library-sidebar/components/palette-tile/palette-tile.component.ts`, `diagram/diagram.component.html` |
-| Minimap             | `<ng-diagram-minimap>`                                                                   | `minimap-bar/minimap-bar.component.html`                                                              |
-| Model               | `initializeModel()`, `NgDiagramModelService` (`getConnectedEdges`, awaitable `addEdges`) | `diagram/diagram.component.ts`, `diagram/wire/junction/topology/`                                     |
-| Selection           | `NgDiagramSelectionService`                                                              | `diagram/editor-actions.service.ts`                                                                   |
-| Viewport            | `NgDiagramViewportService` (awaitable `zoomToFit`, `zoom`, `scale`)                      | `diagram/diagram.component.ts`, `diagram/editor-actions.service.ts`                                   |
-| Linking config      | `NgDiagramConfig.linking` (`validateConnection`, `finalEdgeDataBuilder`)                 | `diagram/diagram.component.ts`                                                                        |
-| Edge routing        | `NgDiagramConfig.edgeRouting` (orthogonal) + `routingMode: 'manual'` for reshaped wires  | `diagram/diagram.component.ts`, `diagram/wire/interactions/reshape/`                                  |
-| Middleware          | `createMiddlewares()` — custom junction port-routing middleware                          | `diagram/diagram.component.ts`                                                                        |
-| Events              | `diagramInit`, `edgeDrawEnded`, `selectionMoved`, `selectionRemoved`                     | `diagram/diagram.component.html`                                                                      |
-
-## Architecture
-
-```
-src/
-├── circuit-theme.css                 # --ce-* color tokens (dark/light) + ng-diagram var remap
-├── typography.css                    # Poppins type scale
-└── app/circuit-editor/
-    ├── circuit-editor.config.ts       # injectable editor config (viewport)
-    ├── pages/                         # page shell: canvas + overlays
-    ├── diagram/
-    │   ├── diagram.component.*        # ng-diagram host, template maps, palette-drop
-    │   ├── data.ts                    # seed example circuit
-    │   ├── editor-actions.service.ts  # clipboard / delete / rotate (context-menu actions)
-    │   ├── model/                     # ComponentType, CircuitNodeData, catalog, guards, connectivity
-    │   ├── node/
-    │   │   ├── circuit-node.component.* # one template for every component
-    │   │   └── symbols/               # inline-SVG schematic symbols
-    │   └── wire/                      # everything about wires/links
-    │       ├── wire.component.*        # edge (wire) template
-    │       ├── geometry/              # pure orthogonal-polyline math + hit testing
-    │       ├── pointer-drag-controller.ts # shared gesture plumbing
-    │       ├── junction/              # solder-dot node + topology/ + routing/
-    │       └── interactions/          # reshape, stretch, branch-from-wire, link-drop-preview
-    ├── library-sidebar/               # searchable component palette
-    ├── properties-sidebar/            # selection-driven properties form
-    ├── minimap-bar/                   # bottom-right zoom + collapsible minimap
-    ├── context-menu/                  # node & background right-click menus
-    ├── export/                        # DXF + SVG + JPEG + JSON export (service + dropdown)
-    └── top-navbar/                    # logo, filename, export, theme toggle
+```ts
+sym('resistor', 'Resistor', 'Passive', {
+  w: 80, h: 20, prefix: 'R', value: '10kΩ',
+  draw: 'L 0 10 20 10 23 3 30 17 37 3 43 17 50 3 57 17 60 10 80 10',
+  ports: '1:0,10 2:80,10',
+});
 ```
 
-### Design tokens
+For box-style parts, `chip()` in `src/model/symbols/chip.ts` takes pin-name lists. A test checks that every symbol's pins land on the 10 px grid.
 
-Every color is a `--ce-*` token defined per theme in
-[`circuit-theme.css`](src/circuit-theme.css), taken straight from the Figma
-color sheets (names and values for both dark and light modes). The base
-`--ngd-*` tokens ship with ngDiagram itself, so that file only adds the `--ce-*`
-tokens and remaps the few `--ngd-*` variables that drive the on-canvas look —
-grid background (major line every 10 minor cells), violet port rings, and the
-white-50% wire stroke.
+## Credits
 
-## Customization
-
-- **Add a component:** add an entry to `COMPONENT_CATALOG` and a `@case` in
-  `ComponentSymbolComponent`. The palette tile, on-canvas node, and properties
-  form pick it up automatically.
-- **Change the seed circuit:** edit [`data.ts`](src/app/circuit-editor/diagram/data.ts).
-- **Tune the viewport:** edit `CIRCUIT_EDITOR_DEFAULTS` (zoom-to-fit padding,
-  zoom step) in [`circuit-editor.config.ts`](src/app/circuit-editor/circuit-editor.config.ts),
-  or override the `CIRCUIT_EDITOR_CONFIG` token in the page providers.
-- **Theme:** adjust the `--ce-*` tokens in `circuit-theme.css`.
-
-## Export format
-
-[`export.service.ts`](src/app/circuit-editor/export/export.service.ts) offers
-four formats: **DXF** (vector, with layer mapping and text styles, for AutoCAD /
-BricsCAD / LibreCAD — renderers in [`export/dxf-circuit/`](src/app/circuit-editor/export/dxf-circuit/)),
-an **editable SVG** (vector schematic built from the model, black-on-white for
-print), a **JPEG** raster snapshot of the canvas, and **JSON**. The JSON is a documented `ng-diagram-circuit` document — a `components`
-array (type, reference, value, specs, position, rotation) plus a `connections`
-array (port-to-port). The connectivity standard for circuits is a **SPICE
-netlist**, but these generic illustrative components don't map cleanly to SPICE
-device cards, so a clean JSON format is used instead.
-
-## Known limitations / notes
-
-- **Composite components:** the catalog ships single-primitive components only.
-  Composite parts (e.g. a bridge rectifier — an assembly of diodes plus internal
-  wiring) are out of scope, since each catalog entry maps to one schematic symbol.
-
-## Tech stack
-
-- [Angular 19](https://angular.dev) (standalone, signals, zoneless via `provideExperimentalZonelessChangeDetection`)
-- **ngDiagram** ([`ng-diagram`](https://www.npmjs.com/package/ng-diagram) on npm)
-- [html-to-image](https://www.npmjs.com/package/html-to-image) (JPEG export)
-- Plain CSS with a custom design-token system (no UI framework)
-- Poppins (Google Fonts)
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/synergycodes/ng-diagram-electric-circuit/issues)
-- **ngDiagram Discussions**: [GitHub Discussions](https://github.com/synergycodes/ng-diagram/discussions), [Discord](https://discord.gg/FDMjRuarFb)
-- **ngDiagram Documentation**: [ngdiagram.dev/docs](https://www.ngdiagram.dev/docs)
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
----
-
-Built with ❤️ by the [Synergy Codes](https://www.synergycodes.com/) team
+Nodal began as a copy of the MIT-licensed [ngDiagram electric-circuit template](https://github.com/synergycodes/ng-diagram-electric-circuit) by Synergy Codes and was then rewritten in React.
