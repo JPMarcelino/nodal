@@ -261,6 +261,41 @@ function shapeHeads(s: ShapeItem) {
   return { ux, uy, size, endTip: { x: s.x + s.w, y: s.y + s.h }, startTip: { x: s.x, y: s.y } };
 }
 
+/** Shapes whose title can be dragged around. */
+export const hasMovableTitle = (s: ShapeItem) => !!s.text && (s.kind === 'rect' || s.kind === 'zone' || s.kind === 'ellipse');
+
+/** Where a shape's title text sits: anchor point (baseline) and its box. */
+export function shapeTitle(s: ShapeItem): { x: number; y: number; anchor: 'start' | 'middle'; box: { x: number; y: number; w: number; h: number } } {
+  const fs = s.fontSize ?? 13;
+  const dx = s.textDx ?? 0;
+  const dy = s.textDy ?? 0;
+  const m = measureText(s.text ?? '', fs);
+  if (s.kind === 'ellipse') {
+    const x = s.x + s.w / 2 + dx;
+    const y = s.y + s.h / 2 + 5 + dy;
+    return { x, y, anchor: 'middle', box: { x: x - m.w / 2, y: y - fs, w: m.w, h: fs * 1.3 } };
+  }
+  const x = s.x + 10 + dx;
+  const y = s.y + fs + 6 + dy;
+  return { x, y, anchor: 'start', box: { x, y: y - fs, w: m.w, h: fs * 1.3 } };
+}
+
+/**
+ * Clamps a title offset so the text stays inside the shape or just outside
+ * it, near the edge (its centre at most ~2 font sizes beyond the outline).
+ */
+export function clampTitleOffset(s: ShapeItem, dx: number, dy: number): { dx: number; dy: number } {
+  const t = shapeTitle({ ...s, textDx: dx, textDy: dy });
+  const margin = Math.max(24, (s.fontSize ?? 13) * 2);
+  const cx = t.box.x + t.box.w / 2;
+  const cy = t.box.y + t.box.h / 2;
+  const x0 = Math.min(s.x, s.x + s.w) - margin;
+  const x1 = Math.max(s.x, s.x + s.w) + margin;
+  const y0 = Math.min(s.y, s.y + s.h) - margin;
+  const y1 = Math.max(s.y, s.y + s.h) + margin;
+  return { dx: dx + Math.min(Math.max(cx, x0), x1) - cx, dy: dy + Math.min(Math.max(cy, y0), y1) - cy };
+}
+
 export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem; palette: Palette }) {
   const da = dashArray(s.dash, s.strokeWidth || 1);
   const ink = inkColor(s.stroke, palette);
@@ -274,7 +309,7 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
         <g className="shape" data-id={s.id}>
           <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={s.radius} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} />
           {s.text && (
-            <text x={s.x + 10} y={s.y + (s.fontSize ?? 13) + 6} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold === false ? 400 : 600} className="shape-title">
+            <text x={shapeTitle(s).x} y={shapeTitle(s).y} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold === false ? 400 : 600} className="shape-title">
               {s.text}
             </text>
           )}
@@ -285,7 +320,7 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
         <g className="shape" data-id={s.id}>
           <ellipse cx={s.x + s.w / 2} cy={s.y + s.h / 2} rx={Math.abs(s.w / 2)} ry={Math.abs(s.h / 2)} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} />
           {s.text && (
-            <text x={s.x + s.w / 2} y={s.y + s.h / 2 + 5} textAnchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={600}>
+            <text x={shapeTitle(s).x} y={shapeTitle(s).y} textAnchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={600}>
               {s.text}
             </text>
           )}

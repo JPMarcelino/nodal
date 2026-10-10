@@ -8,7 +8,7 @@ import { buildWirePath, endpointInfo, hitWire, moveWireNode, snapOnSegment, wire
 import { runAreaExport } from '../io/fileActions';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, dashArray, inkColor, labelLayout, measureText, useSceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, inkColor, labelLayout, measureText, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { HotSpotMenu } from './HotSpotMenu';
 import { applySolder, solderActionFor } from './solder';
@@ -45,7 +45,8 @@ type Gesture =
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
   | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
-  | { kind: 'label'; id: string; start: Point; base: { dx: number; dy: number } };
+  | { kind: 'label'; id: string; start: Point; base: { dx: number; dy: number } }
+  | { kind: 'shapeTitle'; id: string; start: Point; base: { dx: number; dy: number } };
 
 const ORTHO_EPS = 0.01;
 
@@ -313,13 +314,12 @@ export function Canvas() {
       const shapes = items.filter((i): i is ShapeItem => i.type === 'shape').sort((a, b) => b.z - a.z);
       const shapeHit = (s: ShapeItem) => {
         const r = itemBounds(d, s)!;
+        if (hasMovableTitle(s) && pointInRect(p, shapeTitle(s).box, 3)) return true;
         if (s.kind === 'line' || s.kind === 'arrow') return projectOnSegment(p, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }).d < t + s.strokeWidth;
         if (s.kind === 'text') return pointInRect(p, r, 4);
         const inside = pointInRect(p, r, t);
         if (!inside) return false;
         if (s.fillOpacity > 0) return true;
-        const titleBox = s.text ? { x: r.x, y: r.y, w: Math.min(r.w, measureText(s.text, s.fontSize ?? 13).w + 20), h: (s.fontSize ?? 13) + 12 } : null;
-        if (titleBox && pointInRect(p, titleBox)) return true;
         return !pointInRect(p, { x: r.x + t, y: r.y + t, w: r.w - 2 * t, h: r.h - 2 * t });
       };
       for (const s of shapes) if (s.layer === 'above' && shapeHit(s)) return s.id;
@@ -637,7 +637,7 @@ export function Canvas() {
         }
       }
       if (g && combo === 'Escape') {
-        if (g.kind === 'move' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'label' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
+        if (g.kind === 'move' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
         setGesture(null);
         return true;
       }
@@ -762,6 +762,11 @@ export function Canvas() {
     }
 
     // ---- select tool ----
+    if (singleShape && !singleShape.locked && hasMovableTitle(singleShape) && pointInRect(w, shapeTitle(singleShape).box, 3)) {
+      beginGesture();
+      setGesture({ kind: 'shapeTitle', id: singleShape.id, start: w, base: { dx: singleShape.textDx ?? 0, dy: singleShape.textDy ?? 0 } });
+      return;
+    }
     if (singleShape && !singleShape.locked) {
       const hh = shapeHandles(singleShape).find((h) => dist(h.p, w) < 7 / v.zoom);
       if (hh) {
@@ -991,6 +996,15 @@ export function Canvas() {
         });
         break;
       }
+      case 'shapeTitle': {
+        gestureUpdate((d) => {
+          const s = d.items[g.id] as ShapeItem;
+          const o = clampTitleOffset(s, Math.round(g.base.dx + w.x - g.start.x), Math.round(g.base.dy + w.y - g.start.y));
+          s.textDx = Math.round(o.dx);
+          s.textDy = Math.round(o.dy);
+        });
+        break;
+      }
       case 'label': {
         const dx = Math.round(w.x - g.start.x);
         const dy = Math.round(w.y - g.start.y);
@@ -1051,6 +1065,7 @@ export function Canvas() {
       case 'segment':
       case 'resize':
       case 'label':
+      case 'shapeTitle':
         endGesture(true);
         if (g.kind === 'segment' && g.moved) mutate((d) => cleanup(d as CircuitDoc));
         setGesture(null);
@@ -1191,7 +1206,7 @@ export function Canvas() {
         : 'grab'
       : exportAreaJob
         ? badgeCursor('area', prefs.theme) ?? 'crosshair'
-        : g?.kind === 'move'
+        : g?.kind === 'move' || g?.kind === 'shapeTitle' || (tool === 'select' && !placing && !g && singleShape && hasMovableTitle(singleShape) && pointInRect(cursor, shapeTitle(singleShape).box, 3))
           ? 'move'
           : tool === 'node' && !placing
             ? g?.kind === 'node' || g?.kind === 'endpoint' || nodeAt(cursor)

@@ -457,6 +457,22 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
         <Field label="Text colour">
           <ColorInput value={first.textColor ?? ''} allowNone onChange={(v) => upd((s) => (s.textColor = v || undefined))} />
         </Field>
+        {!isText && first.kind !== 'line' && first.kind !== 'arrow' && (
+          <Field label="Position" hint="Select the shape, then drag its title — inside it or just outside the edge">
+            <button
+              className="secondary-btn"
+              disabled={!first.textDx && !first.textDy}
+              onClick={() =>
+                upd((s) => {
+                  delete s.textDx;
+                  delete s.textDy;
+                })
+              }
+            >
+              Reset
+            </button>
+          </Field>
+        )}
       </Section>
       {!isText && (
         <Section title="Stroke">
