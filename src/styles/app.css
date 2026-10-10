@@ -1284,6 +1284,17 @@ select.input {
   stroke: var(--accent);
 }
 
+.handle.node {
+  fill: var(--accent);
+  stroke: var(--panel);
+}
+
+.handle.active {
+  fill: var(--accent);
+  stroke: var(--panel);
+}
+
+
 .port-marker {
   fill: none;
   stroke: var(--danger);

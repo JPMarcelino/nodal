@@ -126,9 +126,10 @@ export function simplify(pts: Point[]): Point[] {
     while (out.length >= 3) {
       const [a, b, c] = out.slice(-3);
       const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
-      const dot = (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y);
-      if (Math.abs(cross) < 0.01 && dot >= 0) out.splice(out.length - 2, 1);
-      else break;
+      if (Math.abs(cross) >= 0.01) break;
+      // collinear: drop the middle point (straight run, or a spike doubling back on itself)
+      out.splice(out.length - 2, 1);
+      if (out.length >= 2 && eq(out[out.length - 2], out[out.length - 1])) out.pop();
     }
   }
   return out;

@@ -1,4 +1,5 @@
 import {
+  PenTool,
   ArrowUpRight,
   Circle,
   Download,
@@ -191,6 +192,7 @@ export function TopBar() {
 
 const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string }[] = [
   { tool: 'select', icon: <MousePointer2 size={17} />, label: 'Select', cmd: 'tool.select' },
+  { tool: 'node', icon: <PenTool size={17} />, label: 'Edit points', cmd: 'tool.node' },
   { tool: 'pan', icon: <Hand size={17} />, label: 'Pan', cmd: 'tool.pan' },
   { tool: 'wire', icon: <Spline size={17} />, label: 'Wire', cmd: 'tool.wire' },
   { tool: 'rect', icon: <Square size={17} />, label: 'Rectangle', cmd: 'tool.rect' },
@@ -208,7 +210,7 @@ export function ToolRail() {
     <div className="tool-rail" onPointerDown={(e) => e.stopPropagation()}>
       {TOOLS.map((t, i) => (
         <span key={t.tool} style={{ display: 'contents' }}>
-          {(i === 2 || i === 3) && <span className="rail-sep" />}
+          {(i === 3 || i === 4) && <span className="rail-sep" />}
           <button
             className={tool === t.tool && !placing ? 'tool-btn active' : 'tool-btn'}
             onClick={() => A.setTool(t.tool)}

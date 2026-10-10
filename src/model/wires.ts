@@ -265,6 +265,28 @@ export function adjustWireForMove(full: Point[], moveA: Point | null, moveB: Poi
   return pts;
 }
 
+/**
+ * Polyline with vertex `idx` moved to `p`. Unless `free`, the neighbouring
+ * bends slide along so their segments stay horizontal / vertical; the wire's
+ * end points never move (they are attached to pins or junctions).
+ */
+export function moveWireNode(base: Point[], idx: number, p: Point, free: boolean): Point[] {
+  const pts = base.map((q) => ({ ...q }));
+  const old = base[idx];
+  if (!free) {
+    for (const nb of [idx - 1, idx + 1]) {
+      if (nb <= 0 || nb >= pts.length - 1) continue;
+      const q = pts[nb];
+      const horiz = Math.abs(old.y - q.y) < 0.01 && Math.abs(old.x - q.x) >= 0.01;
+      const vert = Math.abs(old.x - q.x) < 0.01 && Math.abs(old.y - q.y) >= 0.01;
+      if (horiz) q.y = p.y;
+      else if (vert) q.x = p.x;
+    }
+  }
+  pts[idx] = { ...p };
+  return pts;
+}
+
 export function rotateVec(p: Point, rot: number) {
   return rotate(p, rot);
 }
