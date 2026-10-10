@@ -1984,26 +1984,25 @@ select.input {
 }
 
 .se-canvas {
+  position: relative;
+  height: 440px;
   border-radius: 12px;
   background: var(--canvas);
   border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 420px;
-  overflow: auto;
+  overflow: hidden;
   color: var(--sym);
   --sym-bg: var(--canvas);
+  touch-action: none;
+  user-select: none;
 }
 
 .se-canvas svg {
-  cursor: crosshair;
+  display: block;
 }
 
 .se-bounds {
   fill: none;
   stroke: var(--accent);
-  stroke-dasharray: 3 3;
   opacity: 0.7;
 }
 
@@ -2355,5 +2354,88 @@ select.input {
   fill: none;
   stroke: var(--danger);
   opacity: 0.8;
+  pointer-events: none;
+}
+
+/* symbol editor: properties bar, zoom, handles */
+
+.se-props {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  margin: -4px 0 8px;
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.se-props .segmented {
+  width: auto;
+}
+
+.se-props-label {
+  font-size: 0.8em;
+  color: var(--text-faint);
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.se-text-input {
+  width: 150px;
+}
+
+.se-num {
+  width: 78px;
+}
+
+.se-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.se-zoom .tool-btn {
+  width: 28px;
+}
+
+.se-zoom-val {
+  min-width: 48px;
+  height: 28px;
+  border-radius: 7px;
+  font-size: 0.82em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.se-zoom-val:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.tool-btn.active-soft {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.se-handle {
+  fill: var(--panel);
+  stroke: var(--accent);
+}
+
+.se-size-handle {
+  fill: var(--accent-2);
+  stroke: var(--panel);
+  opacity: 0.85;
+}
+
+.se-coords {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  font-size: 0.75em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
   pointer-events: none;
 }
