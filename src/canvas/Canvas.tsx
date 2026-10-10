@@ -115,6 +115,7 @@ export function Canvas() {
   const scope = useStore((s) => s.scope);
   const exportAreaJob = useStore((s) => s.exportArea);
   const altMove = useStore((s) => s.altMove);
+  const layerHover = useStore((s) => s.layerHover);
   const data = useSceneData(doc);
   const wrapRef = useRef<HTMLDivElement>(null);
   const gRef = useRef<Gesture | null>(null);
@@ -1304,6 +1305,10 @@ export function Canvas() {
 
           {/* hover */}
           {hover.item && !selSet.has(hover.item) && !g && <HoverOutline doc={doc} id={hover.item} polys={data.polys} z={z} />}
+          {/* items hovered in the layers panel */}
+          {layerHover.map((id) => (
+            <HoverOutline key={`lh-${id}`} doc={doc} id={id} polys={data.polys} z={z} />
+          ))}
 
           {/* selection */}
           {selection.map((id) => (

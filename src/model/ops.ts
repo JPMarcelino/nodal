@@ -1,5 +1,5 @@
 import { current, isDraft } from 'immer';
-import { attachedWires, docBounds, groupChain, itemBounds, nextRef, refersTo, uid } from './doc';
+import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, nextRef, refersTo, uid } from './doc';
 import { eq, projectOnSegment, rotate, simplify, snap } from './geometry';
 import { getSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, WireItem } from './types';
@@ -691,4 +691,22 @@ export function annotate(doc: CircuitDoc) {
 
 export function boundsOfIds(doc: CircuitDoc, ids: Iterable<string>): Rect | null {
   return docBounds(doc, ids);
+}
+
+/**
+ * Moves an item in the layer list (front first) to just before / after
+ * another item of the same group, renumbering that group's z values.
+ */
+export function reorderItem(doc: CircuitDoc, id: string, targetId: string, place: 'before' | 'after'): boolean {
+  const it = doc.items[id];
+  const target = doc.items[targetId];
+  if (!it || !target || id === targetId || it.group !== target.group) return false;
+  const key = drawOrder(doc);
+  const siblings = Object.values(doc.items)
+    .filter((i) => i.type !== 'junction' && i.group === it.group && i.id !== id)
+    .sort((a, b) => key.get(b.id)! - key.get(a.id)!);
+  const at = siblings.findIndex((i) => i.id === targetId) + (place === 'after' ? 1 : 0);
+  siblings.splice(at, 0, it);
+  siblings.forEach((s, i) => (s.z = siblings.length - i));
+  return true;
 }

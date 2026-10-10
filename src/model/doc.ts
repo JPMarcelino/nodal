@@ -123,7 +123,7 @@ export const SHAPE_DEFAULTS: Record<ShapeKind, Partial<ShapeItem>> = {
 };
 
 export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number, w: number, h: number): ShapeItem {
-  const z = Math.max(0, ...Object.values(doc.items).map((i) => (i.type === 'shape' ? i.z : 0))) + 1;
+  const z = Math.max(0, ...Object.values(doc.items).map((i) => i.z ?? 0)) + 1;
   return {
     id: uid('s'),
     type: 'shape',
@@ -186,4 +186,9 @@ export function groupMembers(doc: CircuitDoc, groupId: string): string[] {
   return Object.values(doc.items)
     .filter((i) => groupChain(doc, i.group).includes(groupId))
     .map((i) => i.id);
+}
+
+/** Front-to-back key of every item: its z, or its creation position when unset (higher = in front). */
+export function drawOrder(doc: CircuitDoc): Map<string, number> {
+  return new Map(Object.values(doc.items).map((it, i) => [it.id, it.z ?? i]));
 }

@@ -1,6 +1,8 @@
 import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { drawOrder } from '../model/doc';
 import { computeNets } from '../model/netlist';
+import { reorderItem } from '../model/ops';
 import { getSymbol } from '../model/registry';
 import { BUILTIN_SYMBOLS, CATEGORY_ORDER } from '../model/symbols';
 import type { CircuitDoc, Item, SymbolDef } from '../model/types';
@@ -220,10 +222,20 @@ function itemLabel(doc: CircuitDoc, it: Item, netName?: string): string {
 
 const kindName = (k: string) => ({ rect: 'Rectangle', zone: 'Zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text' })[k] ?? k;
 
+type VisFilter = 'any' | 'shown' | 'hidden';
+type LockFilter = 'any' | 'locked' | 'unlocked';
+
 function Layers() {
   const doc = useStore((s) => s.doc);
   const selection = useStore((s) => s.selection);
   const [filter, setFilter] = useState<'all' | 'component' | 'wire' | 'shape'>('all');
+  const [vis, setVis] = useState<VisFilter>('any');
+  const [lock, setLock] = useState<LockFilter>('any');
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [renaming, setRenaming] = useState<string | null>(null);
+  // row dragging (pointer based): which row, where it would drop, and whether it actually moved
+  const [drag, setDrag] = useState<{ id: string; startY: number; moved: boolean } | null>(null);
+  const [drop, setDrop] = useState<{ id: string; place: 'before' | 'after' } | null>(null);
   const sel = new Set(selection);
   // wires are listed by their net's name (automatic netN when unnamed)
   const netByWire = useMemo(() => {
@@ -231,63 +243,129 @@ function Layers() {
     for (const n of computeNets(doc)) for (const w of n.wires) m.set(w, n.name);
     return m;
   }, [doc]);
-  const items = Object.values(doc.items).filter((i) => i.type !== 'junction' && (filter === 'all' || i.type === filter));
+  const order = useMemo(() => drawOrder(doc), [doc]);
+  const filtering = filter !== 'all' || vis !== 'any' || lock !== 'any';
+  // front-most first, like most layer panels
+  const items = Object.values(doc.items)
+    .filter((i) => i.type !== 'junction' && (filter === 'all' || i.type === filter))
+    .filter((i) => vis === 'any' || (vis === 'hidden') === !!i.hidden)
+    .filter((i) => lock === 'any' || (lock === 'locked') === !!i.locked)
+    .sort((a, b) => order.get(b.id)! - order.get(a.id)!);
   const groups = Object.values(doc.groups);
   const childrenOf = (gid: string | undefined) => ({
     groups: groups.filter((g) => g.group === gid),
     items: items.filter((i) => i.group === gid),
   });
+  const groupHasItems = (gid: string): boolean => childrenOf(gid).items.length > 0 || childrenOf(gid).groups.some((g) => groupHasItems(g.id));
+  const groupItemIds = (gid: string) => Object.values(doc.items).filter((i) => i.group === gid).map((i) => i.id);
 
-  const Row = ({ it, depth }: { it: Item; depth: number }) => (
-    <div
-      className={sel.has(it.id) ? 'layer-row selected' : 'layer-row'}
-      style={{ paddingLeft: 10 + depth * 14 }}
-      onClick={(e) => {
-        if (e.shiftKey || e.ctrlKey || e.metaKey) {
-          const s = new Set(S().selection);
-          if (s.has(it.id)) s.delete(it.id);
-          else s.add(it.id);
-          set({ selection: [...s] });
-        } else set({ selection: [it.id] });
-      }}
-      onDoubleClick={() => A.fitView([it.id])}
-    >
-      <span className={`layer-icon ${it.type}`} />
-      <span className="layer-name">{itemLabel(doc, it, netByWire.get(it.id))}</span>
-      {it.type === 'shape' && <span className="layer-tag">{it.layer === 'above' ? 'above' : 'below'}</span>}
-      {it.type === 'wire' && !!it.hopLayer && (
-        <span className="layer-tag" title={`Crossing layer ${it.hopLayer > 0 ? '+' : ''}${it.hopLayer}`}>
-          {it.hopLayer > 0 ? 'over' : 'under'}
-        </span>
-      )}
-      <button className="layer-act" title={it.hidden ? 'Show' : 'Hide'} onClick={(e) => (e.stopPropagation(), A.toggleHidden([it.id]))}>
-        {it.hidden ? <EyeOff size={12} /> : <Eye size={12} />}
-      </button>
-      <button
-        className="layer-act"
-        title={it.locked ? 'Unlock' : 'Lock'}
-        onClick={(e) => {
-          e.stopPropagation();
-          mutate((d) => void (d.items[it.id].locked = !it.locked));
-        }}
-      >
-        {it.locked ? <Lock size={12} /> : <LockOpen size={12} />}
-      </button>
-    </div>
-  );
+  const hover = (ids: string[]) => set({ layerHover: ids });
+  useEffect(() => () => set({ layerHover: [] }), []);
 
-  const GroupNode = ({ gid, depth }: { gid: string; depth: number }) => {
-    const [open, setOpen] = useState(true);
-    const g = doc.groups[gid];
-    const ch = childrenOf(gid);
-    const [editing, setEditing] = useState(false);
+  const endDrag = () => {
+    if (drag?.moved && drop) {
+      const { id } = drag;
+      mutate((d) => void reorderItem(d as CircuitDoc, id, drop.id, drop.place));
+    }
+    setDrag(null);
+    setDrop(null);
+  };
+
+  const row = (it: Item, depth: number) => {
+    const dropHere = drag?.moved && drop?.id === it.id ? ` drop-${drop.place}` : '';
     return (
-      <div>
-        <div className="layer-row group" style={{ paddingLeft: 6 + depth * 14 }} onClick={() => select(Object.values(doc.items).filter((i) => i.group === gid).map((i) => i.id))}>
-          <button className="layer-caret" onClick={(e) => (e.stopPropagation(), setOpen(!open))}>
+      <div
+        key={it.id}
+        data-layer-id={it.id}
+        className={`layer-row${sel.has(it.id) ? ' selected' : ''}${it.hidden ? ' is-hidden' : ''}${drag?.moved && drag.id === it.id ? ' dragging' : ''}${dropHere}`}
+        style={{ paddingLeft: 10 + depth * 14 }}
+        onPointerEnter={() => !drag && hover([it.id])}
+        onPointerLeave={() => !drag && hover([])}
+        onPointerDown={(e) => {
+          if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          setDrag({ id: it.id, startY: e.clientY, moved: false });
+        }}
+        onPointerMove={(e) => {
+          if (!drag || drag.id !== it.id) return;
+          if (!drag.moved && Math.abs(e.clientY - drag.startY) < 4) return;
+          if (!drag.moved) setDrag({ ...drag, moved: true });
+          // the row under the pointer (pointer capture keeps events on the dragged row)
+          const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-layer-id]') as HTMLElement | null;
+          const tid = el?.dataset.layerId;
+          const target = tid ? doc.items[tid] : null;
+          if (!el || !target || tid === it.id || target.group !== it.group) return setDrop(null);
+          const r = el.getBoundingClientRect();
+          setDrop({ id: tid!, place: e.clientY < r.top + r.height / 2 ? 'before' : 'after' });
+        }}
+        onPointerUp={() => drag?.id === it.id && endDrag()}
+        onPointerCancel={() => {
+          setDrag(null);
+          setDrop(null);
+        }}
+        onClick={(e) => {
+          if (drag?.moved) return;
+          if (e.shiftKey || e.ctrlKey || e.metaKey) {
+            const s = new Set(S().selection);
+            if (s.has(it.id)) s.delete(it.id);
+            else s.add(it.id);
+            set({ selection: [...s] });
+          } else set({ selection: [it.id] });
+        }}
+        onDoubleClick={() => A.fitView([it.id])}
+      >
+        <span className={`layer-icon ${it.type}`} />
+        <span className="layer-name">{itemLabel(doc, it, netByWire.get(it.id))}</span>
+        {it.type === 'shape' && <span className="layer-tag">{it.layer === 'above' ? 'above' : 'below'}</span>}
+        {it.type === 'wire' && !!it.hopLayer && (
+          <span className="layer-tag" title={`Crossing layer ${it.hopLayer > 0 ? '+' : ''}${it.hopLayer}`}>
+            {it.hopLayer > 0 ? 'over' : 'under'}
+          </span>
+        )}
+        <button className={it.hidden ? 'layer-act on' : 'layer-act'} title={it.hidden ? 'Show' : 'Hide'} onClick={(e) => (e.stopPropagation(), A.toggleHidden([it.id]))}>
+          {it.hidden ? <EyeOff size={12} /> : <Eye size={12} />}
+        </button>
+        <button
+          className={it.locked ? 'layer-act locked' : 'layer-act'}
+          title={it.locked ? 'Unlock' : 'Lock'}
+          onClick={(e) => {
+            e.stopPropagation();
+            mutate((d) => void (d.items[it.id].locked = !it.locked));
+          }}
+        >
+          {it.locked ? <Lock size={12} /> : <LockOpen size={12} />}
+        </button>
+      </div>
+    );
+  };
+
+  const groupNode = (gid: string, depth: number): JSX.Element | null => {
+    const g = doc.groups[gid];
+    if (filtering && !groupHasItems(gid)) return null;
+    const ch = childrenOf(gid);
+    const open = !collapsed.has(gid);
+    return (
+      <div key={gid}>
+        <div
+          className="layer-row group"
+          style={{ paddingLeft: 6 + depth * 14 }}
+          onPointerEnter={() => !drag && hover(groupItemIds(gid))}
+          onPointerLeave={() => !drag && hover([])}
+          onClick={() => select(groupItemIds(gid))}
+        >
+          <button
+            className="layer-caret"
+            onClick={(e) => {
+              e.stopPropagation();
+              const next = new Set(collapsed);
+              if (open) next.add(gid);
+              else next.delete(gid);
+              setCollapsed(next);
+            }}
+          >
             {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           </button>
-          {editing ? (
+          {renaming === gid ? (
             <input
               className="layer-rename"
               autoFocus
@@ -295,30 +373,33 @@ function Layers() {
               onClick={(e) => e.stopPropagation()}
               onBlur={(e) => {
                 const v = e.target.value.trim();
-                setEditing(false);
+                setRenaming(null);
                 if (v) mutate((d) => void (d.groups[gid].name = v));
               }}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             />
           ) : (
-            <span className="layer-name" onDoubleClick={(e) => (e.stopPropagation(), setEditing(true))} title="Double-click to rename">
+            <span className="layer-name" onDoubleClick={(e) => (e.stopPropagation(), setRenaming(gid))} title="Double-click to rename">
               {g.name}
             </span>
           )}
         </div>
         {open && (
           <>
-            {ch.groups.map((sg) => (
-              <GroupNode key={sg.id} gid={sg.id} depth={depth + 1} />
-            ))}
-            {ch.items.map((it) => (
-              <Row key={it.id} it={it} depth={depth + 1} />
-            ))}
+            {ch.groups.map((sg) => groupNode(sg.id, depth + 1))}
+            {ch.items.map((it) => row(it, depth + 1))}
           </>
         )}
       </div>
     );
   };
+
+  const chip = <T extends string>(cur: T, setCur: (v: T) => void, value: T, icon: JSX.Element, label: string) => (
+    <button className={cur === value ? 'active' : ''} title={`Only ${label.toLowerCase()} items (click again for all)`} onClick={() => setCur((cur === value ? 'any' : value) as T)}>
+      {icon}
+      {label}
+    </button>
+  );
 
   const root = childrenOf(undefined);
   return (
@@ -330,15 +411,19 @@ function Layers() {
           </button>
         ))}
       </div>
-      <div className="lib-scroll">
-        {root.groups.map((g) => (
-          <GroupNode key={g.id} gid={g.id} depth={0} />
-        ))}
-        {root.items.map((it) => (
-          <Row key={it.id} it={it} depth={0} />
-        ))}
-        {!items.length && <div className="empty-note">Nothing here yet.</div>}
+      <div className="layer-filter secondary">
+        {chip(vis, setVis, 'shown', <Eye size={11} />, 'Shown')}
+        {chip(vis, setVis, 'hidden', <EyeOff size={11} />, 'Hidden')}
+        <span className="layer-filter-sep" />
+        {chip(lock, setLock, 'locked', <Lock size={11} />, 'Locked')}
+        {chip(lock, setLock, 'unlocked', <LockOpen size={11} />, 'Unlocked')}
       </div>
+      <div className="lib-scroll" onPointerLeave={() => !drag && hover([])}>
+        {root.groups.map((g) => groupNode(g.id, 0))}
+        {root.items.map((it) => row(it, 0))}
+        {!items.length && <div className="empty-note">{filtering ? 'Nothing matches these filters.' : 'Nothing here yet.'}</div>}
+      </div>
+      <div className="layer-foot muted small">Top of the list is in front · drag rows to reorder</div>
     </div>
   );
 }

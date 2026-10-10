@@ -69,6 +69,8 @@ export interface AppState {
   filePath: string | null;
   placing: Placing | null;
   highlight: Set<string> | null;
+  /** Items hovered in the layers panel (outlined on the canvas). */
+  layerHover: string[];
   contextMenu: ContextMenuState | null;
   dialog: Dialog;
   editingSymbol: string | null;
@@ -142,6 +144,7 @@ export const useStore = create<AppState>(() => ({
   filePath: null,
   placing: null,
   highlight: null,
+  layerHover: [],
   contextMenu: null,
   dialog: null,
   editingSymbol: null,
