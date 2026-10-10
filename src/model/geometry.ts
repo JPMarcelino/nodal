@@ -190,3 +190,26 @@ export function clipPolylineToRect(pts: Point[], r: Rect): Point[][] {
   finish();
   return runs;
 }
+
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+let measureFamily = '';
+
+/**
+ * Size of a (possibly multi-line) text block as the canvas renders it. Uses the
+ * real UI font when a DOM is available, else a width estimate.
+ */
+export function measureText(text: string, fontSize: number, weight = 400): { w: number; h: number } {
+  const lines = text.split('\n');
+  const h = Math.ceil(lines.length * fontSize * 1.3);
+  if (measureCtx === undefined) {
+    measureCtx = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
+    if (measureCtx) measureFamily = getComputedStyle(document.body).fontFamily || 'sans-serif';
+  }
+  if (!measureCtx) {
+    const longest = Math.max(1, ...lines.map((l) => l.length));
+    return { w: Math.ceil(longest * fontSize * (weight >= 600 ? 0.62 : 0.58)), h };
+  }
+  measureCtx.font = `${weight} ${fontSize}px ${measureFamily}`;
+  const w = Math.max(fontSize * 0.5, ...lines.map((l) => measureCtx!.measureText(l).width));
+  return { w: Math.ceil(w), h };
+}

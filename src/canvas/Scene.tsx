@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { componentBounds, sideVector, toWorld } from '../model/geometry';
+import { componentBounds, measureText, sideVector, toWorld } from '../model/geometry';
 import { drawOrder } from '../model/doc';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, ShapeItem, SymbolDef, WireItem } from '../model/types';
@@ -284,7 +284,7 @@ export function shapeTitle(s: ShapeItem): { x: number; y: number; anchor: 'start
   const fs = s.fontSize ?? 13;
   const dx = s.textDx ?? 0;
   const dy = s.textDy ?? 0;
-  const m = measureText(s.text ?? '', fs);
+  const m = measureText(s.text ?? '', fs, s.kind !== 'ellipse' && s.bold === false ? 400 : 600);
   if (s.kind === 'ellipse') {
     const x = s.x + s.w / 2 + dx;
     const y = s.y + s.h / 2 + 5 + dy;
@@ -364,9 +364,10 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
     case 'text': {
       const fs = s.fontSize ?? 16;
       const lines = (s.text ?? '').split('\n');
+      const m = measureText(s.text ?? '', fs, s.bold ? 700 : 400);
       return (
         <g className="shape" data-id={s.id}>
-          {s.fillOpacity > 0 && <rect x={s.x - 6} y={s.y - 4} width={s.w + 12} height={s.h + 8} rx={4} fill={fill} fillOpacity={s.fillOpacity} />}
+          {s.fillOpacity > 0 && <rect x={s.x - 6} y={s.y - 4} width={m.w + 12} height={m.h + 8} rx={4} fill={fill} fillOpacity={s.fillOpacity} />}
           <text x={s.x} y={s.y + fs} fontSize={fs} fill={textColor} fontWeight={s.bold ? 700 : 400} className="free-text">
             {lines.map((l, i) => (
               <tspan key={i} x={s.x} dy={i === 0 ? 0 : fs * 1.3}>
@@ -380,11 +381,7 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
   }
 });
 
-export function measureText(text: string, fontSize: number) {
-  const lines = text.split('\n');
-  const longest = Math.max(1, ...lines.map((l) => l.length));
-  return { w: Math.ceil(longest * fontSize * 0.58), h: Math.ceil(lines.length * fontSize * 1.3) };
-}
+export { measureText };
 
 /* ------------------------------------------------------------------ */
 /* Whole scene                                                         */

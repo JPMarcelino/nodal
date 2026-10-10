@@ -455,7 +455,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
       ids.forEach((id) => {
         const s = d.items[id] as ShapeItem;
         fn(s);
-        if (s.kind === 'text') Object.assign(s, measureText(s.text ?? '', s.fontSize ?? 16));
+        if (s.kind === 'text') Object.assign(s, measureText(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400));
       }),
     );
   const isText = first.kind === 'text';

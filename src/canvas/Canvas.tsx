@@ -350,7 +350,7 @@ export function Canvas() {
       if (c.showValue && c.value) texts.push([L.value, c.value, 10.5, 'value']);
       for (const [at, text, size, which] of texts) {
         if (!at) continue;
-        const m = measureText(text, size);
+        const m = measureText(text, size, 500);
         const x = at.anchor === 'start' ? at.x : at.anchor === 'middle' ? at.x - m.w / 2 : at.x - m.w;
         if (pointInRect(p, { x, y: at.y - size, w: m.w, h: size * 1.3 }, 2)) return { id: c.id, which };
       }
@@ -732,7 +732,7 @@ export function Canvas() {
       let id = '';
       mutate((d) => {
         const s = makeShape(d as CircuitDoc, 'text', p.x, p.y, 40, 20);
-        const m = measureText(s.text ?? '', s.fontSize ?? 16);
+        const m = measureText(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400);
         s.w = m.w;
         s.h = m.h;
         s.group = S().scope;
@@ -854,7 +854,7 @@ export function Canvas() {
       A.enterGroup(id);
       return;
     }
-    if (it.type === 'shape' && it.kind === 'text') {
+    if (it.type === 'shape' && (it.kind === 'text' || it.kind === 'rect' || it.kind === 'zone' || it.kind === 'ellipse') && !it.locked) {
       setEditingText(id);
       return;
     }
@@ -1604,32 +1604,52 @@ function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; 
   );
 }
 
+/** Inline editor for free text and for rectangle / zone / ellipse titles. */
 function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
   const doc = useStore((s) => s.doc);
   const view = useStore((s) => s.view);
   const it = doc.items[id] as ShapeItem | undefined;
   const ref = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState(it?.text ?? '');
+  const done = useRef(false);
   useEffect(() => {
-    ref.current?.focus();
-    ref.current?.select();
+    // focus after the opening click has settled, or its default action steals focus back
+    const t = setTimeout(() => {
+      ref.current?.focus();
+      ref.current?.select();
+    }, 0);
+    return () => clearTimeout(t);
   }, []);
   if (!it) return null;
-  const fs = (it.fontSize ?? 16) * view.zoom;
+  const isText = it.kind === 'text';
+  const size = it.fontSize ?? (isText ? 16 : 13);
+  const weight = isText ? (it.bold ? 700 : 400) : it.kind === 'ellipse' || it.bold !== false ? 600 : 400;
+  const m = measureText(value, size, weight);
+  const width = Math.max(80, m.w * view.zoom + 20);
+  let at = { x: it.x, y: it.y };
+  if (!isText) {
+    const t = shapeTitle({ ...it, text: value || ' ' });
+    at = { x: t.anchor === 'middle' ? t.x - width / view.zoom / 2 : t.box.x, y: t.box.y };
+  }
   const commit = () => {
+    if (done.current) return;
+    done.current = true;
     const text = value;
     mutate((d) => {
       const s = d.items[id] as ShapeItem;
       if (!s) return;
       if (!text.trim()) {
-        delete d.items[id];
+        if (s.kind === 'text') delete d.items[id];
+        else delete s.text;
         return;
       }
       s.text = text;
-      const m = measureText(text, s.fontSize ?? 16);
-      s.w = m.w;
-      s.h = m.h;
+      if (s.kind === 'text') Object.assign(s, measureText(text, s.fontSize ?? 16, s.bold ? 700 : 400));
     });
+    onDone();
+  };
+  const cancel = () => {
+    done.current = true;
     onDone();
   };
   return (
@@ -1641,17 +1661,24 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
       onBlur={commit}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) commit();
+        if (e.key === 'Escape') {
+          if (value === (it.text ?? '')) cancel();
+          else commit();
+        } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || (!isText && !e.shiftKey))) {
+          e.preventDefault();
+          commit();
+        }
       }}
       onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
       style={{
-        left: it.x * view.zoom + view.x - 4,
-        top: it.y * view.zoom + view.y - 2,
-        fontSize: fs,
+        left: at.x * view.zoom + view.x - 4,
+        top: at.y * view.zoom + view.y - 2,
+        fontSize: size * view.zoom,
         lineHeight: 1.3,
-        minWidth: Math.max(80, measureText(value, it.fontSize ?? 16).w * view.zoom + 20),
-        height: measureText(value, it.fontSize ?? 16).h * view.zoom + 12,
-        fontWeight: it.bold ? 700 : 400,
+        minWidth: width,
+        height: m.h * view.zoom + 12,
+        fontWeight: weight,
         color: it.textColor || undefined,
       }}
     />
