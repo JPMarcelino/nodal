@@ -27,7 +27,12 @@ const editable = () => S().selection.filter((id) => S().doc.items[id] && !S().do
 /* ------------------------------------------------------------------ */
 
 export function setTool(tool: Tool) {
-  set({ tool, placing: null, contextMenu: null });
+  set({ tool, altMove: false, placing: null, contextMenu: null });
+}
+
+/** Select tool in alt-move mode: only the selection moves, connections to it are left behind. */
+export function setAltMove() {
+  set({ tool: 'select', altMove: true, placing: null, contextMenu: null });
 }
 
 export function startPlacing(symbol: string) {

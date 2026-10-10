@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { itemBounds, makeShape, uid } from '../model/doc';
 import { dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, simplify, snap, toWorld } from '../model/geometry';
-import { cleanup, splitWire, translateItems } from '../model/ops';
+import { cleanup, splitWire, translateDetached, translateItems } from '../model/ops';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, snapOnSegment, wirePolyline } from '../model/wires';
 import { runAreaExport } from '../io/fileActions';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, dashArray, inkColor, measureText, useSceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, dashArray, inkColor, labelLayout, measureText, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { HotSpotMenu } from './HotSpotMenu';
 import { applySolder, solderActionFor } from './solder';
@@ -37,7 +37,7 @@ type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'p1' | 'p2';
 type Gesture =
   | { kind: 'pan'; client: Point; view: { x: number; y: number } }
   | { kind: 'marquee'; start: Point; cur: Point; additive: boolean }
-  | { kind: 'move'; start: Point; ids: Set<string>; moved: boolean; client: Point }
+  | { kind: 'move'; start: Point; ids: Set<string>; moved: boolean; client: Point; detach: boolean; dx: number; dy: number }
   | { kind: 'wire'; start: Target; pts: Point[]; hFirst: boolean; fromDrag: boolean; downClient: Point; cur: Target; dragging: boolean }
   | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean }
   | { kind: 'endpoint'; wire: string; end: 'a' | 'b'; cur: Target }
@@ -113,6 +113,7 @@ export function Canvas() {
   const prefs = useStore((s) => s.prefs);
   const scope = useStore((s) => s.scope);
   const exportAreaJob = useStore((s) => s.exportArea);
+  const altMove = useStore((s) => s.altMove);
   const data = useSceneData(doc);
   const wrapRef = useRef<HTMLDivElement>(null);
   const gRef = useRef<Gesture | null>(null);
@@ -333,15 +334,24 @@ export function Canvas() {
     [data],
   );
 
+  /** Selected component whose reference / value *text* is under the pointer (dragging it moves the labels). */
   const hitLabel = useCallback((p: Point): string | null => {
     const d = S().doc;
     for (const id of S().selection) {
       const c = d.items[id];
-      if (c?.type !== 'component' || !c.showRef) continue;
+      if (c?.type !== 'component') continue;
       const def = getSymbol(d, c.symbol);
-      const b = itemBounds(d, c)!;
-      const box = { x: b.x - 40, y: b.y - 20, w: b.w + 80, h: b.h + 40 };
-      if (pointInRect(p, box) && !pointInRect(p, b, 2) && !def.valueIsLabel) return c.id;
+      if (def.valueIsLabel) continue;
+      const L = labelLayout(c, def);
+      const texts: [{ x: number; y: number; anchor: 'start' | 'middle' | 'end' } | null | undefined, string, number][] = [];
+      if (c.showRef) texts.push([L.ref, c.ref, 11]);
+      if (c.showValue && c.value) texts.push([L.value, c.value, 10.5]);
+      for (const [at, text, size] of texts) {
+        if (!at) continue;
+        const m = measureText(text, size);
+        const x = at.anchor === 'start' ? at.x : at.anchor === 'middle' ? at.x - m.w / 2 : at.x - m.w;
+        if (pointInRect(p, { x, y: at.y - size, w: m.w, h: size * 1.3 }, 2)) return c.id;
+      }
     }
     return null;
   }, []);
@@ -812,7 +822,7 @@ export function Canvas() {
         return;
       }
       beginGesture();
-      setGesture({ kind: 'move', start: w, ids: new Set(cur.filter((id) => !S().doc.items[id]?.locked)), moved: false, client });
+      setGesture({ kind: 'move', start: w, ids: new Set(cur.filter((id) => !S().doc.items[id]?.locked)), moved: false, client, detach: S().altMove, dx: 0, dy: 0 });
       return;
     }
     if (isDouble && S().scope) {
@@ -879,8 +889,8 @@ export function Canvas() {
         const step = snapOn ? grid : 1;
         dx = snap(dx, step);
         dy = snap(dy, step);
-        gestureUpdate((d, base) => translateItems(base, d as CircuitDoc, g.ids, dx, dy));
-        if (!g.moved) setGesture({ ...g, moved: true });
+        gestureUpdate((d, base) => (g.detach ? translateDetached : translateItems)(base, d as CircuitDoc, g.ids, dx, dy));
+        if (!g.moved || dx !== g.dx || dy !== g.dy) setGesture({ ...g, moved: true, dx, dy });
         break;
       }
       case 'wire': {
@@ -1028,6 +1038,16 @@ export function Canvas() {
         break;
       }
       case 'move':
+        if (g.detach && g.moved) {
+          // alt move: drop junctions that lost their wires and rejoin split runs, in the same undo step
+          gestureUpdate((d, base) => {
+            translateDetached(base, d as CircuitDoc, g.ids, g.dx, g.dy);
+            cleanup(d as CircuitDoc);
+          });
+        }
+        endGesture(true);
+        setGesture(null);
+        break;
       case 'segment':
       case 'resize':
       case 'label':
@@ -1400,6 +1420,11 @@ export function Canvas() {
             if (hold) clearHotTimer('close');
           }}
         />
+      )}
+      {tool === 'select' && altMove && !exportAreaJob && g?.kind !== 'wire' && (
+        <div className="canvas-hint">
+          <b>Alt move</b> · only the selection moves; wires to it are left behind (unsoldered) · <kbd>M</kbd> normal move
+        </div>
       )}
       {tool === 'solder' && !g && !exportAreaJob && (
         <div className="canvas-hint">

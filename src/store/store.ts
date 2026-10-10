@@ -60,6 +60,8 @@ export interface AppState {
   /** Group currently entered (double-click into a group). */
   scope?: string;
   tool: Tool;
+  /** Alt move (Shift+M): moving leaves connections behind instead of dragging wires along. */
+  altMove: boolean;
   view: View;
   past: CircuitDoc[];
   future: CircuitDoc[];
@@ -132,6 +134,7 @@ export const useStore = create<AppState>(() => ({
   selection: [],
   scope: undefined,
   tool: 'select',
+  altMove: false,
   view: { x: 0, y: 0, zoom: 1 },
   past: [],
   future: [],

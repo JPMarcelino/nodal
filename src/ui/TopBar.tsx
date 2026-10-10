@@ -1,5 +1,6 @@
 import {
   CircleDot,
+  Unplug,
   PenTool,
   ArrowUpRight,
   Circle,
@@ -49,7 +50,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
       'arrange.front', 'arrange.forward', 'arrange.backward', 'arrange.back', 'arrange.layer',
     ],
   },
-  { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.hopOver', 'wire.corners'] },
+  { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.corners'] },
   {
     label: 'View',
     items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.grid', 'view.snap', 'view.minimap', '-', 'view.library', 'view.layers', 'view.inspector', 'view.focus', '-', 'view.theme'],
@@ -191,8 +192,9 @@ export function TopBar() {
   );
 }
 
-const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string }[] = [
-  { tool: 'select', icon: <MousePointer2 size={17} />, label: 'Select', cmd: 'tool.select' },
+const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string; alt?: boolean }[] = [
+  { tool: 'select', icon: <MousePointer2 size={17} />, label: 'Move / select', cmd: 'tool.select' },
+  { tool: 'select', alt: true, icon: <Unplug size={17} />, label: 'Alt move (leave wires behind)', cmd: 'tool.altMove' },
   { tool: 'node', icon: <PenTool size={17} />, label: 'Edit points', cmd: 'tool.node' },
   { tool: 'pan', icon: <Hand size={17} />, label: 'Pan', cmd: 'tool.pan' },
   { tool: 'wire', icon: <Spline size={17} />, label: 'Wire', cmd: 'tool.wire' },
@@ -208,14 +210,15 @@ const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string }[] = [
 export function ToolRail() {
   const tool = useStore((s) => s.tool);
   const placing = useStore((s) => s.placing);
+  const altMove = useStore((s) => s.altMove);
   return (
     <div className="tool-rail" onPointerDown={(e) => e.stopPropagation()}>
       {TOOLS.map((t, i) => (
-        <span key={t.tool} style={{ display: 'contents' }}>
-          {(i === 3 || i === 5) && <span className="rail-sep" />}
+        <span key={t.cmd} style={{ display: 'contents' }}>
+          {(i === 4 || i === 6) && <span className="rail-sep" />}
           <button
-            className={tool === t.tool && !placing ? 'tool-btn active' : 'tool-btn'}
-            onClick={() => A.setTool(t.tool)}
+            className={tool === t.tool && !!t.alt === altMove && !placing ? 'tool-btn active' : 'tool-btn'}
+            onClick={() => (t.alt ? A.setAltMove() : A.setTool(t.tool))}
             title={`${t.label} (${prettyKey(keysFor(t.cmd)[0] ?? '')})`}
           >
             {t.icon}

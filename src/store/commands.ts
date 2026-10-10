@@ -1,6 +1,5 @@
 import { copyAsSvg, doExport, exportSelection, fileNew, fileOpen, filePrint, fileSave, startAreaExport } from '../io/fileActions';
 import { computeNets, netOfWire } from '../model/netlist';
-import type { WireItem } from '../model/types';
 import * as A from './actions';
 import { S, redo, set, setPrefs, toast, undo, mutate } from './store';
 
@@ -64,7 +63,8 @@ export const COMMANDS: Command[] = [
   { id: 'edit.nudgeDownFine', label: 'Nudge down 1px', category: 'Edit', keys: ['Mod+ArrowDown'], run: () => A.nudge(0, 1) },
 
   // Tools
-  { id: 'tool.select', label: 'Select tool', category: 'Tools', keys: ['V'], run: () => A.setTool('select') },
+  { id: 'tool.select', label: 'Move / select tool (wires stay connected)', category: 'Tools', keys: ['M'], run: () => A.setTool('select') },
+  { id: 'tool.altMove', label: 'Alt move (only the selection moves; wires to it are left behind)', category: 'Tools', keys: ['Shift+M'], run: () => A.setAltMove() },
   { id: 'tool.node', label: 'Edit points tool (drag wire bends & ends)', category: 'Tools', keys: ['E'], run: () => A.setTool('node') },
   { id: 'tool.solder', label: 'Solder tool (click crossings / pins to solder, junctions to unsolder)', category: 'Tools', keys: ['S'], run: () => A.setTool('solder') },
   { id: 'tool.wire', label: 'Wire tool', category: 'Tools', keys: ['W'], run: () => A.setTool('wire') },
@@ -109,7 +109,6 @@ export const COMMANDS: Command[] = [
   { id: 'wire.reroute', label: 'Re-route selected wires', category: 'Wire', keys: ['Shift+W'], run: A.rerouteWires },
   { id: 'wire.highlightNet', label: 'Highlight net of selected wire', category: 'Wire', keys: ['N'], run: highlightNet },
   { id: 'wire.hops', label: 'Cycle wire crossing style (arc / gap / none)', category: 'Wire', keys: ['Mod+Shift+J'], run: cycleHops },
-  { id: 'wire.hopOver', label: 'Switch which wire hops at crossings', category: 'Wire', keys: ['Mod+Shift+U'], run: flipHopOver },
   { id: 'wire.corners', label: 'Toggle rounded wire corners', category: 'Wire', keys: ['Mod+Shift+K'], run: toggleCorners },
 
   // View
@@ -123,7 +122,7 @@ export const COMMANDS: Command[] = [
   { id: 'view.library', label: 'Toggle library panel', category: 'View', keys: ['Mod+B'], run: () => set((s) => ({ leftPanel: !s.leftPanel })) },
   { id: 'view.inspector', label: 'Toggle properties panel', category: 'View', keys: ['Mod+I'], run: () => set((s) => ({ rightPanel: !s.rightPanel })) },
   { id: 'view.layers', label: 'Show layers panel', category: 'View', keys: ['Mod+Shift+O'], run: () => set({ leftPanel: true, leftTab: 'layers' }) },
-  { id: 'view.minimap', label: 'Toggle minimap', category: 'View', keys: ['M'], run: () => setPrefs({ showMinimap: !S().prefs.showMinimap }) },
+  { id: 'view.minimap', label: 'Toggle minimap', category: 'View', keys: ['Alt+M'], run: () => setPrefs({ showMinimap: !S().prefs.showMinimap }) },
   { id: 'view.theme', label: 'Toggle light / dark theme', category: 'View', keys: ['Mod+Shift+D'], run: () => setPrefs({ theme: S().prefs.theme === 'dark' ? 'light' : 'dark' }) },
   { id: 'view.focus', label: 'Focus mode (hide panels)', category: 'View', keys: ['Mod+.'], run: focusMode },
   { id: 'view.search', label: 'Search symbol library', category: 'View', keys: ['/'], run: focusSearch },
@@ -160,22 +159,6 @@ function cycleHops() {
   const next = order[(order.indexOf(S().doc.settings.hops) + 1) % 3];
   mutateSettings((s) => (s.hops = next));
   toast(`Wire crossings: ${next === 'arc' ? 'hop arcs' : next === 'gap' ? 'gaps' : 'plain'}`);
-}
-
-/** Cycles the selected wires' stacking layer: auto → over (+1) → under (-1) → auto. */
-function flipHopOver() {
-  const ids = S().selection.filter((id) => S().doc.items[id]?.type === 'wire');
-  if (!ids.length) return toast('Select wires to switch their hop side');
-  const cur = Math.sign((S().doc.items[ids[0]] as WireItem).hopLayer ?? 0);
-  const next = cur === 0 ? 1 : cur > 0 ? -1 : 0;
-  mutate((d) =>
-    ids.forEach((id) => {
-      const w = d.items[id] as WireItem;
-      if (next) w.hopLayer = next;
-      else delete w.hopLayer;
-    }),
-  );
-  toast(next === 0 ? 'Hop sides back to automatic' : next > 0 ? 'These wires hop over at crossings' : 'These wires stay flat under crossings');
 }
 
 function toggleCorners() {

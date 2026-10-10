@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, normalizeDoc, uid } from '../model/doc';
 import { clipPolylineToRect, simplify } from '../model/geometry';
-import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, solderPinToWire, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
+import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, solderPinToWire, translateDetached, translateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
 import { computeHotSpots } from '../model/hotspots';
 import { computeNets } from '../model/netlist';
 import type { CircuitDoc, WireItem } from '../model/types';
@@ -356,5 +356,43 @@ describe('pins on wires', () => {
     expect(unsolderPort(doc, c.id, '1')).toEqual({ through: 1, detached: 0 });
     expect(Object.values(doc.items).filter((i) => i.type === 'wire')).toHaveLength(1);
     expect(spots().some((h) => h.kind === 'pinTouch')).toBe(true);
+  });
+});
+
+describe('moving parts', () => {
+  const setup = () => {
+    const doc = createDoc();
+    const c = makeComponent(doc, 'resistor', 100, 100);
+    doc.items[c.id] = c;
+    const pin = endpointInfo(doc, { kind: 'port', comp: c.id, port: '1' })!.pt;
+    const wired: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'port', comp: c.id, port: '1' }, b: { kind: 'free', x: pin.x - 100, y: pin.y }, pts: [] };
+    doc.items[wired.id] = wired;
+    return { doc, c, pin, wired };
+  };
+
+  it('normal move drags connected wires along', () => {
+    const { doc, c, wired } = setup();
+    const base = structuredClone(doc);
+    translateItems(base, doc, new Set([c.id]), 0, 50);
+    const w = doc.items[wired.id] as WireItem;
+    expect(w.a.kind).toBe('port');
+    expect(wirePolyline(doc, w)[0]).toEqual(endpointInfo(doc, { kind: 'port', comp: c.id, port: '1' })!.pt);
+  });
+
+  it('normal move also drags loose ends that rest on a moving pin', () => {
+    const { doc, c, pin, wired } = setup();
+    (doc.items[wired.id] as WireItem).a = { kind: 'free', x: pin.x, y: pin.y };
+    const base = structuredClone(doc);
+    translateItems(base, doc, new Set([c.id]), 0, 50);
+    expect(wirePolyline(doc, doc.items[wired.id] as WireItem)[0]).toEqual({ x: pin.x, y: pin.y + 50 });
+  });
+
+  it('alt move leaves the wire behind with a loose end', () => {
+    const { doc, c, pin, wired } = setup();
+    const base = structuredClone(doc);
+    translateDetached(base, doc, new Set([c.id]), 0, 50);
+    const w = doc.items[wired.id] as WireItem;
+    expect(w.a).toEqual({ kind: 'free', x: pin.x, y: pin.y });
+    expect((doc.items[c.id] as typeof c).y).toBe(150);
   });
 });
