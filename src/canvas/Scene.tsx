@@ -213,26 +213,44 @@ function midpoint(pts: Point[]): Point {
 /* Shapes                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Automatic arrowhead length for a stroke width. */
+export const defaultHeadSize = (sw: number) => Math.max(10, Math.round(sw * 4));
+
+/** Arrowhead half-width as a fraction of its length (~48° opening). */
+const HEAD_SPREAD = 0.45;
+
+/** How far a line should stop short of the tip so it doesn't show through the head. */
+export function headInset(kind: HeadKind, size: number): number {
+  return kind === 'filled' ? size * 0.6 : 0;
+}
+
 /** Renders one arrowhead at `tip`; (x, y) is the unit vector pointing into the tip. */
 export function ArrowHeadEl({ tip, x, y, size, kind, color, sw }: { tip: Point; x: number; y: number; size: number; kind: HeadKind; color: string; sw: number }) {
   if (kind === 'none') return null;
-  if (kind === 'circle') return <circle cx={tip.x} cy={tip.y} r={Math.max(1, size * 0.4)} fill={color} stroke={color} strokeWidth={sw} />;
-  if (kind === 'bar') {
-    if (Math.abs(y) < 1e-6 && Math.abs(x) < 1e-6) return null;
-    const h = size * 0.6;
-    return <path d={`M${tip.x - y * h},${tip.y + x * h}L${tip.x + y * h},${tip.y - x * h}`} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" />;
-  }
+  if (kind === 'circle') return <circle cx={tip.x} cy={tip.y} r={Math.max(1.5, size * 0.3)} fill={color} />;
+  // perpendicular to the direction of travel
   const px = -y;
   const py = x;
-  const d = `M${tip.x - x * size + px * size * 0.5},${tip.y - y * size + py * size * 0.5}L${tip.x},${tip.y}L${tip.x - x * size - px * size * 0.5},${tip.y - y * size - py * size * 0.5}Z`;
-  return <path d={d} fill={kind === 'filled' ? color : 'none'} stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />;
+  if (kind === 'bar') {
+    const h = size * 0.5;
+    return <path d={`M${tip.x + px * h},${tip.y + py * h}L${tip.x - px * h},${tip.y - py * h}`} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" />;
+  }
+  const w = size * HEAD_SPREAD;
+  const bx = tip.x - x * size;
+  const by = tip.y - y * size;
+  const left = `${bx + px * w},${by + py * w}`;
+  const right = `${bx - px * w},${by - py * w}`;
+  if (kind === 'filled') {
+    return <path d={`M${left}L${tip.x},${tip.y}L${right}Z`} fill={color} stroke={color} strokeWidth={Math.min(sw, 2)} strokeLinejoin="round" />;
+  }
+  return <path d={`M${left}L${tip.x},${tip.y}L${right}`} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />;
 }
 
 function shapeHeads(s: ShapeItem) {
   const len = Math.hypot(s.w, s.h);
   const ux = len ? s.w / len : 1;
   const uy = len ? s.h / len : 0;
-  const size = s.headSize ?? Math.max(8, s.strokeWidth * 4);
+  const size = s.headSize ?? defaultHeadSize(s.strokeWidth);
   return { ux, uy, size, endTip: { x: s.x + s.w, y: s.y + s.h }, startTip: { x: s.x, y: s.y } };
 }
 
@@ -271,9 +289,11 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
       const { ux, uy, size, endTip, startTip } = shapeHeads(s);
       const endKind: HeadKind = s.headEnd ?? (s.kind === 'arrow' ? 'open' : 'none');
       const startKind: HeadKind = s.headStart ?? 'none';
+      const e = headInset(endKind, size);
+      const st = headInset(startKind, size);
       return (
         <g className="shape" data-id={s.id}>
-          <line x1={s.x} y1={s.y} x2={endTip.x} y2={endTip.y} stroke={ink} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinecap="round" />
+          <line x1={startTip.x + ux * st} y1={startTip.y + uy * st} x2={endTip.x - ux * e} y2={endTip.y - uy * e} stroke={ink} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinecap="round" />
           <ArrowHeadEl tip={endTip} x={ux} y={uy} size={size} kind={endKind} color={ink} sw={s.strokeWidth} />
           <ArrowHeadEl tip={startTip} x={-ux} y={-uy} size={size} kind={startKind} color={ink} sw={s.strokeWidth} />
           {s.text && (
