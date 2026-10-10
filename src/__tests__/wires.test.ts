@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, normalizeDoc, uid } from '../model/doc';
 import { clipPolylineToRect, simplify } from '../model/geometry';
-import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, solderWires, splitWire, ungroupItems } from '../model/ops';
+import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction } from '../model/ops';
+import { computeHotSpots } from '../model/hotspots';
 import { computeNets } from '../model/netlist';
 import type { CircuitDoc, WireItem } from '../model/types';
 import { buildWirePath, computeHops, crossingStack, hopLayerMap, moveWireNode, orthogonalize, restack, wireCrossings, wirePolyline } from '../model/wires';
@@ -251,5 +252,85 @@ describe('soldering and net names', () => {
     const lw = loaded.items[w.id] as WireItem & { hopOver?: boolean };
     expect(lw.hopLayer).toBe(-1);
     expect(lw.hopOver).toBeUndefined();
+  });
+});
+
+describe('closed loops (rectangles)', () => {
+  const junction = (doc: CircuitDoc, x: number, y: number) => {
+    const id = uid('j');
+    doc.items[id] = { id, type: 'junction', x, y };
+    return id;
+  };
+  const link = (doc: CircuitDoc, a: string, b: string, pts: { x: number; y: number }[] = []) => {
+    const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'junction', id: a }, b: { kind: 'junction', id: b }, pts };
+    doc.items[w.id] = w;
+    return w;
+  };
+
+  it('four wires joined corner to corner become one closed wire without losing any side', () => {
+    const doc = createDoc();
+    const [tl, tr, br, bl] = [junction(doc, 0, 0), junction(doc, 100, 0), junction(doc, 100, 100), junction(doc, 0, 100)];
+    link(doc, tl, tr);
+    link(doc, tr, br);
+    link(doc, br, bl);
+    link(doc, bl, tl);
+    cleanup(doc);
+    const wires = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire');
+    expect(wires).toHaveLength(1);
+    const poly = wirePolyline(doc, wires[0]);
+    // every corner of the rectangle is still on the wire
+    for (const c of [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]) expect(poly).toContainEqual(c);
+  });
+
+  it('keeps a loop that closes on a junction which also has a branch', () => {
+    const doc = createDoc();
+    const j = junction(doc, 0, 0);
+    const loop = link(doc, j, j, [{ x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]);
+    const stub: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'junction', id: j }, b: { kind: 'free', x: -50, y: 0 }, pts: [] };
+    doc.items[stub.id] = stub;
+    cleanup(doc);
+    // previously the loop and the stub were "merged" and the loop vanished
+    expect(doc.items[loop.id]).toBeTruthy();
+    expect(doc.items[stub.id]).toBeTruthy();
+    expect(doc.items[j]).toBeTruthy();
+    expect(wirePolyline(doc, doc.items[loop.id] as WireItem)).toHaveLength(5);
+  });
+});
+
+describe('solder / unsolder cycle', () => {
+  it('unsolders a 4-way junction back into two crossing wires and solders again', () => {
+    const doc = createDoc();
+    const h = freeWire(doc, 0, 50, 100, 50);
+    const v = freeWire(doc, 50, 0, 50, 100);
+    const jid = solderWires(doc, [h.id, v.id], { x: 50, y: 50 })!;
+    cleanup(doc);
+    expect(computeNets(doc)).toHaveLength(1);
+    expect(unsolderJunction(doc, jid)).toEqual({ through: 2, detached: 0 });
+    const wires = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire');
+    expect(wires).toHaveLength(2);
+    expect(Object.values(doc.items).some((i) => i.type === 'junction')).toBe(false);
+    expect(computeNets(doc)).toHaveLength(2);
+    // and back again
+    expect(solderWires(doc, wires.map((w) => w.id), { x: 50, y: 50 })).toBeTruthy();
+  });
+
+  it('a wire ending on another wire is a touch that can be soldered, then unsoldered back to a touch', () => {
+    const doc = createDoc();
+    const top = freeWire(doc, 0, 0, 200, 0);
+    const branch = freeWire(doc, 50, 0, 50, 100);
+    const touch = () => computeHotSpots(doc, new Map(Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire').map((w) => [w.id, wirePolyline(doc, w)])), []).find((h) => h.kind === 'touch');
+    const t = touch();
+    expect(t).toBeTruthy();
+    expect(t!.kind === 'touch' && t!.target.kind).toBe('wire');
+    if (t?.kind !== 'touch') return;
+    expect(solderTouch(doc, t.wire, t.end, t.target)).toBe(true);
+    cleanup(doc);
+    expect(computeNets(doc)).toHaveLength(1);
+    const j = Object.values(doc.items).find((i) => i.type === 'junction')!;
+    expect(unsolderJunction(doc, j.id)).toEqual({ through: 1, detached: 1 });
+    expect(computeNets(doc)).toHaveLength(2);
+    expect(touch()).toBeTruthy();
+    void top;
+    void branch;
   });
 });

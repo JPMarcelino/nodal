@@ -40,7 +40,7 @@ const LABEL_SYMBOLS = /^$/;
 export interface SceneData {
   polys: Map<string, Point[]>;
   hops: Map<string, Hop[]>;
-  /** Drawn wire crossings (empty when crossings are plain). */
+  /** Every point where two wires cross without being connected. */
   crossings: Crossing[];
   /** Wire stacking layers (hopLayer) of the wires that set one. */
   layers: Map<string, number>;
@@ -65,10 +65,10 @@ export function computeSceneData(doc: CircuitDoc): SceneData {
       if (ep.kind === 'junction') junctionDegree.set(ep.id, (junctionDegree.get(ep.id) ?? 0) + 1);
     }
   }
-  // crossings only matter when they are drawn (hop arcs or gaps)
-  const crossings = doc.settings.hops === 'none' ? [] : wireCrossings(polys);
+  // crossings are always found (they offer a hover menu); arcs only when hops are drawn
+  const crossings = wireCrossings(polys);
   const layers = hopLayerMap(Object.values(doc.items));
-  const hops = hopsFromCrossings(crossings, doc.settings.hopSize, layers);
+  const hops = doc.settings.hops === 'none' ? new Map<string, Hop[]>() : hopsFromCrossings(crossings, doc.settings.hopSize, layers);
   return { polys, hops, crossings, layers, portDegree, junctionDegree };
 }
 
