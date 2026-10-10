@@ -90,11 +90,12 @@ interface Seg {
 }
 
 /**
- * Finds wire crossings. At each crossing the more horizontal segment hops
- * over the more vertical one (ties broken by wire id), so every crossing is
- * drawn exactly once.
+ * Finds wire crossings. At each crossing one wire hops over the other: an
+ * explicit per-wire preference (hopOver, true = hop / false = stay flat) wins,
+ * otherwise the more horizontal segment hops over the more vertical one (ties
+ * broken by wire id), so every crossing is drawn exactly once.
  */
-export function computeHops(polys: Map<string, Point[]>, hopSize: number): Map<string, Hop[]> {
+export function computeHops(polys: Map<string, Point[]>, hopSize: number, hopPref?: Map<string, boolean>): Map<string, Hop[]> {
   const segs: Seg[] = [];
   for (const [wire, pts] of polys) {
     for (let i = 0; i < pts.length - 1; i++) {
@@ -130,9 +131,16 @@ export function computeHops(polys: Map<string, Point[]>, hopSize: number): Map<s
       const dt = hit.u * lt;
       // touching at an end is a connection or a corner, not a crossing
       if (ds < margin || ls - ds < margin || dt < margin || lt - dt < margin) continue;
+      const ps = hopPref?.get(s.wire);
+      const pt = hopPref?.get(t.wire);
       let hopper: Seg;
       let d: number;
-      if (s.horiz !== t.horiz) [hopper, d] = s.horiz ? [s, ds] : [t, dt];
+      if (ps === true) [hopper, d] = [s, ds];
+      else if (pt === true) [hopper, d] = [t, dt];
+      else if (ps === false && pt === false) [hopper, d] = s.horiz !== t.horiz ? (s.horiz ? [s, ds] : [t, dt]) : s.wire > t.wire ? [s, ds] : [t, dt];
+      else if (ps === false) [hopper, d] = [t, dt];
+      else if (pt === false) [hopper, d] = [s, ds];
+      else if (s.horiz !== t.horiz) [hopper, d] = s.horiz ? [s, ds] : [t, dt];
       else [hopper, d] = s.wire > t.wire ? [s, ds] : [t, dt];
       const hl = hopper === s ? ls : lt;
       if (d < hopSize || hl - d < hopSize) continue;
@@ -142,6 +150,13 @@ export function computeHops(polys: Map<string, Point[]>, hopSize: number): Map<s
     }
   }
   return hops;
+}
+
+/** Builds the hopOver map for a set of items. */
+export function hopPrefMap(items: Iterable<{ type: string; id: string; hopOver?: boolean }>): Map<string, boolean> {
+  const m = new Map<string, boolean>();
+  for (const it of items) if (it.type === 'wire' && it.hopOver !== undefined) m.set(it.id, it.hopOver);
+  return m;
 }
 
 /* ------------------------------------------------------------------ */

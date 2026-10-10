@@ -119,6 +119,8 @@ export interface WireItem extends ItemBase {
   style?: Partial<WireStyle>;
   /** 'straight' allows diagonal segments instead of automatic orthogonal elbows. */
   routing?: 'ortho' | 'straight';
+  /** Which wire hops at a crossing: true = hop over, false = stay flat under, undefined = document default. */
+  hopOver?: boolean;
   label?: string;
 }
 
@@ -129,6 +131,8 @@ export interface JunctionItem extends ItemBase {
 }
 
 export type ShapeKind = 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text';
+
+export type HeadKind = 'none' | 'open' | 'filled' | 'circle' | 'bar';
 
 export interface ShapeItem extends ItemBase {
   type: 'shape';
@@ -141,10 +145,15 @@ export interface ShapeItem extends ItemBase {
   strokeWidth: number;
   fill: string;
   fillOpacity: number;
-  dash: Dash;
-  radius: number;
-  /** 'below' renders behind wires and components; 'above' on top of everything. */
-  layer: 'below' | 'above';
+   dash: Dash;
+   radius: number;
+   /** Arrowhead at the start / end point (line & arrow shapes). */
+   headStart?: HeadKind;
+   headEnd?: HeadKind;
+   /** Arrowhead length in px; undefined = auto (stroke width based). */
+   headSize?: number;
+   /** 'below' renders behind wires and components; 'above' on top of everything. */
+   layer: 'below' | 'above';
   text?: string;
   fontSize?: number;
   textColor?: string;

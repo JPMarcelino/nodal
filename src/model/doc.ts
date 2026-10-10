@@ -13,7 +13,7 @@ export const DEFAULT_SETTINGS: DocSettings = {
   grid: 10,
   showGrid: true,
   snap: true,
-  wire: { color: '#3ddc97', width: 2, radius: 0, dash: 'solid' },
+  wire: { color: '#000000', width: 2, radius: 0, dash: 'solid' },
   hops: 'arc',
   hopSize: 5,
   junctionSize: 4,
@@ -104,9 +104,9 @@ export function makeComponent(doc: CircuitDoc, symbolId: string, x: number, y: n
 export const SHAPE_DEFAULTS: Record<ShapeKind, Partial<ShapeItem>> = {
   rect: { stroke: '#7aa2f7', strokeWidth: 2, fill: '#7aa2f7', fillOpacity: 0, dash: 'dashed', radius: 6, layer: 'below' },
   zone: { stroke: '#7aa2f7', strokeWidth: 1, fill: '#7aa2f7', fillOpacity: 0.12, dash: 'solid', radius: 8, layer: 'below' },
-  ellipse: { stroke: '#e0af68', strokeWidth: 2, fill: '#e0af68', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
-  line: { stroke: '#a9b1d6', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above' },
-  arrow: { stroke: '#f7768e', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above' },
+  ellipse: { stroke: '#000000', strokeWidth: 2, fill: '#000000', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
+  line: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'none', layer: 'above' },
+  arrow: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'open', layer: 'above' },
   text: { stroke: 'none', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above', fontSize: 16, text: 'Text' },
 };
 

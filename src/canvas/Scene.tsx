@@ -1,8 +1,8 @@
 import { memo, useMemo } from 'react';
 import { componentBounds, sideVector, toWorld } from '../model/geometry';
 import { getSymbol } from '../model/registry';
-import type { CircuitDoc, ComponentItem, Dash, DocSettings, Point, ShapeItem, SymbolDef, WireItem } from '../model/types';
-import { buildWirePath, computeHops, portPosition, wirePolyline, wireStyle, type Hop } from '../model/wires';
+import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, ShapeItem, SymbolDef, WireItem } from '../model/types';
+import { buildWirePath, computeHops, hopPrefMap, portPosition, wirePolyline, wireStyle, type Hop } from '../model/wires';
 import { SymbolBody } from './SymbolGraphic';
 
 export interface Palette {
@@ -55,7 +55,7 @@ export function computeSceneData(doc: CircuitDoc): SceneData {
       if (ep.kind === 'junction') junctionDegree.set(ep.id, (junctionDegree.get(ep.id) ?? 0) + 1);
     }
   }
-  const hops = doc.settings.hops === 'none' ? new Map() : computeHops(polys, doc.settings.hopSize);
+  const hops = doc.settings.hops === 'none' ? new Map() : computeHops(polys, doc.settings.hopSize, hopPrefMap(Object.values(doc.items)));
   return { polys, hops, portDegree, junctionDegree };
 }
 
@@ -204,6 +204,29 @@ function midpoint(pts: Point[]): Point {
 /* Shapes                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Renders one arrowhead at `tip`; (x, y) is the unit vector pointing into the tip. */
+export function ArrowHeadEl({ tip, x, y, size, kind, color, sw }: { tip: Point; x: number; y: number; size: number; kind: HeadKind; color: string; sw: number }) {
+  if (kind === 'none') return null;
+  if (kind === 'circle') return <circle cx={tip.x} cy={tip.y} r={Math.max(1, size * 0.4)} fill={color} stroke={color} strokeWidth={sw} />;
+  if (kind === 'bar') {
+    if (Math.abs(y) < 1e-6 && Math.abs(x) < 1e-6) return null;
+    const h = size * 0.6;
+    return <path d={`M${tip.x - y * h},${tip.y + x * h}L${tip.x + y * h},${tip.y - x * h}`} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" />;
+  }
+  const px = -y;
+  const py = x;
+  const d = `M${tip.x - x * size + px * size * 0.5},${tip.y - y * size + py * size * 0.5}L${tip.x},${tip.y}L${tip.x - x * size - px * size * 0.5},${tip.y - y * size - py * size * 0.5}Z`;
+  return <path d={d} fill={kind === 'filled' ? color : 'none'} stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />;
+}
+
+function shapeHeads(s: ShapeItem) {
+  const len = Math.hypot(s.w, s.h);
+  const ux = len ? s.w / len : 1;
+  const uy = len ? s.h / len : 0;
+  const size = s.headSize ?? Math.max(8, s.strokeWidth * 4);
+  return { ux, uy, size, endTip: { x: s.x + s.w, y: s.y + s.h }, startTip: { x: s.x, y: s.y } };
+}
+
 export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem; palette: Palette }) {
   const da = dashArray(s.dash, s.strokeWidth || 1);
   const stroke = s.strokeWidth > 0 ? s.stroke : 'none';
@@ -235,20 +258,14 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
       );
     case 'line':
     case 'arrow': {
-      const x2 = s.x + s.w;
-      const y2 = s.y + s.h;
-      const len = Math.hypot(s.w, s.h) || 1;
-      const ux = s.w / len;
-      const uy = s.h / len;
-      const ah = Math.max(8, s.strokeWidth * 4);
-      const head =
-        s.kind === 'arrow'
-          ? `M${x2 - ux * ah - uy * ah * 0.5},${y2 - uy * ah + ux * ah * 0.5}L${x2},${y2}L${x2 - ux * ah + uy * ah * 0.5},${y2 - uy * ah - ux * ah * 0.5}`
-          : '';
+      const { ux, uy, size, endTip, startTip } = shapeHeads(s);
+      const endKind: HeadKind = s.headEnd ?? (s.kind === 'arrow' ? 'open' : 'none');
+      const startKind: HeadKind = s.headStart ?? 'none';
       return (
         <g className="shape" data-id={s.id}>
-          <line x1={s.x} y1={s.y} x2={x2} y2={y2} stroke={s.stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinecap="round" />
-          {head && <path d={head} fill="none" stroke={s.stroke} strokeWidth={s.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />}
+          <line x1={s.x} y1={s.y} x2={endTip.x} y2={endTip.y} stroke={s.stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinecap="round" />
+          <ArrowHeadEl tip={endTip} x={ux} y={uy} size={size} kind={endKind} color={s.stroke} sw={s.strokeWidth} />
+          <ArrowHeadEl tip={startTip} x={-ux} y={-uy} size={size} kind={startKind} color={s.stroke} sw={s.strokeWidth} />
           {s.text && (
             <text x={s.x + s.w / 2} y={s.y + s.h / 2 - 6} textAnchor="middle" fontSize={s.fontSize ?? 13} fill={textColor}>
               {s.text}

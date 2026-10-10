@@ -23,7 +23,7 @@ import { measureText } from '../canvas/Scene';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { computeNets, netOfWire } from '../model/netlist';
 import { getSymbol } from '../model/registry';
-import type { ComponentItem, Dash, DocSettings, ShapeItem, WireItem, WireStyle } from '../model/types';
+import type { ComponentItem, Dash, DocSettings, HeadKind, ShapeItem, WireItem, WireStyle } from '../model/types';
 import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './controls';
@@ -32,6 +32,14 @@ const DASHES: { value: Dash; label: string }[] = [
   { value: 'solid', label: 'Solid' },
   { value: 'dashed', label: 'Dashed' },
   { value: 'dotted', label: 'Dotted' },
+];
+
+const HEAD_KINDS: { value: HeadKind; label: string; title?: string }[] = [
+  { value: 'none', label: 'None', title: 'Plain end' },
+  { value: 'open', label: 'Open', title: 'Two-stroke V arrowhead' },
+  { value: 'filled', label: 'Solid', title: 'Filled triangle arrowhead' },
+  { value: 'circle', label: 'Dot', title: 'Filled dot' },
+  { value: 'bar', label: 'Bar', title: 'Perpendicular tick' },
 ];
 
 function ArrangeBar({ count }: { count: number }) {
@@ -338,6 +346,25 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
             onChange={(v) => mutate((d) => ids.forEach((id) => ((d.items[id] as WireItem).routing = v)))}
           />
         </Field>
+        <Field label="Crossings">
+          <Segmented
+            value={first.hopOver === undefined ? 'default' : first.hopOver ? 'over' : 'under'}
+            options={[
+              { value: 'default', label: 'Default' },
+              { value: 'over', label: 'Hop over' },
+              { value: 'under', label: 'Stay under' },
+            ]}
+            onChange={(v) =>
+              mutate((d) =>
+                ids.forEach((id) => {
+                  const w = d.items[id] as WireItem;
+                  if (v === 'default') delete w.hopOver;
+                  else w.hopOver = v === 'over';
+                }),
+              )
+            }
+          />
+        </Field>
         <div className="btn-row">
           <button className="secondary-btn" onClick={() => mutate((d) => ids.forEach((id) => delete (d.items[id] as WireItem).style))}>
             Use default
@@ -439,6 +466,19 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
           <Field label="Line">
             <Segmented value={first.dash} options={DASHES} onChange={(v) => upd((s) => (s.dash = v))} />
           </Field>
+          {isLine && (
+            <>
+              <Field label="Start arrowhead">
+                <Segmented value={first.headStart ?? 'none'} options={HEAD_KINDS} onChange={(v) => upd((s) => (s.headStart = v))} />
+              </Field>
+              <Field label="End arrowhead">
+                <Segmented value={first.headEnd ?? (first.kind === 'arrow' ? 'open' : 'none')} options={HEAD_KINDS} onChange={(v) => upd((s) => (s.headEnd = v))} />
+              </Field>
+              <Field label="Arrowhead size">
+                <NumberInput value={first.headSize ?? Math.max(8, first.strokeWidth * 4)} min={2} max={80} suffix="px" onChange={(v) => upd((s) => (s.headSize = v))} />
+              </Field>
+            </>
+          )}
           {(first.kind === 'rect' || first.kind === 'zone') && (
             <Field label="Corner radius">
               <NumberInput value={first.radius} min={0} max={200} suffix="px" onChange={(v) => upd((s) => (s.radius = v))} />

@@ -3,11 +3,12 @@ import { itemBounds, makeShape, uid } from '../model/doc';
 import { dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, simplify, snap, toWorld } from '../model/geometry';
 import { cleanup, splitWire, translateItems } from '../model/ops';
 import { getSymbol } from '../model/registry';
-import type { CircuitDoc, ComponentItem, Endpoint, Point, Rect, ShapeItem, ShapeKind, WireItem } from '../model/types';
+import type { CircuitDoc, ComponentItem, Endpoint, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
 import { buildWirePath, endpointInfo, hitWire, snapOnSegment, wirePolyline } from '../model/wires';
+import { runAreaExport } from '../io/fileActions';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, useStore } from '../store/store';
-import { ComponentView, EDITOR_PALETTE, Scene, dashArray, measureText, useSceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, dashArray, measureText, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 
 /* ------------------------------------------------------------------ */
@@ -38,6 +39,7 @@ type Gesture =
   | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean }
   | { kind: 'endpoint'; wire: string; end: 'a' | 'b'; cur: Target }
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
+  | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
   | { kind: 'label'; id: string; start: Point; base: { dx: number; dy: number } };
 
@@ -45,6 +47,36 @@ const ORTHO_EPS = 0.01;
 
 /** Live hooks for the global keyboard handler. */
 export const canvasKeys: { handle: ((combo: string) => boolean) | null } = { handle: null };
+
+/* ------------------------------------------------------------------ */
+/* Tool indicator cursors                                              */
+/* ------------------------------------------------------------------ */
+
+const PLUS_GLYPH = '<path d="M6.5 3.5v6M3.5 6.5h6" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round"/>';
+const AREA_GLYPH = '<path d="M3.5 5.5v-2h2M8.5 3.5h2v2M10.5 8.5v2h-2M5.5 10.5h-2v-2" stroke="#1f2433" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
+const BADGE_GLYPHS: Partial<Record<Tool, string>> = {
+  wire: '<polyline points="3,5 5.5,5 6.5,9.5 10,4" fill="none" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
+  rect: '<rect x="3" y="3.5" width="7" height="6" rx="1" fill="none" stroke="#1f2433" stroke-width="1.4"/>',
+  zone: '<rect x="3" y="3.5" width="7" height="6" rx="1" fill="#1f2433" fill-opacity="0.35" stroke="#1f2433" stroke-width="1.4"/>',
+  ellipse: '<circle cx="6.5" cy="6.5" r="3.4" fill="none" stroke="#1f2433" stroke-width="1.4"/>',
+  line: '<path d="M3 9.5L9.5 3.5" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round"/>',
+  arrow: '<path d="M3 9.5L9 3.5M6.4 3.5H9v2.6" fill="none" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
+  text: '<text x="6.5" y="9.8" font-family="sans-serif" font-size="9" fill="#1f2433" text-anchor="middle" stroke="none">T</text>',
+};
+
+/** CSS cursor with a small tool badge in the corner; hotspot stays on the crosshair centre. */
+export function badgeCursor(t: Tool | 'plus' | 'area'): string | null {
+  const glyph = t === 'plus' ? PLUS_GLYPH : t === 'area' ? AREA_GLYPH : BADGE_GLYPHS[t];
+  if (!glyph) return null;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">`
+    + `<g stroke="#ffffff" stroke-width="2.6" opacity="0.55"><path d="M12 0v8M12 16v8M0 12h8M16 12h8" stroke-linecap="round"/></g>`
+    + `<g stroke="#6b7280" stroke-width="1.4"><path d="M12 0v8M12 16v8M0 12h8M16 12h8" stroke-linecap="round"/></g>`
+    + `<rect x="0.75" y="0.75" width="13" height="13" rx="3.25" fill="#ffffff" stroke="#555f89" stroke-width="1"/>`
+    + glyph
+    + `</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
+}
 
 export function Canvas() {
   const doc = useStore((s) => s.doc);
@@ -55,6 +87,7 @@ export function Canvas() {
   const highlight = useStore((s) => s.highlight);
   const prefs = useStore((s) => s.prefs);
   const scope = useStore((s) => s.scope);
+  const exportAreaJob = useStore((s) => s.exportArea);
   const data = useSceneData(doc);
   const wrapRef = useRef<HTMLDivElement>(null);
   const gRef = useRef<Gesture | null>(null);
@@ -331,6 +364,13 @@ export function Canvas() {
 
   useEffect(() => {
     canvasKeys.handle = (combo: string) => {
+      if (S().exportArea) {
+        if (combo === 'Escape') {
+          set({ exportArea: null });
+          setGesture(null);
+        }
+        return true;
+      }
       const g = gRef.current;
       if (g?.kind === 'wire') {
         if (combo === 'Escape') {
@@ -400,6 +440,12 @@ export function Canvas() {
     const now = performance.now();
     const isDouble = now - lastClick.current.t < 350 && dist(lastClick.current.p, client) < 6;
     lastClick.current = { t: now, p: client };
+
+    // export-area mode: any drag defines the export rectangle
+    if (S().exportArea) {
+      setGesture({ kind: 'exportArea', start: sp(w), cur: sp(w) });
+      return;
+    }
 
     // ongoing click-to-click wire
     const g = gRef.current;
@@ -630,6 +676,9 @@ export function Canvas() {
       case 'shape':
         setGesture({ ...g, cur: e.altKey ? w : sp(w) });
         break;
+      case 'exportArea':
+        setGesture({ ...g, cur: sp(w) });
+        break;
       case 'resize': {
         const p = snapOn ? sp(w) : w;
         gestureUpdate((d) => {
@@ -768,6 +817,17 @@ export function Canvas() {
         if (!e.shiftKey) A.setTool('select');
         break;
       }
+      case 'exportArea': {
+        const r = rectFromPoints(g.start, g.cur);
+        setGesture(null);
+        runAreaExport({
+          x: snap(r.x, grid),
+          y: snap(r.y, grid),
+          w: snap(Math.max(r.w, grid), grid),
+          h: snap(Math.max(r.h, grid), grid),
+        });
+        break;
+      }
     }
   };
 
@@ -787,6 +847,10 @@ export function Canvas() {
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (S().exportArea) {
+      set({ exportArea: null });
+      return;
+    }
     if (gRef.current?.kind === 'wire') {
       setGesture(null);
       return;
@@ -819,20 +883,24 @@ export function Canvas() {
   const dotGrid = gs >= 7;
 
   const g = gesture;
-  const cursorStyle =
+  const cursorStyle: string =
     g?.kind === 'pan' || spaceDown || tool === 'pan'
       ? g?.kind === 'pan'
         ? 'grabbing'
         : 'grab'
-      : placing || tool !== 'select'
-        ? 'crosshair'
-        : hover.port
-          ? 'crosshair'
-          : g?.kind === 'move'
-            ? 'move'
-            : hover.item
-              ? 'pointer'
-              : 'default';
+      : exportAreaJob
+        ? badgeCursor('area') ?? 'crosshair'
+        : g?.kind === 'move'
+          ? 'move'
+          : placing || tool !== 'select'
+            ? badgeCursor(tool === 'select' ? 'plus' : tool) ?? 'crosshair'
+            : g?.kind === 'wire'
+              ? badgeCursor(tool) ?? 'crosshair'
+              : hover.port
+                ? 'crosshair'
+                : hover.item
+                  ? 'pointer'
+                  : 'default';
 
   const ghost: ComponentItem | null = placing
     ? {
@@ -936,6 +1004,10 @@ export function Canvas() {
             const crossing = g.cur.x < g.start.x;
             return <rect x={r.x} y={r.y} width={r.w} height={r.h} className={crossing ? 'marquee crossing' : 'marquee'} strokeWidth={1 / z} strokeDasharray={crossing ? `${4 / z} ${3 / z}` : undefined} />;
           })()}
+          {g?.kind === 'exportArea' && (() => {
+            const r = rectFromPoints(g.start, g.cur);
+            return <rect x={r.x} y={r.y} width={r.w} height={r.h} className="marquee crossing" strokeWidth={1.5 / z} strokeDasharray={`${5 / z} ${4 / z}`} />;
+          })()}
           {g?.kind === 'wire' && (() => {
             const pts = wirePreview(g);
             const st = { ...doc.settings.wire, ...S().wireBrush };
@@ -966,6 +1038,11 @@ export function Canvas() {
       )}
       {editingText && <TextEditor id={editingText} onDone={() => setEditingText(null)} />}
       {prefs.showMinimap && <Minimap data={data} />}
+      {exportAreaJob && (
+        <div className="canvas-hint">
+          Drag a rectangle over the region to export · <kbd>Esc</kbd>/<kbd>right-click</kbd> cancel
+        </div>
+      )}
       {g?.kind === 'wire' && (
         <div className="canvas-hint">
           Click to add bends · click a pin, wire or junction to connect · <kbd>Space</kbd> flip elbow · <kbd>⌫</kbd> undo bend · <kbd>Enter</kbd>/double-click to finish · <kbd>Esc</kbd> cancel
@@ -1018,7 +1095,17 @@ function TargetMarker({ t, z, subtle }: { t: Target; z: number; subtle?: boolean
 
 function ShapePreview({ g }: { g: Extract<Gesture, { kind: 'shape' }> }) {
   const r = rectFromPoints(g.start, g.cur);
-  if (g.shape === 'line' || g.shape === 'arrow') return <line x1={g.start.x} y1={g.start.y} x2={g.cur.x} y2={g.cur.y} className="shape-preview" />;
+  if (g.shape === 'line' || g.shape === 'arrow') {
+    const len = Math.hypot(g.cur.x - g.start.x, g.cur.y - g.start.y) || 1;
+    const ux = (g.cur.x - g.start.x) / len;
+    const uy = (g.cur.y - g.start.y) / len;
+    return (
+      <g>
+        <line x1={g.start.x} y1={g.start.y} x2={g.cur.x} y2={g.cur.y} className="shape-preview" />
+        {g.shape === 'arrow' && <ArrowHeadEl tip={g.cur} x={ux} y={uy} size={12} kind="open" color="var(--accent)" sw={1.5} />}
+      </g>
+    );
+  }
   if (g.shape === 'ellipse') return <ellipse cx={r.x + r.w / 2} cy={r.y + r.h / 2} rx={r.w / 2} ry={r.h / 2} className="shape-preview" />;
   return <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={g.shape === 'zone' ? 8 : 6} className={g.shape === 'zone' ? 'shape-preview zone' : 'shape-preview'} />;
 }
