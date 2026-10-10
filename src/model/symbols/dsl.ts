@@ -1,4 +1,4 @@
-import type { Fill, FieldDef, PortDef, Prim, Side, SymbolDef } from '../types';
+import type { Fill, FieldDef, PortDef, Prim, Side, SymbolDef, VariantRef } from '../types';
 
 /**
  * Symbol DSL — one command per line (or separated by `;`). Coordinates are in
@@ -120,6 +120,12 @@ export interface SymbolSpec {
   keywords?: string;
   hideLabels?: boolean;
   valueIsLabel?: boolean;
+  /** This drawing is a "type" of another symbol. */
+  variantOf?: string;
+  /** Label of this type, e.g. "Type B — source arrow". */
+  variantName?: string;
+  /** Alternative drawings offered for this symbol. */
+  variants?: VariantRef[];
 }
 
 /** Field shorthand: "Power rating=0.25W, Tolerance=±5%". */
@@ -134,6 +140,16 @@ export function parseFields(f: FieldDef[] | string | undefined): FieldDef[] | un
       const [label, def] = s.split('=').map((p) => p.trim());
       return { key: label.toLowerCase().replace(/[^a-z0-9]+/g, '_'), label, default: def };
     });
+}
+
+/**
+ * Groups a base symbol with its alternative drawings. Returns them as a flat
+ * list (base first) and records the variant refs on the base so the library can
+ * offer a type picker. The variant defs carry `variantOf`/`variantName`.
+ */
+export function types(base: SymbolDef, ...variants: SymbolDef[]): SymbolDef[] {
+  if (variants.length) base.variants = variants.map((v) => ({ id: v.id, name: v.variantName ?? v.name }));
+  return [base, ...variants];
 }
 
 export function sym(id: string, name: string, category: string, s: SymbolSpec): SymbolDef {
@@ -151,6 +167,9 @@ export function sym(id: string, name: string, category: string, s: SymbolSpec): 
     fields: parseFields(s.fields),
     hideLabels: s.hideLabels,
     valueIsLabel: s.valueIsLabel,
+    variantOf: s.variantOf,
+    variantName: s.variantName,
+    variants: s.variants,
   };
 }
 
@@ -167,6 +186,10 @@ export interface SymbolSource {
   value: string;
   fields: string;
   keywords: string;
+  /** Id of the symbol this drawing is a "type" of, if any. */
+  variantOf?: string;
+  /** Label of this type. */
+  variantName?: string;
 }
 
 export function compileSource(src: SymbolSource): SymbolDef {
@@ -179,6 +202,8 @@ export function compileSource(src: SymbolSource): SymbolDef {
     value: src.value,
     fields: src.fields,
     keywords: src.keywords,
+    variantOf: src.variantOf || undefined,
+    variantName: src.variantName || undefined,
   });
   def.custom = true;
   def.source = JSON.stringify(src);
@@ -188,7 +213,11 @@ export function compileSource(src: SymbolSource): SymbolDef {
 export function sourceOf(def: SymbolDef): SymbolSource {
   if (def.source) {
     try {
-      return JSON.parse(def.source) as SymbolSource;
+      const parsed = JSON.parse(def.source) as SymbolSource;
+      // older sources may pre-date the variant fields
+      if (def.variantOf && parsed.variantOf === undefined) parsed.variantOf = def.variantOf;
+      if (def.variantName && parsed.variantName === undefined) parsed.variantName = def.variantName;
+      return parsed;
     } catch {
       /* fall through */
     }
@@ -205,6 +234,8 @@ export function sourceOf(def: SymbolDef): SymbolSource {
     value: def.value ?? '',
     fields: (def.fields ?? []).map((f) => (f.default ? `${f.label}=${f.default}` : f.label)).join(', '),
     keywords: def.keywords ?? '',
+    variantOf: def.variantOf,
+    variantName: def.variantName,
   };
 }
 

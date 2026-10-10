@@ -16,8 +16,10 @@ export type Tool = 'select' | 'line' | 'poly' | 'rect' | 'circle' | 'ellipse' | 
 type P = { x: number; y: number };
 
 const TOOL_KEYS: Record<Tool, string> = { select: 'V', line: 'L', poly: 'P', rect: 'R', circle: 'C', ellipse: 'E', text: 'T', pin: 'N' };
-const r20 = (v: number) => Math.max(20, Math.round(v / 20) * 20);
-const s10 = (v: number) => Math.round(v / 10) * 10;
+/** The one grid everything in the symbol editor snaps to (same as the schematic). */
+const GRID = 10;
+const r10 = (v: number) => Math.max(20, Math.round(v / GRID) * GRID);
+const s10 = (v: number) => Math.round(v / GRID) * GRID;
 
 /* ------------------------------------------------------------------ */
 /* Primitive geometry                                                  */
@@ -276,7 +278,7 @@ export function SymbolDrawPane({
     return { x: (e.clientX - r.left - view.x) / view.zoom, y: (e.clientY - r.top - view.y) / view.zoom };
   };
   const snap = (p: P, free = false): P => {
-    const step = free || !snapOn ? 1 : 5;
+    const step = free || !snapOn ? 1 : GRID;
     return { x: Math.round(p.x / step) * step, y: Math.round(p.y / step) * step };
   };
 
@@ -404,7 +406,7 @@ export function SymbolDrawPane({
       const base = combo.replace('Shift+', '');
       if (arrows[base]) {
         take();
-        const step = combo.startsWith('Shift+') || !snapOn ? 1 : 5;
+        const step = combo.startsWith('Shift+') || !snapOn ? 1 : GRID;
         const [dx, dy] = [arrows[base][0] * step, arrows[base][1] * step];
         if (poly) return setPoly([...poly.slice(0, -2), poly[poly.length - 2] + dx, poly[poly.length - 1] + dy]);
         updSel((p) => movePrim(p, dx, dy), `nudge-${valid.join(',')}`);
@@ -532,8 +534,8 @@ export function SymbolDrawPane({
         return;
       }
       case 'size': {
-        const w = g.key === 's' ? g.base.w : r20(raw.x);
-        const h = g.key === 'e' ? g.base.h : r20(raw.y);
+        const w = g.key === 's' ? g.base.w : r10(raw.x);
+        const h = g.key === 'e' ? g.base.h : r10(raw.y);
         if (w === src.w && h === src.h) return;
         apply((s) => {
           s.src.w = Math.min(400, w);
@@ -626,7 +628,7 @@ export function SymbolDrawPane({
           <Redo2 size={15} />
         </button>
         <span className="rail-sep v" />
-        <button className={snapOn ? 'tool-btn active-soft' : 'tool-btn'} title={`Snap to the 5px grid: ${snapOn ? 'on' : 'off'} (hold Alt to ignore)`} onClick={() => setSnapOn(!snapOn)}>
+        <button className={snapOn ? 'tool-btn active-soft' : 'tool-btn'} title={`Snap to the ${GRID}px grid: ${snapOn ? 'on' : 'off'} (hold Alt to ignore)`} onClick={() => setSnapOn(!snapOn)}>
           <Magnet size={15} />
         </button>
         <span className="grow" />
@@ -645,8 +647,8 @@ export function SymbolDrawPane({
           </button>
         </span>
         <span className="se-size">
-          <NumberInput value={src.w} min={20} max={400} step={20} suffix="w" onChange={(v) => apply((s) => void (s.src.w = r20(v)))} />
-          <NumberInput value={src.h} min={20} max={400} step={20} suffix="h" onChange={(v) => apply((s) => void (s.src.h = r20(v)))} />
+          <NumberInput value={src.w} min={20} max={400} step={GRID} suffix="w" onChange={(v) => apply((s) => void (s.src.w = r10(v)))} />
+          <NumberInput value={src.h} min={20} max={400} step={GRID} suffix="h" onChange={(v) => apply((s) => void (s.src.h = r10(v)))} />
         </span>
       </div>
 
@@ -716,14 +718,14 @@ export function SymbolDrawPane({
       <div ref={wrapRef} className="se-canvas" style={{ cursor: cursorStyle }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => setG(null)} onDoubleClick={() => poly && finishPoly()}>
         <svg width="100%" height="100%">
           <defs>
-            <pattern id="se-grid" width={5 * z} height={5 * z} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
+            <pattern id="se-grid" width={GRID * z} height={GRID * z} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
               <circle cx={0.6} cy={0.6} r={0.6} className="grid-dot" />
             </pattern>
-            <pattern id="se-grid10" width={10 * z} height={10 * z} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
+            <pattern id="se-grid10" width={2 * GRID * z} height={2 * GRID * z} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
               <circle cx={1} cy={1} r={1.2} className="grid-dot-major" />
             </pattern>
           </defs>
-          {5 * z >= 6 && <rect width="100%" height="100%" fill="url(#se-grid)" />}
+          {GRID * z >= 7 && <rect width="100%" height="100%" fill="url(#se-grid)" />}
           <rect width="100%" height="100%" fill="url(#se-grid10)" />
           <g transform={`translate(${view.x} ${view.y}) scale(${z})`}>
             <rect x={0} y={0} width={src.w} height={src.h} className="se-bounds" strokeWidth={1 / z} strokeDasharray={`${3 / z} ${3 / z}`} />
@@ -779,7 +781,7 @@ export function SymbolDrawPane({
       </div>
       <div className="se-help muted small">
         <div className="se-tool-note">{toolNote}</div>
-        Wheel zooms · Space / middle-drag pans · <kbd>0</kbd> fit · <kbd>Esc</kbd> cancels, then deselects · <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd> copy/paste/duplicate · arrows nudge (Shift: 1px). Pins sit on the dashed outline (10px grid); size is kept to multiples of 20.
+        Wheel zooms · Space / middle-drag pans · <kbd>0</kbd> fit · <kbd>Esc</kbd> cancels, then deselects · <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd> copy/paste/duplicate · arrows nudge (Shift: 1px). Everything — the drawing, the pins and the dashed outline — snaps to the same 10px grid.
       </div>
     </div>
   );

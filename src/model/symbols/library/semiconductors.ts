@@ -1,16 +1,32 @@
 import { chip } from '../chip';
-import { sym } from '../dsl';
+import { sym, types } from '../dsl';
 
 const C = 'Semiconductors';
 const DIODE = 'L 0 20 20 20; GF 20 10 20 30 38 20; L 38 20 60 20';
+// hollow-triangle diode body (alternate drafting style)
+const DIODE_HOLLOW = 'L 0 20 20 20; G 20 10 20 30 38 20; L 38 20 60 20';
 const BAR = 'W 2.5; L 38 10 38 30; W 2';
 const OUT_ARROWS = 'L 30 9 37 2; GF 38.5 0.5 32.9 2.6 36.4 6.1; L 38 11 45 4; GF 46.5 2.5 40.9 4.6 44.4 8.1';
 const IN_ARROWS = 'L 46 0 39 7; GF 37.5 8.5 39.6 2.9 43.1 6.4; L 54 2 47 9; GF 45.5 10.5 47.6 4.9 51.1 8.4';
 // BJT geometry (60×60): base left, collector top, emitter bottom
 const BJT = 'L 20 24 40 12 40 0; L 20 36 40 48 40 60; W 3; L 20 14 20 46; W 2';
+// MOSFET geometry (60×60). Three drafting types:
+//   A — substrate arrow + three channel bars (classic)
+//   B — gate centred, single channel bar, filled arrow on the source lead
+//   C — no substrate arrow; the P-channel carries an inversion bubble at its gate
+const MOS_GATE = 'W 2.5; L 16 18 16 42; L 22 14 22 22; L 22 26 22 34; L 22 38 22 46; W 2';
+const NMOS_A = `L 0 40 16 40; ${MOS_GATE}; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 42; GF 23 30 30 26.5 30 33.5`;
+const PMOS_A = `L 0 20 16 20; ${MOS_GATE}; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 18; GF 39 30 32 26.5 32 33.5`;
+const NMOS_B = 'L 0 30 14 30; W 2.5; L 14 12 14 48; L 20 12 20 48; W 2; L 20 16 40 16 40 0; L 20 44 40 44 40 60; GF 20 44 27 40.5 27 47.5';
+const PMOS_B = 'L 0 30 14 30; W 2.5; L 14 12 14 48; L 20 12 20 48; W 2; L 20 16 40 16 40 0; L 20 44 40 44 40 60; GF 27 16 20 12.5 20 19.5';
+const NMOS_C = `L 0 40 16 40; ${MOS_GATE}; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 42`;
+const PMOS_C = `L 0 20 9 20; C 12.5 20 3.5; ${MOS_GATE}; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 18`;
 
 export const semiconductors = [
-  sym('diode', 'Diode', C, { w: 60, h: 40, prefix: 'D', value: '1N4148', fields: 'Package=SOD-123', keywords: 'rectifier signal', draw: `${DIODE}; ${BAR}`, ports: 'A:0,20 K:60,20' }),
+  ...types(
+    sym('diode', 'Diode', C, { w: 60, h: 40, prefix: 'D', value: '1N4148', fields: 'Package=SOD-123', keywords: 'rectifier signal', draw: `${DIODE}; ${BAR}`, ports: 'A:0,20 K:60,20' }),
+    sym('diode-outline', 'Diode', C, { w: 60, h: 40, prefix: 'D', value: '1N4148', variantOf: 'diode', variantName: 'Type B · hollow triangle', keywords: 'rectifier signal outline', draw: `${DIODE_HOLLOW}; ${BAR}`, ports: 'A:0,20 K:60,20' }),
+  ),
   sym('led', 'LED', C, { w: 60, h: 40, prefix: 'D', value: 'Red', fields: 'Forward voltage=2.0V, Current=20mA, Package=0805', keywords: 'light emitting diode lamp', draw: `${DIODE}; ${BAR}; ${OUT_ARROWS}`, ports: 'A:0,20 K:60,20' }),
   sym('zener', 'Zener diode', C, { w: 60, h: 40, prefix: 'D', value: '5V1', keywords: 'voltage reference regulator', draw: `${DIODE}; W 2.5; L 33 33 38 30 38 10 43 7; W 2`, ports: 'A:0,20 K:60,20' }),
   sym('schottky', 'Schottky diode', C, { w: 60, h: 40, prefix: 'D', value: 'BAT54', keywords: 'low drop fast', draw: `${DIODE}; W 2.5; L 33 26 33 30 38 30 38 10 43 10 43 14; W 2`, ports: 'A:0,20 K:60,20' }),
@@ -34,16 +50,34 @@ export const semiconductors = [
     ports: 'B:0,30 C:60,0 E:60,60',
   }),
   sym('phototransistor', 'Phototransistor', C, { w: 60, h: 60, prefix: 'Q', value: 'PT333', keywords: 'light sensor optical', draw: `${BJT}; GF 36 45.6 29.3 45.1 32.4 39.9; L 0 14 9 23; GF 11 25 5 23.5 9.5 19; L 0 26 9 35; GF 11 37 5 35.5 9.5 31`, ports: 'C:40,0 E:40,60' }),
-  sym('nmos', 'N-channel MOSFET', C, {
-    w: 60, h: 60, prefix: 'Q', value: '2N7002', fields: 'Vds=60V, Id=300mA, Package=SOT-23', keywords: 'mosfet fet enhancement',
-    draw: 'L 0 40 16 40; W 2.5; L 16 18 16 42; L 22 14 22 22; L 22 26 22 34; L 22 38 22 46; W 2; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 42; GF 23 30 30 26.5 30 33.5',
-    ports: 'G:0,40 D:40,0 S:40,60',
-  }),
-  sym('pmos', 'P-channel MOSFET', C, {
-    w: 60, h: 60, prefix: 'Q', value: 'AO3401', fields: 'Vds=-30V, Id=-4A, Package=SOT-23', keywords: 'mosfet fet enhancement',
-    draw: 'L 0 20 16 20; W 2.5; L 16 18 16 42; L 22 14 22 22; L 22 26 22 34; L 22 38 22 46; W 2; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 18; GF 39 30 32 26.5 32 33.5',
-    ports: 'G:0,20 S:40,0 D:40,60',
-  }),
+  ...types(
+    sym('nmos', 'N-channel MOSFET', C, {
+      w: 60, h: 60, prefix: 'Q', value: '2N7002', fields: 'Vds=60V, Id=300mA, Package=SOT-23', keywords: 'mosfet fet enhancement standard',
+      draw: NMOS_A, ports: 'G:0,40 D:40,0 S:40,60',
+    }),
+    sym('nmos-b', 'N-channel MOSFET', C, {
+      w: 60, h: 60, prefix: 'Q', value: '2N7002', variantOf: 'nmos', variantName: 'Type B · source arrow', keywords: 'mosfet fet enhancement source arrow',
+      draw: NMOS_B, ports: 'G:0,30 D:40,0 S:40,60',
+    }),
+    sym('nmos-c', 'N-channel MOSFET', C, {
+      w: 60, h: 60, prefix: 'Q', value: '2N7002', variantOf: 'nmos', variantName: 'Type C · simplified', keywords: 'mosfet fet enhancement simplified',
+      draw: NMOS_C, ports: 'G:0,40 D:40,0 S:40,60',
+    }),
+  ),
+  ...types(
+    sym('pmos', 'P-channel MOSFET', C, {
+      w: 60, h: 60, prefix: 'Q', value: 'AO3401', fields: 'Vds=-30V, Id=-4A, Package=SOT-23', keywords: 'mosfet fet enhancement standard',
+      draw: PMOS_A, ports: 'G:0,20 S:40,0 D:40,60',
+    }),
+    sym('pmos-b', 'P-channel MOSFET', C, {
+      w: 60, h: 60, prefix: 'Q', value: 'AO3401', variantOf: 'pmos', variantName: 'Type B · source arrow', keywords: 'mosfet fet enhancement source arrow',
+      draw: PMOS_B, ports: 'G:0,30 S:40,0 D:40,60',
+    }),
+    sym('pmos-c', 'P-channel MOSFET', C, {
+      w: 60, h: 60, prefix: 'Q', value: 'AO3401', variantOf: 'pmos', variantName: 'Type C · gate bubble', keywords: 'mosfet fet enhancement simplified bubble',
+      draw: PMOS_C, ports: 'G:0,20 S:40,0 D:40,60',
+    }),
+  ),
   sym('nmos-depletion', 'N-MOSFET (depletion)', C, {
     w: 60, h: 60, prefix: 'Q', value: 'BSS139', keywords: 'mosfet depletion',
     draw: 'L 0 40 16 40; W 2.5; L 16 18 16 42; L 22 14 22 46; W 2; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 42; GF 23 30 30 26.5 30 33.5',

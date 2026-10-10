@@ -1,4 +1,4 @@
-import { sym } from '../dsl';
+import { sym, types } from '../dsl';
 
 const C = 'Passive';
 const RES_FIELDS = 'Power rating=0.25W, Tolerance=±5%, Package=0805';
@@ -45,11 +45,18 @@ export const passive = [
     draw: 'L 0 20 20 20; RB 20 13 40 14; L 60 20 80 20; L 22 34 30 34 54 6; T 58 38 9 s U',
     ports: '1:0,20 2:80,20',
   }),
-  sym('capacitor', 'Capacitor', C, {
-    w: 40, h: 40, prefix: 'C', value: '100nF', fields: CAP_FIELDS, keywords: 'cap ceramic film non-polarized',
-    draw: 'L 0 20 16 20; W 3; L 16 6 16 34; L 24 6 24 34; W 2; L 24 20 40 20',
-    ports: '1:0,20 2:40,20',
-  }),
+  ...types(
+    sym('capacitor', 'Capacitor', C, {
+      w: 40, h: 40, prefix: 'C', value: '100nF', fields: CAP_FIELDS, keywords: 'cap ceramic film non-polarized',
+      draw: 'L 0 20 16 20; W 3; L 16 6 16 34; L 24 6 24 34; W 2; L 24 20 40 20',
+      ports: '1:0,20 2:40,20',
+    }),
+    sym('capacitor-curved', 'Capacitor', C, {
+      w: 40, h: 40, prefix: 'C', value: '100nF', variantOf: 'capacitor', variantName: 'Type B · curved plate', keywords: 'cap ceramic film curved',
+      draw: 'L 0 20 16 20; W 3; L 16 6 16 34; P M 28 6 Q 22 20 28 34; W 2; L 25 20 40 20',
+      ports: '1:0,20 2:40,20',
+    }),
+  ),
   sym('capacitor-polarized', 'Capacitor (polarized)', C, {
     w: 40, h: 40, prefix: 'C', value: '10µF', fields: 'Voltage rating=25V, Dielectric=Electrolytic, Package=Radial', keywords: 'electrolytic tantalum polarised',
     draw: 'L 0 20 16 20; W 3; L 16 6 16 34; P M 28 6 Q 21 20 28 34; W 2; L 24.5 20 40 20; L 6 8 12 8; L 9 5 9 11',
@@ -60,11 +67,18 @@ export const passive = [
     draw: 'L 0 20 16 20; W 3; L 16 8 16 32; L 24 8 24 32; W 2; L 24 20 40 20; L 6 36 34 4; GF 34 4 26 7 31 12',
     ports: '1:0,20 2:40,20',
   }),
-  sym('inductor', 'Inductor', C, {
-    w: 80, h: 20, prefix: 'L', value: '10µH', fields: 'Current rating=1A, DCR=0.1Ω', keywords: 'coil choke',
-    draw: 'L 0 10 20 10; A 25 10 5 180 360; A 35 10 5 180 360; A 45 10 5 180 360; A 55 10 5 180 360; L 60 10 80 10',
-    ports: '1:0,10 2:80,10',
-  }),
+  ...types(
+    sym('inductor', 'Inductor', C, {
+      w: 80, h: 20, prefix: 'L', value: '10µH', fields: 'Current rating=1A, DCR=0.1Ω', keywords: 'coil choke',
+      draw: 'L 0 10 20 10; A 25 10 5 180 360; A 35 10 5 180 360; A 45 10 5 180 360; A 55 10 5 180 360; L 60 10 80 10',
+      ports: '1:0,10 2:80,10',
+    }),
+    sym('inductor-loops', 'Inductor', C, {
+      w: 80, h: 20, prefix: 'L', value: '10µH', variantOf: 'inductor', variantName: 'Type B · full loops', keywords: 'coil choke loops circles',
+      draw: 'L 0 10 20 10; C 25 10 5; C 35 10 5; C 45 10 5; C 55 10 5; L 60 10 80 10',
+      ports: '1:0,10 2:80,10',
+    }),
+  ),
   sym('inductor-core', 'Inductor (iron core)', C, {
     w: 80, h: 40, prefix: 'L', value: '1mH', keywords: 'coil choke ferrite core',
     draw: 'L 0 30 20 30; A 25 30 5 180 360; A 35 30 5 180 360; A 45 30 5 180 360; A 55 30 5 180 360; L 60 30 80 30; L 20 20 60 20; L 20 16 60 16',

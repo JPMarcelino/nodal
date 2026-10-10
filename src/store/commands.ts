@@ -1,4 +1,5 @@
 import { copyAsSvg, doExport, exportSelection, fileNew, fileOpen, filePrint, fileSave, startAreaExport } from '../io/fileActions';
+import { exportLibraryFile, exportTemplateFile, importLibraryFile, importTemplateFile } from '../io/sharing';
 import { computeNets, netOfWire } from '../model/netlist';
 import * as A from './actions';
 import { S, redo, set, setPrefs, toast, undo, mutate } from './store';
@@ -33,6 +34,11 @@ export const COMMANDS: Command[] = [
   { id: 'file.exportSelectionSvg', label: 'Export selection as SVG', category: 'File', keys: [], run: () => exportSelection('svg') },
   { id: 'file.exportArea', label: 'Export canvas area…', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
   { id: 'file.print', label: 'Print…', category: 'File', keys: ['Mod+P'], run: filePrint },
+  { id: 'collab.share', label: 'Share & collaborate…', category: 'File', keys: ['Mod+Alt+S'], run: () => set({ dialog: 'share' }) },
+  { id: 'collab.exportLib', label: 'Export my symbol library', category: 'File', keys: [], run: exportLibraryFile },
+  { id: 'collab.importLib', label: 'Import a symbol library…', category: 'File', keys: [], run: importLibraryFile },
+  { id: 'collab.exportTemplate', label: 'Export selection as a template', category: 'File', keys: [], run: () => exportTemplateFile(S().selection), when: hasSel },
+  { id: 'collab.importTemplate', label: 'Insert a template…', category: 'File', keys: [], run: importTemplateFile },
 
   // Edit
   { id: 'edit.undo', label: 'Undo', category: 'Edit', keys: ['Mod+Z'], run: undo },

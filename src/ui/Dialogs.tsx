@@ -1,13 +1,31 @@
-import { FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, Layers3, Printer, RotateCcw, Scan, X } from 'lucide-react';
+import { ClipboardPaste, Copy, FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, FolderUp, Layers3, Printer, RotateCcw, Scan, Share2, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { doExport, filePrint, startAreaExport } from '../io/fileActions';
+import {
+  buildLibraryFile,
+  buildTemplateFile,
+  copyToClipboard,
+  exportLibraryFile,
+  exportTemplateFile,
+  importLibraryFile,
+  importLibraryText,
+  importTemplateFile,
+  importTemplateText,
+  libraryToText,
+  pasteLibraryFromClipboard,
+  pasteTemplateFromClipboard,
+  templateToText,
+} from '../io/sharing';
+import { librarySymbols, variantDefs } from '../model/registry';
 import { BUILTIN_SYMBOLS } from '../model/symbols';
+import type { SymbolDef } from '../model/types';
 import * as A from '../store/actions';
 import { COMMANDS, eventToCombo, keysFor, prettyKey, type Command } from '../store/commands';
-import { S, set, setPrefs, useStore } from '../store/store';
+import { S, set, setPrefs, toast, useStore } from '../store/store';
 import { Field, Kbd, Segmented, Toggle } from './controls';
 import { Logo } from './Logo';
+import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 
 export function Modal({
   title,
@@ -62,32 +80,65 @@ const close = () => set({ dialog: null });
 /* Command palette                                                     */
 /* ------------------------------------------------------------------ */
 
-type PaletteEntry = { kind: 'cmd'; cmd: Command } | { kind: 'sym'; id: string; name: string; category: string };
+type PaletteEntry = { kind: 'cmd'; cmd: Command } | { kind: 'sym'; def: SymbolDef };
 
 export function CommandPalette() {
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
-  const userLib = useStore((s) => s.userLibrary);
+  const [preview, setPreview] = useState<SymbolPopupState | null>(null);
+  const [picker, setPicker] = useState<SymbolPopupState | null>(null);
+  const docSymbols = useStore((s) => s.doc.symbols);
   const listRef = useRef<HTMLDivElement>(null);
+  const syms = useMemo(() => librarySymbols({ symbols: docSymbols }), [docSymbols]);
   const entries = useMemo<PaletteEntry[]>(() => {
     const query = q.trim().toLowerCase();
     const cmds = COMMANDS.filter((c) => !c.when || c.when());
-    const syms = [...Object.values(userLib), ...BUILTIN_SYMBOLS];
     const match = (s: string) => query.split(/\s+/).every((w) => s.toLowerCase().includes(w));
     const out: PaletteEntry[] = [];
     for (const c of cmds) if (!query || match(`${c.category} ${c.label}`)) out.push({ kind: 'cmd', cmd: c });
-    if (query) for (const s of syms) if (match(`place ${s.name} ${s.keywords ?? ''} ${s.category}`)) out.push({ kind: 'sym', id: s.id, name: s.name, category: s.category });
+    if (query) {
+      for (const s of syms) {
+        // one row per part; its types are offered by the picker, not as duplicate rows
+        const extra = variantDefs({ symbols: docSymbols }, s)
+          .map((v) => `${v.variantName ?? ''} ${v.keywords ?? ''}`)
+          .join(' ');
+        if (match(`place ${s.name} ${s.keywords ?? ''} ${s.category} ${extra}`)) out.push({ kind: 'sym', def: s });
+      }
+    }
     return out.slice(0, 80);
-  }, [q, userLib]);
+  }, [q, syms, docSymbols]);
   useEffect(() => setIdx(0), [q]);
   useEffect(() => {
     listRef.current?.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
   }, [idx]);
-  const run = (e: PaletteEntry | undefined) => {
-    if (!e) return;
+  const variantsOf = (def: SymbolDef) => variantDefs({ symbols: docSymbols }, def);
+  const openPicker = (def: SymbolDef, el: Element | null) => {
+    const anchorEl = el ?? (listRef.current?.querySelector('.palette-item.active') as HTMLElement | null);
+    if (!anchorEl) return;
+    setPreview(null);
+    setPicker({ def, variants: variantsOf(def), anchor: anchorOf(anchorEl), pinned: true });
+  };
+  const place = (def: SymbolDef) => {
+    setPicker(null);
+    setPreview(null);
     close();
-    if (e.kind === 'cmd') setTimeout(() => e.cmd.run(), 0);
-    else A.startPlacing(e.id);
+    A.startPlacing(def.id);
+  };
+  const run = (e: PaletteEntry | undefined, el?: Element | null) => {
+    if (!e) return;
+    if (e.kind === 'cmd') {
+      setPreview(null);
+      close();
+      setTimeout(() => e.cmd.run(), 0);
+      return;
+    }
+    // a part with several drawings opens its type picker; a plain part places straight away
+    if (variantsOf(e.def).length) return openPicker(e.def, el ?? null);
+    place(e.def);
+  };
+  const hoverSym = (def: SymbolDef, el: Element) => {
+    if (picker) return;
+    setPreview({ def, variants: variantsOf(def), anchor: anchorOf(el), pinned: false });
   };
   return (
     <Modal onClose={close} width={600} className="palette">
@@ -108,25 +159,41 @@ export function CommandPalette() {
         }}
       />
       <div className="palette-list" ref={listRef}>
-        {entries.map((e, i) => (
-          <button key={e.kind === 'cmd' ? e.cmd.id : `s:${e.id}`} className={i === idx ? 'palette-item active' : 'palette-item'} onMouseEnter={() => setIdx(i)} onClick={() => run(e)}>
-            {e.kind === 'cmd' ? (
-              <>
-                <span className="palette-cat">{e.cmd.category}</span>
-                <span className="palette-label">{e.cmd.label}</span>
-                {keysFor(e.cmd.id)[0] && <Kbd combo={keysFor(e.cmd.id)[0]} />}
-              </>
-            ) : (
-              <>
-                <span className="palette-cat sym">Place</span>
-                <span className="palette-label">{e.name}</span>
-                <span className="palette-meta">{e.category}</span>
-              </>
-            )}
-          </button>
-        ))}
+        {entries.map((e, i) => {
+          const types = e.kind === 'sym' ? variantsOf(e.def).length : 0;
+          return (
+            <button
+              key={e.kind === 'cmd' ? e.cmd.id : `s:${e.def.id}`}
+              className={i === idx ? 'palette-item active' : 'palette-item'}
+              onMouseEnter={(ev) => {
+                setIdx(i);
+                if (e.kind === 'sym') hoverSym(e.def, ev.currentTarget);
+                else setPreview(null);
+              }}
+              onMouseLeave={() => setPreview(null)}
+              onClick={(ev) => run(e, ev.currentTarget)}
+            >
+              {e.kind === 'cmd' ? (
+                <>
+                  <span className="palette-cat">{e.cmd.category}</span>
+                  <span className="palette-label">{e.cmd.label}</span>
+                  {keysFor(e.cmd.id)[0] && <Kbd combo={keysFor(e.cmd.id)[0]} />}
+                </>
+              ) : (
+                <>
+                  <span className="palette-cat sym">Place</span>
+                  <span className="palette-label">{e.def.name}</span>
+                  <span className="palette-meta">{e.def.category}</span>
+                  {types > 0 && <span className="palette-types">{types + 1} types</span>}
+                </>
+              )}
+            </button>
+          );
+        })}
         {!entries.length && <div className="empty-note">No matches</div>}
       </div>
+      {preview && <SymbolPopup {...preview} onPick={(d) => place(d)} onClose={() => setPreview(null)} />}
+      {picker && <SymbolPopup {...picker} onPick={(d) => place(d)} onClose={() => setPicker(null)} />}
     </Modal>
   );
 }
@@ -411,6 +478,116 @@ export function ExportDialog() {
   );
 }
 
+export function ShareDialog() {
+  const [tab, setTab] = useState<'library' | 'template'>('library');
+  const userLibrary = useStore((s) => s.userLibrary);
+  const selection = useStore((s) => s.selection);
+  const [pasted, setPasted] = useState('');
+  const libText = useMemo(() => libraryToText(buildLibraryFile()), [userLibrary]);
+  const tpl = useMemo(() => buildTemplateFile(selection), [selection, userLibrary]);
+  const tplText = tpl ? templateToText(tpl) : '';
+  const libCount = Object.keys(userLibrary).length;
+  const isLib = tab === 'library';
+  return (
+    <Modal title="Share & collaborate" onClose={close} width={680}>
+      <div className="share-intro">
+        <Users size={18} />
+        <div>
+          Live, multi-user editing with named cursors needs a shared server, which a fully offline app can't provide. Until then, collaborating is one click: send your <b>whole symbol library</b>, or any part of a circuit as a reusable <b>template</b>.
+        </div>
+      </div>
+      <div className="tabs inline">
+        <button className={isLib ? 'active' : ''} onClick={() => setTab('library')}>
+          My symbols ({libCount})
+        </button>
+        <button className={!isLib ? 'active' : ''} onClick={() => setTab('template')}>
+          Selection template ({selection.length})
+        </button>
+      </div>
+      {isLib ? (
+        libCount ? (
+          <>
+            <div className="btn-row wrap">
+              <button className="primary-btn" onClick={() => copyToClipboard(libText, 'Symbol library')}>
+                <Copy size={14} /> Copy
+              </button>
+              <button className="secondary-btn" onClick={exportLibraryFile}>
+                <Share2 size={14} /> Save .json
+              </button>
+              <button className="secondary-btn" onClick={pasteLibraryFromClipboard}>
+                <ClipboardPaste size={14} /> Paste & import
+              </button>
+              <button className="secondary-btn" onClick={importLibraryFile}>
+                <FolderUp size={14} /> Import file
+              </button>
+            </div>
+            <textarea className="input mono share-text" readOnly value={libText} onFocus={(e) => e.currentTarget.select()} />
+          </>
+        ) : (
+          <div className="empty-note">You haven't saved any symbols yet. Draw one with the symbol editor (Ctrl+Shift+N), then share it here.</div>
+        )
+      ) : selection.length ? (
+        <>
+          <div className="btn-row wrap">
+            <button className="primary-btn" onClick={() => copyToClipboard(tplText, 'Template')}>
+              <Copy size={14} /> Copy
+            </button>
+            <button className="secondary-btn" onClick={() => exportTemplateFile(selection)}>
+              <Share2 size={14} /> Save .json
+            </button>
+            <button className="secondary-btn" onClick={pasteTemplateFromClipboard}>
+              <ClipboardPaste size={14} /> Paste & insert
+            </button>
+            <button className="secondary-btn" onClick={importTemplateFile}>
+              <FolderUp size={14} /> Import file
+            </button>
+          </div>
+          <textarea className="input mono share-text" readOnly value={tplText} onFocus={(e) => e.currentTarget.select()} />
+          <p className="muted small">The template carries the parts, wiring and any custom symbols it uses, so it lands correctly on another machine.</p>
+        </>
+      ) : (
+        <div className="empty-note">Select some parts and wires on the canvas to share them as a reusable template.</div>
+      )}
+      <div className="share-paste">
+        <Field label="…or paste share text here" wide>
+          <div className="row-gap">
+            <input
+              className="input mono"
+              placeholder="Paste library or template JSON…"
+              value={pasted}
+              onChange={(e) => setPasted(e.target.value)}
+            />
+            <button
+              className="secondary-btn"
+              disabled={!pasted.trim()}
+              onClick={() => {
+                try {
+                  if (isLib) {
+                    const n = importLibraryText(pasted, { overwrite: false });
+                    toast(n ? `Imported ${n} symbol${n > 1 ? 's' : ''}` : 'Nothing new to import', n ? 'success' : 'info');
+                  } else {
+                    const ids = importTemplateText(pasted);
+                    toast(`Inserted template (${ids.length} items)`, 'success');
+                    close();
+                  }
+                  setPasted('');
+                } catch (e) {
+                  toast(`Could not import: ${(e as Error).message}`, 'error');
+                }
+              }}
+            >
+              Import
+            </button>
+          </div>
+        </Field>
+      </div>
+      <p className="muted small share-foot">
+        Tip: keep the copied text or the saved <code>.json</code> and send it however you like — importing merges, never overwrites, your library.
+      </p>
+    </Modal>
+  );
+}
+
 export function AboutDialog() {
   return (
     <Modal onClose={close} width={440}>
@@ -447,6 +624,8 @@ export function Dialogs() {
       return <SettingsDialog />;
     case 'export':
       return <ExportDialog />;
+    case 'share':
+      return <ShareDialog />;
     case 'about':
       return <AboutDialog />;
     default:
