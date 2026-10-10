@@ -217,6 +217,7 @@ export function cancel() {
   if (s.contextMenu) return set({ contextMenu: null });
   if (s.placing) return set({ placing: null });
   if (s.highlight) return set({ highlight: null });
+  if (s.wirePart) return set({ wirePart: null });
   if (s.selection.length) return set({ selection: [] });
   if (A.exitGroup()) return;
   if (s.tool !== 'select') return A.setTool('select');
