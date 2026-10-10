@@ -8,8 +8,8 @@ import type { CircuitDoc, Item, Point, Prim, Rect, WireItem } from '../model/typ
 import { wirePolyline, wireStyle } from '../model/wires';
 
 export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string }> = {
-  light: { sym: '#1f2433', symBg: '#ffffff', label: '#1f2433', value: '#5a6275', bg: '#ffffff', selection: '#3b82f6', grid: '#e6e8ee' },
-  dark: { sym: '#d7dcef', symBg: '#151925', label: '#e6e9f5', value: '#9aa3bd', bg: '#151925', selection: '#7aa2f7', grid: '#232838' },
+  light: { sym: '#1f2433', symBg: '#ffffff', label: '#1f2433', value: '#5a6275', bg: '#ffffff', selection: '#3b82f6', ink: '#000000', grid: '#e6e8ee' },
+  dark: { sym: '#d7dcef', symBg: '#151925', label: '#e6e9f5', value: '#9aa3bd', bg: '#151925', selection: '#7aa2f7', ink: '#d7dcef', grid: '#232838' },
 };
 
 export interface SvgOptions {
@@ -60,14 +60,17 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
     const keep = new Set(opts.ids);
     d = { ...doc, items: Object.fromEntries(Object.entries(doc.items).filter(([id]) => keep.has(id))) };
   }
-  if (opts.clip) d = clipAreaDoc(d, opts.clip);
-  // wires keep their default colour unless it is unreadable on a light page
-  const c = opts.clip;
-  const b = c ? { ...c } : docBounds(d) ?? { x: 0, y: 0, w: 100, h: 100 };
   const p = opts.padding;
-  const box = c
-    ? { x: c.x - p, y: c.y - p, w: c.w + 2 * p, h: c.h + 2 * p }
-    : { x: b.x - p - 30, y: b.y - p - 20, w: b.w + 2 * p + 60, h: b.h + 2 * p + 40 };
+  let box: Rect;
+  if (opts.clip) {
+    const c = opts.clip;
+    d = clipAreaDoc(d, c);
+    box = { x: c.x - p, y: c.y - p, w: c.w + 2 * p, h: c.h + 2 * p };
+  } else {
+    // extra margin so labels that overhang the item bounds are not cut off
+    const b = docBounds(d) ?? { x: 0, y: 0, w: 100, h: 100 };
+    box = { x: b.x - p - 30, y: b.y - p - 20, w: b.w + 2 * p + 60, h: b.h + 2 * p + 40 };
+  }
   const data = computeSceneData(d);
   const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette }));
   const css = `text{font-family:${FONT}}.ref-label{font-size:11px;font-weight:600}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.sym-text{font-size:9px}`;

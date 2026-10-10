@@ -145,15 +145,15 @@ export interface ShapeItem extends ItemBase {
   strokeWidth: number;
   fill: string;
   fillOpacity: number;
-   dash: Dash;
-   radius: number;
-   /** Arrowhead at the start / end point (line & arrow shapes). */
-   headStart?: HeadKind;
-   headEnd?: HeadKind;
-   /** Arrowhead length in px; undefined = auto (stroke width based). */
-   headSize?: number;
-   /** 'below' renders behind wires and components; 'above' on top of everything. */
-   layer: 'below' | 'above';
+  dash: Dash;
+  radius: number;
+  /** Arrowhead at the start / end point (line & arrow shapes). */
+  headStart?: HeadKind;
+  headEnd?: HeadKind;
+  /** Arrowhead length in px; undefined = auto (stroke width based). */
+  headSize?: number;
+  /** 'below' renders behind wires and components; 'above' on top of everything. */
+  layer: 'below' | 'above';
   text?: string;
   fontSize?: number;
   textColor?: string;

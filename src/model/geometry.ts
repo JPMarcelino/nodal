@@ -147,10 +147,14 @@ export function clipPolylineToRect(pts: Point[], r: Rect): Point[][] {
     { x: r.x + r.w, y: r.y + r.h },
     { x: r.x, y: r.y + r.h },
   ];
-  const find = (hits: { pt: Point; t: number }[], entry: boolean) => {
-    if (!hits.length) return null;
-    const sorted = [...hits].sort((p, q) => p.t - q.t);
-    return entry ? sorted[0].pt : sorted[sorted.length - 1].pt;
+  /** Boundary crossings of segment a→b, ordered along the segment. */
+  const crossings = (a: Point, b: Point) => {
+    const hits: { pt: Point; t: number }[] = [];
+    for (let e = 0; e < 4; e++) {
+      const hit = segmentIntersection(a, b, corners[e], corners[(e + 1) % 4]);
+      if (hit) hits.push({ pt: hit.pt, t: hit.t });
+    }
+    return hits.sort((p, q) => p.t - q.t).map((h) => h.pt);
   };
   const runs: Point[][] = [];
   let run: Point[] = [];
@@ -163,33 +167,23 @@ export function clipPolylineToRect(pts: Point[], r: Rect): Point[][] {
     const b = pts[i + 1];
     const aIn = inside(a);
     const bIn = inside(b);
-    if (aIn && run.length === 0) run.push({ ...a });
     if (aIn && bIn) {
+      if (!run.length) run.push({ ...a });
       run.push({ ...b });
-    } else if (aIn !== bIn) {
-      const hits: { pt: Point; t: number }[] = [];
-      for (let e = 0; e < 4; e++) {
-        const hit = segmentIntersection(a, b, corners[e], corners[(e + 1) % 4]);
-        if (hit) hits.push({ pt: hit.pt, t: hit.t });
-      }
-      if (aIn) {
-        const p = find(hits, false);
-        if (p) run.push(p);
-        finish();
-      } else {
-        const p = find(hits, true);
-        if (!p) continue;
-        run = [p];
-        run.push({ ...b });
-      }
-    } else if (!aIn && !bIn) {
-      const hits: { pt: Point; t: number }[] = [];
-      for (let e = 0; e < 4; e++) {
-        const hit = segmentIntersection(a, b, corners[e], corners[(e + 1) % 4]);
-        if (hit) hits.push({ pt: hit.pt, t: hit.t });
-      }
-      hits.sort((p, q) => p.t - q.t);
-      if (hits.length >= 2 && dist(hits[0].pt, hits[hits.length - 1].pt) > EPS) runs.push([hits[0].pt, hits[hits.length - 1].pt]);
+    } else if (aIn) {
+      // leaving: cut at the last boundary crossing
+      if (!run.length) run.push({ ...a });
+      const exit = crossings(a, b).pop();
+      if (exit) run.push(exit);
+      finish();
+    } else if (bIn) {
+      // entering: start a new run at the first boundary crossing
+      const entry = crossings(a, b)[0];
+      if (entry) run = [entry, { ...b }];
+    } else {
+      // passing straight through
+      const hits = crossings(a, b);
+      if (hits.length >= 2 && dist(hits[0], hits[hits.length - 1]) > EPS) runs.push([hits[0], hits[hits.length - 1]]);
     }
   }
   finish();

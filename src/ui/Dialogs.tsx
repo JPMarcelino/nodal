@@ -1,7 +1,7 @@
-import { FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, Layers3, Printer, RotateCcw, Scan, BoxSelect, X } from 'lucide-react';
+import { FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, Layers3, Printer, RotateCcw, Scan, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
-import { doExport, filePrint, exportSelection, startAreaExport } from '../io/fileActions';
+import { doExport, filePrint, startAreaExport } from '../io/fileActions';
 import { BUILTIN_SYMBOLS } from '../model/symbols';
 import * as A from '../store/actions';
 import { COMMANDS, eventToCombo, keysFor, prettyKey, type Command } from '../store/commands';
@@ -374,14 +374,8 @@ export function ExportDialog() {
       <div className="export-grid">
         <Card icon={<FileImage size={20} />} title="PNG image" desc="High-resolution bitmap for documents & chat" onClick={() => doExport('png', opts())} />
         <Card icon={<FileCode2 size={20} />} title="SVG vector" desc="Crisp, editable in Inkscape / Illustrator / Figma" onClick={() => doExport('svg', opts())} />
-        {hasSel && (
-          <Card icon={<BoxSelect size={20} />} title="Selection → PNG" desc="Exports exactly the selected items" onClick={() => exportSelection('png')} />
-        )}
-        {hasSel && (
-          <Card icon={<BoxSelect size={20} />} title="Selection → SVG" desc="Exports exactly the selected items" onClick={() => exportSelection('svg')} />
-        )}
-        <Card icon={<Scan size={20} />} title="Area → PNG" desc="Draw a rectangle on the canvas — wires crossing it are cut" onClick={() => startAreaExport('png', { theme, background: bg, scale })} />
-        <Card icon={<Scan size={20} />} title="Area → SVG" desc="Draw a rectangle on the canvas — wires crossing it are cut" onClick={() => startAreaExport('svg', { theme, background: bg })} />
+        <Card icon={<Scan size={20} />} title="Area → PNG" desc="Drag a rectangle on the canvas; wires crossing its edge are cut" onClick={() => startAreaExport('png', { theme, background: bg, scale })} />
+        <Card icon={<Scan size={20} />} title="Area → SVG" desc="Drag a rectangle on the canvas; wires crossing its edge are cut" onClick={() => startAreaExport('svg', { theme, background: bg })} />
         <Card icon={<Layers3 size={20} />} title="DXF (CAD)" desc="AutoCAD, LibreCAD, BricsCAD — layered" onClick={() => doExport('dxf')} />
         <Card icon={<FileText size={20} />} title="SPICE netlist" desc="Simulate in LTspice / ngspice" onClick={() => doExport('spice')} />
         <Card icon={<FileSpreadsheet size={20} />} title="Bill of materials" desc="CSV grouped by part and value" onClick={() => doExport('bom')} />

@@ -12,6 +12,8 @@ export interface Palette {
   value: string;
   bg: string;
   selection: string;
+  /** What pure black (the default wire / shape colour) is drawn as; stays readable on dark canvases. */
+  ink: string;
 }
 
 export const EDITOR_PALETTE: Palette = {
@@ -21,7 +23,11 @@ export const EDITOR_PALETTE: Palette = {
   value: 'var(--label-dim)',
   bg: 'var(--canvas)',
   selection: 'var(--accent)',
+  ink: 'var(--ink)',
 };
+
+/** Maps pure black to the palette's ink colour; every other colour is left as chosen. */
+export const inkColor = (c: string, p: Palette) => (/^#(000|000000)$/i.test(c) ? p.ink : c);
 
 export const dashArray = (d: Dash, w: number) => (d === 'dashed' ? `${w * 4} ${w * 3}` : d === 'dotted' ? `0.01 ${w * 2.5}` : undefined);
 
@@ -155,15 +161,18 @@ export const WireView = memo(function WireView({
   pts,
   hops,
   settings,
+  palette,
   dim,
 }: {
   w: WireItem;
   pts: Point[];
   hops: Hop[] | undefined;
   settings: DocSettings;
+  palette: Palette;
   dim?: boolean;
 }) {
   const st = { ...settings.wire, ...w.style };
+  const color = inkColor(st.color, palette);
   const d = buildWirePath(pts, st.radius, hops, settings.hops, settings.hopSize);
   const mid = pts.length >= 2 ? midpoint(pts) : null;
   return (
@@ -171,14 +180,14 @@ export const WireView = memo(function WireView({
       <path
         d={d}
         fill="none"
-        stroke={st.color}
+        stroke={color}
         strokeWidth={st.width}
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeDasharray={dashArray(st.dash, st.width)}
       />
       {w.label && mid && (
-        <text x={mid.x} y={mid.y - st.width - 3} textAnchor="middle" className="wire-label" fill={st.color}>
+        <text x={mid.x} y={mid.y - st.width - 3} textAnchor="middle" className="wire-label" fill={color}>
           {w.label}
         </text>
       )}
@@ -229,9 +238,10 @@ function shapeHeads(s: ShapeItem) {
 
 export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem; palette: Palette }) {
   const da = dashArray(s.dash, s.strokeWidth || 1);
-  const stroke = s.strokeWidth > 0 ? s.stroke : 'none';
-  const fill = s.fillOpacity > 0 ? s.fill : 'none';
-  const textColor = s.textColor || (s.kind === 'text' ? palette.label : s.stroke);
+  const ink = inkColor(s.stroke, palette);
+  const stroke = s.strokeWidth > 0 ? ink : 'none';
+  const fill = s.fillOpacity > 0 ? inkColor(s.fill, palette) : 'none';
+  const textColor = s.textColor ? inkColor(s.textColor, palette) : s.kind === 'text' ? palette.label : ink;
   switch (s.kind) {
     case 'rect':
     case 'zone':
@@ -263,9 +273,9 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
       const startKind: HeadKind = s.headStart ?? 'none';
       return (
         <g className="shape" data-id={s.id}>
-          <line x1={s.x} y1={s.y} x2={endTip.x} y2={endTip.y} stroke={s.stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinecap="round" />
-          <ArrowHeadEl tip={endTip} x={ux} y={uy} size={size} kind={endKind} color={s.stroke} sw={s.strokeWidth} />
-          <ArrowHeadEl tip={startTip} x={-ux} y={-uy} size={size} kind={startKind} color={s.stroke} sw={s.strokeWidth} />
+          <line x1={s.x} y1={s.y} x2={endTip.x} y2={endTip.y} stroke={ink} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinecap="round" />
+          <ArrowHeadEl tip={endTip} x={ux} y={uy} size={size} kind={endKind} color={ink} sw={s.strokeWidth} />
+          <ArrowHeadEl tip={startTip} x={-ux} y={-uy} size={size} kind={startKind} color={ink} sw={s.strokeWidth} />
           {s.text && (
             <text x={s.x + s.w / 2} y={s.y + s.h / 2 - 6} textAnchor="middle" fontSize={s.fontSize ?? 13} fill={textColor}>
               {s.text}
@@ -279,7 +289,7 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
       const lines = (s.text ?? '').split('\n');
       return (
         <g className="shape" data-id={s.id}>
-          {s.fillOpacity > 0 && <rect x={s.x - 6} y={s.y - 4} width={s.w + 12} height={s.h + 8} rx={4} fill={s.fill} fillOpacity={s.fillOpacity} />}
+          {s.fillOpacity > 0 && <rect x={s.x - 6} y={s.y - 4} width={s.w + 12} height={s.h + 8} rx={4} fill={fill} fillOpacity={s.fillOpacity} />}
           <text x={s.x} y={s.y + fs} fontSize={fs} fill={textColor} fontWeight={s.bold ? 700 : 400} className="free-text">
             {lines.map((l, i) => (
               <tspan key={i} x={s.x} dy={i === 0 ? 0 : fs * 1.3}>
@@ -331,7 +341,7 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
       <g className="layer-below">{below.map((s) => <ShapeView key={s.id} s={s} palette={palette} />)}</g>
       <g className="layer-wires">
         {wires.map((w) => (
-          <WireView key={w.id} w={w} pts={data.polys.get(w.id) ?? []} hops={data.hops.get(w.id)} settings={doc.settings} dim={!!highlight && !highlight.has(w.id)} />
+          <WireView key={w.id} w={w} pts={data.polys.get(w.id) ?? []} hops={data.hops.get(w.id)} settings={doc.settings} palette={palette} dim={!!highlight && !highlight.has(w.id)} />
         ))}
       </g>
       <g className="layer-components">
@@ -341,7 +351,7 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
       </g>
       <g className="layer-dots">
         {dots.map((d) => (
-          <circle key={d.key} cx={d.x} cy={d.y} r={js} fill={d.color} />
+          <circle key={d.key} cx={d.x} cy={d.y} r={js} fill={inkColor(d.color, palette)} />
         ))}
       </g>
       <g className="layer-above">{above.map((s) => <ShapeView key={s.id} s={s} palette={palette} />)}</g>

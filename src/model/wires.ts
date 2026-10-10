@@ -96,6 +96,10 @@ interface Seg {
  * broken by wire id), so every crossing is drawn exactly once.
  */
 export function computeHops(polys: Map<string, Point[]>, hopSize: number, hopPref?: Map<string, boolean>): Map<string, Hop[]> {
+  const hopRank = (wire: string) => {
+    const v = hopPref?.get(wire);
+    return v === undefined ? 1 : v ? 2 : 0;
+  };
   const segs: Seg[] = [];
   for (const [wire, pts] of polys) {
     for (let i = 0; i < pts.length - 1; i++) {
@@ -131,17 +135,11 @@ export function computeHops(polys: Map<string, Point[]>, hopSize: number, hopPre
       const dt = hit.u * lt;
       // touching at an end is a connection or a corner, not a crossing
       if (ds < margin || ls - ds < margin || dt < margin || lt - dt < margin) continue;
-      const ps = hopPref?.get(s.wire);
-      const pt = hopPref?.get(t.wire);
-      let hopper: Seg;
-      let d: number;
-      if (ps === true) [hopper, d] = [s, ds];
-      else if (pt === true) [hopper, d] = [t, dt];
-      else if (ps === false && pt === false) [hopper, d] = s.horiz !== t.horiz ? (s.horiz ? [s, ds] : [t, dt]) : s.wire > t.wire ? [s, ds] : [t, dt];
-      else if (ps === false) [hopper, d] = [t, dt];
-      else if (pt === false) [hopper, d] = [s, ds];
-      else if (s.horiz !== t.horiz) [hopper, d] = s.horiz ? [s, ds] : [t, dt];
-      else [hopper, d] = s.wire > t.wire ? [s, ds] : [t, dt];
+      // explicit hop-over beats default beats explicit stay-flat; equal ranks use the geometric rule
+      const rs = hopRank(s.wire);
+      const rt = hopRank(t.wire);
+      const sHops = rs !== rt ? rs > rt : s.horiz !== t.horiz ? s.horiz : s.wire > t.wire;
+      const [hopper, d] = sHops ? [s, ds] : [t, dt];
       const hl = hopper === s ? ls : lt;
       if (d < hopSize || hl - d < hopSize) continue;
       const list = hops.get(hopper.wire) ?? [];
