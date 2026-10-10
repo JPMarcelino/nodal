@@ -1,5 +1,5 @@
 import { Circle, Copy, Cpu, Code2, MousePointer2, PenLine, Pin, Redo2, Slash, Square, Trash2, Type, Undo2, Upload, Spline } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { PrimEl, SymbolPreview } from '../canvas/SymbolGraphic';
 import { uid } from '../model/doc';
 import { compileSource, inferSide, parseDraw, parsePorts, primsToDsl, sourceOf, type SymbolSource } from '../model/symbols/dsl';
@@ -44,11 +44,13 @@ export function SymbolEditor() {
   const [src, setSrc] = useState<SymbolSource>(() => (original ? { ...sourceOf(original), id: original.custom ? original.id : '', name: original.custom ? original.name : `${original.name} (custom)`, category: original.custom ? original.category : 'My symbols' } : blank()));
   const [prims, setPrims] = useState<Prim[]>(() => safePrims(src.draw));
   const [ports, setPorts] = useState<PortDef[]>(() => safePorts(src.ports, src.w, src.h));
-  const [histTick, setHistTick] = useState(0);
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
   const [tab, setTab] = useState<Tab>('draw');
   const [error, setError] = useState<string | null>(null);
   const past = useRef<Snap[]>([]);
   const future = useRef<Snap[]>([]);
+  /** Key of the last coalescing edit (typing in a field, nudging) so a burst becomes one undo step. */
+  const lastKey = useRef<string | null>(null);
   const stateRef = useRef<Snap>({ src, prims, ports });
   stateRef.current = { src, prims, ports };
 
@@ -63,15 +65,21 @@ export function SymbolEditor() {
     setSrc(n.src);
     setPrims(n.prims);
     setPorts(n.ports);
-    setHistTick((t) => t + 1);
+    rerender();
   };
 
-  /** Applies an editing change with the editor's own undo/redo history. */
-  const apply = (mut: (s: Snap) => void, history = true) => {
-    if (history) {
+  /**
+   * Applies an editing change with the editor's own undo/redo history.
+   * `history`: true records an undo step, false doesn't (live drag updates),
+   * a string key records one step for a run of edits sharing that key.
+   */
+  const apply = (mut: (s: Snap) => void, history: boolean | string = true) => {
+    const key = typeof history === 'string' ? history : null;
+    if (history && (key === null || key !== lastKey.current)) {
       past.current = [...past.current.slice(-150), snapshot()];
       future.current = [];
     }
+    if (history) lastKey.current = key;
     const next = snapshot();
     mut(next);
     // keep the DSL text in sync with the structured drawing
@@ -82,6 +90,7 @@ export function SymbolEditor() {
   const undoEd = () => {
     const prev = past.current.pop();
     if (!prev) return;
+    lastKey.current = null;
     future.current = [...future.current, snapshot()];
     write(prev);
   };
@@ -89,12 +98,12 @@ export function SymbolEditor() {
   const redoEd = () => {
     const nxt = future.current.pop();
     if (!nxt) return;
+    lastKey.current = null;
     past.current = [...past.current, snapshot()];
     write(nxt);
   };
 
   const hist = { canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
-  void histTick;
 
   const preview = useMemo<SymbolDef | null>(() => {
     try {
@@ -212,7 +221,7 @@ export function SymbolEditor() {
         <div className="se-side">
           <div className="se-preview">{preview ? <SymbolPreview def={preview} size={150} ports /> : <span className="muted">Invalid symbol</span>}</div>
           <Field label="Name">
-            <TextInput value={src.name} onChange={(name) => apply((s) => void (s.src.name = name))} />
+            <TextInput value={src.name} onChange={(name) => apply((s) => void (s.src.name = name), 'name')} />
           </Field>
           <Field label="Category">
             <select className="input" value={src.category} onChange={(e) => apply((s) => void (s.src.category = e.target.value))}>
@@ -222,16 +231,16 @@ export function SymbolEditor() {
             </select>
           </Field>
           <Field label="Ref prefix" hint="R for resistors, U for ICs, Q for transistors…">
-            <TextInput value={src.prefix} onChange={(prefix) => apply((s) => void (s.src.prefix = prefix))} />
+            <TextInput value={src.prefix} onChange={(prefix) => apply((s) => void (s.src.prefix = prefix), 'prefix')} />
           </Field>
           <Field label="Default value">
-            <TextInput value={src.value} onChange={(value) => apply((s) => void (s.src.value = value))} placeholder="e.g. 10kΩ" />
+            <TextInput value={src.value} onChange={(value) => apply((s) => void (s.src.value = value), 'value')} placeholder="e.g. 10kΩ" />
           </Field>
           <Field label="Fields" hint="Comma separated, e.g. Package=0805, Voltage=50V">
-            <TextInput value={src.fields} onChange={(fields) => apply((s) => void (s.src.fields = fields))} placeholder="Package=0805, Tolerance=1%" />
+            <TextInput value={src.fields} onChange={(fields) => apply((s) => void (s.src.fields = fields), 'fields')} placeholder="Package=0805, Tolerance=1%" />
           </Field>
           <Field label="Search words">
-            <TextInput value={src.keywords} onChange={(keywords) => apply((s) => void (s.src.keywords = keywords))} />
+            <TextInput value={src.keywords} onChange={(keywords) => apply((s) => void (s.src.keywords = keywords), 'keywords')} />
           </Field>
           <div className="se-pins">
             <b>{ports.length} pins</b>
@@ -241,7 +250,7 @@ export function SymbolEditor() {
                   value={p.id}
                   onChange={(e) => {
                     const id = e.target.value.replace(/[\s:,]/g, '_');
-                    apply((s) => (s.ports[i] = { ...s.ports[i], id, name: id }));
+                    apply((s) => void (s.ports[i] = { ...s.ports[i], id, name: id }), `pin-${i}`);
                   }}
                 />
                 <button onClick={() => apply((s) => void s.ports.splice(i, 1))}>×</button>
@@ -249,14 +258,6 @@ export function SymbolEditor() {
             ))}
           </div>
           {error && <div className="error-note">{error}</div>}
-          <div className="btn-row">
-            <button className="icon-btn" title="Undo (Ctrl+Z)" disabled={!hist.canUndo} onClick={undoEd}>
-              <Undo2 size={14} />
-            </button>
-            <button className="icon-btn" title="Redo (Ctrl+Shift+Z)" disabled={!hist.canRedo} onClick={redoEd}>
-              <Redo2 size={14} />
-            </button>
-          </div>
           <div className="btn-row">
             {src.id && (
               <button className="secondary-btn" onClick={() => save(true)}>
@@ -343,6 +344,17 @@ function movePrim(p: Prim, dx: number, dy: number): Prim {
   }
 }
 
+const TOOL_KEYS: Record<Tool, string> = { select: 'V', line: 'L', poly: 'P', rect: 'R', circle: 'C', ellipse: 'E', text: 'T', pin: 'N' };
+
+/** The primitive a drag from a to b draws with the given tool, or null for click-only tools. */
+function dragShape(tool: Tool, a: { x: number; y: number }, b: { x: number; y: number }, fill: Fill): Prim | null {
+  if (tool === 'line') return { t: 'line', pts: [a.x, a.y, b.x, b.y] };
+  if (tool === 'rect') return { t: 'rect', x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y), fill };
+  if (tool === 'circle') return { t: 'circle', cx: a.x, cy: a.y, r: Math.round(Math.hypot(b.x - a.x, b.y - a.y)), fill };
+  if (tool === 'ellipse') return { t: 'ellipse', cx: a.x, cy: a.y, rx: Math.abs(b.x - a.x), ry: Math.abs(b.y - a.y), fill };
+  return null;
+}
+
 function DrawPane({
   src,
   apply,
@@ -354,7 +366,7 @@ function DrawPane({
   canRedo,
 }: {
   src: SymbolSource;
-  apply: (mut: (s: Snap) => void, history?: boolean) => void;
+  apply: (mut: (s: Snap) => void, history?: boolean | string) => void;
   prims: Prim[];
   ports: PortDef[];
   onUndo: () => void;
@@ -364,7 +376,7 @@ function DrawPane({
 }) {
   const [tool, setTool] = useState<Tool>('select');
   const [sel, setSel] = useState<number | null>(null);
-  const [drag, setDrag] = useState<{ start: { x: number; y: number }; cur: { x: number; y: number }; moveBase?: Prim } | null>(null);
+  const [drag, setDrag] = useState<{ start: { x: number; y: number }; cur: { x: number; y: number }; moveBase?: Prim; moved?: boolean } | null>(null);
   const [poly, setPoly] = useState<number[] | null>(null);
   const [fill, setFill] = useState<Fill>('none');
   const [cursor, setCursor] = useState({ x: 0, y: 0 });
@@ -382,12 +394,21 @@ function DrawPane({
   };
 
   const finishPoly = () => {
-    setPoly((p) => {
-      if (p && p.length >= 4) {
-        apply((s) => s.prims.push(fill === 'none' ? { t: 'line', pts: p } : { t: 'poly', pts: p, fill }));
-      }
-      return null;
-    });
+    if (poly && poly.length >= 4) apply((s) => void s.prims.push(fill === 'none' ? { t: 'line', pts: poly } : { t: 'poly', pts: poly, fill }));
+    setPoly(null);
+  };
+
+  const dupSel = () => {
+    if (sel === null) return;
+    const copy = movePrim(structuredClone(prims[sel]), 5, 5);
+    apply((s) => void s.prims.splice(sel + 1, 0, copy));
+    setSel(sel + 1);
+  };
+
+  const delSel = () => {
+    if (sel === null) return;
+    apply((s) => void s.prims.splice(sel, 1));
+    setSel(null);
   };
 
   useEffect(() => {
@@ -420,23 +441,18 @@ function DrawPane({
       }
       if ((combo === 'Delete' || combo === 'Backspace') && sel !== null) {
         e.preventDefault();
-        apply((s) => void s.prims.splice(sel, 1), poly === null);
-        setSel(null);
+        delSel();
         return;
       }
-      const tools: Record<string, Tool> = { V: 'select', L: 'line', P: 'poly', R: 'rect', C: 'circle', E: 'ellipse', T: 'text', N: 'pin' };
-      if (tools[combo]) {
+      const hotTool = (Object.keys(TOOL_KEYS) as Tool[]).find((t) => TOOL_KEYS[t] === combo);
+      if (hotTool) {
         finishPoly();
-        setTool(tools[combo]);
+        setTool(hotTool);
         return;
       }
       if (combo === 'Mod+D' && sel !== null) {
         e.preventDefault();
-        const copy = structuredClone(prims[sel]);
-        apply((s) => {
-          s.prims.splice(sel + 1, 0, movePrim(copy, 5, 5));
-        });
-        setSel(sel + 1);
+        dupSel();
         return;
       }
       const nudge: Record<string, [number, number]> = {
@@ -448,7 +464,7 @@ function DrawPane({
       if (nudge[combo]) {
         e.preventDefault();
         if (poly) return setPoly([...poly.slice(0, -2), s5(poly[poly.length - 2] + nudge[combo][0]), s5(poly[poly.length - 1] + nudge[combo][1])]);
-        if (sel !== null) apply((s) => void (s.prims[sel] = movePrim(s.prims[sel], nudge[combo][0], nudge[combo][1])));
+        if (sel !== null) apply((s) => void (s.prims[sel] = movePrim(s.prims[sel], nudge[combo][0], nudge[combo][1])), `nudge-${sel}`);
         return;
       }
     };
@@ -502,13 +518,12 @@ function DrawPane({
     const p = toLocal(e);
     setCursor(p);
     if (!drag) return;
-    setDrag({ ...drag, cur: p });
-    if (tool === 'select' && drag.moveBase && sel !== null) {
-      const base = drag.moveBase;
-      apply(
-        (s) => void (s.prims[sel] = movePrim(base, p.x - drag.start.x, p.y - drag.start.y)),
-        false,
-      );
+    const moving = tool === 'select' && drag.moveBase && sel !== null && (drag.moved || p.x !== drag.start.x || p.y !== drag.start.y);
+    setDrag({ ...drag, cur: p, moved: drag.moved || !!moving });
+    if (moving) {
+      const base = drag.moveBase!;
+      // the first real movement records the undo step; the rest of the drag updates in place
+      apply((s) => void (s.prims[sel] = movePrim(base, p.x - drag.start.x, p.y - drag.start.y)), !drag.moved);
     }
   };
 
@@ -518,28 +533,13 @@ function DrawPane({
     setDrag(null);
     if (tool === 'select') return;
     if (a.x === b.x && a.y === b.y) return;
-    apply((s) => {
-      let prim: Prim | null = null;
-      if (tool === 'line') prim = { t: 'line', pts: [a.x, a.y, b.x, b.y] };
-      if (tool === 'rect') prim = { t: 'rect', x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y), fill };
-      if (tool === 'circle') prim = { t: 'circle', cx: a.x, cy: a.y, r: Math.round(Math.hypot(b.x - a.x, b.y - a.y)), fill };
-      if (tool === 'ellipse') prim = { t: 'ellipse', cx: a.x, cy: a.y, rx: Math.abs(b.x - a.x), ry: Math.abs(b.y - a.y), fill };
-      if (prim) s.prims.push(prim);
-    });
-    const idx = prims.length;
-    if (tool !== 'text') setSel(idx);
+    const prim = dragShape(tool, a, b, fill);
+    if (!prim) return;
+    apply((s) => void s.prims.push(prim));
+    setSel(prims.length);
   };
 
-  const draft: Prim | null = (() => {
-    if (poly) return { t: 'line', pts: [...poly, cursor.x, cursor.y] };
-    if (!drag || tool === 'select') return null;
-    const { start: a, cur: b } = drag;
-    if (tool === 'line') return { t: 'line', pts: [a.x, a.y, b.x, b.y] };
-    if (tool === 'rect') return { t: 'rect', x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y), fill };
-    if (tool === 'circle') return { t: 'circle', cx: a.x, cy: a.y, r: Math.hypot(b.x - a.x, b.y - a.y), fill };
-    if (tool === 'ellipse') return { t: 'ellipse', cx: a.x, cy: a.y, rx: Math.abs(b.x - a.x), ry: Math.abs(b.y - a.y), fill };
-    return null;
-  })();
+  const draft: Prim | null = poly ? { t: 'line', pts: [...poly, cursor.x, cursor.y] } : drag && tool !== 'select' ? dragShape(tool, drag.start, drag.cur, fill) : null;
 
   const selected = sel !== null ? prims[sel] : null;
   const setSelFill = (f: Fill) => {
@@ -562,24 +562,24 @@ function DrawPane({
   };
   const selWidth = selected ? (selected.t === 'rect' ? (selected.sw ?? 2) : 'w' in selected ? (selected.w ?? 2) : 2) : 2;
 
-  const delSel = () => {
-    if (sel === null) return;
-    apply((s) => void s.prims.splice(sel, 1));
-    setSel(null);
-  };
-
-  const snapNote =
-    tool === 'pin' ? 'snaps to the outline · click an existing pin to remove it' : tool === 'poly' ? 'click points · Enter/double-click to finish · Backspace removes a point' : 'drag to draw · hold nothing special';
+  const toolNote =
+    tool === 'pin'
+      ? 'Click on the dashed outline to add a pin; click an existing pin to remove it.'
+      : tool === 'poly'
+        ? 'Click to add points · Enter or double-click to finish · Backspace removes the last point.'
+        : tool === 'select'
+          ? 'Click a shape to select it · drag to move · arrows nudge.'
+          : 'Drag to draw.';
 
   const tools: [Tool, JSX.Element, string][] = [
-    ['select', <MousePointer2 size={15} />, 'Select & move — V (Del removes, arrows nudge, Ctrl+D duplicates)'],
-    ['line', <Slash size={15} />, 'Line (drag) — L'],
-    ['poly', <Spline size={15} />, 'Polyline / polygon (click points, Enter or double-click to finish) — P'],
-    ['rect', <Square size={15} />, 'Rectangle (drag) — R'],
-    ['circle', <Circle size={15} />, 'Circle (drag from centre) — C'],
-    ['ellipse', <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><ellipse cx="12" cy="12" rx="10" ry="6" /></svg>, 'Ellipse (drag from centre) — E'],
-    ['text', <Type size={15} />, 'Text — T'],
-    ['pin', <Pin size={15} />, 'Pin — N (click on the outline, click again to remove)'],
+    ['select', <MousePointer2 size={15} />, 'Select & move (Del removes, arrows nudge, Ctrl+D duplicates)'],
+    ['line', <Slash size={15} />, 'Line (drag)'],
+    ['poly', <Spline size={15} />, 'Polyline / polygon (click points, Enter or double-click to finish)'],
+    ['rect', <Square size={15} />, 'Rectangle (drag)'],
+    ['circle', <Circle size={15} />, 'Circle (drag from centre)'],
+    ['ellipse', <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><ellipse cx="12" cy="12" rx="10" ry="6" /></svg>, 'Ellipse (drag from centre)'],
+    ['text', <Type size={15} />, 'Text'],
+    ['pin', <Pin size={15} />, 'Pin (click on the outline, click again to remove)'],
   ];
 
   return (
@@ -589,13 +589,14 @@ function DrawPane({
           <button
             key={t}
             className={tool === t ? 'tool-btn active' : 'tool-btn'}
-            title={title}
+            title={`${title} — ${TOOL_KEYS[t]}`}
             onClick={() => {
               finishPoly();
               setTool(t);
             }}
           >
             {icon}
+            <span className="tool-key">{TOOL_KEYS[t]}</span>
           </button>
         ))}
         <span className="rail-sep v" />
@@ -621,22 +622,10 @@ function DrawPane({
         )}
         {sel !== null && (
           <>
-            <button
-              className="tool-btn"
-              title="Duplicate (Ctrl+D)"
-              onClick={() => {
-                const copy = structuredClone(prims[sel]);
-                apply((s) => void s.prims.splice(sel + 1, 0, movePrim(copy, 5, 5)));
-                setSel(sel + 1);
-              }}
-            >
+            <button className="tool-btn" title="Duplicate (Ctrl+D)" onClick={dupSel}>
               <Copy size={15} />
             </button>
-            <button
-              className="tool-btn"
-              title="Delete shape (Del)"
-              onClick={delSel}
-            >
+            <button className="tool-btn" title="Delete shape (Del)" onClick={delSel}>
               <Trash2 size={15} />
             </button>
           </>
@@ -699,7 +688,8 @@ function DrawPane({
         </svg>
       </div>
       <div className="se-help muted small">
-        Tools: <kbd>V</kbd> select · <kbd>L</kbd> line · <kbd>P</kbd> poly · <kbd>R</kbd> rect · <kbd>C</kbd> circle · <kbd>E</kbd> ellipse · <kbd>T</kbd> text · <kbd>N</kbd> pin · <kbd>Ctrl+D</kbd> duplicate · <kbd>Del</kbd> delete · <kbd>←↑↓→</kbd> nudge · <kbd>Ctrl+Z</kbd> undo. Grid: 5px drawing, 10px pins. Pins must sit on the dashed outline so wires snap to the schematic grid. Size is kept to multiples of 20. <span className="muted">({snapNote})</span>
+        <div className="se-tool-note">{toolNote}</div>
+        Grid: 5px drawing, 10px pins. Pins sit on the dashed outline so wires snap to the schematic grid; size is kept to multiples of 20.
       </div>
     </div>
   );

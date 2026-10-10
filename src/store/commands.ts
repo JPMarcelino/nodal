@@ -31,14 +31,8 @@ export const COMMANDS: Command[] = [
   { id: 'file.exportBom', label: 'Export bill of materials (CSV)', category: 'File', keys: [], run: () => doExport('bom') },
   { id: 'file.copySvg', label: 'Copy selection as SVG', category: 'File', keys: ['Mod+Alt+C'], run: copyAsSvg },
   { id: 'file.exportSelection', label: 'Export selection as PNG', category: 'File', keys: ['Mod+Alt+E'], run: () => exportSelection('png') },
-  {
-    id: 'file.exportSelectionSvg',
-    label: 'Export selection as SVG',
-    category: 'File',
-    keys: [],
-    run: () => exportSelection('svg'),
-  },
-  { id: 'file.exportArea', label: 'Export canvas area… (draw a rectangle next)', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
+  { id: 'file.exportSelectionSvg', label: 'Export selection as SVG', category: 'File', keys: [], run: () => exportSelection('svg') },
+  { id: 'file.exportArea', label: 'Export canvas area…', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
   { id: 'file.print', label: 'Print…', category: 'File', keys: ['Mod+P'], run: filePrint },
 
   // Edit

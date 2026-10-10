@@ -22,6 +22,7 @@
   --grid: rgba(150, 165, 200, 0.16);
   --grid-major: rgba(150, 165, 200, 0.3);
   --sym: #d5dbef;
+  --ink: #d5dbef;
   --sym-bg: #10141e;
   --label: #e4e8f4;
   --label-dim: #8f98b3;
@@ -50,6 +51,7 @@
   --grid: rgba(70, 85, 120, 0.16);
   --grid-major: rgba(70, 85, 120, 0.32);
   --sym: #1f2433;
+  --ink: #000000;
   --sym-bg: #fbfcfe;
   --label: #1f2433;
   --label-dim: #5d667c;
@@ -1431,7 +1433,7 @@ select.input {
   color: var(--text-dim);
 }
 
-.tool-btn:hover {
+.tool-btn:hover:not(:disabled) {
   background: var(--panel-3);
   color: var(--text);
 }
@@ -1870,8 +1872,9 @@ select.input {
 
 .se-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 6px 4px;
   margin-bottom: 10px;
 }
 
@@ -1934,6 +1937,12 @@ select.input {
 
 .se-help {
   margin-top: 8px;
+  line-height: 1.5;
+}
+
+.se-tool-note {
+  color: var(--text-dim);
+  margin-bottom: 2px;
 }
 
 .se-pins {

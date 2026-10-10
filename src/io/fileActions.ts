@@ -109,10 +109,9 @@ export function startAreaExport(kind: 'png' | 'svg', opts: Partial<SvgOptions> &
       scale: opts.scale ?? 3,
     },
   });
-  toast('Drag a rectangle over the area to export — Esc to cancel');
 }
 
-/** Exports everything strictly inside the given rectangle (clipped wires). */
+/** Finishes an armed area export; rectangles too small to be deliberate just cancel it. */
 export function runAreaExport(rect: Rect) {
   const job = S().exportArea;
   set({ exportArea: null });

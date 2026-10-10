@@ -49,7 +49,7 @@ export function ContextMenu() {
     if (types.has('component')) entries.push('symbols.edit', '-');
     if (selection.length > 1) entries.push('arrange.alignLeft', 'arrange.alignTop', 'arrange.distH', '-');
     entries.push({ label: 'Zoom to selection', run: () => A.fitView(selection), key: keysFor('view.fitSel')[0] });
-    entries.push('file.exportSelection');
+    entries.push('-', 'file.exportSelection');
   }
   while (entries[entries.length - 1] === '-') entries.pop();
   const x = Math.min(menu.x, window.innerWidth - 250);

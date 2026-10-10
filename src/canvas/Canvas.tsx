@@ -8,7 +8,7 @@ import { buildWirePath, endpointInfo, hitWire, snapOnSegment, wirePolyline } fro
 import { runAreaExport } from '../io/fileActions';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, useStore } from '../store/store';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, dashArray, measureText, useSceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, dashArray, inkColor, measureText, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 
 /* ------------------------------------------------------------------ */
@@ -64,10 +64,16 @@ const BADGE_GLYPHS: Partial<Record<Tool, string>> = {
   text: '<text x="6.5" y="9.8" font-family="sans-serif" font-size="9" fill="#1f2433" text-anchor="middle" stroke="none">T</text>',
 };
 
+const cursorCache = new Map<string, string | null>();
+
 /** CSS cursor with a small tool badge in the corner; hotspot stays on the crosshair centre. */
 export function badgeCursor(t: Tool | 'plus' | 'area'): string | null {
+  if (cursorCache.has(t)) return cursorCache.get(t)!;
   const glyph = t === 'plus' ? PLUS_GLYPH : t === 'area' ? AREA_GLYPH : BADGE_GLYPHS[t];
-  if (!glyph) return null;
+  if (!glyph) {
+    cursorCache.set(t, null);
+    return null;
+  }
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">`
     + `<g stroke="#ffffff" stroke-width="2.6" opacity="0.55"><path d="M12 0v8M12 16v8M0 12h8M16 12h8" stroke-linecap="round"/></g>`
@@ -75,7 +81,9 @@ export function badgeCursor(t: Tool | 'plus' | 'area'): string | null {
     + `<rect x="0.75" y="0.75" width="13" height="13" rx="3.25" fill="#ffffff" stroke="#555f89" stroke-width="1"/>`
     + glyph
     + `</svg>`;
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
+  const css = `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
+  cursorCache.set(t, css);
+  return css;
 }
 
 export function Canvas() {
@@ -818,14 +826,9 @@ export function Canvas() {
         break;
       }
       case 'exportArea': {
-        const r = rectFromPoints(g.start, g.cur);
+        // start and cur are already grid-snapped; a bare click (empty rect) cancels
         setGesture(null);
-        runAreaExport({
-          x: snap(r.x, grid),
-          y: snap(r.y, grid),
-          w: snap(Math.max(r.w, grid), grid),
-          h: snap(Math.max(r.h, grid), grid),
-        });
+        runAreaExport(rectFromPoints(g.start, g.cur));
         break;
       }
     }
@@ -1013,7 +1016,7 @@ export function Canvas() {
             const st = { ...doc.settings.wire, ...S().wireBrush };
             return (
               <g className="wire-preview">
-                <path d={buildWirePath(pts, st.radius)} fill="none" stroke={st.color} strokeWidth={st.width} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} strokeDasharray={dashArray(st.dash, st.width)} />
+                <path d={buildWirePath(pts, st.radius)} fill="none" stroke={inkColor(st.color, EDITOR_PALETTE)} strokeWidth={st.width} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} strokeDasharray={dashArray(st.dash, st.width)} />
                 <path d={buildWirePath(pts, st.radius)} fill="none" className="wire-preview-glow" strokeWidth={st.width + 6 / z} />
                 <TargetMarker t={g.cur} z={z} />
                 <TargetMarker t={g.start} z={z} />
