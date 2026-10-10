@@ -1,5 +1,6 @@
-import { copyAsSvg, doExport, fileNew, fileOpen, filePrint, fileSave } from '../io/fileActions';
+import { copyAsSvg, doExport, exportSelection, fileNew, fileOpen, filePrint, fileSave, startAreaExport } from '../io/fileActions';
 import { computeNets, netOfWire } from '../model/netlist';
+import type { WireItem } from '../model/types';
 import * as A from './actions';
 import { S, redo, set, setPrefs, toast, undo, mutate } from './store';
 
@@ -29,6 +30,15 @@ export const COMMANDS: Command[] = [
   { id: 'file.exportSpice', label: 'Export SPICE netlist', category: 'File', keys: [], run: () => doExport('spice') },
   { id: 'file.exportBom', label: 'Export bill of materials (CSV)', category: 'File', keys: [], run: () => doExport('bom') },
   { id: 'file.copySvg', label: 'Copy selection as SVG', category: 'File', keys: ['Mod+Alt+C'], run: copyAsSvg },
+  { id: 'file.exportSelection', label: 'Export selection as PNG', category: 'File', keys: ['Mod+Alt+E'], run: () => exportSelection('png') },
+  {
+    id: 'file.exportSelectionSvg',
+    label: 'Export selection as SVG',
+    category: 'File',
+    keys: [],
+    run: () => exportSelection('svg'),
+  },
+  { id: 'file.exportArea', label: 'Export canvas area… (draw a rectangle next)', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
   { id: 'file.print', label: 'Print…', category: 'File', keys: ['Mod+P'], run: filePrint },
 
   // Edit
@@ -103,6 +113,7 @@ export const COMMANDS: Command[] = [
   { id: 'wire.reroute', label: 'Re-route selected wires', category: 'Wire', keys: ['Shift+W'], run: A.rerouteWires },
   { id: 'wire.highlightNet', label: 'Highlight net of selected wire', category: 'Wire', keys: ['N'], run: highlightNet },
   { id: 'wire.hops', label: 'Cycle wire crossing style (arc / gap / none)', category: 'Wire', keys: ['Mod+Shift+J'], run: cycleHops },
+  { id: 'wire.hopOver', label: 'Switch which wire hops at crossings', category: 'Wire', keys: ['Mod+Shift+U'], run: flipHopOver },
   { id: 'wire.corners', label: 'Toggle rounded wire corners', category: 'Wire', keys: ['Mod+Shift+K'], run: toggleCorners },
 
   // View
@@ -153,6 +164,22 @@ function cycleHops() {
   const next = order[(order.indexOf(S().doc.settings.hops) + 1) % 3];
   mutateSettings((s) => (s.hops = next));
   toast(`Wire crossings: ${next === 'arc' ? 'hop arcs' : next === 'gap' ? 'gaps' : 'plain'}`);
+}
+
+/** Cycles the selected wires' hop preference: default → hop over → stay flat → default. */
+function flipHopOver() {
+  const ids = S().selection.filter((id) => S().doc.items[id]?.type === 'wire');
+  if (!ids.length) return toast('Select wires to switch their hop side');
+  const first = S().doc.items[ids[0]] as WireItem;
+  const next: boolean | undefined = first.hopOver === undefined ? true : first.hopOver ? false : undefined;
+  mutate((d) =>
+    ids.forEach((id) => {
+      const w = d.items[id] as WireItem;
+      if (next === undefined) delete w.hopOver;
+      else w.hopOver = next;
+    }),
+  );
+  toast(next === undefined ? 'Hop sides back to default' : next ? 'These wires hop over at crossings' : 'These wires stay flat under crossings');
 }
 
 function toggleCorners() {

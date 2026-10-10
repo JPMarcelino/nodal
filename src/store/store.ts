@@ -11,6 +11,14 @@ export interface View {
   zoom: number;
 }
 
+/** Pending "draw a rectangle and export its contents" job. */
+export interface ExportAreaJob {
+  kind: 'png' | 'svg';
+  theme: 'light' | 'dark';
+  background: boolean;
+  scale: number;
+}
+
 export interface Placing {
   symbol: string;
   rot: 0 | 90 | 180 | 270;
@@ -72,6 +80,8 @@ export interface AppState {
   canvasSize: { w: number; h: number };
   /** Wire style applied to newly drawn wires. */
   wireBrush: { color?: string; width?: number; radius?: number; dash?: 'solid' | 'dashed' | 'dotted' } | null;
+  /** When set, the next drag on the canvas defines an export rectangle. */
+  exportArea: ExportAreaJob | null;
 }
 
 const LS = {
@@ -140,6 +150,7 @@ export const useStore = create<AppState>(() => ({
   cursor: { x: 0, y: 0 },
   canvasSize: { w: 800, h: 600 },
   wireBrush: null,
+  exportArea: null,
 }));
 
 export const S = () => useStore.getState();

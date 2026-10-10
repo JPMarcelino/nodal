@@ -47,7 +47,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
       'arrange.front', 'arrange.forward', 'arrange.backward', 'arrange.back', 'arrange.layer',
     ],
   },
-  { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.corners'] },
+  { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.hopOver', 'wire.corners'] },
   {
     label: 'View',
     items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.grid', 'view.snap', 'view.minimap', '-', 'view.library', 'view.layers', 'view.inspector', 'view.focus', '-', 'view.theme'],

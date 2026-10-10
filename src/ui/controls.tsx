@@ -1,20 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { keysFor, prettyKey } from '../store/commands';
 
-export const SWATCHES = [
-  '#3ddc97',
-  '#7aa2f7',
-  '#bb9af7',
-  '#f7768e',
-  '#ff9e64',
-  '#e0af68',
-  '#9ece6a',
-  '#2ac3de',
-  '#c0caf5',
-  '#565f89',
-  '#1f2433',
-  '#ffffff',
-];
+export const SWATCHES = ['#000000', '#3ddc97', '#7aa2f7', '#bb9af7', '#f7768e', '#ff9e64', '#e0af68', '#9ece6a', '#2ac3de', '#c0caf5', '#565f89', '#1f2433', '#ffffff'];
 
 export function Field({ label, children, hint, wide }: { label: string; children: ReactNode; hint?: string; wide?: boolean }) {
   return (

@@ -1,5 +1,6 @@
 import { normalizeDoc } from '../model/doc';
 import { toBomCsv, toSpiceNetlist } from '../model/netlist';
+import type { Rect } from '../model/types';
 import { S, newDoc, replaceDoc, set, toast } from '../store/store';
 import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, printDoc, type SvgOptions } from './export';
@@ -80,6 +81,50 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
 
 export function filePrint() {
   printDoc(S().doc);
+}
+
+/** Exports an arbitrary world-space window; wires are cut at the boundary. */
+export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partial<SvgOptions> & { scale?: number }) {
+  const base = `${sanitizeName(S().doc.name)}-area`;
+  const svgOpts: SvgOptions = { theme: 'light', background: true, padding: 8, ...opts, clip: rect };
+  try {
+    const res =
+      kind === 'svg'
+        ? await saveFile(exportSvg(S().doc, svgOpts).svg, `${base}.svg`, [{ name: 'SVG image', extensions: ['svg'] }])
+        : await saveFile(await exportPng(S().doc, { ...svgOpts, scale: opts.scale ?? 3 }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
+    if (res !== false) toast(`Exported ${kind.toUpperCase()} of selected area`, 'success');
+  } catch (e) {
+    toast(`Export failed: ${(e as Error).message}`, 'error');
+  }
+}
+
+/** Arms "export area" mode: the next rectangle drawn on the canvas is exported. */
+export function startAreaExport(kind: 'png' | 'svg', opts: Partial<SvgOptions> & { scale?: number } = {}) {
+  set({
+    dialog: null,
+    exportArea: {
+      kind,
+      theme: opts.theme ?? 'light',
+      background: opts.background ?? true,
+      scale: opts.scale ?? 3,
+    },
+  });
+  toast('Drag a rectangle over the area to export — Esc to cancel');
+}
+
+/** Exports everything strictly inside the given rectangle (clipped wires). */
+export function runAreaExport(rect: Rect) {
+  const job = S().exportArea;
+  set({ exportArea: null });
+  if (!job || rect.w < 4 || rect.h < 4) return;
+  void doClipExport(job.kind, rect, { theme: job.theme, background: job.background, scale: job.scale, padding: job.kind === 'png' ? 0 : 4 });
+}
+
+/** Exports only the currently selected items. */
+export function exportSelection(kind: 'png' | 'svg' = 'png') {
+  const sel = S().selection;
+  if (!sel.length) return toast('Select items to export first');
+  void doExport(kind, { ids: sel });
 }
 
 export async function copyAsSvg() {

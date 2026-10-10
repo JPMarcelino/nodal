@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { Scene, computeSceneData, type Palette } from '../canvas/Scene';
-import { docBounds } from '../model/doc';
-import { toWorld } from '../model/geometry';
+import { docBounds, itemBounds, uid } from '../model/doc';
+import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
 import { getSymbol } from '../model/registry';
-import type { CircuitDoc, Point, Prim, Rect } from '../model/types';
-import { wireStyle } from '../model/wires';
+import type { CircuitDoc, Item, Point, Prim, Rect, WireItem } from '../model/types';
+import { wirePolyline, wireStyle } from '../model/wires';
 
 export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string }> = {
   light: { sym: '#1f2433', symBg: '#ffffff', label: '#1f2433', value: '#5a6275', bg: '#ffffff', selection: '#3b82f6', grid: '#e6e8ee' },
@@ -17,6 +17,38 @@ export interface SvgOptions {
   background: boolean;
   padding: number;
   ids?: string[];
+  /** World-space rectangle to export (wires are cut at the boundary). */
+  clip?: Rect;
+}
+
+/** Builds a document reduced to a rectangular window; wires running out of it are split and cut. */
+export function clipAreaDoc(doc: CircuitDoc, rect: Rect): CircuitDoc {
+  const items: Record<string, Item> = {};
+  for (const it of Object.values(doc.items)) {
+    if (it.hidden) continue;
+    const b = itemBounds(doc, it);
+    if (!b || !rectsIntersect(rect, b)) continue;
+    if (it.type !== 'wire') {
+      items[it.id] = it;
+      continue;
+    }
+    const pieces = clipPolylineToRect(wirePolyline(doc, it), rect);
+    for (const run of pieces) {
+      if (run.length < 2) continue;
+      const id = uid('w');
+      items[id] = {
+        id,
+        type: 'wire',
+        a: { kind: 'free', x: run[0].x, y: run[0].y },
+        b: { kind: 'free', x: run[run.length - 1].x, y: run[run.length - 1].y },
+        pts: run.slice(1, -1).map((p) => ({ x: p.x, y: p.y })),
+        routing: 'straight',
+        ...(it.style ? { style: { ...it.style } } : {}),
+        ...(it.label ? { label: it.label } : {}),
+      } as WireItem;
+    }
+  }
+  return { ...doc, items };
 }
 
 const FONT = `'Inter', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-serif`;
@@ -28,10 +60,14 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
     const keep = new Set(opts.ids);
     d = { ...doc, items: Object.fromEntries(Object.entries(doc.items).filter(([id]) => keep.has(id))) };
   }
+  if (opts.clip) d = clipAreaDoc(d, opts.clip);
   // wires keep their default colour unless it is unreadable on a light page
-  const b = docBounds(d) ?? { x: 0, y: 0, w: 100, h: 100 };
+  const c = opts.clip;
+  const b = c ? { ...c } : docBounds(d) ?? { x: 0, y: 0, w: 100, h: 100 };
   const p = opts.padding;
-  const box = { x: b.x - p - 30, y: b.y - p - 20, w: b.w + 2 * p + 60, h: b.h + 2 * p + 40 };
+  const box = c
+    ? { x: c.x - p, y: c.y - p, w: c.w + 2 * p, h: c.h + 2 * p }
+    : { x: b.x - p - 30, y: b.y - p - 20, w: b.w + 2 * p + 60, h: b.h + 2 * p + 40 };
   const data = computeSceneData(d);
   const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette }));
   const css = `text{font-family:${FONT}}.ref-label{font-size:11px;font-weight:600}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.sym-text{font-size:9px}`;

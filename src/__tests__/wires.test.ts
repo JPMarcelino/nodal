@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, uid } from '../model/doc';
+import { clipPolylineToRect } from '../model/geometry';
 import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, splitWire, ungroupItems } from '../model/ops';
 import { computeNets } from '../model/netlist';
 import type { CircuitDoc, WireItem } from '../model/types';
-import { buildWirePath, computeHops, orthogonalize, wirePolyline } from '../model/wires';
+import { buildWirePath, computeHops, hopPrefMap, orthogonalize, wirePolyline } from '../model/wires';
 
 function freeWire(doc: CircuitDoc, ax: number, ay: number, bx: number, by: number): WireItem {
   const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: ax, y: ay }, b: { kind: 'free', x: bx, y: by }, pts: [] };
   doc.items[w.id] = w;
   return w;
 }
+
+const idWire = (id: string, hopOver: boolean): { type: string; id: string; hopOver?: boolean } => ({ type: 'wire', id, hopOver });
 
 describe('wire geometry', () => {
   it('inserts orthogonal elbows', () => {
@@ -35,9 +38,52 @@ describe('wire geometry', () => {
     expect(computeHops(polys, 5).size).toBe(0);
   });
 
+  it('honours an explicit hop preference per wire', () => {
+    const polys = new Map([
+      ['h', [{ x: 0, y: 50 }, { x: 100, y: 50 }]],
+      ['v', [{ x: 50, y: 0 }, { x: 50, y: 100 }]],
+    ]);
+    // vertical wire explicitly hops over the horizontal one
+    expect(computeHops(polys, 5, hopPrefMap([idWire('v', true)])).get('v')).toEqual([{ seg: 0, d: 50 }]);
+    expect(computeHops(polys, 5, hopPrefMap([idWire('v', true)])).get('h')).toBeUndefined();
+    // horizontal wire told to stay flat: the vertical one must hop instead
+    expect(computeHops(polys, 5, hopPrefMap([idWire('h', false)])).get('v')).toEqual([{ seg: 0, d: 50 }]);
+    // both flat: falls back to the default rule
+    expect(computeHops(polys, 5, hopPrefMap([idWire('h', false), idWire('v', false)])).get('h')).toEqual([{ seg: 0, d: 50 }]);
+  });
+
   it('rounds corners when a radius is set', () => {
     const d = buildWirePath([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }], 10);
     expect(d).toContain('Q100,0');
+  });
+});
+
+describe('polyline clipping', () => {
+  const r = { x: 10, y: 10, w: 80, h: 80 };
+
+  it('cuts a wire entering and leaving the rectangle', () => {
+    const pieces = clipPolylineToRect([{ x: 0, y: 30 }, { x: 100, y: 30 }], r);
+    expect(pieces).toEqual([[{ x: 10, y: 30 }, { x: 90, y: 30 }]]);
+  });
+
+  it('keeps wires fully inside', () => {
+    const pieces = clipPolylineToRect([{ x: 20, y: 50 }, { x: 60, y: 50 }], r);
+    expect(pieces).toEqual([[{ x: 20, y: 50 }, { x: 60, y: 50 }]]);
+  });
+
+  it('drops wires fully outside and keeps multiple disjoint pieces', () => {
+    expect(clipPolylineToRect([{ x: 0, y: 0 }, { x: 5, y: 5 }], r)).toEqual([]);
+    const zig = [
+      { x: 0, y: 30 },
+      { x: 50, y: 30 },
+      { x: 50, y: -10 },
+      { x: 80, y: -10 },
+      { x: 80, y: 60 },
+    ];
+    const pieces = clipPolylineToRect(zig, r);
+    expect(pieces.length).toBe(2);
+    expect(pieces[0]).toEqual([{ x: 10, y: 30 }, { x: 50, y: 30 }, { x: 50, y: 10 }]);
+    expect(pieces[1]).toEqual([{ x: 80, y: 10 }, { x: 80, y: 60 }]);
   });
 });
 
