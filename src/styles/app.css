@@ -2127,12 +2127,19 @@ select.input {
   border-color: var(--border-strong);
 }
 
-.cross-pop-row.dragging {
-  opacity: 0.45;
+.cross-pop-row {
+  transition: transform 0.12s ease;
+  touch-action: none;
+  user-select: none;
 }
 
-.cross-pop-row.drop {
+.cross-pop-row.dragging {
+  transition: none;
+  position: relative;
+  z-index: 1;
   border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+  cursor: grabbing;
 }
 
 .cross-pop-grip {
@@ -2263,4 +2270,19 @@ select.input {
   to {
     stroke-dashoffset: 0;
   }
+}
+
+/* solder tool previews */
+
+.solder-preview {
+  fill: var(--accent);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.unsolder-preview {
+  fill: none;
+  stroke: var(--danger);
+  opacity: 0.8;
+  pointer-events: none;
 }

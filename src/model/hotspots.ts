@@ -15,14 +15,18 @@ export type HotSpot =
   | { kind: 'crossing'; pt: Point }
   | { kind: 'junction'; pt: Point; id: string }
   | { kind: 'touch'; pt: Point; wire: string; end: 'a' | 'b'; target: TouchTarget }
-  | { kind: 'end'; pt: Point; wire: string; end: 'a' | 'b' };
+  | { kind: 'end'; pt: Point; wire: string; end: 'a' | 'b' }
+  /** A component pin lying on a wire without being connected to it. */
+  | { kind: 'pinTouch'; pt: Point; comp: string; port: string; wire: string }
+  /** A component pin with wires connected. */
+  | { kind: 'pin'; pt: Point; comp: string; port: string; ends: number };
 
 export const hotSpotKey = (h: HotSpot) => `${h.kind}:${h.pt.x},${h.pt.y}`;
 
 /**
- * Every hover-menu spot: wire crossings, solder junctions, loose wire ends
- * and loose ends that touch something (a wire, end, junction or pin) without
- * being connected to it.
+ * Every hover-menu spot: wire crossings, solder junctions, loose wire ends,
+ * loose ends that touch something (a wire, end, junction or pin) without
+ * being connected to it, pins lying on a wire, and pins with wires on them.
  */
 export function computeHotSpots(doc: CircuitDoc, polys: Map<string, Point[]>, crossings: Crossing[]): HotSpot[] {
   const out: HotSpot[] = crossings.map((c) => ({ kind: 'crossing', pt: c.pt }));
@@ -55,7 +59,33 @@ export function computeHotSpots(doc: CircuitDoc, polys: Map<string, Point[]>, cr
       out.push({ kind: 'touch', pt, wire: w.id, end, target });
     }
   }
+
+  // pins: lying on a wire (solder), or with wires connected (unsolder)
+  const taken = new Set(out.map((h) => `${h.pt.x},${h.pt.y}`));
+  for (const p of ports) {
+    if (taken.has(`${p.pt.x},${p.pt.y}`)) continue;
+    let ends = 0;
+    for (const it of items) {
+      if (it.type !== 'wire') continue;
+      for (const ep of [it.a, it.b]) if (ep.kind === 'port' && ep.comp === p.comp && ep.port === p.port) ends++;
+    }
+    const over = wireThroughPoint(doc, polys, p.pt, p.comp, p.port);
+    if (over) out.push({ kind: 'pinTouch', pt: p.pt, comp: p.comp, port: p.port, wire: over });
+    else if (ends > 0) out.push({ kind: 'pin', pt: p.pt, comp: p.comp, port: p.port, ends });
+  }
   return out;
+}
+
+/** A wire passing through `pt` (not just ending there) that is not attached to this pin. */
+function wireThroughPoint(doc: CircuitDoc, polys: Map<string, Point[]>, pt: Point, comp: string, port: string): string | null {
+  for (const [wire, pts] of polys) {
+    const w = doc.items[wire];
+    if (!w || w.type !== 'wire' || w.hidden || pts.length < 2) continue;
+    if ([w.a, w.b].some((ep) => ep.kind === 'port' && ep.comp === comp && ep.port === port)) continue;
+    if (eq(pts[0], pt) || eq(pts[pts.length - 1], pt)) continue;
+    for (let i = 0; i < pts.length - 1; i++) if (projectOnSegment(pt, pts[i], pts[i + 1]).d < 0.5) return wire;
+  }
+  return null;
 }
 
 function touchTarget(doc: CircuitDoc, polys: Map<string, Point[]>, ports: { comp: string; port: string; pt: Point }[], self: string, pt: Point): TouchTarget | null {

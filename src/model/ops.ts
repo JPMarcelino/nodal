@@ -103,25 +103,48 @@ export function solderTouch(doc: CircuitDoc, wireId: string, end: 'a' | 'b', tar
 /**
  * Undoes a solder junction: wires that run straight through it become one
  * wire again (crossing, so they hop), any other branch is detached and left
- * as a loose end touching the point. Returns how many wires were detached.
+ * as a loose end touching the point.
  */
 export function unsolderJunction(doc: CircuitDoc, jid: string): { through: number; detached: number } | null {
   const j = doc.items[jid];
   if (!j || j.type !== 'junction') return null;
+  const r = detachEnds(doc, (ep) => refersTo(ep, jid), { x: j.x, y: j.y }, j.group);
+  delete doc.items[jid];
+  cleanup(doc);
+  return r;
+}
+
+/** Same as unsolderJunction, for a component pin: everything on the pin is disconnected. */
+export function unsolderPort(doc: CircuitDoc, comp: string, port: string): { through: number; detached: number } | null {
+  const c = doc.items[comp];
+  if (!c || c.type !== 'component') return null;
+  const at = endpointInfo(doc, { kind: 'port', comp, port });
+  if (!at) return null;
+  const r = detachEnds(doc, (ep) => ep.kind === 'port' && ep.comp === comp && ep.port === port, at.pt, c.group);
+  cleanup(doc);
+  return r;
+}
+
+/**
+ * Detaches every wire end matching `isHere` (all at point `pt`). Ends leaving
+ * in opposite directions are paired and rejoined into one straight-through
+ * wire; the rest become free ends at `pt`.
+ */
+function detachEnds(doc: CircuitDoc, isHere: (ep: Endpoint) => boolean, pt: Point, group?: string): { through: number; detached: number } {
   const ends: { w: WireItem; end: 'a' | 'b'; dir: Point }[] = [];
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'wire') continue;
     const full = wirePolyline(doc, it);
     if (full.length < 2) continue;
     for (const end of ['a', 'b'] as const) {
-      if (!refersTo(it[end], jid)) continue;
+      if (!isHere(it[end])) continue;
       const [p, q] = end === 'a' ? [full[0], full[1]] : [full[full.length - 1], full[full.length - 2]];
       const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
       ends.push({ w: it, end, dir: { x: (q.x - p.x) / len, y: (q.y - p.y) / len } });
     }
   }
+  // keep every route exactly as drawn while the ends change
   for (const e of ends) e.w.pts = wirePolyline(doc, e.w).slice(1, -1);
-  // pair up ends leaving in opposite directions: those wires ran straight through
   const used = new Set<number>();
   let through = 0;
   for (let i = 0; i < ends.length; i++) {
@@ -131,7 +154,7 @@ export function unsolderJunction(doc: CircuitDoc, jid: string): { through: numbe
     used.add(i).add(k);
     // a private two-way junction, merged into one wire by cleanup()
     const nj = uid('j');
-    doc.items[nj] = { id: nj, type: 'junction', x: j.x, y: j.y, group: j.group };
+    doc.items[nj] = { id: nj, type: 'junction', x: pt.x, y: pt.y, group };
     ends[i].w[ends[i].end] = { kind: 'junction', id: nj };
     ends[k].w[ends[k].end] = { kind: 'junction', id: nj };
     through++;
@@ -139,12 +162,33 @@ export function unsolderJunction(doc: CircuitDoc, jid: string): { through: numbe
   let detached = 0;
   ends.forEach((e, i) => {
     if (used.has(i)) return;
-    e.w[e.end] = { kind: 'free', x: j.x, y: j.y };
+    e.w[e.end] = { kind: 'free', x: pt.x, y: pt.y };
     detached++;
   });
-  delete doc.items[jid];
-  cleanup(doc);
   return { through, detached };
+}
+
+/** Connects a pin that lies on a wire: the wire is split there and both halves attach to the pin. */
+export function solderPinToWire(doc: CircuitDoc, comp: string, port: string, wireId: string): boolean {
+  const at = endpointInfo(doc, { kind: 'port', comp, port });
+  const w = doc.items[wireId];
+  if (!at || !w || w.type !== 'wire') return false;
+  const full = wirePolyline(doc, w);
+  const seg = full.findIndex((q, i) => i < full.length - 1 && projectOnSegment(at.pt, q, full[i + 1]).d < 0.5);
+  if (seg < 0) return false;
+  const jid = splitWire(doc, wireId, seg, at.pt);
+  // the split junction is replaced by the pin itself
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'wire') continue;
+    for (const end of ['a', 'b'] as const) {
+      if (refersTo(it[end], jid)) {
+        it.pts = wirePolyline(doc, it).slice(1, -1);
+        it[end] = { kind: 'port', comp, port };
+      }
+    }
+  }
+  delete doc.items[jid];
+  return true;
 }
 
 export function wireDegree(doc: CircuitDoc, id: string) {
