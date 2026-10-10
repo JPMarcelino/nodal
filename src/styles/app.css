@@ -2751,3 +2751,25 @@ select.input {
   margin-left: 6px;
   white-space: nowrap;
 }
+
+/* Selected wire node / segment (part-level deletion) */
+.wire-part-seg {
+  fill: none;
+  stroke: var(--accent);
+  opacity: 0.35;
+}
+
+.wire-part-node {
+  fill: var(--accent);
+  stroke: var(--panel);
+}
+
+.handle.selected {
+  fill: var(--accent);
+  stroke: var(--panel);
+}
+
+.handle.node.selected {
+  fill: var(--accent);
+  stroke: var(--panel);
+}

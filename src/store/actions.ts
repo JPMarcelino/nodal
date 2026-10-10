@@ -4,6 +4,7 @@ import {
   alignItems,
   annotate,
   deleteItems,
+  deleteWirePart,
   distributeItems,
   extractFragment,
   flipItems,
@@ -75,6 +76,13 @@ export function placeAtCenter(symbol: string) {
 /* ------------------------------------------------------------------ */
 
 export function deleteSelection() {
+  // a selected wire node/segment deletes just that part
+  const wp = S().wirePart;
+  if (wp && S().selection.length === 1 && S().selection[0] === wp.wire && S().doc.items[wp.wire]) {
+    mutate((d) => deleteWirePart(d as CircuitDoc, wp));
+    set({ wirePart: null });
+    return;
+  }
   const ids = editable();
   if (!ids.length) return;
   mutate((d) => deleteItems(d as CircuitDoc, ids), []);

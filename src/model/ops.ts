@@ -287,6 +287,85 @@ export function deleteItems(doc: CircuitDoc, ids: Iterable<string>) {
   pruneGroups(doc);
 }
 
+/**
+ * Deletes one vertex ("node") or one segment of a wire.
+ *
+ * - a segment: the wire is shortened (end segment) or split in two (middle one),
+ *   leaving a gap exactly the size of the removed segment;
+ * - a node: an end node removes its end segment; an interior bend is removed and
+ *   the route is re-joined, staying orthogonal unless the wire is straight-routed.
+ */
+export function deleteWirePart(doc: CircuitDoc, part: { wire: string; kind: 'node' | 'segment'; index: number }): void {
+  const w = doc.items[part.wire] as WireItem | undefined;
+  if (!w || w.type !== 'wire') return;
+  const full = wirePolyline(doc, w);
+  const n = full.length - 1; // segment count
+  if (n < 1) return;
+
+  let seg: number;
+  if (part.kind === 'node') {
+    const k = Math.max(0, Math.min(full.length - 1, part.index));
+    if (k > 0 && k < n) {
+      removeVertex(w, full, k);
+      cleanup(doc);
+      return;
+    }
+    seg = k <= 0 ? 0 : n - 1;
+  } else {
+    seg = Math.max(0, Math.min(n - 1, part.index));
+  }
+
+  if (n === 1) {
+    delete doc.items[w.id];
+    cleanup(doc);
+    return;
+  }
+  if (seg === 0) {
+    const rest = full.slice(1);
+    w.a = { kind: 'free', x: rest[0].x, y: rest[0].y };
+    setFullPolyline(w, rest);
+  } else if (seg === n - 1) {
+    const rest = full.slice(0, n);
+    w.b = { kind: 'free', x: rest[rest.length - 1].x, y: rest[rest.length - 1].y };
+    setFullPolyline(w, rest);
+  } else {
+    const first = full.slice(0, seg + 1);
+    const second = full.slice(seg + 1);
+    const w2: WireItem = {
+      ...clone(w),
+      id: uid('w'),
+      a: { kind: 'free', x: second[0].x, y: second[0].y },
+      pts: simplify(second).slice(1, -1),
+    };
+    w.b = { kind: 'free', x: first[first.length - 1].x, y: first[first.length - 1].y };
+    setFullPolyline(w, first);
+    doc.items[w2.id] = w2;
+  }
+  cleanup(doc);
+}
+
+/** Removes interior vertex `k`; for orthogonal wires an elbow keeps the route right-angled. */
+function removeVertex(w: WireItem, full: Point[], k: number) {
+  const P = full.map((p) => ({ ...p }));
+  const prev = P[k - 1];
+  const next = P[k + 1];
+  if (w.routing === 'straight' || Math.abs(prev.x - next.x) < 0.01 || Math.abs(prev.y - next.y) < 0.01) {
+    P.splice(k, 1);
+  } else {
+    // choose the elbow that continues the run entering (or leaving) the vertex
+    const before = P[k - 2];
+    const after = P[k + 2];
+    let elbow: Point;
+    if (before && Math.abs(before.y - prev.y) < 0.01) elbow = { x: next.x, y: prev.y };
+    else if (before && Math.abs(before.x - prev.x) < 0.01) elbow = { x: prev.x, y: next.y };
+    else if (after && Math.abs(after.y - next.y) < 0.01) elbow = { x: prev.x, y: next.y };
+    else if (after && Math.abs(after.x - next.x) < 0.01) elbow = { x: next.x, y: prev.y };
+    else elbow = { x: next.x, y: prev.y };
+    P.splice(k, 1, elbow);
+  }
+  setFullPolyline(w, P);
+}
+
 export function pruneGroups(doc: CircuitDoc) {
   const used = new Map<string, number>();
   for (const it of Object.values(doc.items)) if (it.group) used.set(it.group, (used.get(it.group) ?? 0) + 1);

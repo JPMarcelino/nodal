@@ -301,6 +301,8 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
               ['Flip wire elbow', 'Space or / while wiring'],
               ['Remove last bend', 'Backspace while wiring'],
               ['Reshape a wire', 'Select it, then drag a segment'],
+              ['Delete a segment', 'Select a wire, click a segment again to select it, then Del removes just that segment'],
+              ['Delete a node', 'Edit points tool (E): click a bend or end, then Del removes it (the wire splits at a middle segment)'],
               ['Solder / unsolder', 'Solder tool (S): click a crossing or a pin on a wire to solder, a junction or wired pin to unsolder'],
               ['Move bend points', 'Edit points tool (E): drag any bend or end · Alt drags freely · double-click adds/removes a bend'],
               ['Reconnect wire end', 'Select it, then drag an end handle'],

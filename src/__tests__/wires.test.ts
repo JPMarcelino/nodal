@@ -3,7 +3,7 @@ import { createDoc, drawOrder, makeComponent, makeShape, normalizeDoc, uid } fro
 import { clampTitleOffset, labelLayout, shapeTitle } from '../canvas/Scene';
 import { getSymbol } from '../model/registry';
 import { clipPolylineToRect, simplify } from '../model/geometry';
-import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, reorderItem, rotateItems, solderPinToWire, translateDetached, translateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
+import { cleanup, deleteItems, deleteWirePart, extractFragment, groupItems, insertFragment, reorderItem, rotateItems, solderPinToWire, translateDetached, translateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
 import { computeHotSpots } from '../model/hotspots';
 import { computeNets } from '../model/netlist';
 import type { CircuitDoc, WireItem } from '../model/types';
@@ -451,5 +451,74 @@ describe('part labels', () => {
     expect(split.ref!.x - base.ref!.x).toBe(10);
     expect(split.value!.x - base.value!.x).toBe(-20);
     expect(split.value!.y).toBe(base.value!.y);
+  });
+});
+
+describe('delete a wire node or segment', () => {
+  /** A wire whose full polyline is exactly the given points. */
+  function bentWire(doc: CircuitDoc, full: [number, number][]) {
+    const w = freeWire(doc, full[0][0], full[0][1], full[full.length - 1][0], full[full.length - 1][1]);
+    w.pts = full.slice(1, -1).map(([x, y]) => ({ x, y }));
+    return w;
+  }
+  const wires = (doc: CircuitDoc) => Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire');
+  const poly = (doc: CircuitDoc, id: string) => wirePolyline(doc, doc.items[id] as WireItem);
+
+  it('splits the wire when a middle segment is removed, leaving a gap', () => {
+    const doc = createDoc();
+    const w = bentWire(doc, [[0, 0], [100, 0], [100, 100], [200, 100]]);
+    deleteWirePart(doc, { wire: w.id, kind: 'segment', index: 1 });
+    const ws = wires(doc);
+    expect(ws.length).toBe(2);
+    const first = poly(doc, w.id); // keeps the original id
+    const second = poly(doc, ws.find((x) => x.id !== w.id)!.id);
+    expect(first).toEqual([{ x: 0, y: 0 }, { x: 100, y: 0 }]);
+    expect(second).toEqual([{ x: 100, y: 100 }, { x: 200, y: 100 }]);
+    // both inner ends are loose now
+    expect((doc.items[w.id] as WireItem).b.kind).toBe('free');
+  });
+
+  it('shortens the wire when an end segment is removed', () => {
+    const doc = createDoc();
+    const w = bentWire(doc, [[0, 0], [100, 0], [100, 100], [200, 100]]);
+    deleteWirePart(doc, { wire: w.id, kind: 'segment', index: 0 });
+    expect(wires(doc).length).toBe(1);
+    expect(poly(doc, w.id)).toEqual([{ x: 100, y: 0 }, { x: 100, y: 100 }, { x: 200, y: 100 }]);
+    expect((doc.items[w.id] as WireItem).a).toEqual({ kind: 'free', x: 100, y: 0 });
+
+    const doc2 = createDoc();
+    const w2 = bentWire(doc2, [[0, 0], [100, 0], [100, 100], [200, 100]]);
+    deleteWirePart(doc2, { wire: w2.id, kind: 'segment', index: 2 });
+    expect(poly(doc2, w2.id)).toEqual([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }]);
+  });
+
+  it('deletes the whole wire when it has a single segment', () => {
+    const doc = createDoc();
+    const w = freeWire(doc, 0, 0, 100, 0);
+    deleteWirePart(doc, { wire: w.id, kind: 'segment', index: 0 });
+    expect(wires(doc).length).toBe(0);
+  });
+
+  it('removes an end node by removing its end segment', () => {
+    const doc = createDoc();
+    const w = bentWire(doc, [[0, 0], [100, 0], [100, 100], [200, 100]]);
+    deleteWirePart(doc, { wire: w.id, kind: 'node', index: 0 });
+    expect(poly(doc, w.id)).toEqual([{ x: 100, y: 0 }, { x: 100, y: 100 }, { x: 200, y: 100 }]);
+  });
+
+  it('removes an interior bend and keeps the route orthogonal', () => {
+    const doc = createDoc();
+    const w = bentWire(doc, [[0, 0], [100, 0], [100, 100], [200, 100]]);
+    deleteWirePart(doc, { wire: w.id, kind: 'node', index: 2 });
+    expect(poly(doc, w.id)).toEqual([{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }]);
+    expect(wires(doc).length).toBe(1);
+  });
+
+  it('removes a bend directly on a straight-routed wire (diagonal allowed)', () => {
+    const doc = createDoc();
+    const w = bentWire(doc, [[0, 0], [100, 0], [100, 100], [200, 100]]);
+    w.routing = 'straight';
+    deleteWirePart(doc, { wire: w.id, kind: 'node', index: 2 });
+    expect(poly(doc, w.id)).toEqual([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 100 }]);
   });
 });

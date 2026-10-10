@@ -27,6 +27,13 @@ export interface Placing {
   repeat: boolean;
 }
 
+/** A single vertex ("node") or one segment of a wire, selected for deletion. */
+export interface WirePartSel {
+  wire: string;
+  kind: 'node' | 'segment';
+  index: number;
+}
+
 export interface ContextMenuState {
   x: number;
   y: number;
@@ -57,6 +64,8 @@ export interface Toast {
 export interface AppState {
   doc: CircuitDoc;
   selection: string[];
+  /** A node or segment of the selected wire, for part-level deletion. */
+  wirePart: WirePartSel | null;
   /** Group currently entered (double-click into a group). */
   scope?: string;
   tool: Tool;
@@ -134,6 +143,7 @@ setUserLibrary(userLibrary);
 export const useStore = create<AppState>(() => ({
   doc: initialDoc(),
   selection: [],
+  wirePart: null,
   scope: undefined,
   tool: 'select',
   altMove: false,
@@ -265,14 +275,15 @@ export function expandToGroups(ids: string[]): string[] {
 export function select(ids: string[], mode: 'replace' | 'add' | 'toggle' = 'replace') {
   const expanded = expandToGroups(ids);
   const cur = new Set(S().selection);
-  if (mode === 'replace') return set({ selection: expanded });
+  // selecting items always drops any node/segment sub-selection
+  if (mode === 'replace') return set({ selection: expanded, wirePart: null });
   if (mode === 'add') {
     expanded.forEach((id) => cur.add(id));
-    return set({ selection: [...cur] });
+    return set({ selection: [...cur], wirePart: null });
   }
   const allIn = expanded.every((id) => cur.has(id));
   expanded.forEach((id) => (allIn ? cur.delete(id) : cur.add(id)));
-  set({ selection: [...cur] });
+  set({ selection: [...cur], wirePart: null });
 }
 
 /* ------------------------------------------------------------------ */
