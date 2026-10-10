@@ -34,7 +34,7 @@ export interface ContextMenuState {
   target: string | null;
 }
 
-export type Dialog = null | 'palette' | 'shortcuts' | 'settings' | 'symbol-editor' | 'about' | 'export';
+export type Dialog = null | 'palette' | 'shortcuts' | 'settings' | 'symbol-editor' | 'about' | 'export' | 'share';
 
 export interface Prefs {
   theme: 'dark' | 'light';
@@ -297,6 +297,14 @@ export function setPrefs(p: Partial<Prefs>) {
 
 export function saveUserSymbol(def: SymbolDef) {
   const lib = { ...S().userLibrary, [def.id]: def };
+  setUserLibrary(lib);
+  set({ userLibrary: lib });
+  localStorage.setItem(LS.lib, JSON.stringify(lib));
+}
+
+/** Merges a set of symbols into "My symbols" (used by share / import). */
+export function mergeUserSymbols(incoming: Record<string, SymbolDef>): void {
+  const lib = { ...S().userLibrary, ...incoming };
   setUserLibrary(lib);
   set({ userLibrary: lib });
   localStorage.setItem(LS.lib, JSON.stringify(lib));

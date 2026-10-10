@@ -43,6 +43,12 @@ export interface FieldDef {
   default?: string;
 }
 
+/** A named alternative drawing ("type") of a symbol. Refers to another symbol id. */
+export interface VariantRef {
+  id: string;
+  name: string;
+}
+
 export interface SymbolDef {
   id: string;
   name: string;
@@ -62,6 +68,12 @@ export interface SymbolDef {
   hideLabels?: boolean;
   /** Symbols whose value is shown as the main label (net labels, rails). */
   valueIsLabel?: boolean;
+  /** When set, this symbol is an alternative drawing ("type") of the symbol with this id. */
+  variantOf?: string;
+  /** Human label of this type, e.g. "Type B — source arrow". */
+  variantName?: string;
+  /** Alternative drawings of this symbol, offered as a type picker wherever it is placed. */
+  variants?: VariantRef[];
 }
 
 /* ------------------------------------------------------------------ */

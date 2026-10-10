@@ -24,6 +24,7 @@ export function App() {
   const left = useStore((s) => s.leftPanel);
   const right = useStore((s) => s.rightPanel);
   const dialog = useStore((s) => s.dialog);
+  const editingSymbol = useStore((s) => s.editingSymbol);
   const name = useStore((s) => s.doc.name);
   const dirty = useStore((s) => s.dirty);
 
@@ -91,7 +92,7 @@ export function App() {
       <StatusBar />
       <ContextMenu />
       <Dialogs />
-      {dialog === 'symbol-editor' && <SymbolEditor />}
+      {dialog === 'symbol-editor' && <SymbolEditor key={editingSymbol ?? 'new'} />}
       <Toasts />
     </div>
   );

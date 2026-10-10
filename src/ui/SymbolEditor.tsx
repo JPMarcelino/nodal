@@ -1,12 +1,12 @@
-import { Cpu, Code2, PenLine, Upload } from 'lucide-react';
+import { Cpu, Code2, Layers, PenLine, Pencil, Trash2, Upload } from 'lucide-react';
 import { useMemo, useReducer, useRef, useState } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { uid } from '../model/doc';
 import { compileSource, parseDraw, parsePorts, primsToDsl, sourceOf, type SymbolSource } from '../model/symbols/dsl';
-import { getSymbol } from '../model/registry';
+import { baseSymbols, getSymbol, variantDefs } from '../model/registry';
 import { CATEGORY_ORDER } from '../model/symbols';
-import type { PortDef, Prim, SymbolDef } from '../model/types';
-import { S, mutate, saveUserSymbol, set, toast, useStore } from '../store/store';
+import type { PortDef, Prim, SymbolDef, VariantRef } from '../model/types';
+import { S, deleteUserSymbol, mutate, saveUserSymbol, set, toast, useStore } from '../store/store';
 import { Modal } from './Dialogs';
 import { SymbolDrawPane, type Snap } from './SymbolDrawPane';
 import { Field, NumberInput, TextInput } from './controls';
@@ -19,12 +19,14 @@ const blank = (): SymbolSource => ({
   category: 'My symbols',
   w: 80,
   h: 40,
-  draw: 'L 0 20 20 20\nRB 20 8 40 24 3\nL 60 20 80 20',
+  draw: 'L 0 20 20 20\nRB 20 10 40 20 3\nL 60 20 80 20',
   ports: '1:0,20 2:80,20',
   prefix: 'U',
   value: '',
   fields: '',
   keywords: '',
+  variantOf: '',
+  variantName: '',
 });
 
 const r20 = (v: number) => Math.max(20, Math.round(v / 20) * 20);
@@ -33,7 +35,16 @@ const r20 = (v: number) => Math.max(20, Math.round(v / 20) * 20);
 export function SymbolEditor() {
   const editing = useStore((s) => s.editingSymbol);
   const original = useMemo<SymbolDef | null>(() => (editing ? getSymbol(S().doc, editing) : null), [editing]);
-  const [src, setSrc] = useState<SymbolSource>(() => (original ? { ...sourceOf(original), id: original.custom ? original.id : '', name: original.custom ? original.name : `${original.name} (custom)`, category: original.custom ? original.category : 'My symbols' } : blank()));
+  const [src, setSrc] = useState<SymbolSource>(() => {
+    if (!original) return blank();
+    const keep = original.custom || !!original.variantOf; // editing a type keeps its id/name
+    return {
+      ...sourceOf(original),
+      id: keep ? original.id : '',
+      name: keep ? original.name : `${original.name} (custom)`,
+      category: keep ? original.category : 'My symbols',
+    };
+  });
   const [prims, setPrims] = useState<Prim[]>(() => safePrims(src.draw));
   const [ports, setPorts] = useState<PortDef[]>(() => safePorts(src.ports, src.w, src.h));
   const [, rerender] = useReducer((n: number) => n + 1, 0);
@@ -107,15 +118,47 @@ export function SymbolEditor() {
     }
   }, [src]);
 
+  const validate = () => {
+    const problems = ports.filter((p) => !(p.x === 0 || p.y === 0 || p.x === src.w || p.y === src.h));
+    if (problems.length) throw new Error(`Pin ${problems[0].name} must sit on the symbol's outline`);
+    const ids = new Set<string>();
+    for (const p of ports) {
+      if (ids.has(p.id)) throw new Error(`Two pins are named "${p.id}"`);
+      ids.add(p.id);
+    }
+  };
+
   const save = (asNew: boolean) => {
     try {
-      const problems = ports.filter((p) => !(p.x === 0 || p.y === 0 || p.x === src.w || p.y === src.h));
-      if (problems.length) throw new Error(`Pin ${problems[0].name} must sit on the symbol's outline`);
-      const ids = new Set<string>();
-      for (const p of ports) {
-        if (ids.has(p.id)) throw new Error(`Two pins are named "${p.id}"`);
-        ids.add(p.id);
+      validate();
+      // ---- Save the drawing as an extra "type" of an existing symbol ----
+      if (src.variantOf) {
+        const base = getSymbol(S().doc, src.variantOf);
+        const vid = !asNew && src.id ? src.id : `user-type-${slug(variantName)}-${uid('').slice(-5)}`;
+        const def = compileSource({ ...src, id: vid, name: base.name, category: base.category, prefix: base.prefix, value: src.value || base.value || '' });
+        // the type inherits the base's identity, labels and fields
+        def.name = base.name;
+        def.category = base.category;
+        def.prefix = base.prefix;
+        def.fields = base.fields;
+        def.hideLabels = base.hideLabels;
+        def.valueIsLabel = base.valueIsLabel;
+        def.variantOf = base.id;
+        def.variantName = variantName;
+        const ref: VariantRef = { id: vid, name: variantName };
+        const mergedBase: SymbolDef = { ...base, variants: [...(base.variants ?? []).filter((v) => v.id !== ref.id), ref] };
+        saveUserSymbol(def);
+        saveUserSymbol(mergedBase);
+        // one document edit, so undo puts the whole addition back at once
+        mutate((d) => {
+          d.symbols[vid] = def;
+          d.symbols[base.id] = mergedBase;
+        });
+        toast(`Added “${variantName}” as a type of ${base.name}`, 'success');
+        set({ dialog: null, editingSymbol: null });
+        return;
       }
+      // ---- Save as a standalone symbol ----
       const id = !asNew && src.id ? src.id : `user-${slug(src.name)}-${uid('').slice(-5)}`;
       const def = compileSource({ ...src, id });
       saveUserSymbol(def);
@@ -143,6 +186,28 @@ export function SymbolEditor() {
       setError((e as Error).message);
     }
   };
+
+  /** Removes a type from a base symbol; parts using it fall back to the base drawing. */
+  const removeType = (baseId: string, vid: string) => {
+    const base = getSymbol(S().doc, baseId);
+    const merged: SymbolDef = { ...base, variants: (base.variants ?? []).filter((v) => v.id !== vid) };
+    saveUserSymbol(merged);
+    deleteUserSymbol(vid);
+    mutate((d) => {
+      d.symbols[baseId] = merged;
+      delete d.symbols[vid];
+      for (const it of Object.values(d.items)) {
+        if (it.type === 'component' && it.symbol === vid) it.symbol = baseId;
+      }
+    });
+    toast(`Removed that type of ${base.name}`, 'success');
+  };
+
+  const bases = useMemo(() => baseSymbols({ symbols: S().doc.symbols }), []);
+  const baseId = src.variantOf || (original?.variants?.length ? original.id : '');
+  const manageBase = baseId ? getSymbol(S().doc, baseId) : null;
+  const manageTypes = manageBase ? [manageBase, ...variantDefs({ symbols: S().doc.symbols }, manageBase)] : [];
+  const variantName = (src.variantName ?? '').trim() || `Type ${(manageBase?.variants?.length ?? 0) + 1}`;
 
   return (
     <Modal title={original ? (original.custom ? `Edit symbol — ${original.name}` : `Customise “${original.name}”`) : 'Create a symbol'} onClose={() => set({ dialog: null, editingSymbol: null })} onEscape={() => (tab === 'draw' ? !!escRef.current?.() : false)} width={1080} className="symbol-editor">
@@ -236,6 +301,55 @@ export function SymbolEditor() {
           <Field label="Search words">
             <TextInput value={src.keywords} onChange={(keywords) => apply((s) => void (s.src.keywords = keywords), 'keywords')} />
           </Field>
+          <div className="se-types">
+            <Field label="Drawing type" hint="Offer this drawing as an extra “type” of an existing symbol">
+              <select
+                className="input"
+                value={src.variantOf ?? ''}
+                onChange={(e) =>
+                  apply((s) => {
+                    s.src.variantOf = e.target.value || undefined;
+                    if (!e.target.value) s.src.variantName = '';
+                  })
+                }
+              >
+                <option value="">— standalone symbol —</option>
+                {bases.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} · {b.category}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {src.variantOf && (
+              <Field label="Type name" hint="Shown in the type picker, e.g. “Type B · source arrow”">
+                <input className="input" value={src.variantName ?? ''} onChange={(e) => apply((s) => void (s.src.variantName = e.target.value), 'vname')} placeholder="Type B" />
+              </Field>
+            )}
+            {manageBase && (
+              <div className="se-type-list">
+                <div className="se-type-head">
+                  <Layers size={12} /> {manageTypes.length} type{manageTypes.length === 1 ? '' : 's'} of {manageBase.name}
+                </div>
+                {manageTypes.map((t, i) => (
+                  <div key={t.id} className={t.id === src.id ? 'se-type-row active' : 'se-type-row'}>
+                    <span className="se-type-prev">
+                      <SymbolPreview def={t} size={28} />
+                    </span>
+                    <span className="se-type-label">{i === 0 ? 'Type A · standard' : t.variantName || t.name}</span>
+                    <button className="mini-btn" title="Edit this type" onClick={() => set({ editingSymbol: t.id })}>
+                      <Pencil size={11} />
+                    </button>
+                    {t.id !== manageBase.id && (
+                      <button className="mini-btn" title="Delete this type" onClick={() => removeType(manageBase.id, t.id)}>
+                        <Trash2 size={11} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="se-pins">
             <b>{ports.length} pins</b>
             {ports.map((p, i) => (
@@ -253,13 +367,13 @@ export function SymbolEditor() {
           </div>
           {error && <div className="error-note">{error}</div>}
           <div className="btn-row">
-            {src.id && (
+            {src.id && !src.variantOf && (
               <button className="secondary-btn" onClick={() => save(true)}>
                 Save as copy
               </button>
             )}
             <button className="primary-btn" onClick={() => save(false)}>
-              {src.id ? 'Save changes' : 'Add to My symbols'}
+              {src.variantOf ? (src.id ? 'Save this type' : 'Add this type') : src.id ? 'Save changes' : 'Add to My symbols'}
             </button>
           </div>
         </div>

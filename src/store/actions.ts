@@ -46,6 +46,11 @@ export function placeComponent(symbol: string, x: number, y: number, rot: 0 | 90
   mutate((d) => {
     // copy user symbols into the document so files are self-contained
     if (userLibrary[symbol] && !d.symbols[symbol]) d.symbols[symbol] = userLibrary[symbol];
+    // a user-defined "type" also brings its base override along, so its type picker works elsewhere
+    const placed = userLibrary[symbol];
+    if (placed?.variantOf && userLibrary[placed.variantOf] && !d.symbols[placed.variantOf]) {
+      d.symbols[placed.variantOf] = userLibrary[placed.variantOf];
+    }
     const c = makeComponent(d as CircuitDoc, symbol, x, y, rot, flipX);
     c.group = scope;
     d.items[c.id] = c;

@@ -28,14 +28,23 @@ Nodal is a fast, good-looking schematic editor. It's one React + TypeScript code
 
 You can search the library, mark favourites (★), and see recently used parts. Click a part to place it, or drag it onto the canvas.
 
+### Symbol types (several drawings per part)
+Many parts can be drawn more than one way. A symbol with types shows a small **types badge** on its tile; **hover** it for a clean popup preview, and **click** it to open a type picker (e.g. N- and P-channel MOSFETs ship with **Type A · standard**, **Type B · source arrow** and **Type C · simplified/gate-bubble**, and diodes, capacitors and inductors have alternates too). The same preview appears on hover in the command palette, and the type travels with the part.
+
 ### Making your own symbols
 Open the symbol editor with **Ctrl+Shift+N**, the **+ New** button, or **Customise symbol** on any part:
 - **Draw:** lines, polylines/polygons, rectangles, circles and text on a grid, plus pins that snap onto the symbol outline
 - **Chip / IC builder:** type the pin names for each side and the box, leads, labels and pin numbers are generated
 - **Import SVG:** paste or load an SVG; it is converted and scaled to fit
 - **Code:** a short text format, for precise edits
+- **Drawing type:** set *“Drawing type”* to an existing symbol to save your drawing as a **new type** of it — it then appears in that part's type picker, and you can manage (edit/delete) the other types from the same panel. Everything in the editor snaps to the same 10 px grid.
 
 Your symbols are kept in *My symbols*. Every circuit file also stores a copy of the symbols it uses, so files open correctly on other machines.
+
+### Sharing & collaboration
+Live multi-user editing with named cursors needs a shared server, which a fully offline app can't provide. Until then, collaborating is one click — open **File → Share & collaborate…** (or the button atop the library) to:
+- **Share your whole symbol library** as copy-paste text or a `.json` file, and import someone else's (imports *merge*, never overwrite).
+- **Share any part of a circuit as a reusable template** — select it and send it; the template carries its parts, wiring and custom symbols, and lands correctly on another machine.
 
 ### Wiring
 - Drag from any pin to draw a wire, or press **W** and click to add bends. Wires stay orthogonal; press **Space** to flip the elbow and **Backspace** to remove the last bend.

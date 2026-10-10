@@ -1,35 +1,92 @@
-import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Pencil, Plus, Search, Share2, Star, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { drawOrder } from '../model/doc';
 import { computeNets } from '../model/netlist';
 import { reorderItem } from '../model/ops';
-import { getSymbol } from '../model/registry';
-import { BUILTIN_SYMBOLS, CATEGORY_ORDER } from '../model/symbols';
+import { getSymbol, librarySymbols, variantDefs } from '../model/registry';
+import { CATEGORY_ORDER } from '../model/symbols';
 import type { CircuitDoc, Item, SymbolDef } from '../model/types';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import * as A from '../store/actions';
 import { S, deleteUserSymbol, mutate, select, set, toggleFavorite, useStore } from '../store/store';
+import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 
 function Tile({ def }: { def: SymbolDef }) {
   const fav = useStore((s) => s.favorites.includes(def.id));
   const placing = useStore((s) => s.placing?.symbol === def.id);
+  const docSymbols = useStore((s) => s.doc.symbols);
+  const variants = useMemo(() => variantDefs({ symbols: docSymbols }, def), [def, docSymbols]);
+  const [pop, setPop] = useState<SymbolPopupState | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const clearTimer = () => clearTimeout(timer.current);
+  // grace period so the pointer can travel from the tile into the popup
+  const clearClose = () => clearTimeout(closeTimer.current);
+  const scheduleClose = () => {
+    clearClose();
+    closeTimer.current = setTimeout(() => setPop((p) => (p && !p.pinned ? null : p)), 180);
+  };
+  useEffect(() => () => (clearTimer(), clearClose()), []);
+
+  // a pinned picker also closes on Esc
+  useEffect(() => {
+    if (!pop?.pinned) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPop(null);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [pop?.pinned]);
+
+  const place = (d: SymbolDef) => {
+    setPop(null);
+    A.startPlacing(d.id);
+  };
+
   return (
-    <div
-      className={placing ? 'tile active' : 'tile'}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData('application/x-nodal-symbol', def.id);
-        e.dataTransfer.effectAllowed = 'copy';
-      }}
-      onClick={() => A.startPlacing(def.id)}
-      onDoubleClick={() => {
-        set({ placing: null });
-        A.placeAtCenter(def.id);
-      }}
-      title={`${def.name}${def.value ? ` — ${def.value}` : ''}\nClick to place · drag onto canvas · double-click to drop in view centre`}
-    >
-      <SymbolPreview def={def} size={44} />
-      <span className="tile-name">{def.name}</span>
+    <>
+      <div
+        className={placing ? 'tile active' : 'tile'}
+        draggable
+        onDragStart={(e) => {
+          setPop(null);
+          e.dataTransfer.setData('application/x-nodal-symbol', def.id);
+          e.dataTransfer.effectAllowed = 'copy';
+        }}
+        onMouseEnter={(e) => {
+          clearClose();
+          if (pop) return;
+          const el = e.currentTarget;
+          clearTimer();
+          timer.current = setTimeout(() => setPop({ def, variants, anchor: anchorOf(el), pinned: false }), 140);
+        }}
+        onMouseLeave={() => {
+          clearTimer();
+          scheduleClose();
+        }}
+        onClick={(e) => {
+          clearTimer();
+          clearClose();
+          if (!variants.length) return A.startPlacing(def.id);
+          const anchor = anchorOf(e.currentTarget);
+          setPop((p) => (p?.pinned ? null : { def, variants, anchor, pinned: true }));
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          clearTimer();
+          setPop(null);
+          set({ placing: null });
+          A.placeAtCenter(def.id);
+        }}
+        title={`${def.name}${def.value ? ` — ${def.value}` : ''}${variants.length ? `\n${variants.length + 1} types — click to choose` : ''}\nClick to place · drag onto canvas · double-click to drop in view centre`}
+      >
+        <SymbolPreview def={def} size={44} />
+        <span className="tile-name">{def.name}</span>
+        {variants.length > 0 && (
+          <span className="tile-types" title={`${variants.length + 1} types available`}>
+            <Boxes size={9} />
+            {variants.length + 1}
+          </span>
+        )}
       <button
         className={fav ? 'tile-fav on' : 'tile-fav'}
         onClick={(e) => {
@@ -62,7 +119,9 @@ function Tile({ def }: { def: SymbolDef }) {
           </button>
         </span>
       )}
-    </div>
+      </div>
+      {pop && <SymbolPopup {...pop} onPick={place} onClose={() => setPop(null)} onEnter={clearClose} />}
+    </>
   );
 }
 
@@ -87,7 +146,7 @@ function Category({ name, defs, defaultOpen = true }: { name: string; defs: Symb
   );
 }
 
-function score(def: SymbolDef, q: string) {
+function score(def: SymbolDef, q: string, extra = '') {
   const name = def.name.toLowerCase();
   if (name === q) return 100;
   if (name.startsWith(q)) return 80;
@@ -95,40 +154,55 @@ function score(def: SymbolDef, q: string) {
   if (def.id.includes(q)) return 50;
   if (def.prefix.toLowerCase() === q) return 45;
   if ((def.keywords ?? '').toLowerCase().includes(q)) return 40;
+  if (extra.includes(q)) return 34;
   if (def.category.toLowerCase().includes(q)) return 20;
   return 0;
 }
 
 function Library() {
   const [q, setQ] = useState('');
-  const userLib = useStore((s) => s.userLibrary);
   const favorites = useStore((s) => s.favorites);
   const recent = useStore((s) => s.recent);
   const docSymbols = useStore((s) => s.doc.symbols);
-  const all = useMemo(() => {
-    const user = Object.values(userLib);
-    const docOnly = Object.values(docSymbols).filter((d) => !userLib[d.id]);
-    return [...user, ...docOnly, ...BUILTIN_SYMBOLS];
-  }, [userLib, docSymbols]);
+  const userLibrary = useStore((s) => s.userLibrary);
+  const all = useMemo(() => librarySymbols({ symbols: docSymbols }), [docSymbols, userLibrary]);
+  const extras = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of all) {
+      m.set(
+        d.id,
+        variantDefs({ symbols: docSymbols }, d)
+          .map((v) => `${v.name} ${v.variantName ?? ''} ${v.keywords ?? ''}`)
+          .join(' ')
+          .toLowerCase(),
+      );
+    }
+    return m;
+  }, [all, docSymbols]);
   const query = q.trim().toLowerCase();
   const results = useMemo(() => {
     if (!query) return [];
     const words = query.split(/\s+/);
     return all
-      .map((d) => ({ d, s: words.reduce((acc, w) => (acc < 0 ? acc : score(d, w) || -1), 0) }))
+      .map((d) => ({ d, s: words.reduce((acc, w) => (acc < 0 ? acc : score(d, w, extras.get(d.id) ?? '') || -1), 0) }))
       .filter((r) => r.s > 0)
       .sort((a, b) => b.s - a.s)
       .map((r) => r.d);
-  }, [all, query]);
+  }, [all, query, extras]);
   const lookup = (id: string) => getSymbol(S().doc, id);
   const byCat = useMemo(() => {
     const m = new Map<string, SymbolDef[]>();
-    for (const d of BUILTIN_SYMBOLS) m.set(d.category, [...(m.get(d.category) ?? []), d]);
+    for (const d of all) if (d.category !== 'My symbols') m.set(d.category, [...(m.get(d.category) ?? []), d]);
     return m;
-  }, []);
+  }, [all]);
   const mine = all.filter((d) => d.custom);
   return (
     <div className="library">
+      <div className="lib-actions">
+        <button className="lib-action" onClick={() => set({ dialog: 'share' })} title="Share or import your symbols and templates">
+          <Share2 size={12} /> Share & collaborate
+        </button>
+      </div>
       <div className="search">
         <Search size={14} />
         <input

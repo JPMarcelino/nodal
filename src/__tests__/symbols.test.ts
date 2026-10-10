@@ -1,10 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_SYMBOLS } from '../model/symbols';
+import { BUILTIN, BUILTIN_SYMBOLS } from '../model/symbols';
 
 describe('built-in symbol library', () => {
   it('has unique ids', () => {
     const ids = BUILTIN_SYMBOLS.map((s) => s.id);
     expect(ids.length).toBe(new Set(ids).size);
+  });
+
+  it('wires up symbol types both ways', () => {
+    for (const s of BUILTIN_SYMBOLS) {
+      if (s.variantOf) {
+        expect(BUILTIN[s.variantOf], `${s.id} references missing base ${s.variantOf}`).toBeTruthy();
+      }
+      for (const ref of s.variants ?? []) {
+        const v = BUILTIN[ref.id];
+        expect(v, `${s.id} lists missing type ${ref.id}`).toBeTruthy();
+        expect(v.variantOf, `${ref.id} is not marked as a type of ${s.id}`).toBe(s.id);
+      }
+    }
+  });
+
+  it('offers at least three MOSFET drawing types', () => {
+    for (const id of ['nmos', 'pmos']) {
+      const base = BUILTIN[id];
+      expect(base.variants?.length ?? 0).toBeGreaterThanOrEqual(2);
+    }
   });
 
   for (const s of BUILTIN_SYMBOLS) {
