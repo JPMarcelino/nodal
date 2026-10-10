@@ -89,17 +89,25 @@ interface Seg {
   maxY: number;
 }
 
-/**
- * Finds wire crossings. At each crossing one wire hops over the other: an
- * explicit per-wire preference (hopOver, true = hop / false = stay flat) wins,
- * otherwise the more horizontal segment hops over the more vertical one (ties
- * broken by wire id), so every crossing is drawn exactly once.
- */
-export function computeHops(polys: Map<string, Point[]>, hopSize: number, hopPref?: Map<string, boolean>): Map<string, Hop[]> {
-  const hopRank = (wire: string) => {
-    const v = hopPref?.get(wire);
-    return v === undefined ? 1 : v ? 2 : 0;
-  };
+/** One wire's side of a crossing. */
+export interface CrossSide {
+  wire: string;
+  seg: number;
+  /** Distance of the crossing from the segment start. */
+  d: number;
+  /** Segment length. */
+  len: number;
+  horiz: boolean;
+}
+
+export interface Crossing {
+  pt: Point;
+  a: CrossSide;
+  b: CrossSide;
+}
+
+/** Every point where two different wires cross (touching at an end or corner is a connection, not a crossing). */
+export function wireCrossings(polys: Map<string, Point[]>): Crossing[] {
   const segs: Seg[] = [];
   for (const [wire, pts] of polys) {
     for (let i = 0; i < pts.length - 1; i++) {
@@ -119,7 +127,7 @@ export function computeHops(polys: Map<string, Point[]>, hopSize: number, hopPre
     }
   }
   segs.sort((s, t) => s.minX - t.minX);
-  const hops = new Map<string, Hop[]>();
+  const out: Crossing[] = [];
   const margin = 0.5;
   for (let i = 0; i < segs.length; i++) {
     const s = segs[i];
@@ -133,28 +141,72 @@ export function computeHops(polys: Map<string, Point[]>, hopSize: number, hopPre
       const lt = Math.hypot(t.b.x - t.a.x, t.b.y - t.a.y);
       const ds = hit.t * ls;
       const dt = hit.u * lt;
-      // touching at an end is a connection or a corner, not a crossing
       if (ds < margin || ls - ds < margin || dt < margin || lt - dt < margin) continue;
-      // explicit hop-over beats default beats explicit stay-flat; equal ranks use the geometric rule
-      const rs = hopRank(s.wire);
-      const rt = hopRank(t.wire);
-      const sHops = rs !== rt ? rs > rt : s.horiz !== t.horiz ? s.horiz : s.wire > t.wire;
-      const [hopper, d] = sHops ? [s, ds] : [t, dt];
-      const hl = hopper === s ? ls : lt;
-      if (d < hopSize || hl - d < hopSize) continue;
-      const list = hops.get(hopper.wire) ?? [];
-      list.push({ seg: hopper.idx, d });
-      hops.set(hopper.wire, list);
+      out.push({
+        pt: hit.pt,
+        a: { wire: s.wire, seg: s.idx, d: ds, len: ls, horiz: s.horiz },
+        b: { wire: t.wire, seg: t.idx, d: dt, len: lt, horiz: t.horiz },
+      });
     }
+  }
+  return out;
+}
+
+/**
+ * Whether wire side `s` hops over `t`. A higher stacking layer (hopLayer,
+ * default 0) hops over a lower one; on equal layers the more horizontal
+ * segment hops over the more vertical one, then the wire id decides.
+ * This is a strict total order, so a stack of wires always sorts cleanly.
+ */
+export function hopsOver(s: { wire: string; horiz: boolean }, t: { wire: string; horiz: boolean }, layers?: Map<string, number>): boolean {
+  const ls = layers?.get(s.wire) ?? 0;
+  const lt = layers?.get(t.wire) ?? 0;
+  return ls !== lt ? ls > lt : s.horiz !== t.horiz ? s.horiz : s.wire > t.wire;
+}
+
+/** Hop arcs for a set of crossings; the wire that hops over gets the arc. */
+export function hopsFromCrossings(crossings: Crossing[], hopSize: number, layers?: Map<string, number>): Map<string, Hop[]> {
+  const hops = new Map<string, Hop[]>();
+  for (const c of crossings) {
+    const hopper = hopsOver(c.a, c.b, layers) ? c.a : c.b;
+    if (hopper.d < hopSize || hopper.len - hopper.d < hopSize) continue;
+    const list = hops.get(hopper.wire) ?? [];
+    list.push({ seg: hopper.seg, d: hopper.d });
+    hops.set(hopper.wire, list);
   }
   return hops;
 }
 
-/** Builds the hopOver map for a set of items. */
-export function hopPrefMap(items: Iterable<{ type: string; id: string; hopOver?: boolean }>): Map<string, boolean> {
-  const m = new Map<string, boolean>();
-  for (const it of items) if (it.type === 'wire' && it.hopOver !== undefined) m.set(it.id, it.hopOver);
+/** Finds wire crossings and decides which wire hops at each one (see hopsOver). */
+export function computeHops(polys: Map<string, Point[]>, hopSize: number, layers?: Map<string, number>): Map<string, Hop[]> {
+  return hopsFromCrossings(wireCrossings(polys), hopSize, layers);
+}
+
+/** Stacking layers of the wires that have one set. */
+export function hopLayerMap(items: Iterable<{ type: string; id: string; hopLayer?: number }>): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const it of items) if (it.type === 'wire' && it.hopLayer) m.set(it.id, it.hopLayer);
   return m;
+}
+
+/** Wires crossing within `eps` of a point, top of the stack (hops over the rest) first. */
+export function crossingStack(crossings: Crossing[], pt: Point, eps: number, layers?: Map<string, number>): CrossSide[] {
+  const byWire = new Map<string, CrossSide>();
+  for (const c of crossings) {
+    if (Math.hypot(c.pt.x - pt.x, c.pt.y - pt.y) > eps) continue;
+    for (const side of [c.a, c.b]) if (!byWire.has(side.wire)) byWire.set(side.wire, side);
+  }
+  return [...byWire.values()].sort((s, t) => (hopsOver(s, t, layers) ? -1 : 1));
+}
+
+/**
+ * New stacking layers that put `order` (top first) in that exact order while
+ * staying as close as possible to the wires' current layers.
+ */
+export function restack(order: string[], layers: Map<string, number>): Map<string, number> {
+  const vals = order.map((w) => layers.get(w) ?? 0).sort((a, b) => b - a);
+  for (let i = 1; i < vals.length; i++) vals[i] = Math.min(vals[i], vals[i - 1] - 1);
+  return new Map(order.map((w, i) => [w, vals[i]]));
 }
 
 /* ------------------------------------------------------------------ */

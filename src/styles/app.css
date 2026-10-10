@@ -2072,3 +2072,125 @@ select.input {
     width: 260px;
   }
 }
+
+/* crossing order popup */
+
+.cross-pop {
+  position: absolute;
+  z-index: 40;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 10px;
+  animation: pop 0.12s ease-out;
+  cursor: default;
+}
+
+.cross-pop-title {
+  font-weight: 650;
+  font-size: 0.95em;
+}
+
+.cross-pop-sub {
+  color: var(--text-faint);
+  font-size: 0.8em;
+  margin: 2px 0 8px;
+}
+
+.cross-pop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cross-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 31px;
+  padding: 0 4px 0 2px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid transparent;
+  cursor: grab;
+}
+
+.cross-pop-row:hover {
+  border-color: var(--border-strong);
+}
+
+.cross-pop-row.dragging {
+  opacity: 0.45;
+}
+
+.cross-pop-row.drop {
+  border-color: var(--accent);
+}
+
+.cross-pop-grip {
+  color: var(--text-faint);
+  flex: none;
+}
+
+.cross-pop-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.cross-pop-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+
+.cross-pop-tag {
+  font-size: 0.72em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cross-pop-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-dim);
+}
+
+.cross-pop-btn:hover:not(:disabled) {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.cross-pop-solder {
+  margin-top: 8px;
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.88em;
+}
+
+.cross-pop-solder:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}

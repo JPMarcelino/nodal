@@ -1,6 +1,6 @@
 import { current, isDraft } from 'immer';
 import { attachedWires, docBounds, groupChain, itemBounds, nextRef, refersTo, uid } from './doc';
-import { eq, rotate, simplify, snap } from './geometry';
+import { eq, projectOnSegment, rotate, simplify, snap } from './geometry';
 import { getSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, WireItem } from './types';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
@@ -16,12 +16,11 @@ function setFullPolyline(w: WireItem, full: Point[]) {
   w.pts = simplify(full).slice(1, -1);
 }
 
-/** Splits a wire at a point on segment `seg`, inserting a junction. Returns the junction id. */
-export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Point): string {
+/** Splits a wire at a point on segment `seg` at a junction (a new one unless `jid` is given). Returns the junction id. */
+export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Point, jid = uid('j')): string {
   const w = doc.items[wireId] as WireItem;
   const full = wirePolyline(doc, w);
-  const jid = uid('j');
-  doc.items[jid] = { id: jid, type: 'junction', x: pt.x, y: pt.y, group: w.group };
+  if (!doc.items[jid]) doc.items[jid] = { id: jid, type: 'junction', x: pt.x, y: pt.y, group: w.group };
   const first = full.slice(0, seg + 1);
   const second = full.slice(seg + 1);
   const w2: WireItem = {
@@ -33,6 +32,30 @@ export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Poin
   w.b = { kind: 'junction', id: jid };
   w.pts = simplify([...first, pt]).slice(1, -1);
   doc.items[w2.id] = w2;
+  return jid;
+}
+
+/**
+ * Solders wires together where they cross: each wire is split at `pt` and
+ * all pieces meet at one shared junction. Returns the junction id, or null
+ * when fewer than two of the wires actually pass through the point.
+ */
+export function solderWires(doc: CircuitDoc, wireIds: string[], pt: Point): string | null {
+  const hits: { id: string; seg: number }[] = [];
+  for (const id of wireIds) {
+    const w = doc.items[id];
+    if (!w || w.type !== 'wire') continue;
+    const full = wirePolyline(doc, w);
+    for (let i = 0; i < full.length - 1; i++) {
+      if (projectOnSegment(pt, full[i], full[i + 1]).d < 0.5) {
+        hits.push({ id, seg: i });
+        break;
+      }
+    }
+  }
+  if (hits.length < 2) return null;
+  const jid = uid('j');
+  for (const h of hits) splitWire(doc, h.id, h.seg, pt, jid);
   return jid;
 }
 

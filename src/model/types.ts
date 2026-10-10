@@ -119,8 +119,8 @@ export interface WireItem extends ItemBase {
   style?: Partial<WireStyle>;
   /** 'straight' allows diagonal segments instead of automatic orthogonal elbows. */
   routing?: 'ortho' | 'straight';
-  /** Which wire hops at a crossing: true = hop over, false = stay flat under, undefined = document default. */
-  hopOver?: boolean;
+  /** Stacking layer at crossings: a higher layer hops over a lower one (undefined = 0). */
+  hopLayer?: number;
   label?: string;
 }
 

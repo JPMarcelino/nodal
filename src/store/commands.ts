@@ -161,20 +161,20 @@ function cycleHops() {
   toast(`Wire crossings: ${next === 'arc' ? 'hop arcs' : next === 'gap' ? 'gaps' : 'plain'}`);
 }
 
-/** Cycles the selected wires' hop preference: default → hop over → stay flat → default. */
+/** Cycles the selected wires' stacking layer: auto → over (+1) → under (-1) → auto. */
 function flipHopOver() {
   const ids = S().selection.filter((id) => S().doc.items[id]?.type === 'wire');
   if (!ids.length) return toast('Select wires to switch their hop side');
-  const first = S().doc.items[ids[0]] as WireItem;
-  const next: boolean | undefined = first.hopOver === undefined ? true : first.hopOver ? false : undefined;
+  const cur = Math.sign((S().doc.items[ids[0]] as WireItem).hopLayer ?? 0);
+  const next = cur === 0 ? 1 : cur > 0 ? -1 : 0;
   mutate((d) =>
     ids.forEach((id) => {
       const w = d.items[id] as WireItem;
-      if (next === undefined) delete w.hopOver;
-      else w.hopOver = next;
+      if (next) w.hopLayer = next;
+      else delete w.hopLayer;
     }),
   );
-  toast(next === undefined ? 'Hop sides back to default' : next ? 'These wires hop over at crossings' : 'These wires stay flat under crossings');
+  toast(next === 0 ? 'Hop sides back to automatic' : next > 0 ? 'These wires hop over at crossings' : 'These wires stay flat under crossings');
 }
 
 function toggleCorners() {
