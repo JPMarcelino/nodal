@@ -198,4 +198,4 @@ export interface CircuitDoc {
   symbols: Record<string, SymbolDef>;
 }
 
-export type Tool = 'select' | 'wire' | 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pan';
+export type Tool = 'select' | 'node' | 'wire' | 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pan';

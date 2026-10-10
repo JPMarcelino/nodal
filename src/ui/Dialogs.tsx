@@ -206,6 +206,7 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
               ['Flip wire elbow', 'Space or / while wiring'],
               ['Remove last bend', 'Backspace while wiring'],
               ['Reshape a wire', 'Select it, then drag a segment'],
+              ['Move bend points', 'Edit points tool (E): drag any bend or end · Alt drags freely · double-click adds/removes a bend'],
               ['Reconnect wire end', 'Select it, then drag an end handle'],
               ['Switch hop side', 'Select wires, then Ctrl+Shift+U (or Crossings in the inspector)'],
               ['Export selection', 'Ctrl+Alt+E exports the selected items as PNG'],
@@ -299,6 +300,9 @@ export function SettingsDialog() {
           </Field>
           <Field label="Unconnected pin markers">
             <Toggle checked={prefs.showPortMarkers} onChange={(showPortMarkers) => setPrefs({ showPortMarkers })} />
+          </Field>
+          <Field label="Finish wire on reaching a wire end, junction or bend">
+            <Toggle checked={prefs.autoFinishWire} onChange={(autoFinishWire) => setPrefs({ autoFinishWire })} />
           </Field>
           <Field label="Autosave (restores your work on restart)">
             <Toggle checked={prefs.autosave} onChange={(autosave) => setPrefs({ autosave })} />

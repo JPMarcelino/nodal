@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, uid } from '../model/doc';
-import { clipPolylineToRect } from '../model/geometry';
+import { clipPolylineToRect, simplify } from '../model/geometry';
 import { cleanup, deleteItems, extractFragment, groupItems, insertFragment, rotateItems, splitWire, ungroupItems } from '../model/ops';
 import { computeNets } from '../model/netlist';
 import type { CircuitDoc, WireItem } from '../model/types';
-import { buildWirePath, computeHops, hopPrefMap, orthogonalize, wirePolyline } from '../model/wires';
+import { buildWirePath, computeHops, hopPrefMap, moveWireNode, orthogonalize, wirePolyline } from '../model/wires';
 
 function freeWire(doc: CircuitDoc, ax: number, ay: number, bx: number, by: number): WireItem {
   const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: ax, y: ay }, b: { kind: 'free', x: bx, y: by }, pts: [] };
@@ -55,6 +55,47 @@ describe('wire geometry', () => {
   it('rounds corners when a radius is set', () => {
     const d = buildWirePath([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }], 10);
     expect(d).toContain('Q100,0');
+  });
+});
+
+describe('editing wire points', () => {
+  // Z-shaped wire: two fixed ends and two bends
+  const z = [
+    { x: 0, y: 0 },
+    { x: 50, y: 0 },
+    { x: 50, y: 100 },
+    { x: 100, y: 100 },
+  ];
+
+  it('moves a bend and slides its neighbour so segments stay orthogonal', () => {
+    const out = moveWireNode(z, 1, { x: 70, y: 0 }, false);
+    expect(out[1]).toEqual({ x: 70, y: 0 });
+    expect(out[2]).toEqual({ x: 70, y: 100 });
+  });
+
+  it('never moves the attached wire ends', () => {
+    const out = moveWireNode(z, 1, { x: 50, y: 20 }, false);
+    expect(out[0]).toEqual({ x: 0, y: 0 });
+    expect(out[3]).toEqual({ x: 100, y: 100 });
+  });
+
+  it('moves only the chosen point in free mode', () => {
+    const out = moveWireNode(z, 1, { x: 70, y: 20 }, true);
+    expect(out).toEqual([z[0], { x: 70, y: 20 }, z[2], z[3]]);
+  });
+
+  it('does not mutate the input polyline', () => {
+    const copy = z.map((p) => ({ ...p }));
+    moveWireNode(z, 2, { x: 10, y: 10 }, false);
+    expect(z).toEqual(copy);
+  });
+
+  it('simplify removes spikes that double back on themselves', () => {
+    expect(simplify([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 40 }])).toEqual([
+      { x: 0, y: 0 },
+      { x: 60, y: 0 },
+      { x: 60, y: 40 },
+    ]);
   });
 });
 

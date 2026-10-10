@@ -44,6 +44,8 @@ export interface Prefs {
   showMinimap: boolean;
   showPortMarkers: boolean;
   uiScale: number;
+  /** Finish click-to-click wiring as soon as the wire reaches an existing wire end, junction or bend. */
+  autoFinishWire: boolean;
 }
 
 export interface Toast {
@@ -109,6 +111,7 @@ const DEFAULT_PREFS: Prefs = {
   showMinimap: true,
   showPortMarkers: true,
   uiScale: 1,
+  autoFinishWire: true,
 };
 
 function initialDoc(): CircuitDoc {

@@ -65,6 +65,7 @@ export const COMMANDS: Command[] = [
 
   // Tools
   { id: 'tool.select', label: 'Select tool', category: 'Tools', keys: ['V'], run: () => A.setTool('select') },
+  { id: 'tool.node', label: 'Edit points tool (drag wire bends & ends)', category: 'Tools', keys: ['E'], run: () => A.setTool('node') },
   { id: 'tool.wire', label: 'Wire tool', category: 'Tools', keys: ['W'], run: () => A.setTool('wire') },
   { id: 'tool.rect', label: 'Rectangle (outline)', category: 'Tools', keys: ['B'], run: () => A.setTool('rect') },
   { id: 'tool.zone', label: 'Filled zone', category: 'Tools', keys: ['Z'], run: () => A.setTool('zone') },

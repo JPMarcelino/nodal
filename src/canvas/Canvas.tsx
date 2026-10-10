@@ -4,7 +4,7 @@ import { dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, 
 import { cleanup, splitWire, translateItems } from '../model/ops';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
-import { buildWirePath, endpointInfo, hitWire, snapOnSegment, wirePolyline } from '../model/wires';
+import { buildWirePath, endpointInfo, hitWire, moveWireNode, snapOnSegment, wirePolyline } from '../model/wires';
 import { runAreaExport } from '../io/fileActions';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, useStore } from '../store/store';
@@ -38,6 +38,7 @@ type Gesture =
   | { kind: 'wire'; start: Target; pts: Point[]; hFirst: boolean; fromDrag: boolean; downClient: Point; cur: Target; dragging: boolean }
   | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean }
   | { kind: 'endpoint'; wire: string; end: 'a' | 'b'; cur: Target }
+  | { kind: 'node'; wire: string; idx: number; base: Point[]; cur: Point; free: boolean; moved: boolean }
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
   | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
@@ -291,9 +292,97 @@ export function Canvas() {
     ];
   };
 
+  /* -------------------------- edit points -------------------------- */
+
+  /** Wire vertex (end or bend) under the pointer; selected wires win over the rest. */
+  const nodeAt = (p: Point): { wire: string; idx: number; pts: Point[] } | null => {
+    const d = S().doc;
+    const tol = 7 / S().view.zoom;
+    const sel = new Set(S().selection);
+    let best: { wire: string; idx: number; pts: Point[] } | null = null;
+    let bestScore = Infinity;
+    for (const [wire, pts] of data.polys) {
+      const it = d.items[wire];
+      if (!it || it.hidden || it.locked) continue;
+      for (let idx = 0; idx < pts.length; idx++) {
+        const dd = dist(pts[idx], p);
+        const score = dd - (sel.has(wire) ? tol : 0);
+        if (dd < tol && score < bestScore) {
+          best = { wire, idx, pts };
+          bestScore = score;
+        }
+      }
+    }
+    return best;
+  };
+
+  const onNodeDown = (w: Point, e: React.PointerEvent, isDouble: boolean) => {
+    const v = S().view;
+    if (singleShape && !singleShape.locked) {
+      const hh = shapeHandles(singleShape).find((h) => dist(h.p, w) < 7 / v.zoom);
+      if (hh) {
+        beginGesture();
+        setGesture({ kind: 'resize', id: singleShape.id, handle: hh.h, base: singleShape, start: w });
+        return;
+      }
+    }
+    const n = nodeAt(w);
+    if (n) {
+      const last = n.pts.length - 1;
+      if (!selSet.has(n.wire)) select([n.wire]);
+      if (n.idx === 0 || n.idx === last) {
+        beginGesture();
+        setGesture({ kind: 'endpoint', wire: n.wire, end: n.idx === 0 ? 'a' : 'b', cur: { kind: 'grid', pt: n.pts[n.idx] } });
+        return;
+      }
+      if (isDouble) {
+        // double-click a bend removes it
+        mutate((dd) => {
+          const d = dd as CircuitDoc;
+          const wire = d.items[n.wire] as WireItem;
+          wire.pts = simplify(n.pts.filter((_, i) => i !== n.idx)).slice(1, -1);
+          cleanup(d);
+        });
+        return;
+      }
+      beginGesture();
+      setGesture({ kind: 'node', wire: n.wire, idx: n.idx, base: n.pts, cur: n.pts[n.idx], free: false, moved: false });
+      return;
+    }
+    const hit = hitItem(w);
+    const item = hit ? S().doc.items[hit] : null;
+    if (item?.type === 'wire' && item.routing === 'straight') {
+      // straight wires: grabbing a segment drops a new bend there and drags it
+      const pts = data.polys.get(item.id) ?? [];
+      const h = hitWire(new Map([[item.id, pts]]), w, Infinity);
+      if (h) {
+        if (!selSet.has(item.id)) select([item.id]);
+        const at = sp(h.pt);
+        const base = [...pts.slice(0, h.seg + 1), at, ...pts.slice(h.seg + 1)];
+        beginGesture();
+        setGesture({ kind: 'node', wire: item.id, idx: h.seg + 1, base, cur: at, free: true, moved: false });
+        return;
+      }
+    }
+    if (hit) {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) select([hit], 'toggle');
+      else if (!selSet.has(hit)) select([hit]);
+      return;
+    }
+    setGesture({ kind: 'marquee', start: w, cur: w, additive: e.shiftKey || e.ctrlKey || e.metaKey });
+  };
+
+  /** Writes a node drag into the wire (always recomputed from the gesture's base polyline). */
+  const applyNode = (d: CircuitDoc, g: Extract<Gesture, { kind: 'node' }>) => {
+    const wire = d.items[g.wire] as WireItem | undefined;
+    if (!wire) return;
+    wire.pts = moveWireNode(g.base, g.idx, g.cur, g.free || wire.routing === 'straight').slice(1, -1);
+  };
+
   /* ------------------------- wire commit ------------------------- */
 
-  const resolveEndpoint = (d: CircuitDoc, t: Target): Endpoint => {
+  /** Turns a target into a wire endpoint; `self` is a wire being reconnected, which must never be split onto itself. */
+  const resolveEndpoint = (d: CircuitDoc, t: Target, self?: string): Endpoint => {
     switch (t.kind) {
       case 'port':
         return { kind: 'port', comp: t.comp, port: t.port };
@@ -311,7 +400,7 @@ export function Canvas() {
       case 'wire': {
         // re-locate the wire under the point (ids may have changed after a previous split)
         const polys = new Map<string, Point[]>();
-        for (const it of Object.values(d.items)) if (it.type === 'wire') polys.set(it.id, wirePolyline(d, it));
+        for (const it of Object.values(d.items)) if (it.type === 'wire' && it.id !== self) polys.set(it.id, wirePolyline(d, it));
         const hit = hitWire(polys, t.pt, 0.5);
         if (!hit) return { kind: 'free', ...t.pt };
         const pts = polys.get(hit.wire)!;
@@ -360,6 +449,35 @@ export function Canvas() {
 
   const sameTarget = (a: Target, b: Target) =>
     (a.kind === 'port' && b.kind === 'port' && a.comp === b.comp && a.port === b.port) || (a.kind === 'junction' && b.kind === 'junction' && a.id === b.id);
+
+  /** Port/junction target matching an existing endpoint (for same-target checks). */
+  const endpointTarget = (ep: Endpoint): Target =>
+    ep.kind === 'port'
+      ? { kind: 'port', comp: ep.comp, port: ep.port, pt: { x: 0, y: 0 }, dir: { x: 0, y: 0 } }
+      : ep.kind === 'junction'
+        ? { kind: 'junction', id: ep.id, pt: { x: 0, y: 0 } }
+        : { kind: 'grid', pt: { x: ep.x, y: ep.y } };
+
+  /**
+   * Whether the wire being drawn has reached a point that should end it:
+   * another wire's end or bend, a junction, a pin that already has a wire,
+   * or the drawn wire's own start / earlier bends.
+   */
+  const reachesEnd = (g: Extract<Gesture, { kind: 'wire' }>, cur: Target): boolean => {
+    const last = g.pts.length ? g.pts[g.pts.length - 1] : g.start.pt;
+    if (eq(cur.pt, last) || sameTarget(g.start, cur)) return false;
+    switch (cur.kind) {
+      case 'wireEnd':
+      case 'junction':
+        return true;
+      case 'port':
+        return (data.portDegree.get(`${cur.comp}:${cur.port}`) ?? 0) > 0;
+      case 'wire':
+        return (data.polys.get(cur.wire) ?? []).some((q) => eq(q, cur.pt));
+      case 'grid':
+        return [g.start.pt, ...g.pts.slice(0, -1)].some((q) => eq(q, cur.pt));
+    }
+  };
 
   /** After a click adds vertices, the next leg should turn 90°. */
   const nextHFirst = (pts: Point[]) => {
@@ -413,7 +531,7 @@ export function Canvas() {
         }
       }
       if (g && combo === 'Escape') {
-        if (g.kind === 'move' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'label') endGesture(false);
+        if (g.kind === 'move' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'label' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
         setGesture(null);
         return true;
       }
@@ -496,7 +614,8 @@ export function Canvas() {
     }
 
     if (tool === 'wire') {
-      startWire(findTarget(w), false, client);
+      // press-drag-release draws a wire in one go; a plain click starts click-to-click mode
+      startWire(findTarget(w), true, client);
       return;
     }
     if (tool === 'text') {
@@ -513,6 +632,10 @@ export function Canvas() {
       });
       set({ selection: [id], tool: 'select' });
       setEditingText(id);
+      return;
+    }
+    if (tool === 'node') {
+      onNodeDown(w, e, isDouble);
       return;
     }
     if (tool !== 'select') {
@@ -622,7 +745,7 @@ export function Canvas() {
     set({ cursor: w });
     const g = gRef.current;
     if (!g) {
-      if (tool === 'select' || tool === 'wire') {
+      if (tool === 'select' || tool === 'wire' || tool === 'node') {
         const pi = findPort(w);
         const item = pi ? null : hitItem(w);
         if (pi?.comp !== hover.port?.comp || pi?.port !== hover.port?.port || item !== hover.item) setHover({ port: pi, item });
@@ -654,7 +777,14 @@ export function Canvas() {
       }
       case 'wire': {
         const cur = findTarget(w);
-        const dragging = g.dragging || dist(g.downClient, { x: e.clientX, y: e.clientY }) > 5;
+        // only a held button counts as dragging; plain mouse moves in click-to-click mode don't
+        const dragging = g.dragging || (!!(e.buttons & 1) && dist(g.downClient, { x: e.clientX, y: e.clientY }) > 5);
+        // click-to-click mode (no button held): reaching a connection point ends the wire
+        if (S().prefs.autoFinishWire && !(e.buttons & 1) && reachesEnd(g, cur)) {
+          commitWire(g, cur);
+          setGesture(null);
+          break;
+        }
         setGesture({ ...g, cur, dragging });
         break;
       }
@@ -671,15 +801,21 @@ export function Canvas() {
         gestureUpdate((d) => {
           const wire = d.items[g.wire] as WireItem;
           const pts = g.base.map((p) => ({ ...p }));
+          // attached ends stay put (a stub keeps the connection); free ends travel with the segment
+          const freeA = wire.a.kind === 'free';
+          const freeB = wire.b.kind === 'free';
           let seg = g.seg;
-          if (seg === 0) {
+          if (seg === 0 && !freeA) {
             pts.splice(1, 0, { ...pts[0] });
             seg = 1;
           }
-          if (seg === pts.length - 2) pts.splice(pts.length - 1, 0, { ...pts[pts.length - 1] });
+          if (seg === pts.length - 2 && !freeB) pts.splice(pts.length - 1, 0, { ...pts[pts.length - 1] });
           pts[seg] = { x: pts[seg].x + dx, y: pts[seg].y + dy };
           pts[seg + 1] = { x: pts[seg + 1].x + dx, y: pts[seg + 1].y + dy };
-          wire.pts = simplify(pts).slice(1, -1);
+          const full = simplify(pts);
+          if (freeA) wire.a = { kind: 'free', ...full[0] };
+          if (freeB) wire.b = { kind: 'free', ...full[full.length - 1] };
+          wire.pts = full.slice(1, -1);
         });
         if (!g.moved) setGesture({ ...g, moved: true });
         break;
@@ -691,6 +827,12 @@ export function Canvas() {
           const wire = d.items[g.wire] as WireItem;
           wire[g.end] = { kind: 'free', ...cur.pt };
         });
+        break;
+      }
+      case 'node': {
+        const next = { ...g, cur: sp(w), free: e.altKey, moved: true };
+        gestureUpdate((d) => applyNode(d as CircuitDoc, next));
+        setGesture(next);
         break;
       }
       case 'shape':
@@ -785,6 +927,17 @@ export function Canvas() {
         if (g.kind === 'segment' && g.moved) mutate((d) => cleanup(d as CircuitDoc));
         setGesture(null);
         break;
+      case 'node':
+        if (g.moved) {
+          // final shape plus cleanup in the same undo step
+          gestureUpdate((d) => {
+            applyNode(d as CircuitDoc, g);
+            cleanup(d as CircuitDoc);
+          });
+        }
+        endGesture(true);
+        setGesture(null);
+        break;
       case 'endpoint': {
         endGesture(false);
         const t = g.cur;
@@ -792,10 +945,13 @@ export function Canvas() {
           const d = dd as CircuitDoc;
           const wire = d.items[g.wire] as WireItem;
           if (!wire) return;
-          const before = wirePolyline(d, wire);
-          wire[g.end] = resolveEndpoint(d, t);
-          // keep the interior route
-          wire.pts = before.slice(1, -1);
+          const other = g.end === 'a' ? wire.b : wire.a;
+          // dropping onto the wire's own other end would make a zero-length loop
+          if (sameTarget(t, endpointTarget(other))) return;
+          // bake the exact route shown while dragging, so the wire doesn't jump on release
+          const shown = wirePolyline(d, { ...wire, [g.end]: { kind: 'free', ...t.pt } });
+          wire[g.end] = resolveEndpoint(d, t, g.wire);
+          wire.pts = shown.slice(1, -1);
           cleanup(d);
         });
         setGesture(null);
@@ -807,8 +963,10 @@ export function Canvas() {
           const moved = dist(g.start.pt, t.pt) >= grid;
           if (moved) commitWire(g, t);
           setGesture(null);
+        } else if (g.fromDrag) {
+          // released without dragging: continue in click-to-click mode
+          setGesture({ ...g, fromDrag: false });
         }
-        // otherwise stay in click-to-click mode
         break;
       case 'shape': {
         const r = rectFromPoints(g.start, g.cur);
@@ -907,6 +1065,12 @@ export function Canvas() {
         ? badgeCursor('area', prefs.theme) ?? 'crosshair'
         : g?.kind === 'move'
           ? 'move'
+          : tool === 'node' && !placing
+            ? g?.kind === 'node' || g?.kind === 'endpoint' || nodeAt(cursor)
+              ? 'move'
+              : hover.item
+                ? 'pointer'
+                : 'default'
           : placing || tool !== 'select'
             ? badgeCursor(tool === 'select' ? 'plus' : tool, prefs.theme) ?? 'crosshair'
             : g?.kind === 'wire'
@@ -1003,7 +1167,31 @@ export function Canvas() {
             shapeHandles(singleShape).map((h) => (
               <rect key={h.h} x={h.p.x - 4 / z} y={h.p.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className="handle" strokeWidth={1.5 / z} />
             ))}
+          {tool === 'node' &&
+            (() => {
+              const hot = !g ? nodeAt(cursor) : null;
+              return [...new Set([...selection, ...(hover.item && !g ? [hover.item] : [])])].map((id) => {
+              const it = doc.items[id];
+              if (it?.type !== 'wire' || it.locked) return null;
+              const pts = data.polys.get(id) ?? [];
+              return (
+                <g key={id} className="node-handles">
+                  {pts.map((p, i) => {
+                    const end = i === 0 || i === pts.length - 1;
+                    const active = (hot?.wire === id && hot.idx === i) || (g?.kind === 'node' && g.wire === id && g.idx === i);
+                    const r = (active ? 5 : 3.75) / z;
+                    return end ? (
+                      <circle key={i} cx={p.x} cy={p.y} r={r + 0.75 / z} className={active ? 'handle active' : 'handle'} strokeWidth={1.5 / z} />
+                    ) : (
+                      <rect key={i} x={p.x - r} y={p.y - r} width={2 * r} height={2 * r} rx={1 / z} className={active ? 'handle node active' : 'handle node'} strokeWidth={1.5 / z} />
+                    );
+                  })}
+                </g>
+              );
+            });
+            })()}
           {singleWire &&
+            tool !== 'node' &&
             (() => {
               const pts = data.polys.get(singleWire.id) ?? [];
               if (pts.length < 2) return null;
@@ -1053,6 +1241,12 @@ export function Canvas() {
       )}
       {editingText && <TextEditor id={editingText} onDone={() => setEditingText(null)} />}
       {prefs.showMinimap && <Minimap data={data} />}
+      {tool === 'node' && !g && !exportAreaJob && (
+        <div className="canvas-hint">
+          Drag a bend or wire end to move it · <kbd>Alt</kbd> drag freely · double-click a bend to remove it{' '}
+          · <kbd>Esc</kbd> back to select
+        </div>
+      )}
       {exportAreaJob && (
         <div className="canvas-hint">
           Drag a rectangle over the region to export · <kbd>Esc</kbd>/<kbd>right-click</kbd> cancel
