@@ -1103,6 +1103,12 @@ export function Canvas() {
         break;
       case 'endpoint': {
         endGesture(false);
+        // plain click without a drag: keep the existing endpoint (the initial
+        // 'grid' target would otherwise resolve to 'free' and detach it)
+        if (!g.moved) {
+          setGesture(null);
+          break;
+        }
         const t = g.cur;
         mutate((dd) => {
           const d = dd as CircuitDoc;
