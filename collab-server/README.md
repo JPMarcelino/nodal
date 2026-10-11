@@ -9,7 +9,7 @@ cd collab-server
 npm install
 npm run dev       # local relay on ws://127.0.0.1:8788
 npx wrangler login
-npm run deploy    # prints https://nodal-collab.<your-subdomain>.workers.dev
+npm run deploy    # live at https://nodal-collab.nodal-collab.workers.dev
 ```
 
 The web app connects to the URL in `COLLAB_URL` (`src/collab/session.ts`), or to `VITE_COLLAB_URL` at build time.
