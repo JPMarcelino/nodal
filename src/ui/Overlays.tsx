@@ -46,7 +46,8 @@ export function ContextMenu() {
     entries.push('edit.lock', '-');
     if (types.has('shape')) entries.push('arrange.layer', 'arrange.front', 'arrange.back', '-');
     if (types.has('wire')) entries.push('wire.highlightNet', 'wire.reroute', '-');
-    if (types.has('component')) entries.push('symbols.edit', '-');
+    if (types.has('component')) entries.push('symbols.edit');
+    entries.push('symbols.fromSelection', '-');
     if (selection.length > 1) entries.push('arrange.alignLeft', 'arrange.alignTop', 'arrange.distH', '-');
     entries.push({ label: 'Zoom to selection', run: () => A.fitView(selection), key: keysFor('view.fitSel')[0] });
     entries.push('-', 'file.exportSelection');

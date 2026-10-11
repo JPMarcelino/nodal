@@ -1,5 +1,6 @@
 import { copyAsSvg, doExport, exportSelection, fileNew, fileOpen, filePrint, fileSave, startAreaExport } from '../io/fileActions';
 import { exportLibraryFile, exportTemplateFile, importLibraryFile, importTemplateFile } from '../io/sharing';
+import { selectionToDrawing } from '../model/fromSelection';
 import { computeNets, netOfWire } from '../model/netlist';
 import * as A from './actions';
 import { S, redo, set, setPrefs, toast, undo, mutate } from './store';
@@ -144,6 +145,19 @@ export const COMMANDS: Command[] = [
       const def = A.symbolOfSelection();
       if (!def) return toast('Select a component first');
       set({ dialog: 'symbol-editor', editingSymbol: def.id });
+    },
+  },
+
+  {
+    id: 'symbols.fromSelection',
+    label: 'Create symbol from selection…',
+    category: 'Symbols',
+    keys: ['Mod+Alt+K'],
+    run: () => {
+      const ids = S().selection;
+      const drawing = ids.length ? selectionToDrawing(S().doc, ids) : null;
+      if (!drawing) return toast('Select the parts, wires or shapes to turn into a symbol');
+      set({ dialog: 'symbol-editor', editingSymbol: null, symbolSeed: { ...drawing, ids: [...ids] } });
     },
   },
 
