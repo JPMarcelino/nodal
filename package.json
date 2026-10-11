@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:web": "vite build",
+    "deploy:web": "bash scripts/deploy-web.sh",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "preview": "vite preview",
