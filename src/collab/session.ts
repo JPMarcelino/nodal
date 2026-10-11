@@ -13,7 +13,7 @@ import { SyncState, changedKeys, docFromEntries, writeEntries, type Entry } from
  * rules and collab-server/ for the relay.
  */
 
-export const COLLAB_URL: string = import.meta.env.VITE_COLLAB_URL ?? 'wss://nodal-collab.jp-marcelino434.workers.dev';
+export const COLLAB_URL: string = import.meta.env.VITE_COLLAB_URL ?? 'wss://nodal-collab.nodal-collab.workers.dev';
 /** Links made from the desktop app point at the web app, so anyone can open them. */
 const PUBLIC_APP_URL = 'https://jpmarcelino.github.io/nodal/';
 
