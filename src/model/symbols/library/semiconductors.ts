@@ -13,16 +13,26 @@ const BJT = 'L 20 24 40 12 40 0; L 20 36 40 48 40 60; W 3; L 20 14 20 46; W 2';
 // MOSFET geometry (60×60). Three drafting types:
 //   A — substrate arrow + three channel bars (classic)
 //   B — gate centred, single channel bar, filled arrow on the source lead
-//   C — simplified: gate offset toward the source, gate plate, single channel bar, filled arrow on the source
-//       stub (out of the channel for N, into it for P) and a bulk (B) lead to the right
+//   C — the same as B, plus a bulk (B) lead to the right
 const MOS_GATE = 'W 2.5; L 16 18 16 42; L 22 14 22 22; L 22 26 22 34; L 22 38 22 46; W 2';
 const NMOS_A = `L 0 40 16 40; ${MOS_GATE}; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 42; GF 23 30 30 26.5 30 33.5`;
 const PMOS_A = `L 0 20 16 20; ${MOS_GATE}; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 18; GF 39 30 32 26.5 32 33.5`;
-const NMOS_B = 'L 0 30 14 30; W 2.5; L 14 12 14 48; L 20 12 20 48; W 2; L 20 16 40 16 40 0; L 20 44 40 44 40 60; GF 23 44 34 39.5 34 48.5';
-const PMOS_B = 'L 0 30 14 30; W 2.5; L 14 12 14 48; L 20 12 20 48; W 2; L 20 16 40 16 40 0; L 20 44 40 44 40 60; GF 36 16 25.5 11.5 25.5 20.5';
-const MOS_C = 'W 2.5; L 14 16 14 44; L 20 12 20 48; W 2; L 20 16 40 16 40 0; L 20 44 40 44 40 60; L 20 30 60 30';
-const NMOS_C = `L 0 40 14 40; ${MOS_C}; GF 34 44 23 39.5 23 48.5`;
-const PMOS_C = `L 0 20 14 20; ${MOS_C}; GF 23 16 34 11.5 34 20.5`;
+const NMOS_B = 'L 0 30 14 30; W 2.5; L 14 12 14 48; L 20 12 20 48; W 2; L 20 16 40 16 40 0; L 20 44 40 44 40 60; GF 36 44 25.5 39.5 25.5 48.5';
+const PMOS_B = 'L 0 30 14 30; W 2.5; L 14 12 14 48; L 20 12 20 48; W 2; L 20 16 40 16 40 0; L 20 44 40 44 40 60; GF 23 16 34 11.5 34 20.5';
+const BULK = 'L 20 30 60 30';
+const NMOS_C = `${NMOS_B}; ${BULK}`;
+const PMOS_C = `${PMOS_B}; ${BULK}`;
+
+// Depletion mode: the same three types with a continuous channel. Type A draws
+// it as one solid line; B (and C) use a heavy bar, with the arrows clear of it.
+const DEP_A = (draw: string) => draw.replace(MOS_GATE, 'W 2.5; L 16 18 16 42; L 22 14 22 46; W 2');
+const DEP_BAR = (draw: string) => draw.replace('L 20 12 20 48', 'W 5; L 20 12 20 48');
+const NMOS_DEP_A = DEP_A(NMOS_A);
+const PMOS_DEP_A = DEP_A(PMOS_A);
+const NMOS_DEP_B = DEP_BAR(NMOS_B).replace('GF 36 44 25.5 39.5 25.5 48.5', 'GF 37 44 26 39.5 26 48.5');
+const PMOS_DEP_B = DEP_BAR(PMOS_B).replace('GF 23 16 34 11.5 34 20.5', 'GF 26 16 37 11.5 37 20.5');
+const NMOS_DEP_C = `${NMOS_DEP_B}; ${BULK}`;
+const PMOS_DEP_C = `${PMOS_DEP_B}; ${BULK}`;
 
 export const semiconductors = [
   ...types(
@@ -63,7 +73,7 @@ export const semiconductors = [
     }),
     sym('nmos-c', 'N-channel MOSFET', C, {
       w: 60, h: 60, prefix: 'Q', value: '2N7002', variantOf: 'nmos', variantName: 'Type C · simplified, bulk pin', keywords: 'mosfet fet enhancement simplified bulk body substrate',
-      draw: NMOS_C, ports: 'G:0,40 D:40,0 S:40,60 B:60,30',
+      draw: NMOS_C, ports: 'G:0,30 D:40,0 S:40,60 B:60,30',
     }),
   ),
   ...types(
@@ -77,14 +87,37 @@ export const semiconductors = [
     }),
     sym('pmos-c', 'P-channel MOSFET', C, {
       w: 60, h: 60, prefix: 'Q', value: 'AO3401', variantOf: 'pmos', variantName: 'Type C · simplified, bulk pin', keywords: 'mosfet fet enhancement simplified bulk body substrate',
-      draw: PMOS_C, ports: 'G:0,20 S:40,0 D:40,60 B:60,30',
+      draw: PMOS_C, ports: 'G:0,30 S:40,0 D:40,60 B:60,30',
     }),
   ),
-  sym('nmos-depletion', 'N-MOSFET (depletion)', C, {
-    w: 60, h: 60, prefix: 'Q', value: 'BSS139', keywords: 'mosfet depletion',
-    draw: 'L 0 40 16 40; W 2.5; L 16 18 16 42; L 22 14 22 46; W 2; L 22 18 40 18 40 0; L 22 42 40 42 40 60; L 22 30 40 30 40 42; GF 23 30 30 26.5 30 33.5',
-    ports: 'G:0,40 D:40,0 S:40,60',
-  }),
+  ...types(
+    sym('nmos-depletion', 'N-MOSFET (depletion)', C, {
+      w: 60, h: 60, prefix: 'Q', value: 'BSS139', keywords: 'mosfet depletion standard',
+      draw: NMOS_DEP_A, ports: 'G:0,40 D:40,0 S:40,60',
+    }),
+    sym('nmos-depletion-b', 'N-MOSFET (depletion)', C, {
+      w: 60, h: 60, prefix: 'Q', value: 'BSS139', variantOf: 'nmos-depletion', variantName: 'Type B · source arrow', keywords: 'mosfet depletion source arrow',
+      draw: NMOS_DEP_B, ports: 'G:0,30 D:40,0 S:40,60',
+    }),
+    sym('nmos-depletion-c', 'N-MOSFET (depletion)', C, {
+      w: 60, h: 60, prefix: 'Q', value: 'BSS139', variantOf: 'nmos-depletion', variantName: 'Type C · simplified, bulk pin', keywords: 'mosfet depletion simplified bulk body substrate',
+      draw: NMOS_DEP_C, ports: 'G:0,30 D:40,0 S:40,60 B:60,30',
+    }),
+  ),
+  ...types(
+    sym('pmos-depletion', 'P-MOSFET (depletion)', C, {
+      w: 60, h: 60, prefix: 'Q', value: 'BSS84', keywords: 'mosfet depletion standard',
+      draw: PMOS_DEP_A, ports: 'G:0,20 S:40,0 D:40,60',
+    }),
+    sym('pmos-depletion-b', 'P-MOSFET (depletion)', C, {
+      w: 60, h: 60, prefix: 'Q', value: 'BSS84', variantOf: 'pmos-depletion', variantName: 'Type B · source arrow', keywords: 'mosfet depletion source arrow',
+      draw: PMOS_DEP_B, ports: 'G:0,30 S:40,0 D:40,60',
+    }),
+    sym('pmos-depletion-c', 'P-MOSFET (depletion)', C, {
+      w: 60, h: 60, prefix: 'Q', value: 'BSS84', variantOf: 'pmos-depletion', variantName: 'Type C · simplified, bulk pin', keywords: 'mosfet depletion simplified bulk body substrate',
+      draw: PMOS_DEP_C, ports: 'G:0,30 S:40,0 D:40,60 B:60,30',
+    }),
+  ),
   sym('njfet', 'N-channel JFET', C, { w: 60, h: 60, prefix: 'Q', value: 'J310', keywords: 'jfet fet', draw: 'L 0 30 20 30; GF 20 30 13 26.5 13 33.5; W 3; L 20 14 20 46; W 2; L 20 18 40 18 40 0; L 20 42 40 42 40 60', ports: 'G:0,30 D:40,0 S:40,60' }),
   sym('pjfet', 'P-channel JFET', C, { w: 60, h: 60, prefix: 'Q', value: 'J175', keywords: 'jfet fet', draw: 'L 0 30 20 30; GF 6 30 13 26.5 13 33.5; W 3; L 20 14 20 46; W 2; L 20 18 40 18 40 0; L 20 42 40 42 40 60', ports: 'G:0,30 S:40,0 D:40,60' }),
   sym('igbt', 'IGBT', C, {
