@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { createDoc, groupMembers, normalizeDoc, topGroup } from '../model/doc';
 import { setUserLibrary } from '../model/registry';
 import { sampleDoc } from '../model/sample';
+import type { SelectionDrawing } from '../model/fromSelection';
 import type { CircuitDoc, Point, SymbolDef, Tool } from '../model/types';
 
 export interface View {
@@ -83,6 +84,8 @@ export interface AppState {
   contextMenu: ContextMenuState | null;
   dialog: Dialog;
   editingSymbol: string | null;
+  /** Drawing made from a selection, opened in the symbol editor; saving replaces those items with the new symbol. */
+  symbolSeed: (SelectionDrawing & { ids: string[] }) | null;
   leftPanel: boolean;
   rightPanel: boolean;
   leftTab: 'library' | 'layers';
@@ -158,6 +161,7 @@ export const useStore = create<AppState>(() => ({
   contextMenu: null,
   dialog: null,
   editingSymbol: null,
+  symbolSeed: null,
   leftPanel: true,
   rightPanel: true,
   leftTab: 'library',

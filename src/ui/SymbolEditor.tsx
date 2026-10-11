@@ -2,10 +2,11 @@ import { Cpu, Code2, Layers, PenLine, Pencil, Trash2, Upload } from 'lucide-reac
 import { useMemo, useReducer, useRef, useState } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { uid } from '../model/doc';
+import { replaceWithInstance } from '../model/fromSelection';
 import { compileSource, parseDraw, parsePorts, primsToDsl, sourceOf, type SymbolSource } from '../model/symbols/dsl';
 import { baseSymbols, getSymbol, variantDefs } from '../model/registry';
 import { CATEGORY_ORDER } from '../model/symbols';
-import type { PortDef, Prim, SymbolDef, VariantRef } from '../model/types';
+import type { CircuitDoc, PortDef, Prim, SymbolDef, VariantRef } from '../model/types';
 import { S, deleteUserSymbol, mutate, saveUserSymbol, set, toast, useStore } from '../store/store';
 import { Modal } from './Dialogs';
 import { SymbolDrawPane, type Snap } from './SymbolDrawPane';
@@ -35,7 +36,10 @@ const r20 = (v: number) => Math.max(20, Math.round(v / 20) * 20);
 export function SymbolEditor() {
   const editing = useStore((s) => s.editingSymbol);
   const original = useMemo<SymbolDef | null>(() => (editing ? getSymbol(S().doc, editing) : null), [editing]);
+  /** Set when the editor was opened with "Create symbol from selection". */
+  const seed = useMemo(() => (editing ? null : S().symbolSeed), [editing]);
   const [src, setSrc] = useState<SymbolSource>(() => {
+    if (!original && seed) return { ...blank(), w: seed.w, h: seed.h, draw: primsToDsl(seed.prims), ports: '' };
     if (!original) return blank();
     const keep = original.custom || !!original.variantOf; // editing a type keeps its id/name
     return {
@@ -155,13 +159,22 @@ export function SymbolEditor() {
           d.symbols[base.id] = mergedBase;
         });
         toast(`Added “${variantName}” as a type of ${base.name}`, 'success');
-        set({ dialog: null, editingSymbol: null });
+        set({ dialog: null, editingSymbol: null, symbolSeed: null });
         return;
       }
       // ---- Save as a standalone symbol ----
       const id = !asNew && src.id ? src.id : `user-${slug(src.name)}-${uid('').slice(-5)}`;
       const def = compileSource({ ...src, id });
       saveUserSymbol(def);
+      // made from a selection: one undoable step swaps those items for the new symbol
+      if (seed) {
+        let placed = '';
+        mutate((d) => void (placed = replaceWithInstance(d as CircuitDoc, seed.ids, def, seed.origin)));
+        set({ selection: placed ? [placed] : [] });
+        toast(`Saved “${def.name}” and placed it in place of the selection`, 'success');
+        set({ dialog: null, editingSymbol: null, symbolSeed: null });
+        return;
+      }
       // keep the document copy in sync so placed parts update
       if (S().doc.symbols[id]) mutate((d) => void (d.symbols[id] = def));
       // when customising a built-in symbol for a selected part, swap it in
@@ -181,7 +194,7 @@ export function SymbolEditor() {
         }
       }
       toast(`Saved “${def.name}” to My symbols`, 'success');
-      set({ dialog: null, editingSymbol: null });
+      set({ dialog: null, editingSymbol: null, symbolSeed: null });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -210,7 +223,7 @@ export function SymbolEditor() {
   const variantName = (src.variantName ?? '').trim() || `Type ${(manageBase?.variants?.length ?? 0) + 1}`;
 
   return (
-    <Modal title={original ? (original.custom ? `Edit symbol — ${original.name}` : `Customise “${original.name}”`) : 'Create a symbol'} onClose={() => set({ dialog: null, editingSymbol: null })} onEscape={() => (tab === 'draw' ? !!escRef.current?.() : false)} width={1080} className="symbol-editor">
+    <Modal title={original ? (original.custom ? `Edit symbol — ${original.name}` : `Customise “${original.name}”`) : seed ? 'Create a symbol from the selection' : 'Create a symbol'} onClose={() => set({ dialog: null, editingSymbol: null, symbolSeed: null })} onEscape={() => (tab === 'draw' ? !!escRef.current?.() : false)} width={1080} className="symbol-editor">
       <div className="se-layout">
         <div className="se-main">
           <div className="tabs inline">
@@ -227,6 +240,11 @@ export function SymbolEditor() {
               <Code2 size={13} /> Code
             </button>
           </div>
+          {seed && !ports.length && (
+            <p className="se-seed-hint">
+              Drawn from your selection. Add pins where connections should go (on the outline), then save: the selection is replaced by the new symbol, and wires ending on a pin stay connected.
+            </p>
+          )}
           {tab === 'draw' && <SymbolDrawPane src={src} apply={apply} prims={prims} ports={ports} onUndo={undoEd} onRedo={redoEd} canUndo={hist.canUndo} canRedo={hist.canRedo} escRef={escRef} />}
           {tab === 'chip' && (
             <ChipBuilder

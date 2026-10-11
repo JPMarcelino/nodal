@@ -40,7 +40,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   },
   {
     label: 'Place',
-    items: ['tool.wire', 'tool.placeLast', '-', 'tool.resistor', 'tool.capacitor', 'tool.ground', 'tool.vcc', 'tool.netLabel', 'tool.junction', '-', 'tool.rect', 'tool.zone', 'tool.ellipse', 'tool.line', 'tool.arrow', 'tool.text', '-', 'symbols.new', 'symbols.edit'],
+    items: ['tool.wire', 'tool.placeLast', '-', 'tool.resistor', 'tool.capacitor', 'tool.ground', 'tool.vcc', 'tool.netLabel', 'tool.junction', '-', 'tool.rect', 'tool.zone', 'tool.ellipse', 'tool.line', 'tool.arrow', 'tool.text', '-', 'symbols.new', 'symbols.fromSelection', 'symbols.edit'],
   },
   {
     label: 'Arrange',
