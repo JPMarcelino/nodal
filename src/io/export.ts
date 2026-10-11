@@ -9,7 +9,7 @@ import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 
 export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string }> = {
   light: { sym: '#1f2433', symBg: '#ffffff', label: '#1f2433', value: '#5a6275', bg: '#ffffff', selection: '#3b82f6', ink: '#000000', grid: '#e6e8ee' },
-  dark: { sym: '#d7dcef', symBg: '#151925', label: '#e6e9f5', value: '#9aa3bd', bg: '#151925', selection: '#7aa2f7', ink: '#d7dcef', grid: '#232838' },
+  dark: { sym: '#e6dfcf', symBg: '#0f0e0c', label: '#ece6d8', value: '#a69f8f', bg: '#0f0e0c', selection: '#d4af6a', ink: '#e6dfcf', grid: '#2a2722' },
 };
 
 export interface SvgOptions {

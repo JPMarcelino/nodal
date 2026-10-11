@@ -4,28 +4,28 @@
 
 :root,
 [data-theme='dark'] {
-  --bg: #0d1017;
-  --panel: #131722;
-  --panel-2: #181d2a;
-  --panel-3: #1f2535;
-  --border: #252c3d;
-  --border-strong: #323b51;
-  --text: #e4e8f4;
-  --text-dim: #9aa3bd;
-  --text-faint: #646d86;
-  --accent: #7aa2f7;
-  --accent-2: #3ddc97;
-  --accent-soft: rgba(122, 162, 247, 0.14);
-  --danger: #f7768e;
+  --bg: #0c0b09;
+  --panel: #141310;
+  --panel-2: #1a1915;
+  --panel-3: #22201b;
+  --border: #2a2722;
+  --border-strong: #3a362e;
+  --text: #ece6d8;
+  --text-dim: #a69f8f;
+  --text-faint: #6e685c;
+  --accent: #d4af6a;
+  --accent-2: #e6cf9c;
+  --accent-soft: rgba(212, 175, 106, 0.13);
+  --danger: #e5786d;
   --warn: #e0af68;
-  --canvas: #10141e;
-  --grid: rgba(150, 165, 200, 0.16);
-  --grid-major: rgba(150, 165, 200, 0.3);
-  --sym: #d5dbef;
-  --ink: #d5dbef;
-  --sym-bg: #10141e;
-  --label: #e4e8f4;
-  --label-dim: #8f98b3;
+  --canvas: #0f0e0c;
+  --grid: rgba(212, 190, 150, 0.11);
+  --grid-major: rgba(212, 190, 150, 0.22);
+  --sym: #e6dfcf;
+  --ink: #e6dfcf;
+  --sym-bg: #0f0e0c;
+  --label: #ece6d8;
+  --label-dim: #9c9483;
   --shadow: 0 10px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.3);
   --radius: 10px;
@@ -33,30 +33,30 @@
 }
 
 [data-theme='light'] {
-  --bg: #eef0f5;
-  --panel: #ffffff;
-  --panel-2: #f6f7fa;
-  --panel-3: #eceff5;
-  --border: #e1e4ec;
-  --border-strong: #cfd4e0;
-  --text: #1c2130;
-  --text-dim: #5b6377;
-  --text-faint: #9299ab;
-  --accent: #3b6ef5;
-  --accent-2: #12a96b;
-  --accent-soft: rgba(59, 110, 245, 0.1);
-  --danger: #e0445e;
-  --warn: #c58a17;
-  --canvas: #fbfcfe;
-  --grid: rgba(70, 85, 120, 0.16);
-  --grid-major: rgba(70, 85, 120, 0.32);
-  --sym: #1f2433;
+  --bg: #f4f1ea;
+  --panel: #fffdf8;
+  --panel-2: #f9f6ef;
+  --panel-3: #f0ebe0;
+  --border: #e6dfd0;
+  --border-strong: #d6ccb8;
+  --text: #1d1a14;
+  --text-dim: #6b6355;
+  --text-faint: #a39a88;
+  --accent: #9a7429;
+  --accent-2: #7d5d1d;
+  --accent-soft: rgba(154, 116, 41, 0.1);
+  --danger: #c4483c;
+  --warn: #b07d16;
+  --canvas: #fffdf9;
+  --grid: rgba(120, 100, 60, 0.14);
+  --grid-major: rgba(120, 100, 60, 0.28);
+  --sym: #1f1c16;
   --ink: #000000;
-  --sym-bg: #fbfcfe;
-  --label: #1f2433;
-  --label-dim: #5d667c;
-  --shadow: 0 12px 40px rgba(30, 40, 70, 0.16), 0 2px 8px rgba(30, 40, 70, 0.08);
-  --shadow-sm: 0 2px 10px rgba(30, 40, 70, 0.1);
+  --sym-bg: #fffdf9;
+  --label: #1f1c16;
+  --label-dim: #6b6355;
+  --shadow: 0 12px 40px rgba(60, 45, 20, 0.14), 0 2px 8px rgba(60, 45, 20, 0.07);
+  --shadow-sm: 0 2px 10px rgba(60, 45, 20, 0.09);
   color-scheme: light;
 }
 
@@ -364,20 +364,31 @@ kbd {
   gap: 7px;
   height: 32px;
   padding: 0 14px;
-  border-radius: 9px;
+  border-radius: 6px;
+  border: 1px solid var(--btn-bg);
   font-weight: 600;
-  color: #0b1020;
-  background: linear-gradient(135deg, var(--accent-2), var(--accent));
-  box-shadow: 0 2px 10px rgba(80, 140, 240, 0.25);
+  color: var(--btn-fg);
+  background: var(--btn-bg);
   margin-left: 6px;
+  transition: background 0.12s, border-color 0.12s;
+  --btn-bg: #ece6d8;
+  --btn-fg: #0c0b09;
+  --btn-hover: #fbf5e6;
 }
 
 [data-theme='light'] .primary-btn {
-  color: white;
+  --btn-bg: #1d1a14;
+  --btn-fg: #f6efdd;
+  --btn-hover: #2e2a21;
+}
+
+.primary-btn svg {
+  color: var(--accent);
 }
 
 .primary-btn:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--btn-hover);
+  border-color: var(--btn-hover);
 }
 
 .secondary-btn {
@@ -1387,7 +1398,7 @@ select.input {
 }
 
 .marquee.crossing {
-  fill: rgba(61, 220, 151, 0.08);
+  fill: rgba(230, 207, 156, 0.08);
   stroke: var(--accent-2);
 }
 
@@ -1423,11 +1434,11 @@ select.input {
 }
 
 .shape-preview.zone {
-  fill: rgba(122, 162, 247, 0.18);
+  fill: var(--accent-soft);
 }
 
 .scope-box {
-  fill: rgba(122, 162, 247, 0.04);
+  fill: rgba(212, 175, 106, 0.04);
   stroke: var(--accent);
   stroke-dasharray: 6 4;
 }
@@ -1535,7 +1546,7 @@ select.input {
 }
 
 [data-theme='dark'] .tool-btn.active {
-  color: #0b1020;
+  color: #0c0b09;
 }
 
 .tool-key {
@@ -1679,7 +1690,7 @@ select.input {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(5, 8, 15, 0.5);
+  background: rgba(8, 7, 5, 0.55);
   backdrop-filter: blur(3px);
   display: flex;
   align-items: flex-start;
@@ -2844,7 +2855,7 @@ select.input {
   height: 8px;
   border-radius: 50%;
   background: var(--accent-2);
-  box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.2);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .live-chip.connecting .live-dot,
