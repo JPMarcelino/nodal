@@ -4,8 +4,8 @@ import { Scene, computeSceneData, type Palette } from '../canvas/Scene';
 import { docBounds, itemBounds, uid } from '../model/doc';
 import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
 import { getSymbol } from '../model/registry';
-import type { CircuitDoc, Item, Point, Prim, Rect, WireItem } from '../model/types';
-import { wirePolyline, wireStyle } from '../model/wires';
+import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
+import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 
 export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string }> = {
   light: { sym: '#1f2433', symBg: '#ffffff', label: '#1f2433', value: '#5a6275', bg: '#ffffff', selection: '#3b82f6', ink: '#000000', grid: '#e6e8ee' },
@@ -52,14 +52,58 @@ export function clipAreaDoc(doc: CircuitDoc, rect: Rect): CircuitDoc {
   return { ...doc, items };
 }
 
+function endpointOwnerId(ep: Endpoint): string | null {
+  return ep.kind === 'port' ? ep.comp : ep.kind === 'junction' ? ep.id : null;
+}
+
+/**
+ * Builds a document reduced to the given item ids. Wires that connect two kept
+ * items are included even when not selected themselves (mirroring
+ * extractFragment in ops.ts), and kept wires whose endpoint owner is outside
+ * the selection are re-anchored as free ends at their current position so the
+ * wire still renders instead of vanishing (wirePolyline returns [] when an
+ * endpoint owner is missing).
+ */
+export function selectionDoc(doc: CircuitDoc, ids: string[]): CircuitDoc {
+  const keep = new Set(ids);
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'wire' || keep.has(it.id)) continue;
+    const oa = endpointOwnerId(it.a);
+    const ob = endpointOwnerId(it.b);
+    if ((!oa || keep.has(oa)) && (!ob || keep.has(ob)) && (oa || ob) && (keep.has(oa ?? '') || keep.has(ob ?? ''))) keep.add(it.id);
+  }
+  const items: Record<string, Item> = {};
+  for (const [id, it] of Object.entries(doc.items)) {
+    if (!keep.has(id)) continue;
+    if (it.type !== 'wire') {
+      items[id] = it;
+      continue;
+    }
+    const c: WireItem = { ...it, pts: it.pts.map((p) => ({ ...p })) };
+    let frozen: Point[] | null = null;
+    for (const end of ['a', 'b'] as const) {
+      const o = endpointOwnerId(c[end]);
+      if (o && !keep.has(o)) {
+        const info = endpointInfo(doc, c[end]);
+        if (info) {
+          if (!frozen) frozen = wirePolyline(doc, it).slice(1, -1);
+          c[end] = { kind: 'free', x: info.pt.x, y: info.pt.y };
+        }
+      }
+    }
+    if (frozen) c.pts = frozen;
+    items[id] = c;
+  }
+  return { ...doc, items };
+}
+
 const FONT = `'Inter', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-serif`;
 
 export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bounds: Rect } {
   const palette = EXPORT_THEMES[opts.theme];
   let d = doc;
   if (opts.ids?.length) {
-    const keep = new Set(opts.ids);
-    d = { ...doc, items: Object.fromEntries(Object.entries(doc.items).filter(([id]) => keep.has(id))) };
+    d = selectionDoc(doc, opts.ids);
   }
   const p = opts.padding;
   let box: Rect;
