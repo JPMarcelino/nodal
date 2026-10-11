@@ -73,8 +73,8 @@ const BADGE_GLYPHS: Partial<Record<Tool, string>> = {
 };
 
 const CURSOR_THEMES = {
-  light: { ink: '#1f2433', halo: '#ffffff', badge: '#ffffff', border: '#cfd4e0' },
-  dark: { ink: '#d5dbef', halo: '#10141e', badge: '#1a1f2c', border: '#3a4258' },
+  light: { ink: '#1d1a14', halo: '#fffdf8', badge: '#fffdf8', border: '#d6ccb8' },
+  dark: { ink: '#e6dfcf', halo: '#0f0e0c', badge: '#1a1915', border: '#3a362e' },
 };
 
 const cursorCache = new Map<string, string | null>();
