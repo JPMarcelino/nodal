@@ -54,6 +54,15 @@ describe('buildWirePreview', () => {
       { x: 100, y: 50 },
     ]);
   });
+
+  it('takes the other elbow when the first would run back over the drawn leg', () => {
+    expect(buildWirePreview({ x: 0, y: 0 }, [{ x: 100, y: 0 }], true, { x: 50, y: 50 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 50 },
+      { x: 50, y: 50 },
+    ]);
+  });
 });
 
 describe('commitWire', () => {
@@ -151,6 +160,25 @@ describe('resolveWireEndpoint', () => {
     const w = freeWire(doc, 0, 0, 100, 0);
     w.b = { kind: 'port', comp: c1.id, port: '1' };
     const ep = resolveWireEndpoint(doc, { kind: 'wireEnd', wire: w.id, end: 'b', pt: { x: 100, y: 0 } });
+    expect(ep).toEqual({ kind: 'port', comp: c1.id, port: '1' });
+    expect(Object.values(doc.items).filter((i) => i.type === 'junction')).toHaveLength(0);
+  });
+
+  it("landing a 'wire' target on a free wire end shares a junction with it", () => {
+    const doc = createDoc();
+    const w = freeWire(doc, 0, 0, 100, 0);
+    const ep = resolveWireEndpoint(doc, { kind: 'wire', wire: 'other', seg: 0, pt: { x: 100, y: 0 } });
+    expect(ep.kind).toBe('junction');
+    expect((doc.items[w.id] as WireItem).b).toEqual(ep);
+    expect(Object.values(doc.items).filter((i) => i.type === 'junction')).toHaveLength(1);
+  });
+
+  it("landing a 'wire' target on a connected wire end returns the existing endpoint", () => {
+    const { doc, c1 } = twoResistors();
+    const pin = endpointInfo(doc, { kind: 'port', comp: c1.id, port: '1' })!.pt;
+    const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: 0, y: 0 }, b: { kind: 'port', comp: c1.id, port: '1' }, pts: [] };
+    doc.items[w.id] = w;
+    const ep = resolveWireEndpoint(doc, { kind: 'wire', wire: 'other', seg: 0, pt: { ...pin } });
     expect(ep).toEqual({ kind: 'port', comp: c1.id, port: '1' });
     expect(Object.values(doc.items).filter((i) => i.type === 'junction')).toHaveLength(0);
   });
