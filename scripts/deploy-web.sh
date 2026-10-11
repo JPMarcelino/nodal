@@ -24,7 +24,7 @@ else
   git -C "$out" checkout -q --orphan gh-pages
 fi
 
-git -C "$out" rm -rq --ignore-unmatch .
+git -C "$out" rm -rqf --ignore-unmatch .
 cp -r dist/. "$out"/
 touch "$out"/.nojekyll
 git -C "$out" add -A
