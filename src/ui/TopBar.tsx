@@ -26,6 +26,7 @@ import type { Tool } from '../model/types';
 import * as A from '../store/actions';
 import { COMMANDS, COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { S, mutate, redo, set, setPrefs, undo, useStore } from '../store/store';
+import { CollabBar } from './CollabBar';
 import { Logo } from './Logo';
 
 const MENUS: { label: string; items: (string | '-')[] }[] = [
@@ -184,6 +185,7 @@ export function TopBar() {
         <button className="icon-btn" onClick={() => setPrefs({ theme: theme === 'dark' ? 'light' : 'dark' })} title="Toggle theme">
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
+        <CollabBar />
         <button className="primary-btn" onClick={() => set({ dialog: 'export' })}>
           <Download size={15} /> Export
         </button>

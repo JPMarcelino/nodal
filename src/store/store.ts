@@ -246,6 +246,24 @@ export function redo() {
   set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]) });
 }
 
+/**
+ * Applies a change made by someone else in a live session. It is not undoable,
+ * and it is written into the undo history too, so undo only ever reverts the
+ * local user's own edits.
+ */
+export function applyExternal(patch: (doc: CircuitDoc) => CircuitDoc) {
+  const s = S();
+  if (gestureBase) gestureBase = patch(gestureBase);
+  const doc = patch(s.doc);
+  set({ doc, past: s.past.map(patch), future: s.future.map(patch), selection: s.selection.filter((id) => doc.items[id]) });
+}
+
+let autosavePaused = false;
+/** Stops autosave from overwriting the local circuit (e.g. while a shared one is open). */
+export function pauseAutosave(paused: boolean) {
+  autosavePaused = paused;
+}
+
 export function replaceDoc(doc: CircuitDoc, filePath: string | null = null) {
   set({ doc, past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null });
 }
@@ -343,7 +361,7 @@ export function pushRecent(id: string) {
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((s, prev) => {
-  if (s.doc === prev.doc || !s.prefs.autosave) return;
+  if (s.doc === prev.doc || !s.prefs.autosave || autosavePaused) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     const doc = S().doc;

@@ -1,6 +1,7 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { joinFromUrl } from './collab/session';
 import './styles/app.css';
 
 // Dev-only visual review page. Lazily imported and gated on DEV so Vite can
@@ -10,6 +11,8 @@ const Gallery = import.meta.env.DEV
   : null;
 
 const showGallery = import.meta.env.DEV && Gallery !== null && location.hash === '#gallery';
+
+if (!showGallery) joinFromUrl();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
