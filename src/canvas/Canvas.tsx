@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { itemBounds, makeShape, uid } from '../model/doc';
-import { dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, simplify, snap, toWorld } from '../model/geometry';
-import { cleanup, deleteWirePart, splitWire, translateDetached, translateItems } from '../model/ops';
+import { itemBounds, makeShape } from '../model/doc';
+import { dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, snap, toWorld } from '../model/geometry';
+import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
-import { buildWirePath, endpointInfo, hitWire, moveWireNode, snapOnSegment, wirePolyline } from '../model/wires';
+import { buildWirePath, endpointInfo, hitWire, moveWireNode, snapOnSegment } from '../model/wires';
+import { buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd } from '../model/wireCommit';
 import { runAreaExport } from '../io/fileActions';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
@@ -471,93 +472,18 @@ export function Canvas() {
 
   /* ------------------------- wire commit ------------------------- */
 
-  /** Turns a target into a wire endpoint; `self` is a wire being reconnected, which must never be split onto itself. */
-  const resolveEndpoint = (d: CircuitDoc, t: Target, self?: string): Endpoint => {
-    switch (t.kind) {
-      case 'port':
-        return { kind: 'port', comp: t.comp, port: t.port };
-      case 'junction':
-        return { kind: 'junction', id: t.id };
-      case 'wireEnd': {
-        const w = d.items[t.wire] as WireItem | undefined;
-        if (!w) return { kind: 'free', ...t.pt };
-        // already connected earlier in this same commit (a loop closing where it started)
-        if (w[t.end].kind !== 'free') return w[t.end];
-        const jid = uid('j');
-        d.items[jid] = { id: jid, type: 'junction', x: t.pt.x, y: t.pt.y, group: w.group };
-        w.pts = wirePolyline(d, w).slice(1, -1);
-        w[t.end] = { kind: 'junction', id: jid };
-        return { kind: 'junction', id: jid };
-      }
-      case 'wire': {
-        // re-locate the wire under the point (ids may have changed after a previous split)
-        const polys = new Map<string, Point[]>();
-        for (const it of Object.values(d.items)) if (it.type === 'wire' && it.id !== self) polys.set(it.id, wirePolyline(d, it));
-        const hit = hitWire(polys, t.pt, 0.5);
-        if (!hit) return { kind: 'free', ...t.pt };
-        const pts = polys.get(hit.wire)!;
-        if (eq(pts[0], t.pt) || eq(pts[pts.length - 1], t.pt)) {
-          const w = d.items[hit.wire] as WireItem;
-          const end = eq(pts[0], t.pt) ? 'a' : 'b';
-          if (w[end].kind !== 'free') return w[end];
-          return resolveEndpoint(d, { kind: 'wireEnd', wire: w.id, end, pt: t.pt });
-        }
-        return { kind: 'junction', id: splitWire(d, hit.wire, hit.seg, t.pt) };
-      }
-      case 'grid':
-        return { kind: 'free', ...t.pt };
-    }
-  };
-
-  const wirePreview = (g: Extract<Gesture, { kind: 'wire' }>): Point[] => {
-    const start = g.start.pt;
-    const last = g.pts.length ? g.pts[g.pts.length - 1] : start;
-    const c = g.cur.pt;
-    const out = [start, ...g.pts];
-    if (Math.abs(last.x - c.x) > ORTHO_EPS && Math.abs(last.y - c.y) > ORTHO_EPS) {
-      let elbow = g.hFirst ? { x: c.x, y: last.y } : { x: last.x, y: c.y };
-      // never run back over the leg just drawn: take the other elbow instead
-      const prev = out.length >= 2 ? out[out.length - 2] : null;
-      if (prev && (elbow.x - last.x) * (last.x - prev.x) + (elbow.y - last.y) * (last.y - prev.y) < 0) {
-        elbow = g.hFirst ? { x: last.x, y: c.y } : { x: c.x, y: last.y };
-      }
-      out.push(elbow);
-    }
-    out.push(c);
-    return simplify(out);
-  };
+  const wirePreview = (g: Extract<Gesture, { kind: 'wire' }>): Point[] =>
+    buildWirePreview(g.start.pt, g.pts, g.hFirst, g.cur.pt);
 
   const commitWire = (g: Extract<Gesture, { kind: 'wire' }>, end: Target) => {
-    const pts = wirePreview({ ...g, cur: end });
-    if (pts.length < 2 || (pts.length === 2 && eq(pts[0], pts[1]))) return false;
-    // same start and end is only fine when the wire goes somewhere and comes back (a loop)
-    if (sameTarget(g.start, end) && pts.length < 4) return false;
     const brush = S().wireBrush;
-    let newId = '';
+    let newId: string | null = null;
     mutate((dd) => {
-      const d = dd as CircuitDoc;
-      const a = resolveEndpoint(d, g.start);
-      const b = resolveEndpoint(d, end);
-      const w: WireItem = { id: uid('w'), type: 'wire', a, b, pts: pts.slice(1, -1), group: S().scope };
-      if (brush) w.style = { ...brush };
-      d.items[w.id] = w;
-      newId = w.id;
-      cleanup(d);
+      newId = commitWireDoc(dd as CircuitDoc, g.start, end, { via: g.pts, hFirst: g.hFirst, group: S().scope, ...(brush ? { style: { ...brush } } : {}) });
     });
-    if (S().doc.items[newId]) set({ selection: [] });
-    return true;
+    if (newId && S().doc.items[newId]) set({ selection: [] });
+    return newId !== null;
   };
-
-  const sameTarget = (a: Target, b: Target) =>
-    (a.kind === 'port' && b.kind === 'port' && a.comp === b.comp && a.port === b.port) || (a.kind === 'junction' && b.kind === 'junction' && a.id === b.id);
-
-  /** Port/junction target matching an existing endpoint (for same-target checks). */
-  const endpointTarget = (ep: Endpoint): Target =>
-    ep.kind === 'port'
-      ? { kind: 'port', comp: ep.comp, port: ep.port, pt: { x: 0, y: 0 }, dir: { x: 0, y: 0 } }
-      : ep.kind === 'junction'
-        ? { kind: 'junction', id: ep.id, pt: { x: 0, y: 0 } }
-        : { kind: 'grid', pt: { x: ep.x, y: ep.y } };
 
   /**
    * Whether the wire being drawn has reached a point that should end it:
@@ -929,23 +855,7 @@ export function Canvas() {
         const dy = horiz || !vert ? snap(w.y - g.start.y, step) : 0;
         if (!dx && !dy && !g.moved) return;
         gestureUpdate((d) => {
-          const wire = d.items[g.wire] as WireItem;
-          const pts = g.base.map((p) => ({ ...p }));
-          // attached ends stay put (a stub keeps the connection); free ends travel with the segment
-          const freeA = wire.a.kind === 'free';
-          const freeB = wire.b.kind === 'free';
-          let seg = g.seg;
-          if (seg === 0 && !freeA) {
-            pts.splice(1, 0, { ...pts[0] });
-            seg = 1;
-          }
-          if (seg === pts.length - 2 && !freeB) pts.splice(pts.length - 1, 0, { ...pts[pts.length - 1] });
-          pts[seg] = { x: pts[seg].x + dx, y: pts[seg].y + dy };
-          pts[seg + 1] = { x: pts[seg + 1].x + dx, y: pts[seg + 1].y + dy };
-          const full = simplify(pts);
-          if (freeA) wire.a = { kind: 'free', ...full[0] };
-          if (freeB) wire.b = { kind: 'free', ...full[full.length - 1] };
-          wire.pts = full.slice(1, -1);
+          moveWireSegment(d as CircuitDoc, g.wire, g.base, g.seg, dx, dy);
         });
         if (!g.moved) {
           set({ wirePart: null }); // dragging a segment reshapes it instead of selecting it
@@ -1111,17 +1021,7 @@ export function Canvas() {
         }
         const t = g.cur;
         mutate((dd) => {
-          const d = dd as CircuitDoc;
-          const wire = d.items[g.wire] as WireItem;
-          if (!wire) return;
-          const other = g.end === 'a' ? wire.b : wire.a;
-          // dropping onto the wire's own other end would make a zero-length loop
-          if (sameTarget(t, endpointTarget(other))) return;
-          // bake the exact route shown while dragging, so the wire doesn't jump on release
-          const shown = wirePolyline(d, { ...wire, [g.end]: { kind: 'free', ...t.pt } });
-          wire[g.end] = resolveEndpoint(d, t, g.wire);
-          wire.pts = shown.slice(1, -1);
-          cleanup(d);
+          reconnectWireEnd(dd as CircuitDoc, g.wire, g.end, t);
         });
         setGesture(null);
         break;
