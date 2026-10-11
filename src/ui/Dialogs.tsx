@@ -24,6 +24,7 @@ import * as A from '../store/actions';
 import { COMMANDS, eventToCombo, keysFor, prettyKey, type Command } from '../store/commands';
 import { S, set, setPrefs, toast, useStore } from '../store/store';
 import { Field, Kbd, Segmented, Toggle } from './controls';
+import { LiveSession } from './LiveSession';
 import { Logo } from './Logo';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 
@@ -501,10 +502,11 @@ export function ShareDialog() {
   const isLib = tab === 'library';
   return (
     <Modal title="Share & collaborate" onClose={close} width={680}>
+      <LiveSession />
       <div className="share-intro">
         <Users size={18} />
         <div>
-          Live, multi-user editing with named cursors needs a shared server, which a fully offline app can't provide. Until then, collaborating is one click: send your <b>whole symbol library</b>, or any part of a circuit as a reusable <b>template</b>.
+          Or share without a live session: send your <b>whole symbol library</b>, or any part of a circuit as a reusable <b>template</b>.
         </div>
       </div>
       <div className="tabs inline">

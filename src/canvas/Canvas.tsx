@@ -11,6 +11,7 @@ import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, inkColor, labelLayout, labelOffsets, measureText, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
+import { FollowFrame, RemotePresence } from './RemotePresence';
 import { HotSpotMenu } from './HotSpotMenu';
 import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
@@ -1358,8 +1359,10 @@ export function Canvas() {
               <ComponentView c={ghost} def={getSymbol(doc, ghost.symbol)} settings={doc.settings} palette={EDITOR_PALETTE} ghost />
             </g>
           )}
+          <RemotePresence doc={doc} polys={data.polys} z={z} />
         </g>
       </svg>
+      <FollowFrame />
       {scope && (
         <div className="scope-banner">
           Editing group <b>{doc.groups[scope]?.name ?? ''}</b>

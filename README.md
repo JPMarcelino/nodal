@@ -42,7 +42,16 @@ Open the symbol editor with **Ctrl+Shift+N**, the **+ New** button, or **Customi
 Your symbols are kept in *My symbols*. Every circuit file also stores a copy of the symbols it uses, so files open correctly on other machines.
 
 ### Sharing & collaboration
-Live multi-user editing with named cursors needs a shared server, which a fully offline app can't provide. Until then, collaborating is one click — open **File → Share & collaborate…** (or the button atop the library) to:
+**Live collaboration.** Click **Share** in the top bar, then **Start live session**. A link is copied for you; anyone who opens it edits the same circuit with you in real time:
+- Everyone's **cursor and name** are shown live, along with what they have selected. Pick your own name and colour in the Share dialog.
+- The avatars in the top bar show who is here. **Click someone's avatar to follow their view**; panning or zooming yourself stops following.
+- **Undo only undoes your own edits**, never someone else's.
+- The session is **end-to-end encrypted**. The key is in the part of the link after `#`, which never reaches the server, so only people with the link can read the circuit. The room keeps an encrypted copy, so the link still works after everyone has left (rooms nobody touches for 90 days are deleted).
+- In the desktop app, paste a session link into *Share → Join*.
+
+The relay is a small Cloudflare Worker in [`collab-server/`](collab-server).
+
+You can also share without a live session. Open **File → Share & collaborate…** to:
 - **Share your whole symbol library** as copy-paste text or a `.json` file, and import someone else's (imports *merge*, never overwrite).
 - **Share any part of a circuit as a reusable template** — select it and send it; the template carries its parts, wiring and custom symbols, and lands correctly on another machine.
 
