@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, uid } from '../model/doc';
 import type { WireItem } from '../model/types';
 import { wirePolyline } from '../model/wires';
-import { selectionDoc } from '../io/export';
+import { selectionDoc, exportSvg } from '../io/export';
 
 function twoResistors() {
   const doc = createDoc();
@@ -47,5 +47,11 @@ describe('selectionDoc', () => {
     expect(kept.a).toEqual({ kind: 'port', comp: c1.id, port: '2' });
     expect(kept.b.kind).toBe('free');
     expect(wirePolyline(d, kept).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('exportSvg({ids:[wire]}) keeps a wire connecting unselected items', () => {
+    const { doc, w } = twoResistors();
+    const { svg } = exportSvg(doc, { theme: 'light', background: false, padding: 10, ids: [w.id] });
+    expect(svg).toContain(`data-id="${w.id}"`);
   });
 });
