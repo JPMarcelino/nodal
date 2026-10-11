@@ -351,6 +351,21 @@ export function deleteUserSymbol(id: string) {
   localStorage.setItem(LS.lib, JSON.stringify(lib));
 }
 
+/**
+ * Deletes a symbol (and its extra types) from "My symbols". The open circuit
+ * keeps its copy only while parts still use it; otherwise that copy goes too,
+ * or the library tile would stay (the library also lists circuit symbols).
+ */
+export function removeSymbolFromLibrary(id: string): { inUse: number } {
+  const { doc, userLibrary } = S();
+  const ids = [id, ...Object.values({ ...doc.symbols, ...userLibrary }).filter((d) => d.variantOf === id).map((d) => d.id)];
+  const uses = (sid: string) => Object.values(doc.items).filter((it) => it.type === 'component' && it.symbol === sid).length;
+  for (const sid of ids) deleteUserSymbol(sid);
+  const unused = ids.filter((sid) => doc.symbols[sid] && !uses(sid));
+  if (unused.length) mutate((d) => unused.forEach((sid) => delete d.symbols[sid]));
+  return { inUse: ids.reduce((n, sid) => n + uses(sid), 0) };
+}
+
 export function toggleFavorite(id: string) {
   const fav = S().favorites.includes(id) ? S().favorites.filter((f) => f !== id) : [...S().favorites, id];
   set({ favorites: fav });

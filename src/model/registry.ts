@@ -29,10 +29,13 @@ export function variantDefs(doc: Pick<CircuitDoc, 'symbols'>, def: SymbolDef): S
  * symbols first, then built-ins, with variant drawings folded into their base
  * symbol and duplicates removed by id.
  */
-export function librarySymbols(doc: Pick<CircuitDoc, 'symbols'>): SymbolDef[] {
+export function librarySymbols(doc: Pick<CircuitDoc, 'symbols'> & Partial<Pick<CircuitDoc, 'items'>>): SymbolDef[] {
   const byId = new Map<string, SymbolDef>();
   for (const d of Object.values(userLibrary)) byId.set(d.id, d);
-  for (const d of Object.values(doc.symbols)) if (!byId.has(d.id)) byId.set(d.id, d);
+  // with the circuit's items given, its own symbols are listed only while parts use them
+  // (so a symbol deleted from "My symbols" disappears once nothing uses it)
+  const used = doc.items ? usedSymbols(doc as Pick<CircuitDoc, 'symbols' | 'items'>) : null;
+  for (const d of Object.values(doc.symbols)) if (!byId.has(d.id) && (!used || used.has(d.id))) byId.set(d.id, d);
   for (const d of BUILTIN_SYMBOLS) if (!byId.has(d.id)) byId.set(d.id, d);
   return [...byId.values()].filter((d) => !isVariant(d));
 }
@@ -40,4 +43,16 @@ export function librarySymbols(doc: Pick<CircuitDoc, 'symbols'>): SymbolDef[] {
 /** Symbols that can act as a base for a new "type" in the symbol editor. */
 export function baseSymbols(doc: Pick<CircuitDoc, 'symbols'>): SymbolDef[] {
   return librarySymbols(doc).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Symbols placed in the circuit, counting a base symbol as used when one of its types is. */
+function usedSymbols(doc: Pick<CircuitDoc, 'symbols' | 'items'>): Set<string> {
+  const used = new Set<string>();
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'component') continue;
+    used.add(it.symbol);
+    const base = doc.symbols[it.symbol]?.variantOf;
+    if (base) used.add(base);
+  }
+  return used;
 }

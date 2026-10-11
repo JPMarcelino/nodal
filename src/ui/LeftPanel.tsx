@@ -8,7 +8,7 @@ import { CATEGORY_ORDER } from '../model/symbols';
 import type { CircuitDoc, Item, SymbolDef } from '../model/types';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import * as A from '../store/actions';
-import { S, deleteUserSymbol, mutate, select, set, toggleFavorite, useStore } from '../store/store';
+import { S, mutate, removeSymbolFromLibrary, select, set, toast, toggleFavorite, useStore } from '../store/store';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 
 function Tile({ def }: { def: SymbolDef }) {
@@ -112,7 +112,14 @@ function Tile({ def }: { def: SymbolDef }) {
             title="Delete from my library"
             onClick={(e) => {
               e.stopPropagation();
-              if (confirm(`Delete "${def.name}" from your library? Circuits that use it keep their copy.`)) deleteUserSymbol(def.id);
+              if (!confirm(`Delete "${def.name}" from your library? Circuits that use it keep their copy.`)) return;
+              const { inUse } = removeSymbolFromLibrary(def.id);
+              toast(
+                inUse
+                  ? `Deleted from My symbols. ${inUse} part${inUse > 1 ? 's' : ''} in this circuit still use${inUse > 1 ? '' : 's'} it, so it stays listed here until ${inUse > 1 ? 'they are' : 'it is'} removed.`
+                  : `Deleted “${def.name}”`,
+                inUse ? 'info' : 'success',
+              );
             }}
           >
             <Trash2 size={11} />
@@ -165,7 +172,8 @@ function Library() {
   const recent = useStore((s) => s.recent);
   const docSymbols = useStore((s) => s.doc.symbols);
   const userLibrary = useStore((s) => s.userLibrary);
-  const all = useMemo(() => librarySymbols({ symbols: docSymbols }), [docSymbols, userLibrary]);
+  const docItems = useStore((s) => s.doc.items);
+  const all = useMemo(() => librarySymbols({ symbols: docSymbols, items: docItems }), [docSymbols, docItems, userLibrary]);
   const extras = useMemo(() => {
     const m = new Map<string, string>();
     for (const d of all) {
