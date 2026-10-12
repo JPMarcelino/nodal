@@ -14,6 +14,9 @@ const showGallery = import.meta.env.DEV && Gallery !== null && location.hash.sta
 
 if (!showGallery) joinFromUrl();
 
+// Dev-only handle for scripted UI checks (headless screenshots).
+if (import.meta.env.DEV) void import('./store/store').then((m) => Object.assign(window, { __nodal: m }));
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {showGallery && Gallery ? (

@@ -15,16 +15,16 @@ Nodal is a fast, good-looking schematic editor. It's one React + TypeScript code
 
 ## Features
 
-### Symbol library (~200 parts)
-- **Passive:** resistors (US and IEC), variable resistors, potentiometers, trimmers, NTC thermistors, LDRs, varistors, capacitors (ceramic, polarized, variable), inductors, ferrite beads, transformers (including center-tapped), crystals, resonators, fuses, polyfuses, antennas
-- **Semiconductors:** diodes, LEDs, Zener, Schottky, TVS, varactor, photodiode, laser diode, DIAC, bridge rectifier, NPN/PNP (plain and circled), Darlington, phototransistor, N/P MOSFETs, depletion MOSFET, N/P JFETs, IGBT, SCR, TRIAC, UJT, optocoupler, gate driver
-- **ICs and analog:** op-amps, comparator, instrumentation amp, 555, linear and adjustable regulators, buck converter, generic 8/14/16-pin ICs, ATmega328P, generic MCU, EEPROM, ADC, DAC, H-bridge, USB-UART
-- **Logic:** AND/NAND/OR/NOR/XOR/XNOR (2 and 3 inputs), NOT, buffers, Schmitt triggers, tri-state, D/JK/T flip-flops, SR latch, multiplexers, demux, 3→8 decoder, adders, counter, 74HC595, clock source, tie-high/low
-- **Power and sources:** ground (signal, chassis, earth), supply rails, cells and batteries, DC/AC/pulse/current sources, dependent sources, solar cell, generator, power flag
-- **Switches and relays:** SPST, SPDT, DPST, DPDT, push buttons (NO/NC), reed, limit, rotary, DIP, relay coil, SPDT/DPDT/solid-state relays, breaker, contactor, thermal switch, e-stop
-- **Output and sensors:** lamp, RGB LED, 7-segment, buzzer, speaker, microphone, piezo, DC/AC/stepper motors, servo, solenoid, heater, fan, bell, headphones, thermocouple, Hall, temperature, PIR, ultrasonic, IMU, LCD 16×2, OLED
+### Symbol library (~240 parts)
+- **Passive:** resistors (US and IEC), variable resistors, potentiometers, trimmers, NTC/PTC thermistors, LDRs, varistors, resistor networks, 4-terminal current-sense resistors, capacitors (ceramic, polarized, bipolar, variable), inductors, coupled inductors, ferrite beads, transformers (center-tapped, dual secondary), crystals, resonators, fuses, polyfuses, spark gaps, gas discharge tubes, antennas
+- **Semiconductors:** diodes, dual diodes, LEDs, Zener, Schottky, tunnel, TVS, varactor, photodiode, laser diode, DIAC, bridge rectifier, NPN/PNP (plain and circled), Darlington, phototransistor, N/P MOSFETs, depletion MOSFET, N/P JFETs, IGBT, SCR, TRIAC, UJT, optocouplers (transistor and TRIAC output), gate driver, vacuum tubes (triode, pentode)
+- **ICs and analog:** op-amps (single and dual), comparator, TL431 shunt reference, voltage reference, LDO with enable, oscillator module, instrumentation amp, 555, linear and adjustable regulators, buck converter, generic 8/14/16-pin ICs, ATmega328P, generic MCU, EEPROM, ADC, DAC, H-bridge, USB-UART
+- **Logic:** AND/NAND/OR/NOR/XOR/XNOR (2, 3 and 4 inputs), Schmitt NAND, NOT, buffers, Schmitt triggers, tri-state, D/JK/T flip-flops, SR latch, multiplexers, demux, 3→8 decoder, adders, counter, 74HC595, clock source, tie-high/low
+- **Power and sources:** ground (signal, chassis, earth), supply rails, cells and batteries, DC/AC/pulse/current sources, dependent sources (including a 4-terminal VCCS), solar cell, generator, power flag
+- **Switches and relays:** SPST, SPDT, DPST, DPDT, push buttons (NO/NC, 4-pin tactile), rotary encoder, reed, limit, rotary, DIP, relay coil, SPDT/DPDT/solid-state relays, breaker, contactor, thermal switch, e-stop
+- **Output and sensors:** lamp, neon lamp, photo interrupter, RGB LED, 7-segment, buzzer, speaker, microphone, piezo, DC/AC/stepper motors, servo, solenoid, heater, fan, bell, headphones, thermocouple, Hall, temperature, PIR, ultrasonic, IMU, LCD 16×2, OLED
 - **Meters and test:** volt/am/ohm/watt meters, galvanometer, oscilloscope, frequency counter, function generator, test point, probe
-- **Connectors and labels:** net labels, global labels, in/out/bidirectional ports, off-page connector, no-connect flag, terminals, terminal blocks, pin headers (1×2 to 1×8, 2×5), DC jack, 3.5 mm audio jack, USB, USB-C, RJ45, BNC, plug and socket, banana jack, mounting hole, fiducial
+- **Connectors and labels:** net labels, global labels, in/out/bidirectional ports, off-page connector, no-connect flag, terminals, terminal blocks, pin headers (1×2 to 1×12, 2×3 to 2×10), D-sub 9, SMA, bus entry, DC jack, 3.5 mm audio jack, USB, USB-C, RJ45, BNC, plug and socket, banana jack, mounting hole, fiducial
 
 You can search the library, mark favourites (★), and see recently used parts. Click a part to place it, or drag it onto the canvas.
 
@@ -71,17 +71,33 @@ You can also share without a live session. Open **File → Share & collaborate�
 - Stroke, fill, opacity, corner radius and dash settings; z-ordering within each layer
 - Locking a zone lets clicks pass through it
 
+### Checking the circuit
+- **Check tab** (**Ctrl+Alt+R**): a live electrical rules check. It lists unconnected pins (open power pins are errors), duplicate reference designators, supply rails shorted together, net labels used only once, nets that reach a single pin, loose wire ends, wire ends touching something without connecting, no-connect flags on wired pins, and parts stacked on the same spot. Markers show each problem on the canvas; click one to select and zoom to it. Put a **no-connect flag** (**Shift+X**) on pins you leave open on purpose.
+- **Find** (**Ctrl+F**): jump to any part (by reference, value or any field), net, label or text.
+- Pins of two parts that touch are connected, just as if a wire joined them.
+
+### Part details and manufacturing
+- Every part has **footprint, manufacturer, part number, supplier, supplier part number and datasheet** fields (the datasheet opens from the inspector), plus any **fields of your own**.
+- **Do not populate**: the part stays in the drawing (dimmed, tagged DNP) but is left out of the SPICE netlist and listed separately in the BOM.
+
+### Drawing frame and title block
+Turn on **Drawing frame** in the document properties for a sheet border with zone markers (1, 2, 3… / A, B, C…) and a title block (company, title, description, author, date, size, revision, sheet number). Sizes A5–A0, US Letter/Legal/Tabloid and ANSI C–E, landscape or portrait. With a frame, exports use the sheet as the page and printing uses its paper size.
+
+### Maths (LaTeX)
+Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone/shape titles, wire labels and part values, e.g. `$f_c = \frac{1}{2\pi RC}$` or `$R_{load}$`. Formulas are typeset with MathJax as vector paths, so they look the same in SVG, PNG and PDF exports. Type `\$` for a literal dollar sign.
+
 ### Organising
 - **Groups** (**Ctrl+G** / **Ctrl+Shift+G**), including nested groups. Double-click a grouped item to enter the group.
 - **Layers** panel: tree of groups and items, with show/hide and lock
 - Align and distribute, rotate (**R**), flip (**X**/**Y**), nudge with the arrow keys
-- Copy/paste between windows (the clipboard holds JSON), duplicate, paste at cursor
+- Copy/paste between windows (the clipboard holds JSON); **Ctrl+V pastes under the mouse pointer**, **Ctrl+Shift+V** pastes next to the original; duplicate
 - Automatic reference designators (R1, C2…), plus a renumber command
 - Box select: drag right to select items fully inside, drag left to select anything touched
 
 ### Files and export
 - Native open/save dialogs on desktop (`.nodal` files), with autosave and restore
-- Export to **PNG** (1–4×, light/dark), **SVG**, **DXF** (layered, for AutoCAD/LibreCAD), **SPICE netlist**, **bill of materials (CSV)** and **JSON**; print or save as PDF
+- Export to **PNG** (1–4×, light/dark), **SVG**, **DXF** (layered, for AutoCAD/LibreCAD), **SPICE netlist** (correct transistor pin order, engineering values such as `4k7` converted), **KiCad netlist** (parts, footprints and nets for PCB layout), **bill of materials (CSV)** with footprints, part numbers and DNP, and **JSON**; print or save as PDF
+- Buses: draw a thick wire as the bus and attach signals with **bus entry** symbols; signals connect by their net labels
 - Copy the selection as SVG to paste into other apps
 
 ### Interface
@@ -109,6 +125,7 @@ Press **?** in the app for the full list. You can rebind any shortcut in Setting
 | Align left/right/top/bottom | `Alt+←/→/↑/↓` | Distribute H / V | `Alt+Shift+H` / `Alt+Shift+V` |
 | Highlight net | `N` | Re-route wire | `Shift+W` |
 | Command palette | `Ctrl+K` | Save / Open / Export | `Ctrl+S` / `Ctrl+O` / `Ctrl+E` |
+| Find | `Ctrl+F` | Check circuit | `Ctrl+Alt+R` |
 | New symbol | `Ctrl+Shift+N` | Library / Properties panel | `Ctrl+B` / `Ctrl+I` |
 
 ## Development

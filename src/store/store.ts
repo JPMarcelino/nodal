@@ -95,6 +95,8 @@ export interface AppState {
   recent: string[];
   toasts: Toast[];
   cursor: Point;
+  /** Whether the mouse is over the canvas (so paste can land under it). */
+  pointerOnCanvas: boolean;
   canvasSize: { w: number; h: number };
   /** Wire style applied to newly drawn wires. */
   wireBrush: { color?: string; width?: number; radius?: number; dash?: 'solid' | 'dashed' | 'dotted' } | null;
@@ -171,6 +173,7 @@ export const useStore = create<AppState>(() => ({
   recent: load<string[]>(LS.recent, []),
   toasts: [],
   cursor: { x: 0, y: 0 },
+  pointerOnCanvas: false,
   canvasSize: { w: 800, h: 600 },
   wireBrush: null,
   exportArea: null,

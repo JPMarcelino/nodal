@@ -4,7 +4,8 @@ import { Scene, computeSceneData, type Palette } from '../canvas/Scene';
 import { docBounds, itemBounds, uid } from '../model/doc';
 import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
 import { getSymbol } from '../model/registry';
-import { sheetRect } from '../model/sheet';
+import { PX_PER_MM, sheetRect } from '../model/sheet';
+import { stripMath } from '../model/latex';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 
@@ -287,7 +288,7 @@ export function exportDxf(doc: CircuitDoc): string {
     g(10, x);
     g(20, Y(y));
     g(40, h);
-    g(1, s);
+    g(1, stripMath(s));
     if (align !== 'start') {
       g(72, align === 'middle' ? 1 : 2);
       g(11, x);
@@ -384,6 +385,14 @@ export function printDoc(doc: CircuitDoc) {
   if (el) {
     el.removeAttribute('width');
     el.removeAttribute('height');
+  }
+  // with a drawing frame, print on that paper size and orientation, edge to edge
+  const sheet = sheetRect(doc.settings);
+  if (sheet) {
+    const mm = (px: number) => (px / PX_PER_MM).toFixed(1);
+    const page = document.createElement('style');
+    page.textContent = `@page { size: ${mm(sheet.w)}mm ${mm(sheet.h)}mm; margin: 0 }`;
+    host.appendChild(page);
   }
   document.body.appendChild(host);
   document.body.classList.add('printing');

@@ -20,6 +20,7 @@ import {
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
+import { viewCentre } from '../io/importFiles';
 import { S, mutate, pushRecent, select, set, toast } from './store';
 
 const sel = () => new Set(S().selection);
@@ -153,6 +154,9 @@ export async function paste(at?: { x: number; y: number }) {
   if (!frag || !frag.items.length) return;
   pasteFragment(frag, at);
 }
+
+/** Where Ctrl+V pastes: under the mouse when it is over the canvas, else the middle of the view. */
+export const pastePoint = () => (S().pointerOnCanvas ? S().cursor : viewCentre());
 
 export function pasteFragment(frag: Fragment, at?: { x: number; y: number }) {
   const g = S().doc.settings.grid;
