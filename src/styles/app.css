@@ -1286,6 +1286,21 @@ select.input {
   touch-action: none;
 }
 
+/* files dragged over the canvas */
+.canvas-wrap.file-drop::after {
+  content: 'Drop to import';
+  position: absolute;
+  inset: 8px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  pointer-events: none;
+}
+
 .canvas {
   display: block;
 }

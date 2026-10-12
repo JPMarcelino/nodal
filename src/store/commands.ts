@@ -1,4 +1,5 @@
 import { copyAsSvg, doExport, exportSelection, fileNew, fileOpen, filePrint, fileSave, startAreaExport } from '../io/fileActions';
+import { importFile } from '../io/importFiles';
 import { exportLibraryFile, exportTemplateFile, importLibraryFile, importTemplateFile } from '../io/sharing';
 import { selectionToDrawing } from '../model/fromSelection';
 import { computeNets, netOfWire } from '../model/netlist';
@@ -22,6 +23,7 @@ export const COMMANDS: Command[] = [
   // File
   { id: 'file.new', label: 'New circuit', category: 'File', keys: ['Mod+Alt+N'], run: fileNew },
   { id: 'file.open', label: 'Open…', category: 'File', keys: ['Mod+O'], run: fileOpen },
+  { id: 'file.import', label: 'Import…', category: 'File', keys: [], run: importFile },
   { id: 'file.save', label: 'Save', category: 'File', keys: ['Mod+S'], run: () => fileSave() },
   { id: 'file.saveAs', label: 'Save as…', category: 'File', keys: ['Mod+Shift+S'], run: () => fileSave(true) },
   { id: 'file.export', label: 'Export…', category: 'File', keys: ['Mod+E'], run: () => set({ dialog: 'export' }) },

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Canvas, canvasKeys } from './canvas/Canvas';
 import { isDesktop } from './io/files';
+import { importDroppedFiles } from './io/importFiles';
 import { eventToCombo, findCommand } from './store/commands';
 import { S, useStore } from './store/store';
 import { Dialogs } from './ui/Dialogs';
@@ -70,11 +71,24 @@ export function App() {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!isDesktop() && S().dirty && !S().prefs.autosave) e.preventDefault();
     };
+    // files dropped outside the canvas are imported too (and never navigate the page away)
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      if (e.defaultPrevented || !e.dataTransfer?.files.length) return;
+      e.preventDefault();
+      void importDroppedFiles(e.dataTransfer.files);
+    };
     window.addEventListener('keydown', onKey);
     window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
     };
   }, []);
 

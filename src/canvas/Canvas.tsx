@@ -7,6 +7,7 @@ import type { CircuitDoc, ComponentItem, Endpoint, Point, Rect, ShapeItem, Shape
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, snapOnSegment } from '../model/wires';
 import { buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd } from '../model/wireCommit';
 import { runAreaExport } from '../io/fileActions';
+import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, inkColor, labelLayout, labelOffsets, measureText, shapeTitle, useSceneData } from './Scene';
@@ -126,6 +127,7 @@ export function Canvas() {
   const [hover, setHover] = useState<{ item: string | null; port: PortInfo | null }>({ item: null, port: null });
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 });
   const [spaceDown, setSpaceDown] = useState(false);
+  const [fileDrag, setFileDrag] = useState(false);
   const [editingText, setEditingText] = useState<string | null>(null);
   const lastClick = useRef<{ t: number; p: Point }>({ t: 0, p: { x: 0, y: 0 } });
   // hover menus: open after the pointer rests on a hot spot, close shortly after leaving it
@@ -1110,6 +1112,12 @@ export function Canvas() {
   };
 
   const onDrop = (e: React.DragEvent) => {
+    setFileDrag(false);
+    if (e.dataTransfer.files.length) {
+      e.preventDefault();
+      void importDroppedFiles(e.dataTransfer.files, toWorldPt(e.clientX, e.clientY));
+      return;
+    }
     const sym = e.dataTransfer.getData('application/x-nodal-symbol');
     if (!sym) return;
     e.preventDefault();
@@ -1175,7 +1183,7 @@ export function Canvas() {
   return (
     <div
       ref={wrapRef}
-      className="canvas-wrap"
+      className={fileDrag ? 'canvas-wrap file-drop' : 'canvas-wrap'}
       style={{ cursor: cursorStyle }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -1192,7 +1200,14 @@ export function Canvas() {
         if (e.dataTransfer.types.includes('application/x-nodal-symbol')) {
           e.preventDefault();
           setCursor(toWorldPt(e.clientX, e.clientY));
+        } else if (e.dataTransfer.types.includes('Files')) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setFileDrag(true);
         }
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileDrag(false);
       }}
       onDrop={onDrop}
     >
