@@ -13,7 +13,7 @@ export const IMPORT_FILTER = [
   { name: 'Nodal files, SVG, PDF and images', extensions: ['nodal', 'json', 'svg', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'] },
 ];
 
-const viewCentre = (): Point => {
+export const viewCentre = (): Point => {
   const { view, canvasSize } = S();
   return { x: (canvasSize.w / 2 - view.x) / view.zoom, y: (canvasSize.h / 2 - view.y) / view.zoom };
 };
