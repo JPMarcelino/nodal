@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { CircuitDoc } from '../model/types';
 
 // the store touches window / localStorage when it loads
 const g = globalThis as unknown as Record<string, unknown>;
@@ -41,7 +42,92 @@ describe('importFileText', () => {
     await importFileText('notes.txt', 'hello');
     expect(S().toasts[S().toasts.length - 1]?.kind).toBe('error');
   });
+});
 
+describe('pasteClipboardContent', () => {
+  it('pastes fragments, images and SVG in priority order', async () => {
+    const { S, set, mutate } = await import('../store/store');
+    const { createDoc, makeComponent } = await import('../model/doc');
+    const { extractFragment } = await import('../model/ops');
+    const { pasteClipboardContent } = await import('../io/clipboardPaste');
+
+    const reset = () => set({ doc: createDoc(), past: [], future: [], selection: [], toasts: [] });
+    const fakePic = { src: 'data:image/png;base64,AA==', w: 200, h: 100 };
+
+    // fragment text inserts the fragment at `at`
+    reset();
+    const src = createDoc();
+    const r = makeComponent(src, 'resistor', 0, 0);
+    src.items[r.id] = r;
+    const fragText = JSON.stringify(extractFragment(src, new Set([r.id])));
+    expect(await pasteClipboardContent({ text: fragText }, { x: 400, y: 400 })).toBe('fragment');
+    const ids = Object.keys(S().doc.items);
+    expect(ids).toHaveLength(1);
+    expect(S().selection).toEqual(ids);
+
+    // a fragment beats an image present at the same time
+    reset();
+    let decoded = 0;
+    expect(
+      await pasteClipboardContent(
+        { text: fragText, imageBlob: new Blob(['x'], { type: 'image/png' }) },
+        { x: 0, y: 0 },
+        { rasterToPicture: async () => (decoded++, fakePic) },
+      ),
+    ).toBe('fragment');
+    expect(decoded).toBe(0);
+
+    // an image blob lands in insertPictures, centred on `at`
+    reset();
+    expect(
+      await pasteClipboardContent(
+        { text: 'screenshot', imageBlob: new Blob(['x'], { type: 'image/png' }) },
+        { x: 300, y: 300 },
+        { rasterToPicture: async () => fakePic },
+      ),
+    ).toBe('image');
+    const pic = Object.values(S().doc.items)[0];
+    expect(pic && pic.type === 'shape' && pic.kind === 'image').toBe(true);
+    expect(S().selection).toHaveLength(1);
+    expect(S().toasts[S().toasts.length - 1]?.text).toBe('Pasted image');
+
+    // a decode failure toasts and never throws
+    reset();
+    expect(
+      await pasteClipboardContent(
+        { imageBlob: new Blob(['x'], { type: 'image/png' }) },
+        undefined,
+        { rasterToPicture: async () => { throw new Error('empty'); } },
+      ),
+    ).toBe('image');
+    expect(Object.keys(S().doc.items)).toHaveLength(0);
+    expect(S().toasts[S().toasts.length - 1]?.text).toBe('Could not paste image: empty');
+
+    // SVG text (or an SVG clipboard item) is routed to the SVG import
+    reset();
+    const seen: string[] = [];
+    const stubSvg = async (_n: string, body: string) => {
+      seen.push(body);
+      mutate((d) => {
+        const c = makeComponent(d as CircuitDoc, 'resistor', 0, 0);
+        d.items[c.id] = c;
+      });
+    };
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>';
+    expect(await pasteClipboardContent({ text: `  ${svg}` }, { x: 1, y: 2 }, { importSvg: stubSvg })).toBe('svg');
+    expect(seen).toHaveLength(1);
+    expect(Object.keys(S().doc.items)).toHaveLength(1);
+    expect(await pasteClipboardContent({ svgText: svg }, undefined, { importSvg: stubSvg })).toBe('svg');
+    expect(seen).toHaveLength(2);
+
+    // anything else leaves the doc alone
+    reset();
+    expect(await pasteClipboardContent({ text: 'hello' })).toBe('none');
+    expect(Object.keys(S().doc.items)).toHaveLength(0);
+  });
+});
+
+describe('importFileText', () => {
   it('places pictures as image shapes stacked around the drop point, in one undo step', async () => {
     const { S, set, undo } = await import('../store/store');
     const { createDoc } = await import('../model/doc');
