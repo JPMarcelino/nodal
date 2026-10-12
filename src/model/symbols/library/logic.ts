@@ -6,8 +6,10 @@ const IN2 = 'L 0 10 18 10; L 0 30 18 30';
 const IN3 = 'L 0 10 18 10; L 0 30 24 30; L 0 50 18 50';
 const AND = 'PB M 16 2 H 44 A 18 18 0 0 1 44 38 H 16 Z';
 const AND3 = 'PB M 16 2 H 42 A 28 28 0 0 1 42 58 H 16 Z';
+const AND4 = 'PB M 18 2 H 48 A 32 32 0 0 1 48 78 H 18 Z';
 const OR = 'PB M 12 2 Q 32 2 48 8 Q 58 13 64 20 Q 58 27 48 32 Q 32 38 12 38 Q 22 20 12 2 Z';
 const OR3 = 'PB M 12 2 Q 36 2 54 12 Q 64 20 70 30 Q 64 40 54 48 Q 36 58 12 58 Q 25 30 12 2 Z';
+const OR4 = 'PB M 12 2 Q 40 2 60 14 Q 72 24 78 40 Q 72 56 60 66 Q 40 78 12 78 Q 28 40 12 2 Z';
 const XOR_BACK = 'P M 5 2 Q 15 20 5 38';
 const BUBBLE = (x: number, y: number) => `CB ${x} ${y} 4`;
 const SCHMITT = 'W 1.5; P M 27 24 H 36 V 16 M 31 24 V 16 H 40; W 2';
@@ -29,6 +31,11 @@ export const logic = [
   gate('and3-gate', 'AND gate (3 inputs)', `${IN3}; L 70 30 80 30; ${AND3}`, 'A:0,10 B:0,30 C:0,50 Y:80,30', 60, '74HC11'),
   gate('nand3-gate', 'NAND gate (3 inputs)', `${IN3}; L 74 30 80 30; ${AND3}; ${BUBBLE(74, 30)}`, 'A:0,10 B:0,30 C:0,50 Y:80,30', 60, '74HC10'),
   gate('or3-gate', 'OR gate (3 inputs)', `${IN3}; L 70 30 80 30; ${OR3}`, 'A:0,10 B:0,30 C:0,50 Y:80,30', 60, '74HC4075'),
+  gate('and4-gate', 'AND gate (4 inputs)', `L 0 10 18 10; L 0 30 18 30; L 0 50 18 50; L 0 70 18 70; L 76 40 80 40; ${AND4}`, 'A:0,10 B:0,30 C:0,50 D:0,70 Y:80,40', 80, '74HC21'),
+  gate('nand4-gate', 'NAND gate (4 inputs)', `L 0 10 18 10; L 0 30 18 30; L 0 50 18 50; L 0 70 18 70; L 76 40 80 40; ${AND4}; ${BUBBLE(80, 40)}`, 'A:0,10 B:0,30 C:0,50 D:0,70 Y:80,40', 80, '74HC20'),
+  gate('or4-gate', 'OR gate (4 inputs)', `L 0 10 18 10; L 0 30 18 30; L 0 50 18 50; L 0 70 18 70; L 76 40 80 40; ${OR4}`, 'A:0,10 B:0,30 C:0,50 D:0,70 Y:80,40', 80, '74HC4072'),
+  gate('nor3-gate', 'NOR gate (3 inputs)', `${IN3}; L 74 30 80 30; ${OR3}; ${BUBBLE(74, 30)}`, 'A:0,10 B:0,30 C:0,50 Y:80,30', 60, '74HC4025'),
+  gate('nand-schmitt', 'NAND gate (Schmitt)', `${IN2}; L 70 20 80 20; ${AND}; ${BUBBLE(66, 20)}; ${SCHMITT}`, undefined, 40, '74HC132'),
   chip('d-flipflop', 'D flip-flop', C, { left: ['D', 'CLK'], right: ['Q', '~Q'], top: ['PRE'], bottom: ['CLR'], value: '74HC74', keywords: 'register latch sequential', numbers: false }),
   chip('jk-flipflop', 'JK flip-flop', C, { left: ['J', 'CLK', 'K'], right: ['Q', '~Q'], value: '74HC107', keywords: 'sequential', numbers: false }),
   chip('t-flipflop', 'T flip-flop', C, { left: ['T', 'CLK'], right: ['Q', '~Q'], value: '', keywords: 'toggle sequential', numbers: false }),

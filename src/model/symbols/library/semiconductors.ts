@@ -138,4 +138,29 @@ export const semiconductors = [
     ports: 'A:0,20 K:0,60 C:100,20 E:100,60',
   }),
   chip('mosfet-driver', 'Gate driver', C, { left: ['VCC', 'IN', 'GND'], right: ['OUT'], title: 'DRV', value: 'TC4420', keywords: 'mosfet gate driver' }),
+  sym('tunnel-diode', 'Tunnel diode', C, {
+    w: 60, h: 40, prefix: 'D', value: '', keywords: 'tunnel diode resonant negative resistance',
+    draw: 'L 0 20 20 20; GF 20 10 20 30 38 20; L 38 20 60 20; W 2.5; L 33 33 38 30 38 10 43 7; W 2; L 22 28 38 20; L 38 12 44 28',
+    ports: 'A:0,20 K:60,20',
+  }),
+  sym('diode-dual-cc', 'Dual diode (common cathode)', C, {
+    w: 60, h: 60, prefix: 'D', value: '1N4148', keywords: 'dual diode common cathode rectifier',
+    draw: 'L 0 10 18 10; GF 18 2 18 18 34 10; L 34 10 60 10; L 0 50 18 50; GF 18 42 18 58 34 50; L 34 50 60 50; L 34 30 60 30; W 2.5; L 34 2 34 18 34 42 34 58; W 2',
+    ports: 'A1:0,10 A2:0,50 K:60,30',
+  }),
+  sym('triode', 'Triode (vacuum tube)', C, {
+    w: 60, h: 80, prefix: 'V', value: '12AX7', keywords: 'vacuum tube triode thermionic',
+    draw: 'CB 30 40 24; L 30 0 30 18; L 10 18 50 18; L 30 62 30 80; W 2.5; L 16 30 44 30; W 2; W 2.5; L 22 28 38 28; W 2; GF 30 42 35 38 35 44; GF 30 42 25 38 25 44',
+    ports: 'P:30,0 G:0,30 K:30,80',
+  }),
+  sym('pentode', 'Pentode (vacuum tube)', C, {
+    w: 60, h: 80, prefix: 'V', value: 'EL84', keywords: 'vacuum tube pentode thermionic',
+    draw: 'CB 30 40 24; L 30 0 30 18; L 10 18 50 18; L 30 62 30 80; W 2.5; L 18 20 42 20; L 20 32 40 32; L 22 44 38 44; W 2; GF 30 58 35 54 35 60; GF 30 58 25 54 25 60',
+    ports: 'P:30,0 G1:0,20 G2:0,32 G3:0,44 K:30,80',
+  }),
+  sym('opto-triac', 'Optocoupler (TRIAC output)', C, {
+    w: 100, h: 60, prefix: 'U', value: 'MOC3021', keywords: 'opto optocoupler triac diac output',
+    draw: 'W 1.5; R 6 6 88 48 3; W 2; L 0 15 28 15 28 24; GF 20 24 36 24 28 36; W 2.5; L 20 36 36 36; W 2; L 28 36 28 50 0 50; L 40 30 60 30; W 3; L 40 20 40 40; L 60 20 100 20; L 60 40 100 40; W 2; GF 58 36 50 33 50 39',
+    ports: 'A:0,15 K:0,50 MT1:100,20 MT2:100,40',
+  }),
 ];

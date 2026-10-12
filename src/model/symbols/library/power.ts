@@ -68,6 +68,16 @@ export const power = [
     draw: 'L 20 0 20 20; GB 20 20 40 40 20 60 0 40; L 20 60 20 80; L 14 32 26 32; L 20 26 20 38; L 14 50 26 50',
     ports: '+:20,0 -:20,80',
   }),
+  sym('vccs', 'Voltage-controlled current source', C, {
+    w: 40, h: 80, prefix: 'G', value: 'g·V', keywords: 'controlled vccs voltage diamond arrow',
+    draw: 'L 20 0 20 20; GB 20 20 40 40 20 60 0 40; L 20 60 20 80; L 14 32 26 32; L 20 26 20 38; L 20 52 20 30; GF 14 32 20 24 26 32',
+    ports: '+:20,0 -:20,80',
+  }),
+  sym('ccvs', 'Current-controlled voltage source', C, {
+    w: 40, h: 80, prefix: 'H', value: 'r·I', keywords: 'controlled ccvs current diamond',
+    draw: 'L 20 0 20 20; GB 20 20 40 40 20 60 0 40; L 20 60 20 80; L 14 32 26 32; L 20 26 20 38; L 20 32 20 32; L 14 50 26 50',
+    ports: '+:20,0 -:20,80',
+  }),
   sym('cccs', 'Dependent current source', C, {
     w: 40, h: 80, prefix: 'F', value: 'k·I', keywords: 'controlled vccs cccs diamond',
     draw: 'L 20 0 20 20; GB 20 20 40 40 20 60 0 40; L 20 60 20 80; L 20 52 20 30; GF 14 32 20 24 26 32',
