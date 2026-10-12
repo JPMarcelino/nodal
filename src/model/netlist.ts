@@ -1,4 +1,5 @@
 import { toWorld } from './geometry';
+import { stripMath } from './latex';
 import { getSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint } from './types';
 
@@ -121,46 +122,164 @@ export function netOfWire(nets: Net[], wireId: string): Net | undefined {
   return nets.find((n) => n.wires.includes(wireId));
 }
 
+/** SPICE number from an engineering value: "10kΩ" → "10k", "4k7" → "4.7k", "100nF" → "100n", "10µF" → "10u". */
+export function spiceValue(v: string): string {
+  let t = stripMath(v).trim().replace(/µ|μ/g, 'u').replace(/Ω|ohms?/gi, '').replace(/\s+/g, '');
+  const rkm = /^(\d+)([RrkKmMuUnNpPgGtT])(\d+)$/.exec(t);
+  if (rkm) t = `${rkm[1]}.${rkm[3]}${/[Rr]/.test(rkm[2]) ? '' : rkm[2]}`;
+  const m = /^(-?\d+(?:\.\d+)?(?:e-?\d+)?)(meg|[TGkKmMunpf])?(?:[FHVAWfhvaw]|Hz)?$/i.exec(t);
+  if (!m) return t || '0';
+  let unit = m[2] ?? '';
+  // SPICE reads "M" as milli; mega is "meg"
+  if (unit === 'M') unit = 'meg';
+  else if (unit === 'K') unit = 'k';
+  return m[1] + unit;
+}
+
+type SpiceKind = { letter: string; order: string[] } | { letter: 'X'; order: null } | null;
+
+/** How a part is written into a SPICE netlist: element letter and node order, or null to leave it out. */
+function spiceKind(id: string, prefix: string, ports: string[]): SpiceKind {
+  const has = (...ids: string[]) => ids.every((p) => ports.includes(p)) && ports.length === ids.length;
+  if (has('A', 'K')) return { letter: 'D', order: ['A', 'K'] };
+  if (has('B', 'C', 'E')) return { letter: 'Q', order: ['C', 'B', 'E'] };
+  if (has('G', 'D', 'S') || has('G', 'D', 'S', 'B')) {
+    if (/jfet/.test(id)) return { letter: 'J', order: ['D', 'G', 'S'] };
+    return { letter: 'M', order: ['D', 'G', 'S', ports.includes('B') ? 'B' : 'S'] };
+  }
+  if (ports.length === 2 && /^(R|TH|RV|VR)$/.test(prefix)) return { letter: 'R', order: ports };
+  if (ports.length === 2 && prefix === 'C') return { letter: 'C', order: ports };
+  if (ports.length === 2 && prefix === 'L' && id !== 'solenoid') return { letter: 'L', order: ports };
+  if (has('+', '-') && /^(V|BT|PV)$/.test(prefix)) return { letter: 'V', order: ['+', '-'] };
+  if (has('+', '-') && prefix === 'I') return { letter: 'I', order: ['+', '-'] };
+  if (has('+', '-', 'C+', 'C-') && /^[EG]$/.test(prefix)) return { letter: prefix, order: ['+', '-', 'C+', 'C-'] };
+  if (/^(U|IC|Q|RN|D|X|Y|T|OK)$/.test(prefix)) return { letter: 'X', order: null };
+  return null;
+}
+
 export function toSpiceNetlist(doc: CircuitDoc): string {
   const nets = computeNets(doc);
   const pinNet = new Map<string, string>();
   for (const n of nets) {
-    const name = /^(gnd|0|ground)$/i.test(n.name) ? '0' : n.name.replace(/\s+/g, '_');
+    const name = /^(gnd|0|ground|0v|agnd|dgnd)$/i.test(n.name) ? '0' : stripMath(n.name).replace(/[^\w.+-]+/g, '_');
     for (const p of n.pins) pinNet.set(`${p.comp}:${p.port}`, name);
   }
-  const lines = [`* ${doc.name} — exported from Nodal`, ''];
-  for (const c of Object.values(doc.items)) {
-    if (c.type !== 'component') continue;
+  const lines = [`* ${doc.name} — exported from Nodal`, '* Semiconductors and subcircuits need their .model / .subckt definitions (.include your vendor libraries).', ''];
+  const skipped: string[] = [];
+  const comps = Object.values(doc.items)
+    .filter((c): c is ComponentItem => c.type === 'component')
+    .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+  for (const c of comps) {
     const def = getSymbol(doc, c.symbol);
     if (def.prefix.startsWith('#') || !def.ports.length) continue;
-    const pins = def.ports.map((p) => pinNet.get(`${c.id}:${p.id}`) ?? `NC_${c.ref}_${p.id}`);
-    lines.push(`${c.ref} ${pins.join(' ')} ${c.value || def.name.replace(/\s+/g, '_')}`);
+    if (c.props.dnp === '1') {
+      skipped.push(`${c.ref} (not populated)`);
+      continue;
+    }
+    const kind = spiceKind(def.id, def.prefix, def.ports.map((p) => p.id));
+    if (!kind) {
+      skipped.push(`${c.ref} (${def.name})`);
+      continue;
+    }
+    const order = kind.order ?? def.ports.map((p) => p.id);
+    const nodes = order.map((id) => pinNet.get(`${c.id}:${id}`) ?? `NC_${c.ref}_${id}`.replace(/[^\w]+/g, '_'));
+    const ref = c.ref.replace(/[^\w]+/g, '_');
+    const name = ref.toUpperCase().startsWith(kind.letter) ? ref : `${kind.letter}${ref}`;
+    const raw = stripMath(c.value || def.value || '').trim();
+    let value: string;
+    switch (kind.letter) {
+      case 'R':
+      case 'C':
+      case 'L':
+        value = spiceValue(raw);
+        break;
+      case 'V':
+      case 'I':
+        value = /^(dc|ac|sin|pulse|pwl|exp|sffm)\b/i.test(raw) ? raw : `DC ${spiceValue(raw.split(/\s+/)[0] ?? '0')}`;
+        break;
+      case 'E':
+      case 'G':
+        value = spiceValue(raw.replace(/^[a-z]\s*=\s*/i, ''));
+        break;
+      default:
+        value = (raw || def.name).replace(/\s+/g, '_');
+    }
+    lines.push(`${name} ${nodes.join(' ')} ${value}`);
   }
+  if (skipped.length) lines.push('', `* Not simulated: ${skipped.join(', ')}`);
   lines.push('', '.end', '');
   return lines.join('\n');
 }
 
+const BOM_COLUMNS = ['Item', 'Quantity', 'References', 'Value', 'Description', 'Footprint', 'Manufacturer', 'Part number', 'Supplier', 'Supplier part no.', 'Datasheet', 'Specifications', 'Populate'];
+
 export function toBomCsv(doc: CircuitDoc): string {
-  const rows = new Map<string, { refs: string[]; value: string; name: string; props: string }>();
+  type Row = { refs: string[]; cells: string[]; dnp: boolean };
+  const rows = new Map<string, Row>();
   for (const c of Object.values(doc.items)) {
     if (c.type !== 'component') continue;
     const def = getSymbol(doc, c.symbol);
     if (def.prefix.startsWith('#') || def.valueIsLabel) continue;
-    const props = Object.entries(c.props)
-      .filter(([, v]) => v)
+    const std = new Set(['footprint', 'manufacturer', 'mpn', 'supplier', 'supplier_pn', 'datasheet', 'dnp']);
+    const specs = Object.entries(c.props)
+      .filter(([k, v]) => v && !std.has(k))
       .map(([k, v]) => `${def.fields?.find((f) => f.key === k)?.label ?? k}: ${v}`)
       .join('; ');
-    const k = `${def.id}|${c.value}|${props}`;
-    const row = rows.get(k) ?? { refs: [], value: c.value, name: def.name, props };
+    const p = (k: string) => (c.props[k] ?? '').trim();
+    const dnp = p('dnp') === '1';
+    const cells = [stripMath(c.value), def.name, p('footprint'), p('manufacturer'), p('mpn'), p('supplier'), p('supplier_pn'), p('datasheet'), specs];
+    const k = `${def.id}|${dnp}|${cells.join('|')}`;
+    const row = rows.get(k) ?? { refs: [], cells, dnp };
     row.refs.push(c.ref);
     rows.set(k, row);
   }
   const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  const out = ['Quantity,References,Component,Value,Specifications'];
-  const sorted = [...rows.values()].sort((a, b) => a.refs[0].localeCompare(b.refs[0], undefined, { numeric: true }));
-  for (const r of sorted) {
-    r.refs.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    out.push([r.refs.length, esc(r.refs.join(', ')), esc(r.name), esc(r.value), esc(r.props)].join(','));
-  }
+  const out = [BOM_COLUMNS.join(',')];
+  const sorted = [...rows.values()]
+    .map((r) => ({ ...r, refs: r.refs.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) }))
+    // parts to fit first, do-not-populate parts at the end
+    .sort((a, b) => Number(a.dnp) - Number(b.dnp) || a.refs[0].localeCompare(b.refs[0], undefined, { numeric: true }));
+  sorted.forEach((r, i) => {
+    out.push([i + 1, r.refs.length, esc(r.refs.join(', ')), ...r.cells.map(esc), r.dnp ? 'DNP' : 'Yes'].join(','));
+  });
   return out.join('\n') + '\n';
+}
+
+/** KiCad netlist (S-expression, version E) for handing the design to a PCB layout. */
+export function toKicadNetlist(doc: CircuitDoc): string {
+  const q = (s: string) => `"${stripMath(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const comps = Object.values(doc.items)
+    .filter((c): c is ComponentItem => c.type === 'component')
+    .filter((c) => {
+      const def = getSymbol(doc, c.symbol);
+      return !def.prefix.startsWith('#') && !def.valueIsLabel;
+    })
+    .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+  const out = ['(export (version "E")', `  (design (source ${q(`${doc.name}.nodal`)}) (date ${q(new Date().toISOString())}) (tool "Nodal"))`, '  (components'];
+  for (const c of comps) {
+    const def = getSymbol(doc, c.symbol);
+    const fp = c.props.footprint?.trim();
+    const extra = [
+      ['Manufacturer', c.props.manufacturer],
+      ['MPN', c.props.mpn],
+      ['Datasheet', c.props.datasheet],
+      ['DNP', c.props.dnp === '1' ? 'DNP' : ''],
+    ].filter(([, v]) => v?.trim());
+    out.push(
+      `    (comp (ref ${q(c.ref)}) (value ${q(c.value || def.name)})${fp ? ` (footprint ${q(fp)})` : ''}` +
+        ` (libsource (lib "nodal") (part ${q(def.id)}) (description ${q(def.name)}))` +
+        (extra.length ? ` (fields ${extra.map(([k, v]) => `(field (name ${q(k!)}) ${q(v!)})`).join(' ')})` : '') +
+        ')',
+    );
+  }
+  out.push('  )', '  (nets');
+  computeNets(doc)
+    .filter((n) => n.pins.length)
+    .forEach((n, i) => {
+      out.push(`    (net (code "${i + 1}") (name ${q(n.name)})`);
+      for (const p of n.pins) out.push(`      (node (ref ${q(p.ref)}) (pin ${q(p.port)}) (pinfunction ${q(p.portName)}))`);
+      out.push('    )');
+    });
+  out.push('  )', ')', '');
+  return out.join('\n');
 }

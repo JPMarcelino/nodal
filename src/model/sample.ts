@@ -66,7 +66,7 @@ export function sampleDoc(): CircuitDoc {
   zone.fill = '#7aa2f7';
   zone.stroke = '#7aa2f7';
   doc.items[zone.id] = zone;
-  const out = makeShape(doc, 'zone', 470, 230, 190, 160);
+  const out = makeShape(doc, 'zone', 500, 224, 160, 166);
   out.text = 'Output';
   out.fill = '#f7768e';
   out.stroke = '#f7768e';

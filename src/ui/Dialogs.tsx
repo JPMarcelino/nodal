@@ -483,7 +483,8 @@ export function ExportDialog() {
         <Card icon={<Scan size={20} />} title="Area → SVG" desc="Drag a rectangle on the canvas; wires crossing its edge are cut" onClick={() => startAreaExport('svg', { theme, background: bg })} />
         <Card icon={<Layers3 size={20} />} title="DXF (CAD)" desc="AutoCAD, LibreCAD, BricsCAD — layered" onClick={() => doExport('dxf')} />
         <Card icon={<FileText size={20} />} title="SPICE netlist" desc="Simulate in LTspice / ngspice" onClick={() => doExport('spice')} />
-        <Card icon={<FileSpreadsheet size={20} />} title="Bill of materials" desc="CSV grouped by part and value" onClick={() => doExport('bom')} />
+        <Card icon={<FileText size={20} />} title="KiCad netlist" desc="Parts, footprints and nets for PCB layout" onClick={() => doExport('kicad')} />
+        <Card icon={<FileSpreadsheet size={20} />} title="Bill of materials" desc="CSV with footprints, part numbers and DNP" onClick={() => doExport('bom')} />
         <Card icon={<FileJson size={20} />} title="JSON" desc="Full circuit data for scripts & tools" onClick={() => doExport('json')} />
         <Card icon={<Printer size={20} />} title="Print / PDF" desc="Use “Save as PDF” in the print dialog" onClick={filePrint} />
       </div>

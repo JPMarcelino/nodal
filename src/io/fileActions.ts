@@ -1,5 +1,6 @@
 import { normalizeDoc } from '../model/doc';
-import { toBomCsv, toSpiceNetlist } from '../model/netlist';
+import { prepareMath } from '../model/latex';
+import { toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
 import type { CircuitDoc, Rect } from '../model/types';
 import { S, newDoc, replaceDoc, set, toast } from '../store/store';
 import { fitView } from '../store/actions';
@@ -54,13 +55,14 @@ export async function fileSave(saveAs = false) {
   }
 }
 
-export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'bom' | 'json';
+export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'kicad' | 'bom' | 'json';
 
 export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { scale?: number } = {}) {
   const { doc } = S();
   const base = sanitizeName(doc.name);
   const svgOpts: SvgOptions = { theme: 'light', background: true, padding: 20, ...opts };
   try {
+    await prepareMath(doc);
     let res: string | null | false = null;
     switch (kind) {
       case 'svg':
@@ -71,6 +73,9 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
         break;
       case 'dxf':
         res = await saveFile(exportDxf(doc), `${base}.dxf`, [{ name: 'AutoCAD DXF', extensions: ['dxf'] }]);
+        break;
+      case 'kicad':
+        res = await saveFile(toKicadNetlist(doc), `${base}.net`, [{ name: 'KiCad netlist', extensions: ['net'] }]);
         break;
       case 'spice':
         res = await saveFile(toSpiceNetlist(doc), `${base}.cir`, [{ name: 'SPICE netlist', extensions: ['cir', 'net', 'sp'] }]);
@@ -88,7 +93,8 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
   }
 }
 
-export function filePrint() {
+export async function filePrint() {
+  await prepareMath(S().doc).catch(() => undefined);
   printDoc(S().doc);
 }
 
@@ -97,6 +103,7 @@ export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partia
   const base = `${sanitizeName(S().doc.name)}-area`;
   const svgOpts: SvgOptions = { theme: 'light', background: true, padding: 8, ...opts, clip: rect };
   try {
+    await prepareMath(S().doc);
     const res =
       kind === 'svg'
         ? await saveFile(exportSvg(S().doc, svgOpts).svg, `${base}.svg`, [{ name: 'SVG image', extensions: ['svg'] }])
@@ -137,6 +144,7 @@ export function exportSelection(kind: 'png' | 'svg' = 'png') {
 
 export async function copyAsSvg() {
   const { doc, selection } = S();
+  await prepareMath(doc).catch(() => undefined);
   const { svg } = exportSvg(doc, { theme: 'light', background: false, padding: 10, ids: selection.length ? selection : undefined });
   try {
     await navigator.clipboard.writeText(svg);

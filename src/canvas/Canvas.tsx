@@ -803,7 +803,7 @@ export function Canvas() {
   const onPointerMove = (e: React.PointerEvent) => {
     const w = toWorldPt(e.clientX, e.clientY);
     setCursor(w);
-    set({ cursor: w });
+    set(S().pointerOnCanvas ? { cursor: w } : { cursor: w, pointerOnCanvas: true });
     const g = gRef.current;
     if (!g) {
       if (tool === 'select' || tool === 'wire' || tool === 'node') {
@@ -1196,6 +1196,7 @@ export function Canvas() {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={() => {
+        set({ pointerOnCanvas: false });
         setHover({ item: null, port: null });
         clearHotTimer('open');
         setHotPending(null);

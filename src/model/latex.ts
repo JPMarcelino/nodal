@@ -116,3 +116,18 @@ export function texToSvg(tex: string, display = false): MathSvg | null {
 
 /** Canvas units per ex at a given font size (MathJax's TeX fonts have an x-height of about 0.442 em). */
 export const exPx = (fontSize: number) => fontSize * 0.442;
+
+/** Every piece of text in a circuit that can hold maths. */
+function* docTexts(doc: { items: Record<string, { type: string; text?: string; label?: string; value?: string; ref?: string }> }) {
+  for (const it of Object.values(doc.items)) {
+    if (it.text) yield it.text;
+    if (it.label) yield it.label;
+    if (it.value) yield it.value;
+    if (it.ref) yield it.ref;
+  }
+}
+
+/** Loads MathJax if the circuit uses maths, so a synchronous render (export, print) can typeset it. */
+export async function prepareMath(doc: Parameters<typeof docTexts>[0]): Promise<void> {
+  for (const t of docTexts(doc)) if (hasMath(t)) return loadMath();
+}

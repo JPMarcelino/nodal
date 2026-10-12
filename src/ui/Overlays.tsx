@@ -23,7 +23,7 @@ export function ContextMenu() {
   let entries: MenuEntry[];
   if (!target) {
     entries = [
-      { label: 'Paste here', run: () => void A.paste(menu.world), key: keysFor('edit.pasteHere')[0] },
+      { label: 'Paste here', run: () => void A.paste(menu.world), key: keysFor('edit.paste')[0] },
       'edit.selectAll',
       '-',
       'tool.wire',

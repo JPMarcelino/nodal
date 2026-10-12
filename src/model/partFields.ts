@@ -2,7 +2,7 @@ import type { ComponentItem, SymbolDef } from './types';
 
 /** Sourcing / layout fields every real part can carry (stored in `props` under these keys). */
 export const PART_FIELDS = [
-  { key: 'footprint', label: 'Footprint', placeholder: 'e.g. R_0603_1608Metric' },
+  { key: 'footprint', label: 'Footprint', placeholder: 'e.g. R_0603' },
   { key: 'manufacturer', label: 'Manufacturer', placeholder: 'e.g. Yageo' },
   { key: 'mpn', label: 'Part number', placeholder: 'Manufacturer part no.' },
   { key: 'supplier', label: 'Supplier', placeholder: 'e.g. Digi-Key' },
