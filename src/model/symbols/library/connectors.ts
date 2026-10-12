@@ -47,7 +47,12 @@ export const connectors = [
   header(4),
   header(6),
   header(8),
+  header(10),
+  header(12),
+  chip('header-2x3', 'Pin header 2×3', C, { left: ['1', '3', '5'], right: ['2', '4', '6'], prefix: 'J', value: 'Conn_02x03', keywords: 'idc box header', numbers: false, minW: 40 }),
   chip('header-2x5', 'Pin header 2×5', C, { left: ['1', '3', '5', '7', '9'], right: ['2', '4', '6', '8', '10'], prefix: 'J', value: 'Conn_02x05', keywords: 'idc box header', numbers: false, minW: 40 }),
+  chip('header-2x8', 'Pin header 2×8', C, { left: ['1', '3', '5', '7', '9', '11', '13', '15'], right: ['2', '4', '6', '8', '10', '12', '14', '16'], prefix: 'J', value: 'Conn_02x08', keywords: 'idc box header', numbers: false, minW: 40 }),
+  chip('header-2x10', 'Pin header 2×10', C, { left: ['1', '3', '5', '7', '9', '11', '13', '15', '17', '19'], right: ['2', '4', '6', '8', '10', '12', '14', '16', '18', '20'], prefix: 'J', value: 'Conn_02x10', keywords: 'idc box header', numbers: false, minW: 40 }),
   sym('jack-dc', 'DC barrel jack', C, { w: 60, h: 40, prefix: 'J', value: '5.5×2.1mm', keywords: 'power jack barrel', draw: 'L 0 10 26 10; RB 26 5 28 10 5; L 0 30 34 30 40 24 46 30 60 30', ports: '+:0,10 -:0,30' }),
   sym('jack-audio', 'Audio jack 3.5mm (TRS)', C, {
     w: 60, h: 60, prefix: 'J', value: 'TRS 3.5mm', keywords: 'audio headphone jack stereo trs',
@@ -64,4 +69,19 @@ export const connectors = [
   sym('antenna-dipole', 'Dipole antenna', C, { w: 60, h: 40, prefix: 'AE', keywords: 'antenna dipole rf', draw: 'L 20 40 20 20 4 4; L 40 40 40 20 56 4', ports: '1:20,40 2:40,40' }),
   sym('mounting-hole', 'Mounting hole', C, { w: 40, h: 40, prefix: 'H', hideLabels: false, keywords: 'screw hole mechanical', draw: 'C 20 20 14; C 20 20 7', ports: '' }),
   sym('fiducial', 'Fiducial', C, { w: 40, h: 40, prefix: 'FID', keywords: 'fiducial marker pcb', draw: 'CF 20 20 6; W 1.5; C 20 20 14', ports: '' }),
+  sym('sma', 'SMA connector', C, {
+    w: 60, h: 40, prefix: 'J', value: 'SMA', keywords: 'sma coax connector rf',
+    draw: 'L 0 20 26 20; CF 30 20 2.5; C 30 20 6; L 30 14 36 14; L 30 26 36 26; L 34 10 34 30; L 30 20 60 20; L 0 36 26 36 26 30; CB 28 32 2.5',
+    ports: 'SIG:0,20 SH:0,36',
+  }),
+  sym('dsub-9', 'DE-9 connector (D-sub)', C, {
+    w: 80, h: 80, prefix: 'J', value: 'DB9', keywords: 'dsub de-9 serial connector',
+    draw: 'W 1.5; P M 6 10 L 74 10 A 74 10 10 270 90 L 6 30 A 6 30 10 90 270 Z; W 2; L 0 20 6 20; L 0 40 6 40; L 0 60 6 60; CB 10 20 2; CB 10 40 2; CB 10 60 2; CF 10 20 1.5; CF 10 40 1.5; CF 10 60 1.5; L 74 20 80 20; L 74 40 80 40; L 74 60 80 60; CB 70 20 2; CB 70 40 2; CB 70 60 2; CF 70 20 1.5; CF 70 40 1.5; CF 70 60 1.5; T 20 22 7 m 1; T 30 22 7 m 3; T 40 22 7 m 5; T 20 42 7 m 2; T 30 42 7 m 4; T 40 42 7 m 6; T 50 22 7 m 7; T 60 22 7 m 8; T 50 42 7 m 9',
+    ports: '1:0,20 2:80,20 3:0,40 4:80,40 5:0,60 6:80,60 7:0,70 8:80,70 9:40,80',
+  }),
+  sym('bus-entry', 'Bus entry', C, {
+    w: 20, h: 20, prefix: '#BE', value: '', hideLabels: true, keywords: 'bus entry wire connection',
+    draw: 'L 0 0 20 20',
+    ports: '1:0,0 2:20,20',
+  }),
 ];

@@ -48,4 +48,18 @@ export const electromechanical = [
   sym('contactor', 'Contactor contact', C, { w: 80, h: 40, prefix: 'K', keywords: 'contactor power contact', draw: `${SW(30)}; A 58 24 5 180 360`, ports: '1:0,30 2:80,30' }),
   sym('thermal-switch', 'Thermal switch', C, { w: 80, h: 40, prefix: 'S', value: '70°C', keywords: 'thermostat bimetal temperature', draw: `${SW(30)}; T 40 39 9 m ϑ`, ports: '1:0,30 2:80,30' }),
   sym('emergency-stop', 'Emergency stop', C, { w: 80, h: 40, prefix: 'S', keywords: 'e-stop mushroom estop', draw: 'L 0 30 20 30; CB 22 30 2.5; CB 58 30 2.5; L 60.5 30 80 30; L 18 34 62 34; L 40 34 40 10; PB M 28 10 A 12 8 0 0 1 52 10 Z', ports: '1:0,30 2:80,30' }),
+  sym('pushbutton-4pin', 'Push button (4-pin)', C, {
+    w: 80, h: 60, prefix: 'SW', keywords: 'tactile 4-pin momentary switch button',
+    draw: 'L 0 20 20 20; CB 22 20 2.5; CB 58 20 2.5; L 60.5 20 80 20; L 0 40 20 40; CB 22 40 2.5; CB 58 40 2.5; L 60.5 40 80 40; L 18 10 62 10; L 40 10 40 0; L 32 0 48 0; L 18 50 62 50; L 40 50 40 60; L 32 60 48 60',
+    ports: '1:0,20 2:80,20 3:0,40 4:80,40',
+  }),
+  chip('rotary-encoder', 'Rotary encoder', C, {
+    left: ['A', 'B', 'C'],
+    right: ['SW1', 'SW2'],
+    title: 'ENC',
+    value: 'EC11',
+    prefix: 'SW',
+    keywords: 'rotary encoder switch incremental',
+    numbers: false,
+  }),
 ];
