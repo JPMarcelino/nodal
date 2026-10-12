@@ -205,9 +205,28 @@ export interface DocSettings {
   componentColor: string;
   labelColor: string;
   background: string;
+  /** Draw the drawing frame (sheet border with zone markers and a title block). */
   titleBlock: boolean;
   author: string;
   revision: string;
+  /** Frame size and title block fields; used while `titleBlock` is on. */
+  sheet?: SheetSettings;
+}
+
+export type SheetSize = 'A5' | 'A4' | 'A3' | 'A2' | 'A1' | 'A0' | 'Letter' | 'Legal' | 'Tabloid' | 'C' | 'D' | 'E';
+
+export interface SheetSettings {
+  size: SheetSize;
+  orientation: 'landscape' | 'portrait';
+  /** Top-left corner of the sheet on the canvas. */
+  x: number;
+  y: number;
+  company: string;
+  /** Free-form date text; empty shows today's date. */
+  date: string;
+  /** e.g. "1 / 3". */
+  sheetNo: string;
+  description: string;
 }
 
 export interface CircuitDoc {

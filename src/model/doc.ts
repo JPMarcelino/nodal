@@ -1,4 +1,5 @@
-import { componentBounds, measureText, polylineBounds, unionRects } from './geometry';
+import { componentBounds, polylineBounds, unionRects } from './geometry';
+import { measureRich } from './richText';
 import { getSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, Item, Rect, ShapeItem, ShapeKind } from './types';
 import { wirePolyline } from './wires';
@@ -74,7 +75,7 @@ export function itemBounds(doc: CircuitDoc, it: Item): Rect | null {
       return { x: it.x - 3, y: it.y - 3, w: 6, h: 6 };
     case 'shape':
       // free text is sized by its content, so the outline always follows the text
-      if (it.kind === 'text') return { x: it.x, y: it.y, ...measureText(it.text ?? '', it.fontSize ?? 16, it.bold ? 700 : 400) };
+      if (it.kind === 'text') return { x: it.x, y: it.y, ...measureRich(it.text ?? '', it.fontSize ?? 16, it.bold ? 700 : 400) };
       return { x: Math.min(it.x, it.x + it.w), y: Math.min(it.y, it.y + it.h), w: Math.abs(it.w), h: Math.abs(it.h) };
     case 'wire': {
       const pts = wirePolyline(doc, it);

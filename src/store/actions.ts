@@ -1,5 +1,6 @@
 import { docBounds, makeComponent, topGroup } from '../model/doc';
-import { snap } from '../model/geometry';
+import { snap, unionRects } from '../model/geometry';
+import { sheetRect } from '../model/sheet';
 import {
   alignItems,
   annotate,
@@ -17,7 +18,7 @@ import {
   type Fragment,
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
-import type { CircuitDoc, Item, ShapeItem, Tool } from '../model/types';
+import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { S, mutate, pushRecent, select, set, toast } from './store';
 
@@ -358,7 +359,8 @@ export function zoomTo(zoom: number) {
 
 export function fitView(ids?: string[]) {
   const { doc, canvasSize } = S();
-  const b = docBounds(doc, ids && ids.length ? ids : undefined);
+  const whole = !ids || !ids.length;
+  const b = whole ? unionRects([docBounds(doc), sheetRect(doc.settings)].filter((r): r is Rect => !!r)) : docBounds(doc, ids);
   if (!b) {
     set({ view: { x: canvasSize.w / 2, y: canvasSize.h / 2, zoom: 1 } });
     return;
@@ -372,6 +374,19 @@ export function fitView(ids?: string[]) {
       y: canvasSize.h / 2 - (b.y + b.h / 2) * zoom,
     },
   });
+}
+
+/** Brings items (or a point) into view at a readable zoom, without zooming in further than needed. */
+export function revealItems(ids: string[], at?: Point | null) {
+  const { doc, canvasSize, view } = S();
+  const b = ids.length ? docBounds(doc, ids) : null;
+  const box = b ?? (at ? { x: at.x - 40, y: at.y - 40, w: 80, h: 80 } : null);
+  if (!box) return;
+  const pad = 80;
+  const fit = Math.min((canvasSize.w - pad * 2) / Math.max(box.w, 1), (canvasSize.h - pad * 2) / Math.max(box.h, 1));
+  const zoom = Math.min(Math.max(view.zoom, 1), Math.max(0.15, fit), 2.5);
+  const c = at && b && box.w * zoom > canvasSize.w - pad * 2 ? at : { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+  set({ view: { zoom, x: canvasSize.w / 2 - c.x * zoom, y: canvasSize.h / 2 - c.y * zoom } });
 }
 
 export function symbolOfSelection() {

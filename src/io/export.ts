@@ -4,6 +4,7 @@ import { Scene, computeSceneData, type Palette } from '../canvas/Scene';
 import { docBounds, itemBounds, uid } from '../model/doc';
 import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
 import { getSymbol } from '../model/registry';
+import { sheetRect } from '../model/sheet';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 
@@ -104,6 +105,8 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
   let d = doc;
   if (opts.ids?.length) {
     d = selectionDoc(doc, opts.ids);
+    // a selection is exported on its own, without the drawing frame
+    d = { ...d, settings: { ...d.settings, titleBlock: false } };
   }
   const p = opts.padding;
   let box: Rect;
@@ -112,13 +115,19 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
     d = clipAreaDoc(d, c);
     box = { x: c.x - p, y: c.y - p, w: c.w + 2 * p, h: c.h + 2 * p };
   } else {
-    // extra margin so labels that overhang the item bounds are not cut off
-    const b = docBounds(d) ?? { x: 0, y: 0, w: 100, h: 100 };
-    box = { x: b.x - p - 30, y: b.y - p - 20, w: b.w + 2 * p + 60, h: b.h + 2 * p + 40 };
+    const sheet = opts.ids?.length ? null : sheetRect(d.settings);
+    if (sheet) {
+      // with a drawing frame the page is exactly the sheet
+      box = { x: sheet.x, y: sheet.y, w: sheet.w, h: sheet.h };
+    } else {
+      // extra margin so labels that overhang the item bounds are not cut off
+      const b = docBounds(d) ?? { x: 0, y: 0, w: 100, h: 100 };
+      box = { x: b.x - p - 30, y: b.y - p - 20, w: b.w + 2 * p + 60, h: b.h + 2 * p + 40 };
+    }
   }
   const data = computeSceneData(d);
   const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette }));
-  const css = `text{font-family:${FONT}}.ref-label{font-size:11px;font-weight:600}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.sym-text{font-size:9px}`;
+  const css = `text{font-family:${FONT}}.ref-label{font-size:11px;font-weight:600}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:#c4483c}.comp.dnp>g:first-child{opacity:.45}`;
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(box.w)}" height="${Math.ceil(box.h)}" viewBox="${box.x} ${box.y} ${box.w} ${box.h}">
 <title>${escapeXml(doc.name)}</title>

@@ -24,6 +24,7 @@ import * as A from '../store/actions';
 import { COMMANDS, eventToCombo, keysFor, prettyKey, type Command } from '../store/commands';
 import { S, set, setPrefs, toast, useStore } from '../store/store';
 import { Field, Kbd, Segmented, Toggle } from './controls';
+import { FindDialog } from './FindDialog';
 import { LiveSession } from './LiveSession';
 import { Logo } from './Logo';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
@@ -631,6 +632,8 @@ export function Dialogs() {
   switch (dialog) {
     case 'palette':
       return <CommandPalette />;
+    case 'find':
+      return <FindDialog />;
     case 'shortcuts':
       return <ShortcutsDialog />;
     case 'settings':

@@ -36,7 +36,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   },
   {
     label: 'Edit',
-    items: ['edit.undo', 'edit.redo', '-', 'edit.cut', 'edit.copy', 'edit.paste', 'edit.pasteHere', 'edit.duplicate', 'edit.delete', '-', 'edit.selectAll', 'edit.lock', 'edit.hide', '-', 'edit.annotate', '-', 'help.settings'],
+    items: ['edit.undo', 'edit.redo', '-', 'edit.cut', 'edit.copy', 'edit.paste', 'edit.pasteHere', 'edit.duplicate', 'edit.delete', '-', 'edit.selectAll', 'edit.find', 'edit.lock', 'edit.hide', '-', 'edit.annotate', '-', 'help.settings'],
   },
   {
     label: 'Place',
@@ -54,7 +54,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.corners'] },
   {
     label: 'View',
-    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.grid', 'view.snap', 'view.minimap', '-', 'view.library', 'view.layers', 'view.inspector', 'view.focus', '-', 'view.theme'],
+    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.grid', 'view.snap', 'view.minimap', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
   },
   { label: 'Help', items: ['help.palette', 'help.shortcuts', '-', 'help.about'] },
 ];

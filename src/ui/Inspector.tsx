@@ -17,13 +17,20 @@ import {
   RotateCw,
   SendToBack,
   Ungroup,
+  ExternalLink,
+  Plus,
+  X,
 } from 'lucide-react';
-import { useMemo } from 'react';
-import { defaultHeadSize, measureText } from '../canvas/Scene';
+import { useMemo, useState } from 'react';
+import { defaultHeadSize } from '../canvas/Scene';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { computeNets, netOfWire } from '../model/netlist';
+import { measureRich } from '../model/richText';
+import { DNP, PART_FIELDS, customFieldKeys, hasPartFields, isDnp } from '../model/partFields';
 import { getSymbol } from '../model/registry';
-import type { ComponentItem, Dash, DocSettings, HeadKind, ShapeItem, WireItem, WireStyle } from '../model/types';
+import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
+import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
+import { docBounds } from '../model/doc';
 import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './controls';
@@ -163,6 +170,84 @@ function WireStyleEditor({ style, onChange, showBrush }: { style: WireStyle; onC
   );
 }
 
+/** Drawing frame: sheet size, orientation and title block fields. */
+function SheetSection() {
+  const doc = useStore((s) => s.doc);
+  const on = doc.settings.titleBlock;
+  const sheet = sheetOf(doc);
+  const setSheet = (patch: Partial<SheetSettings>) => mutate((d) => void (d.settings.sheet = { ...sheetOf(d as CircuitDoc), ...patch }));
+  const centre = (d: CircuitDoc) => {
+    d.settings.sheet = { ...sheetOf(d), ...centredSheet(d.settings, docBounds(d)) };
+  };
+  return (
+    <Section title="Drawing frame">
+      <Field label="Frame & title block" hint="Sheet border with zone markers and a title block, used for printing and export">
+        <Toggle
+          checked={on}
+          onChange={(v) => {
+            mutate((d) => {
+              d.settings.titleBlock = v;
+              // first time on: put the sheet around the circuit
+              if (v && !d.settings.sheet) centre(d as CircuitDoc);
+            });
+            if (v) setTimeout(() => A.fitView(), 0);
+          }}
+        />
+      </Field>
+      {on && (
+        <>
+          <Field label="Size">
+            <select className="input" value={sheet.size} onChange={(e) => setSheet({ size: e.target.value as SheetSize })}>
+              {Object.entries(SHEET_SIZES).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v.label} · {v.w} × {v.h} mm
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Orientation">
+            <Segmented
+              value={sheet.orientation}
+              options={[
+                { value: 'landscape', label: 'Landscape' },
+                { value: 'portrait', label: 'Portrait' },
+              ]}
+              onChange={(orientation) => setSheet({ orientation })}
+            />
+          </Field>
+          <Field label="Company">
+            <TextInput value={sheet.company} placeholder="Company or project" onChange={(company) => setSheet({ company })} />
+          </Field>
+          <Field label="Description">
+            <TextInput value={sheet.description} placeholder="Shown in the title block" onChange={(description) => setSheet({ description })} />
+          </Field>
+          <Field label="Date">
+            <TextInput value={sheet.date} placeholder={`Today (${todayText()})`} onChange={(date) => setSheet({ date })} />
+          </Field>
+          <Field label="Sheet">
+            <TextInput value={sheet.sheetNo} placeholder="1 / 1" onChange={(sheetNo) => setSheet({ sheetNo })} />
+          </Field>
+          <Field label="Position">
+            <span className="row-gap">
+              <NumberInput value={sheet.x} step={10} suffix="x" onChange={(x) => setSheet({ x })} />
+              <NumberInput value={sheet.y} step={10} suffix="y" onChange={(y) => setSheet({ y })} />
+            </span>
+          </Field>
+          <button
+            className="secondary-btn full"
+            onClick={() => {
+              mutate((d) => centre(d as CircuitDoc));
+              setTimeout(() => A.fitView(), 0);
+            }}
+          >
+            Centre the sheet on the circuit
+          </button>
+        </>
+      )}
+    </Section>
+  );
+}
+
 function DocumentPanel() {
   const settings = useStore((s) => s.doc.settings);
   const items = useStore((s) => s.doc.items);
@@ -231,6 +316,7 @@ function DocumentPanel() {
           Reset all wires to default style
         </button>
       </Section>
+      <SheetSection />
       <Section title="Canvas">
         <Field label="Grid">
           <NumberInput value={settings.grid} min={2} max={100} suffix="px" onChange={(v) => upd((s) => (s.grid = v))} />
@@ -255,6 +341,71 @@ function DocumentPanel() {
         Tip: select something to edit it. Press <kbd>?</kbd> for all shortcuts, <kbd>Ctrl+K</kbd> for the command palette.
       </div>
     </>
+  );
+}
+
+/** Footprint, sourcing, DNP and the user's own fields of a part. */
+function PartDetails({ c }: { c: ComponentItem }) {
+  const doc = useStore((s) => s.doc);
+  const def = getSymbol(doc, c.symbol);
+  const upd = (fn: (c: ComponentItem) => void) => mutate((d) => fn(d.items[c.id] as ComponentItem));
+  const [adding, setAdding] = useState(false);
+  const custom = customFieldKeys(c, def);
+  const setProp = (k: string, v: string) =>
+    upd((x) => {
+      if (v.trim()) x.props[k] = v.trim();
+      else delete x.props[k];
+    });
+  const addField = (name: string) => {
+    const k = name.trim();
+    setAdding(false);
+    if (!k) return;
+    if (k in c.props || PART_FIELDS.some((f) => f.label.toLowerCase() === k.toLowerCase())) return toast(`“${k}” is already a field of this part`);
+    upd((x) => (x.props[k] = ''));
+  };
+  const datasheet = c.props.datasheet?.trim();
+  return (
+    <Section title="Part details">
+      {PART_FIELDS.map((f) => (
+        <Field key={f.key} label={f.label}>
+          <TextInput value={c.props[f.key] ?? ''} placeholder={f.placeholder} onChange={(v) => setProp(f.key, v)} />
+          {f.key === 'datasheet' && datasheet && /^(https?:\/\/|www\.)/i.test(datasheet) && (
+            <a className="icon-btn field-link" href={/^www\./i.test(datasheet) ? `https://${datasheet}` : datasheet} target="_blank" rel="noreferrer" title="Open datasheet">
+              <ExternalLink size={14} />
+            </a>
+          )}
+        </Field>
+      ))}
+      {custom.map((k) => (
+        <Field key={k} label={k}>
+          <TextInput value={c.props[k] ?? ''} onChange={(v) => upd((x) => (x.props[k] = v))} />
+          <button className="icon-btn field-link" title={`Remove the “${k}” field`} onClick={() => upd((x) => delete x.props[k])}>
+            <X size={14} />
+          </button>
+        </Field>
+      ))}
+      {adding ? (
+        <Field label="New field">
+          <input
+            className="input"
+            autoFocus
+            placeholder="Name, e.g. Tolerance"
+            onBlur={(e) => addField(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') addField((e.target as HTMLInputElement).value);
+              if (e.key === 'Escape') setAdding(false);
+            }}
+          />
+        </Field>
+      ) : (
+        <button className="link-btn add-field" onClick={() => setAdding(true)}>
+          <Plus size={12} /> Add field
+        </button>
+      )}
+      <Field label="Do not populate" hint="Keep the part in the drawing but leave it off the board and out of the BOM quantities">
+        <Toggle checked={isDnp(c)} onChange={(v) => upd((x) => (v ? (x.props[DNP] = '1') : delete x.props[DNP]))} />
+      </Field>
+    </Section>
   );
 }
 
@@ -317,6 +468,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
           </button>
         )}
       </Section>
+      {hasPartFields(def) && <PartDetails c={c} />}
       <Section title="Appearance">
         <Field label="Rotation">
           <Segmented
@@ -455,7 +607,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
       ids.forEach((id) => {
         const s = d.items[id] as ShapeItem;
         fn(s);
-        if (s.kind === 'text') Object.assign(s, measureText(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400));
+        if (s.kind === 'text') Object.assign(s, measureRich(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400));
       }),
     );
   const isText = first.kind === 'text';

@@ -932,6 +932,9 @@ kbd {
 .field-label {
   color: var(--text-dim);
   font-size: 0.92em;
+  min-width: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .field-control {
@@ -1800,11 +1803,25 @@ select.input {
 
 .palette-label {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .palette-meta {
   color: var(--text-faint);
   font-size: 0.88em;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-cat,
+.palette-types,
+.palette-item kbd {
+  flex: none;
 }
 
 .shortcuts-toolbar {
@@ -2985,4 +3002,193 @@ select.input {
   background: var(--accent-soft);
   color: var(--text);
   font-size: 0.86em;
+}
+
+/* electrical rules check */
+.check-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.check-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.92em;
+}
+
+.check-summary .spacer {
+  flex: 1;
+}
+
+.check-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.check-count.error {
+  color: var(--danger);
+}
+
+.check-count.warning {
+  color: var(--warn);
+}
+
+.check-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.check-summary .chip {
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 0.86em;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.check-summary .chip.active {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.check-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px 10px;
+}
+
+.check-group + .check-group {
+  margin-top: 4px;
+}
+
+.check-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 4px 5px;
+  font-size: 0.78em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.check-group-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check-group-head .count {
+  font-weight: 500;
+  color: var(--text-faint);
+  margin-right: 4px;
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 0.9em;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.check-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.check-row svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.check-row.error svg {
+  color: var(--danger);
+}
+
+.check-row.warning svg {
+  color: var(--warn);
+}
+
+.check-row:hover {
+  background: var(--panel-3);
+}
+
+.tab-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  background: var(--panel-3);
+  color: var(--text-dim);
+}
+
+.tab-badge.error {
+  background: var(--danger);
+  color: #fff;
+}
+
+.erc-marker circle {
+  fill: var(--warn);
+  stroke: var(--canvas);
+}
+
+.erc-marker.error circle {
+  fill: var(--danger);
+}
+
+.erc-marker text {
+  fill: #fff;
+  font-weight: 800;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.field-control .field-link {
+  flex: none;
+  margin-left: 4px;
+  width: 26px;
+  height: 26px;
+}
+
+.link-btn.add-field {
+  margin: 2px 0 4px;
+}
+
+.dnp-tag {
+  font-weight: 700;
+  fill: var(--danger);
+}
+
+.comp.dnp > g:first-child {
+  opacity: 0.45;
 }

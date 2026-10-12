@@ -1,10 +1,34 @@
+import { toWorld } from './geometry';
 import { getSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint } from './types';
 
 export interface Net {
   name: string;
+  /** Every distinct label / rail name on the net (more than one means differently named nets are joined). */
+  names: string[];
   wires: string[];
   pins: { comp: string; ref: string; port: string; portName: string }[];
+}
+
+/**
+ * Pins of different parts that sit on exactly the same spot (a ground symbol
+ * dropped straight onto a pin, two parts butted together). They are connected
+ * just as if a wire joined them. Returns the "comp:port" keys of each group.
+ */
+export function touchingPins(doc: CircuitDoc): string[][] {
+  const at = new Map<string, string[]>();
+  for (const c of Object.values(doc.items)) {
+    if (c.type !== 'component') continue;
+    const def = getSymbol(doc, c.symbol);
+    for (const p of def.ports) {
+      const w = toWorld(c, def, p.x, p.y);
+      const k = `${Math.round(w.x * 2)},${Math.round(w.y * 2)}`;
+      const list = at.get(k);
+      if (list) list.push(`${c.id}:${p.id}`);
+      else at.set(k, [`${c.id}:${p.id}`]);
+    }
+  }
+  return [...at.values()].filter((g) => new Set(g.map((k) => k.split(':')[0])).size > 1);
 }
 
 const key = (ep: Endpoint, wireId: string, end: string) =>
@@ -39,6 +63,7 @@ export function computeNets(doc: CircuitDoc): Net[] {
     dsu.union(`w:${it.id}`, a);
     dsu.union(a, b);
   }
+  for (const group of touchingPins(doc)) for (const k of group.slice(1)) dsu.union(`p:${group[0]}`, `p:${k}`);
   const labelOf = new Map<string, string>();
   const byLabel = new Map<string, string>();
   for (const c of comps) {
@@ -60,7 +85,7 @@ export function computeNets(doc: CircuitDoc): Net[] {
   const groups = new Map<string, Net>();
   let auto = 1;
   const roots = [...dsu.parent.keys()].map((k) => dsu.find(k));
-  for (const root of new Set(roots)) groups.set(root, { name: '', wires: [], pins: [] });
+  for (const root of new Set(roots)) groups.set(root, { name: '', names: [], wires: [], pins: [] });
   for (const k of dsu.parent.keys()) {
     const net = groups.get(dsu.find(k))!;
     if (k.startsWith('w:')) net.wires.push(k.slice(2));
@@ -69,7 +94,9 @@ export function computeNets(doc: CircuitDoc): Net[] {
       const c = doc.items[comp] as ComponentItem;
       const def = getSymbol(doc, c.symbol);
       if (def.valueIsLabel || def.prefix.startsWith('#')) {
-        if (!net.name && labelOf.has(k)) net.name = labelOf.get(k)!;
+        const label = labelOf.get(k);
+        if (label && !net.names.includes(label)) net.names.push(label);
+        if (!net.name && label) net.name = label;
         continue;
       }
       net.pins.push({ comp, ref: c.ref, port, portName: def.ports.find((p) => p.id === port)?.name ?? port });
