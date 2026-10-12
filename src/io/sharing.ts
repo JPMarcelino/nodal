@@ -1,7 +1,7 @@
 import { docBounds } from '../model/doc';
 import { extractFragment, insertFragment, type Fragment } from '../model/ops';
 import { snap } from '../model/geometry';
-import type { CircuitDoc, SymbolDef } from '../model/types';
+import type { CircuitDoc, Point, SymbolDef } from '../model/types';
 import { S, mergeUserSymbols, mutate, set, toast } from '../store/store';
 import { openTextFile, sanitizeName, saveFile } from './files';
 
@@ -65,8 +65,8 @@ export function importLibraryText(text: string, opts: { overwrite?: boolean } = 
   return Object.keys(toAdd).length;
 }
 
-/** Inserts a template's items into the current document, centred on the view. */
-export function importTemplateText(text: string): string[] {
+/** Inserts a template's items into the current document, centred on `at` (world) or the view. */
+export function importTemplateText(text: string, at?: Point): string[] {
   const data = parseTemplate(text);
   const frag = data.fragment;
   if (!frag?.items?.length) throw new Error('This template has no items.');
@@ -74,8 +74,8 @@ export function importTemplateText(text: string): string[] {
   const g = doc.settings.grid;
   const tmp = { ...doc, items: Object.fromEntries(frag.items.map((i) => [i.id, i])) } as CircuitDoc;
   const b = docBounds(tmp);
-  const targetX = (canvasSize.w / 2 - view.x) / view.zoom;
-  const targetY = (canvasSize.h / 2 - view.y) / view.zoom;
+  const targetX = at ? at.x : (canvasSize.w / 2 - view.x) / view.zoom;
+  const targetY = at ? at.y : (canvasSize.h / 2 - view.y) / view.zoom;
   const dx = b ? snap(targetX - (b.x + b.w / 2), g) : 0;
   const dy = b ? snap(targetY - (b.y + b.h / 2), g) : 0;
   let ids: string[] = [];

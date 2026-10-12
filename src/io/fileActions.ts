@@ -1,6 +1,6 @@
 import { normalizeDoc } from '../model/doc';
 import { toBomCsv, toSpiceNetlist } from '../model/netlist';
-import type { Rect } from '../model/types';
+import type { CircuitDoc, Rect } from '../model/types';
 import { S, newDoc, replaceDoc, set, toast } from '../store/store';
 import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, printDoc, type SvgOptions } from './export';
@@ -24,13 +24,22 @@ export async function fileOpen() {
   try {
     const f = await openTextFile(NODAL_FILTER);
     if (!f) return;
-    const doc = normalizeDoc(JSON.parse(f.text));
-    replaceDoc(doc, f.path);
-    setTimeout(() => fitView(), 0);
-    toast(`Opened ${f.name}`, 'success');
+    loadCircuit(f.name, normalizeDoc(JSON.parse(f.text)), f.path);
   } catch (e) {
     toast(`Could not open file: ${(e as Error).message}`, 'error');
   }
+}
+
+/** Opens circuit text that arrived some other way (drag & drop, Import…). Throws if it isn't a circuit. */
+export async function openCircuitText(name: string, text: string, path: string | null) {
+  const doc = normalizeDoc(JSON.parse(text));
+  if (await confirmDiscard()) loadCircuit(name, doc, path);
+}
+
+function loadCircuit(name: string, doc: CircuitDoc, path: string | null) {
+  replaceDoc(doc, path);
+  setTimeout(() => fitView(), 0);
+  toast(`Opened ${name}`, 'success');
 }
 
 export async function fileSave(saveAs = false) {
