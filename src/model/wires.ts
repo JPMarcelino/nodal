@@ -1,6 +1,6 @@
 import { eq, projectOnSegment, rotate, segmentIntersection, sideVector, simplify, toWorld } from './geometry';
 import { getSymbol } from './registry';
-import type { CircuitDoc, ComponentItem, Endpoint, Point, WireItem, WireStyle } from './types';
+import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, WireItem, WireStyle } from './types';
 
 export interface PortPos {
   pt: Point;
@@ -341,4 +341,72 @@ export function moveWireNode(base: Point[], idx: number, p: Point, free: boolean
 
 export function rotateVec(p: Point, rot: number) {
   return rotate(p, rot);
+}
+
+/** Point at fraction `t` (0…1) of a polyline's length, and whether that stretch runs horizontally. */
+export function pointAlong(pts: Point[], t: number): { pt: Point; horiz: boolean } | null {
+  if (pts.length < 2) return null;
+  const lens = pts.slice(1).map((q, i) => Math.hypot(q.x - pts[i].x, q.y - pts[i].y));
+  const total = lens.reduce((a, b) => a + b, 0);
+  let left = Math.min(Math.max(t, 0), 1) * total;
+  for (let i = 0; i < lens.length; i++) {
+    if (left <= lens[i] || i === lens.length - 1) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const k = lens[i] ? Math.min(left / lens[i], 1) : 0;
+      return { pt: { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k }, horiz: Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) };
+    }
+    left -= lens[i];
+  }
+  return null;
+}
+
+/** Nearest spot on a polyline to `p`: its fraction along the length, distance, and the stretch direction. */
+export function projectAlong(pts: Point[], p: Point): { t: number; d: number; pt: Point; horiz: boolean } | null {
+  if (pts.length < 2) return null;
+  let total = 0;
+  let best: { t: number; d: number; pt: Point; horiz: boolean; at: number } | null = null;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const pr = projectOnSegment(p, a, b);
+    if (!best || pr.d < best.d) best = { t: 0, d: pr.d, pt: pr.pt, horiz: Math.abs(b.x - a.x) >= Math.abs(b.y - a.y), at: total + pr.t * len };
+    total += len;
+  }
+  if (!best) return null;
+  return { t: total ? best.at / total : 0.5, d: best.d, pt: best.pt, horiz: best.horiz };
+}
+
+/** Where a wire's label is drawn: anchor point, text anchor and the side it ended up on. */
+export function wireLabelSpot(
+  w: Pick<WireItem, 'labelAt' | 'labelSide'>,
+  pts: Point[],
+  width: number,
+): { x: number; y: number; anchor: 'start' | 'middle' | 'end'; side: LabelSide } | null {
+  let at: { pt: Point; horiz: boolean } | null = null;
+  if (w.labelAt === undefined) {
+    // middle of the longest segment reads best
+    let best = -1;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const l = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      if (l > best) {
+        best = l;
+        at = { pt: { x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 }, horiz: Math.abs(pts[i + 1].x - pts[i].x) >= Math.abs(pts[i + 1].y - pts[i].y) };
+      }
+    }
+  } else at = pointAlong(pts, w.labelAt);
+  if (!at) return null;
+  const side: LabelSide = w.labelSide ?? (at.horiz ? 'above' : 'right');
+  const { x, y } = at.pt;
+  switch (side) {
+    case 'above':
+      return { x, y: y - width - 3, anchor: 'middle', side };
+    case 'below':
+      return { x, y: y + width + 10, anchor: 'middle', side };
+    case 'left':
+      return { x: x - width - 4, y: y + 3.5, anchor: 'end', side };
+    case 'right':
+      return { x: x + width + 4, y: y + 3.5, anchor: 'start', side };
+  }
 }

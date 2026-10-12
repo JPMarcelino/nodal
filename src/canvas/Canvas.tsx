@@ -4,8 +4,9 @@ import { itemBounds, makeShape } from '../model/doc';
 import { dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
 import { getSymbol } from '../model/registry';
-import type { CircuitDoc, ComponentItem, Endpoint, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
-import { buildWirePath, endpointInfo, hitWire, moveWireNode, snapOnSegment } from '../model/wires';
+import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
+import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireLabelSpot, wireStyle } from '../model/wires';
+import { computeNets, netOfWire } from '../model/netlist';
 import { buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd } from '../model/wireCommit';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
@@ -51,6 +52,8 @@ type Gesture =
   | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
   | { kind: 'label'; id: string; which: 'ref' | 'value'; start: Point; base: { dx: number; dy: number }; frozen: ReturnType<typeof frozenLabelOffsets> }
+  /** Sliding a wire's net label along its net, to either side of the wire. */
+  | { kind: 'wireLabel'; id: string; net: string[] }
   | { kind: 'shapeTitle'; id: string; start: Point; base: { dx: number; dy: number } };
 
 const ORTHO_EPS = 0.01;
@@ -349,11 +352,10 @@ export function Canvas() {
       const c = d.items[id];
       if (c?.type !== 'component') continue;
       const def = getSymbol(d, c.symbol);
-      if (def.valueIsLabel) continue;
       const L = labelLayout(c, def);
       const texts: [{ x: number; y: number; anchor: 'start' | 'middle' | 'end' } | null | undefined, string, number, 'ref' | 'value'][] = [];
       if (c.showRef) texts.push([L.ref, c.ref, 11, 'ref']);
-      if (c.showValue && c.value) texts.push([L.value, c.value, 10.5, 'value']);
+      if (c.showValue && c.value) texts.push([L.value, c.value, def.valueIsLabel ? 11 : 10.5, 'value']);
       for (const [at, text, size, which] of texts) {
         if (!at) continue;
         const m = measureRich(text, size, 500);
@@ -363,6 +365,23 @@ export function Canvas() {
     }
     return null;
   }, []);
+
+  /** Wire whose (visible) net label text is under the pointer. */
+  const hitWireLabel = useCallback(
+    (p: Point): string | null => {
+      const d = S().doc;
+      for (const it of Object.values(d.items)) {
+        if (it.type !== 'wire' || !it.label || it.labelHidden || it.hidden || it.locked) continue;
+        const spot = wireLabelSpot(it, data.polys.get(it.id) ?? [], wireStyle(d, it).width);
+        if (!spot) continue;
+        const m = measureRich(it.label, 10, 600);
+        const x = spot.anchor === 'start' ? spot.x : spot.anchor === 'middle' ? spot.x - m.w / 2 : spot.x - m.w;
+        if (pointInRect(p, { x, y: spot.y - 10, w: m.w, h: 13 }, 2)) return it.id;
+      }
+      return null;
+    },
+    [data],
+  );
 
   /* ------------------------ selection handles ------------------------ */
 
@@ -728,6 +747,16 @@ export function Canvas() {
         return;
       }
     }
+    const wireLabel = tool === 'select' ? hitWireLabel(w) : null;
+    if (wireLabel) {
+      // other wires of the net that carry a label of their own are not landing spots
+      const d0 = S().doc;
+      const net = (netOfWire(computeNets(d0), wireLabel)?.wires ?? [wireLabel]).filter((id) => id === wireLabel || !(d0.items[id] as WireItem | undefined)?.label);
+      select([wireLabel]);
+      beginGesture();
+      setGesture({ kind: 'wireLabel', id: wireLabel, net });
+      return;
+    }
     const labelOf = hitLabel(w);
     const hit = hitItem(w);
     if (labelOf && (!hit || hit === labelOf.id || S().doc.items[hit]?.type !== 'component')) {
@@ -933,6 +962,35 @@ export function Canvas() {
         });
         break;
       }
+      case 'wireLabel': {
+        // nearest spot on any wire of the net; the pointer's side of the wire picks the label side
+        let best: { wire: string; t: number; d: number; pt: Point; horiz: boolean } | null = null;
+        const d0 = S().doc;
+        for (const id of g.net) {
+          const o = d0.items[id];
+          if (!o || o.type !== 'wire' || o.hidden) continue;
+          const pr = projectAlong(data.polys.get(id) ?? [], w);
+          if (pr && (!best || pr.d < best.d)) best = { wire: id, ...pr };
+        }
+        if (!best) break;
+        const b = best;
+        const side: LabelSide = b.horiz ? (w.y < b.pt.y ? 'above' : 'below') : w.x < b.pt.x ? 'left' : 'right';
+        gestureUpdate((d) => {
+          const from = d.items[g.id] as WireItem;
+          const to = d.items[b.wire] as WireItem;
+          if (to.id !== from.id) {
+            to.label = from.label;
+            delete from.label;
+            delete from.labelAt;
+            delete from.labelSide;
+            delete from.labelHidden;
+          }
+          to.labelAt = Math.round(b.t * 1000) / 1000;
+          to.labelSide = side;
+        });
+        if (b.wire !== S().selection[0]) set({ selection: [b.wire] });
+        break;
+      }
       case 'label': {
         const dx = Math.round(w.x - g.start.x);
         const dy = Math.round(w.y - g.start.y);
@@ -1003,6 +1061,7 @@ export function Canvas() {
       case 'segment':
       case 'resize':
       case 'label':
+      case 'wireLabel':
       case 'shapeTitle':
         endGesture(true);
         if (g.kind === 'segment' && g.moved) mutate((d) => cleanup(d as CircuitDoc));

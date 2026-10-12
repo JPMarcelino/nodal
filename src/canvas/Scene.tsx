@@ -5,7 +5,7 @@ import { touchingPins } from '../model/netlist';
 import { isDnp } from '../model/partFields';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
-import { buildWirePath, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
+import { buildWirePath, wireLabelSpot, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
 import { SheetFrame } from './SheetFrame';
 import { RichText } from './RichText';
 import { hasMath } from '../model/latex';
@@ -282,7 +282,7 @@ export const WireView = memo(function WireView({
   const st = { ...settings.wire, ...w.style };
   const color = inkColor(st.color, palette);
   const d = buildWirePath(pts, st.radius, hops, settings.hops, settings.hopSize);
-  const mid = pts.length >= 2 ? midpoint(pts) : null;
+  const spot = w.label && !w.labelHidden ? wireLabelSpot(w, pts, st.width) : null;
   return (
     <g className="wire" data-id={w.id} opacity={dim ? 0.25 : 1}>
       <path
@@ -294,26 +294,10 @@ export const WireView = memo(function WireView({
         strokeLinejoin="round"
         strokeDasharray={dashArray(st.dash, st.width)}
       />
-      {w.label && mid && (
-        <RichText text={w.label} x={mid.x} y={mid.y - st.width - 3} anchor="middle" fontSize={10} className="wire-label" fill={color} />
-      )}
+      {w.label && spot && <RichText text={w.label} x={spot.x} y={spot.y} anchor={spot.anchor} fontSize={10} className="wire-label" fill={color} />}
     </g>
   );
 });
-
-function midpoint(pts: Point[]): Point {
-  // midpoint of the longest segment reads best for labels
-  let best = 0;
-  let bi = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const l = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
-    if (l > best) {
-      best = l;
-      bi = i;
-    }
-  }
-  return { x: (pts[bi].x + pts[bi + 1].x) / 2, y: (pts[bi].y + pts[bi + 1].y) / 2 };
-}
 
 /* ------------------------------------------------------------------ */
 /* Shapes                                                              */

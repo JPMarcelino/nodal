@@ -140,7 +140,15 @@ export interface WireItem extends ItemBase {
   /** Stacking layer at crossings: a higher layer hops over a lower one (undefined = 0). */
   hopLayer?: number;
   label?: string;
+  /** Where the label sits along the wire, 0 (end a) … 1 (end b); unset = middle of the longest segment. */
+  labelAt?: number;
+  /** Which side of the wire the label is on; unset = above horizontal runs, right of vertical ones. */
+  labelSide?: LabelSide;
+  /** Keep the label (it still names the net in lists and search) but don't draw it. */
+  labelHidden?: boolean;
 }
+
+export type LabelSide = 'above' | 'below' | 'left' | 'right';
 
 export interface JunctionItem extends ItemBase {
   type: 'junction';
