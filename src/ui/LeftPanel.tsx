@@ -9,6 +9,7 @@ import type { CircuitDoc, Item, SymbolDef } from '../model/types';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import * as A from '../store/actions';
 import { S, mutate, removeSymbolFromLibrary, select, set, toast, toggleFavorite, useStore } from '../store/store';
+import { CheckPanel, useErcIssues } from './CheckPanel';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 
 function Tile({ def }: { def: SymbolDef }) {
@@ -510,6 +511,14 @@ function Layers() {
   );
 }
 
+/** Count of rule-check findings on the Check tab (red when any are errors). */
+function CheckBadge() {
+  const issues = useErcIssues();
+  if (!issues.length) return null;
+  const errors = issues.some((i) => i.severity === 'error');
+  return <span className={errors ? 'tab-badge error' : 'tab-badge'}>{issues.length > 99 ? '99+' : issues.length}</span>;
+}
+
 export function LeftPanel() {
   const tab = useStore((s) => s.leftTab);
   return (
@@ -521,8 +530,11 @@ export function LeftPanel() {
         <button className={tab === 'layers' ? 'active' : ''} onClick={() => set({ leftTab: 'layers' })}>
           Layers
         </button>
+        <button className={tab === 'check' ? 'active' : ''} onClick={() => set({ leftTab: 'check' })} title="Electrical rules check">
+          Check <CheckBadge />
+        </button>
       </div>
-      {tab === 'library' ? <Library /> : <Layers />}
+      {tab === 'library' ? <Library /> : tab === 'layers' ? <Layers /> : <CheckPanel />}
     </aside>
   );
 }

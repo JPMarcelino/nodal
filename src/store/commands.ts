@@ -52,6 +52,7 @@ export const COMMANDS: Command[] = [
   { id: 'edit.pasteHere', label: 'Paste at cursor', category: 'Edit', keys: ['Mod+Shift+V'], run: () => void A.paste(S().cursor) },
   { id: 'edit.duplicate', label: 'Duplicate', category: 'Edit', keys: ['Mod+D'], run: A.duplicateSelection, when: hasSel },
   { id: 'edit.delete', label: 'Delete', category: 'Edit', keys: ['Delete', 'Backspace'], run: A.deleteSelection, when: hasSel },
+  { id: 'edit.find', label: 'Find part, net or text…', category: 'Edit', keys: ['Mod+F', 'F3'], run: () => set({ dialog: 'find' }) },
   { id: 'edit.selectAll', label: 'Select all', category: 'Edit', keys: ['Mod+A'], run: A.selectAll },
   { id: 'edit.deselect', label: 'Deselect / cancel', category: 'Edit', keys: ['Escape'], run: () => cancel() },
   { id: 'edit.annotate', label: 'Renumber reference designators', category: 'Edit', keys: ['Mod+Shift+A'], run: A.annotateAll },
@@ -135,6 +136,7 @@ export const COMMANDS: Command[] = [
   { id: 'view.theme', label: 'Toggle light / dark theme', category: 'View', keys: ['Mod+Shift+D'], run: () => setPrefs({ theme: S().prefs.theme === 'dark' ? 'light' : 'dark' }) },
   { id: 'view.focus', label: 'Focus mode (hide panels)', category: 'View', keys: ['Mod+.'], run: focusMode },
   { id: 'view.search', label: 'Search symbol library', category: 'View', keys: ['/'], run: focusSearch },
+  { id: 'view.check', label: 'Check circuit (electrical rules check)', category: 'View', keys: ['Mod+Alt+R'], run: () => set({ leftPanel: true, leftTab: 'check' }) },
 
   // Symbols
   { id: 'symbols.new', label: 'Create new symbol…', category: 'Symbols', keys: ['Mod+Shift+N'], run: () => set({ dialog: 'symbol-editor', editingSymbol: null }) },

@@ -1,9 +1,15 @@
 import { memo, useMemo } from 'react';
-import { componentBounds, measureText, sideVector, toWorld } from '../model/geometry';
+import { componentBounds, measureText, segmentIntersectsRect, sideVector, toWorld } from '../model/geometry';
 import { drawOrder } from '../model/doc';
+import { touchingPins } from '../model/netlist';
+import { isDnp } from '../model/partFields';
 import { getSymbol } from '../model/registry';
-import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, ShapeItem, SymbolDef, WireItem } from '../model/types';
+import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
 import { buildWirePath, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
+import { SheetFrame } from './SheetFrame';
+import { RichText } from './RichText';
+import { hasMath } from '../model/latex';
+import { layoutRich, measureRich } from '../model/richText';
 import { SymbolBody } from './SymbolGraphic';
 
 export interface Palette {
@@ -48,6 +54,8 @@ export interface SceneData {
   /** Number of wire ends at each port key "comp:port". */
   portDegree: Map<string, number>;
   junctionDegree: Map<string, number>;
+  /** Pins ("comp:port") resting on another part's pin, which connects them. */
+  touching: Set<string>;
 }
 
 export function useSceneData(doc: CircuitDoc): SceneData {
@@ -70,7 +78,8 @@ export function computeSceneData(doc: CircuitDoc): SceneData {
   const crossings = wireCrossings(polys);
   const layers = hopLayerMap(Object.values(doc.items));
   const hops = doc.settings.hops === 'none' ? new Map<string, Hop[]>() : hopsFromCrossings(crossings, doc.settings.hopSize, layers);
-  return { polys, hops, crossings, layers, portDegree, junctionDegree };
+  const touching = new Set(touchingPins(doc).flat());
+  return { polys, hops, crossings, layers, portDegree, junctionDegree, touching };
 }
 
 /* ------------------------------------------------------------------ */
@@ -108,16 +117,92 @@ function baseLabelLayout(c: ComponentItem, def: SymbolDef) {
     if (dir.x > 0) return { value: { x: b.x + b.w + 4 + dx, y: c.y + 4 + dy, anchor: 'start' as const }, ref: null };
     return { value: { x: b.x - 4 + dx, y: c.y + 4 + dy, anchor: 'end' as const }, ref: null };
   }
-  if (b.w >= b.h) {
-    return {
-      ref: { x: c.x + dx, y: b.y - 5 + dy, anchor: 'middle' as const },
-      value: { x: c.x + dx, y: b.y + b.h + 14 + dy, anchor: 'middle' as const },
-    };
+  const spots = labelCandidates(b, c);
+  // dragged labels are offsets from this fixed spot (see frozenLabelOffsets)
+  if (hasLabelOffsets(c)) return b.w >= b.h ? spots.split : spots.right;
+  // otherwise use the first spot that keeps both labels off the wires leaving the pins
+  const leads = def.ports.map((p) => {
+    const at = toWorld(c, def, p.x, p.y);
+    const v = sideVector(c, p.side);
+    return [at, { x: at.x + v.x * LEAD_CLEARANCE, y: at.y + v.y * LEAD_CLEARANCE }] as const;
+  });
+  const hits = (spot: LabelSpot) =>
+    labelRects(spot, c).reduce((n, r) => n + leads.filter(([a, z]) => segmentIntersectsRect(a, z, r)).length, 0);
+  const sides = new Set(leads.map(([a, z]) => `${Math.sign(z.x - a.x)},${Math.sign(z.y - a.y)}`));
+  const order: (keyof typeof spots)[] =
+    sides.size === 4
+      ? // chips with pins all round: keep the labels off the body, at a corner
+        ['topRight', 'topLeft', 'bottomRight', 'split', 'right', 'left', 'above', 'below']
+      : b.w >= b.h
+      ? ['split', 'right', 'topRight', 'above', 'below', 'left', 'bottomRight', 'topLeft']
+      : ['right', 'left', 'split', 'topRight', 'bottomRight', 'above', 'below', 'topLeft'];
+  let best = spots[order[0]];
+  let bestHits = Infinity;
+  for (const k of order) {
+    const n = hits(spots[k]);
+    if (n < bestHits) [best, bestHits] = [spots[k], n];
+    if (!n) break;
   }
+  return best;
+}
+
+const hasLabelOffsets = (c: ComponentItem) => c.labelDx != null || c.labelDy != null || c.valueDx != null || c.valueDy != null;
+
+/** Offsets that keep both labels exactly where they are drawn now; written when a label is first dragged. */
+export function frozenLabelOffsets(c: ComponentItem, def: SymbolDef) {
+  const o = labelOffsets(c);
+  if (hasLabelOffsets(c) || def.valueIsLabel) return { labelDx: o.ref.x, labelDy: o.ref.y, valueDx: o.value.x, valueDy: o.value.y };
+  const auto = baseLabelLayout(c, def);
+  const b = componentBounds(c, def);
+  const spots = labelCandidates(b, c);
+  const fixed = b.w >= b.h ? spots.split : spots.right;
+  const d = (p: { x: number; y: number } | null, q: LabelPos) => (p ? { x: p.x - q.x, y: p.y - q.y } : { x: 0, y: 0 });
+  const r = d(auto.ref, fixed.ref);
+  const v = d(auto.value, fixed.value);
+  return { labelDx: r.x, labelDy: r.y, valueDx: v.x, valueDy: v.y };
+}
+
+/** How far out from a pin its wire is kept clear of labels. */
+const LEAD_CLEARANCE = 30;
+
+interface LabelPos {
+  x: number;
+  y: number;
+  anchor: 'start' | 'middle' | 'end';
+}
+interface LabelSpot {
+  ref: LabelPos;
+  value: LabelPos;
+}
+
+/** Spots the reference and value can take around a part's bounds. */
+function labelCandidates(b: Rect, c: ComponentItem): Record<'split' | 'right' | 'left' | 'above' | 'below' | 'topRight' | 'bottomRight' | 'topLeft', LabelSpot> {
+  const r = b.x + b.w + 6;
+  const l = b.x - 6;
+  const both = (x: number, y1: number, y2: number, anchor: LabelPos['anchor']): LabelSpot => ({ ref: { x, y: y1, anchor }, value: { x, y: y2, anchor } });
   return {
-    ref: { x: b.x + b.w + 6 + dx, y: c.y - 2 + dy, anchor: 'start' as const },
-    value: { x: b.x + b.w + 6 + dx, y: c.y + 12 + dy, anchor: 'start' as const },
+    split: { ref: { x: c.x, y: b.y - 5, anchor: 'middle' }, value: { x: c.x, y: b.y + b.h + 14, anchor: 'middle' } },
+    right: both(r, c.y - 2, c.y + 12, 'start'),
+    left: both(l, c.y - 2, c.y + 12, 'end'),
+    above: both(c.x, b.y - 18, b.y - 5, 'middle'),
+    below: both(c.x, b.y + b.h + 14, b.y + b.h + 27, 'middle'),
+    topRight: both(b.x + b.w + 2, b.y - 18, b.y - 5, 'start'),
+    bottomRight: both(b.x + b.w + 2, b.y + b.h + 14, b.y + b.h + 27, 'start'),
+    topLeft: both(b.x - 2, b.y - 18, b.y - 5, 'end'),
   };
+}
+
+/** Approximate boxes of the visible labels at a spot. */
+function labelRects(spot: LabelSpot, c: ComponentItem): Rect[] {
+  const out: Rect[] = [];
+  const box = (at: LabelPos, text: string, size: number) => {
+    const m = measureRich(text, size, 600);
+    const x = at.anchor === 'start' ? at.x : at.anchor === 'middle' ? at.x - m.w / 2 : at.x - m.w;
+    out.push({ x, y: at.y - size, w: m.w, h: size * 1.25 });
+  };
+  if (c.showRef && c.ref) box(spot.ref, c.ref, 11);
+  if (c.showValue && c.value) box(spot.value, c.value, 10.5);
+  return out;
 }
 
 export const ComponentView = memo(function ComponentView({
@@ -137,8 +222,9 @@ export const ComponentView = memo(function ComponentView({
   const tf = `translate(${c.x} ${c.y}) rotate(${c.rot}) scale(${c.flipX ? -1 : 1} 1) translate(${-def.w / 2} ${-def.h / 2})`;
   const labels = labelLayout(c, def);
   const labelColor = settings.labelColor || palette.label;
+  const dnp = isDnp(c);
   return (
-    <g className={ghost ? 'comp ghost' : 'comp'} data-id={c.id} style={{ color, ['--sym-bg' as string]: palette.symBg }}>
+    <g className={`comp${ghost ? ' ghost' : ''}${dnp ? ' dnp' : ''}`} data-id={c.id} style={{ color, ['--sym-bg' as string]: palette.symBg }}>
       <g transform={tf}>
         <SymbolBody def={def} />
       </g>
@@ -155,20 +241,20 @@ export const ComponentView = memo(function ComponentView({
         );
       })}
       {c.showRef && labels.ref && (
-        <text x={labels.ref.x} y={labels.ref.y} textAnchor={labels.ref.anchor} className="ref-label" fill={labelColor}>
-          {c.ref}
-        </text>
+        <RichText text={c.ref} x={labels.ref.x} y={labels.ref.y} anchor={labels.ref.anchor} fontSize={11} className="ref-label" fill={labelColor} />
       )}
       {c.showValue && c.value && labels.value && (
-        <text
+        <RichText
+          text={c.value}
           x={labels.value.x}
           y={labels.value.y}
-          textAnchor={labels.value.anchor}
+          anchor={labels.value.anchor}
+          fontSize={def.valueIsLabel ? 11 : 10.5}
           className={def.valueIsLabel ? 'net-label' : 'value-label'}
           fill={def.valueIsLabel ? color : settings.labelColor || palette.value}
         >
-          {c.value}
-        </text>
+          {dnp && <tspan className="dnp-tag"> DNP</tspan>}
+        </RichText>
       )}
     </g>
   );
@@ -209,9 +295,7 @@ export const WireView = memo(function WireView({
         strokeDasharray={dashArray(st.dash, st.width)}
       />
       {w.label && mid && (
-        <text x={mid.x} y={mid.y - st.width - 3} textAnchor="middle" className="wire-label" fill={color}>
-          {w.label}
-        </text>
+        <RichText text={w.label} x={mid.x} y={mid.y - st.width - 3} anchor="middle" fontSize={10} className="wire-label" fill={color} />
       )}
     </g>
   );
@@ -284,7 +368,7 @@ export function shapeTitle(s: ShapeItem): { x: number; y: number; anchor: 'start
   const fs = s.fontSize ?? 13;
   const dx = s.textDx ?? 0;
   const dy = s.textDy ?? 0;
-  const m = measureText(s.text ?? '', fs, s.kind !== 'ellipse' && s.bold === false ? 400 : 600);
+  const m = measureRich(s.text ?? '', fs, s.kind !== 'ellipse' && s.bold === false ? 400 : 600);
   if (s.kind === 'ellipse') {
     const x = s.x + s.w / 2 + dx;
     const y = s.y + s.h / 2 + 5 + dy;
@@ -324,9 +408,7 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
         <g className="shape" data-id={s.id}>
           <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={s.radius} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} />
           {s.text && (
-            <text x={shapeTitle(s).x} y={shapeTitle(s).y} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold === false ? 400 : 600} className="shape-title">
-              {s.text}
-            </text>
+            <RichText text={s.text} x={shapeTitle(s).x} y={shapeTitle(s).y} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold === false ? 400 : 600} className="shape-title" />
           )}
         </g>
       );
@@ -335,9 +417,7 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
         <g className="shape" data-id={s.id}>
           <ellipse cx={s.x + s.w / 2} cy={s.y + s.h / 2} rx={Math.abs(s.w / 2)} ry={Math.abs(s.h / 2)} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} />
           {s.text && (
-            <text x={shapeTitle(s).x} y={shapeTitle(s).y} textAnchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={600}>
-              {s.text}
-            </text>
+            <RichText text={s.text} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={600} />
           )}
         </g>
       );
@@ -361,9 +441,7 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
           <ArrowHeadEl tip={endTip} x={ux} y={uy} size={size} kind={endKind} color={ink} sw={s.strokeWidth} />
           <ArrowHeadEl tip={startTip} x={-ux} y={-uy} size={size} kind={startKind} color={ink} sw={s.strokeWidth} />
           {s.text && (
-            <text x={s.x + s.w / 2} y={s.y + s.h / 2 - 6} textAnchor="middle" fontSize={s.fontSize ?? 13} fill={textColor}>
-              {s.text}
-            </text>
+            <RichText text={s.text} x={s.x + s.w / 2} y={s.y + s.h / 2 - 6} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} />
           )}
         </g>
       );
@@ -371,17 +449,12 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
     case 'text': {
       const fs = s.fontSize ?? 16;
       const lines = (s.text ?? '').split('\n');
-      const m = measureText(s.text ?? '', fs, s.bold ? 700 : 400);
+      const m = measureRich(s.text ?? '', fs, s.bold ? 700 : 400);
+      const first = hasMath(lines[0]) ? layoutRich(lines[0], fs, s.bold ? 700 : 400)[0].ascent : fs;
       return (
         <g className="shape" data-id={s.id}>
           {s.fillOpacity > 0 && <rect x={s.x - 6} y={s.y - 4} width={m.w + 12} height={m.h + 8} rx={4} fill={fill} fillOpacity={s.fillOpacity} />}
-          <text x={s.x} y={s.y + fs} fontSize={fs} fill={textColor} fontWeight={s.bold ? 700 : 400} className="free-text">
-            {lines.map((l, i) => (
-              <tspan key={i} x={s.x} dy={i === 0 ? 0 : fs * 1.3}>
-                {l || ' '}
-              </tspan>
-            ))}
-          </text>
+          <RichText text={s.text ?? ''} x={s.x} y={s.y + Math.max(fs, first)} fontSize={fs} fill={textColor} fontWeight={s.bold ? 700 : 400} className="free-text" />
         </g>
       );
     }
@@ -422,6 +495,7 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
   }
   return (
     <>
+      <SheetFrame doc={doc} ink={palette.sym} dim={palette.value} />
       <g className="layer-below">{below.map((s) => <ShapeView key={s.id} s={s} palette={palette} />)}</g>
       <g className="layer-wires">
         {wires.map((w) => (

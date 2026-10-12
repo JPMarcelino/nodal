@@ -42,7 +42,7 @@ export interface ContextMenuState {
   target: string | null;
 }
 
-export type Dialog = null | 'palette' | 'shortcuts' | 'settings' | 'symbol-editor' | 'about' | 'export' | 'share';
+export type Dialog = null | 'palette' | 'find' | 'shortcuts' | 'settings' | 'symbol-editor' | 'about' | 'export' | 'share';
 
 export interface Prefs {
   theme: 'dark' | 'light';
@@ -88,7 +88,7 @@ export interface AppState {
   symbolSeed: (SelectionDrawing & { ids: string[] }) | null;
   leftPanel: boolean;
   rightPanel: boolean;
-  leftTab: 'library' | 'layers';
+  leftTab: 'library' | 'layers' | 'check';
   prefs: Prefs;
   userLibrary: Record<string, SymbolDef>;
   favorites: string[];
@@ -240,14 +240,14 @@ export function undo() {
   const s = S();
   if (!s.past.length) return;
   const prev = s.past[s.past.length - 1];
-  set({ doc: prev, past: s.past.slice(0, -1), future: [s.doc, ...s.future], dirty: true, selection: s.selection.filter((id) => prev.items[id]) });
+  set({ doc: prev, past: s.past.slice(0, -1), future: [s.doc, ...s.future], dirty: true, selection: s.selection.filter((id) => prev.items[id]), wirePart: null });
 }
 
 export function redo() {
   const s = S();
   if (!s.future.length) return;
   const next = s.future[0];
-  set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]) });
+  set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]), wirePart: null });
 }
 
 /**
@@ -259,7 +259,9 @@ export function applyExternal(patch: (doc: CircuitDoc) => CircuitDoc) {
   const s = S();
   if (gestureBase) gestureBase = patch(gestureBase);
   const doc = patch(s.doc);
-  set({ doc, past: s.past.map(patch), future: s.future.map(patch), selection: s.selection.filter((id) => doc.items[id]) });
+  // a node/segment sub-selection only survives if its wire was left untouched
+  const wirePart = s.wirePart && doc.items[s.wirePart.wire] === s.doc.items[s.wirePart.wire] ? s.wirePart : null;
+  set({ doc, past: s.past.map(patch), future: s.future.map(patch), selection: s.selection.filter((id) => doc.items[id]), wirePart });
 }
 
 let autosavePaused = false;
@@ -269,7 +271,7 @@ export function pauseAutosave(paused: boolean) {
 }
 
 export function replaceDoc(doc: CircuitDoc, filePath: string | null = null) {
-  set({ doc, past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null });
+  set({ doc, past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null });
 }
 
 export function newDoc() {

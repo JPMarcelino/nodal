@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { measureRich } from '../model/richText';
 import { itemBounds, makeShape } from '../model/doc';
 import { dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
@@ -10,9 +11,10 @@ import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, inkColor, labelLayout, labelOffsets, measureText, shapeTitle, useSceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { FollowFrame, RemotePresence } from './RemotePresence';
+import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
 import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
@@ -48,7 +50,7 @@ type Gesture =
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
   | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
-  | { kind: 'label'; id: string; which: 'ref' | 'value'; start: Point; base: { dx: number; dy: number } }
+  | { kind: 'label'; id: string; which: 'ref' | 'value'; start: Point; base: { dx: number; dy: number }; frozen: ReturnType<typeof frozenLabelOffsets> }
   | { kind: 'shapeTitle'; id: string; start: Point; base: { dx: number; dy: number } };
 
 const ORTHO_EPS = 0.01;
@@ -354,7 +356,7 @@ export function Canvas() {
       if (c.showValue && c.value) texts.push([L.value, c.value, 10.5, 'value']);
       for (const [at, text, size, which] of texts) {
         if (!at) continue;
-        const m = measureText(text, size, 500);
+        const m = measureRich(text, size, 500);
         const x = at.anchor === 'start' ? at.x : at.anchor === 'middle' ? at.x - m.w / 2 : at.x - m.w;
         if (pointInRect(p, { x, y: at.y - size, w: m.w, h: size * 1.3 }, 2)) return { id: c.id, which };
       }
@@ -661,7 +663,7 @@ export function Canvas() {
       let id = '';
       mutate((d) => {
         const s = makeShape(d as CircuitDoc, 'text', p.x, p.y, 40, 20);
-        const m = measureText(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400);
+        const m = measureRich(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400);
         s.w = m.w;
         s.h = m.h;
         s.group = S().scope;
@@ -730,9 +732,10 @@ export function Canvas() {
     const hit = hitItem(w);
     if (labelOf && (!hit || hit === labelOf.id || S().doc.items[hit]?.type !== 'component')) {
       const c = S().doc.items[labelOf.id] as ComponentItem;
-      const o = labelOffsets(c)[labelOf.which];
+      const frozen = frozenLabelOffsets(c, getSymbol(S().doc, c.symbol));
+      const base = labelOf.which === 'ref' ? { dx: frozen.labelDx, dy: frozen.labelDy } : { dx: frozen.valueDx, dy: frozen.valueDy };
       beginGesture();
-      setGesture({ kind: 'label', id: labelOf.id, which: labelOf.which, start: w, base: { dx: o.x, dy: o.y } });
+      setGesture({ kind: 'label', id: labelOf.id, which: labelOf.which, start: w, base, frozen });
       return;
     }
     if (hit) {
@@ -935,6 +938,8 @@ export function Canvas() {
         const dy = Math.round(w.y - g.start.y);
         gestureUpdate((d) => {
           const c = d.items[g.id] as ComponentItem;
+          // first drag: pin both labels where they are drawn now, so neither jumps
+          if (c.labelDx === undefined && c.labelDy === undefined && c.valueDx === undefined && c.valueDy === undefined) Object.assign(c, g.frozen);
           if (g.which === 'value') {
             c.valueDx = g.base.dx + dx;
             c.valueDy = g.base.dy + dy;
@@ -1179,6 +1184,8 @@ export function Canvas() {
   const scopeBounds = scope ? groupBounds(doc, scope) : null;
   const selectionBounds = selection.length > 1 ? unionBounds(doc, selection) : null;
   const connectedPorts = data.portDegree;
+  const showErc = useStore((s) => s.leftPanel && s.leftTab === 'check');
+  const ercIssues = useErcIssues(showErc);
 
   return (
     <div
@@ -1237,11 +1244,24 @@ export function Canvas() {
           {prefs.showPortMarkers && z > 0.45 && (
             <g className="port-markers">
               {ports.map((p) =>
-                connectedPorts.get(`${p.comp}:${p.port}`) ? null : (
+                connectedPorts.get(`${p.comp}:${p.port}`) || data.touching.has(`${p.comp}:${p.port}`) ? null : (
                   <circle key={`${p.comp}:${p.port}`} cx={p.pt.x} cy={p.pt.y} r={2.4} strokeWidth={1 / z} className="port-marker" />
                 ),
               )}
             </g>
+          )}
+
+          {/* rule-check findings, while the Check tab is open */}
+          {ercIssues.map((i) =>
+            i.at ? (
+              <g key={i.key} className={`erc-marker ${i.severity}`} transform={`translate(${i.at.x} ${i.at.y}) scale(${1 / z})`}>
+                <title>{i.message}</title>
+                <circle r={7} strokeWidth={1.5} />
+                <text y={3.5} fontSize={10}>
+                  !
+                </text>
+              </g>
+            ) : null,
           )}
 
           {/* hover */}
@@ -1548,7 +1568,7 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
   const isText = it.kind === 'text';
   const size = it.fontSize ?? (isText ? 16 : 13);
   const weight = isText ? (it.bold ? 700 : 400) : it.kind === 'ellipse' || it.bold !== false ? 600 : 400;
-  const m = measureText(value, size, weight);
+  const m = measureRich(value, size, weight);
   const width = Math.max(80, m.w * view.zoom + 20);
   let at = { x: it.x, y: it.y };
   if (!isText) {
@@ -1568,7 +1588,7 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
         return;
       }
       s.text = text;
-      if (s.kind === 'text') Object.assign(s, measureText(text, s.fontSize ?? 16, s.bold ? 700 : 400));
+      if (s.kind === 'text') Object.assign(s, measureRich(text, s.fontSize ?? 16, s.bold ? 700 : 400));
     });
     onDone();
   };

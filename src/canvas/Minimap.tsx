@@ -1,5 +1,8 @@
 import { useRef } from 'react';
 import { docBounds, itemBounds } from '../model/doc';
+import { unionRects } from '../model/geometry';
+import { sheetRect } from '../model/sheet';
+import type { Rect } from '../model/types';
 import { S, set, useStore } from '../store/store';
 import type { SceneData } from './Scene';
 
@@ -11,7 +14,7 @@ export function Minimap({ data }: { data: SceneData }) {
   const view = useStore((s) => s.view);
   const size = useStore((s) => s.canvasSize);
   const ref = useRef<SVGSVGElement>(null);
-  const b = docBounds(doc);
+  const b = unionRects([docBounds(doc), sheetRect(doc.settings)].filter((r): r is Rect => !!r));
   const vp = { x: -view.x / view.zoom, y: -view.y / view.zoom, w: size.w / view.zoom, h: size.h / view.zoom };
   const all = b
     ? {
