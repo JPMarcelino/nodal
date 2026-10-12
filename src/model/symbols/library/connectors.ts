@@ -69,15 +69,11 @@ export const connectors = [
   sym('antenna-dipole', 'Dipole antenna', C, { w: 60, h: 40, prefix: 'AE', keywords: 'antenna dipole rf', draw: 'L 20 40 20 20 4 4; L 40 40 40 20 56 4', ports: '1:20,40 2:40,40' }),
   sym('mounting-hole', 'Mounting hole', C, { w: 40, h: 40, prefix: 'H', hideLabels: false, keywords: 'screw hole mechanical', draw: 'C 20 20 14; C 20 20 7', ports: '' }),
   sym('fiducial', 'Fiducial', C, { w: 40, h: 40, prefix: 'FID', keywords: 'fiducial marker pcb', draw: 'CF 20 20 6; W 1.5; C 20 20 14', ports: '' }),
-  sym('sma', 'SMA connector', C, {
-    w: 60, h: 40, prefix: 'J', value: 'SMA', keywords: 'sma coax connector rf',
-    draw: 'L 0 20 26 20; CF 30 20 2.5; C 30 20 6; L 30 14 36 14; L 30 26 36 26; L 34 10 34 30; L 30 20 60 20; L 0 36 26 36 26 30; CB 28 32 2.5',
-    ports: 'SIG:0,20 SH:0,36',
-  }),
-  sym('dsub-9', 'DE-9 connector (D-sub)', C, {
-    w: 80, h: 80, prefix: 'J', value: 'DB9', keywords: 'dsub de-9 serial connector',
-    draw: 'W 1.5; P M 6 10 L 74 10 A 74 10 10 270 90 L 6 30 A 6 30 10 90 270 Z; W 2; L 0 20 6 20; L 0 40 6 40; L 0 60 6 60; CB 10 20 2; CB 10 40 2; CB 10 60 2; CF 10 20 1.5; CF 10 40 1.5; CF 10 60 1.5; L 74 20 80 20; L 74 40 80 40; L 74 60 80 60; CB 70 20 2; CB 70 40 2; CB 70 60 2; CF 70 20 1.5; CF 70 40 1.5; CF 70 60 1.5; T 20 22 7 m 1; T 30 22 7 m 3; T 40 22 7 m 5; T 20 42 7 m 2; T 30 42 7 m 4; T 40 42 7 m 6; T 50 22 7 m 7; T 60 22 7 m 8; T 50 42 7 m 9',
-    ports: '1:0,20 2:80,20 3:0,40 4:80,40 5:0,60 6:80,60 7:0,70 8:80,70 9:40,80',
+  sym('sma', 'SMA / RF connector', C, { w: 40, h: 40, prefix: 'J', value: 'SMA', keywords: 'sma u.fl mmcx rf coax antenna connector', draw: 'L 0 20 20 20; CF 20 20 2.5; C 20 20 7; A 20 20 13 210 510; L 20 33 20 40', ports: 'SIG:0,20 SH:20,40' }),
+  sym('dsub-9', 'D-sub 9 (DE-9)', C, {
+    w: 60, h: 200, prefix: 'J', value: 'DE-9', keywords: 'dsub de-9 db9 rs232 serial connector',
+    draw: 'W 1.5; G 22 4 52 16 52 184 22 196; W 2; L 0 20 27 20; CB 30 20 3; T 10 17 7 m 1; L 0 40 39 40; CB 42 40 3; T 10 37 7 m 6; L 0 60 27 60; CB 30 60 3; T 10 57 7 m 2; L 0 80 39 80; CB 42 80 3; T 10 77 7 m 7; L 0 100 27 100; CB 30 100 3; T 10 97 7 m 3; L 0 120 39 120; CB 42 120 3; T 10 117 7 m 8; L 0 140 27 140; CB 30 140 3; T 10 137 7 m 4; L 0 160 39 160; CB 42 160 3; T 10 157 7 m 9; L 0 180 27 180; CB 30 180 3; T 10 177 7 m 5; L 52 100 60 100',
+    ports: '1:0,20 6:0,40 2:0,60 7:0,80 3:0,100 8:0,120 4:0,140 9:0,160 5:0,180 SH:60,100',
   }),
   sym('bus-entry', 'Bus entry', C, {
     w: 20, h: 20, prefix: '#BE', value: '', hideLabels: true, keywords: 'bus entry wire connection',

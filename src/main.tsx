@@ -10,7 +10,7 @@ const Gallery = import.meta.env.DEV
   ? lazy(() => import('./dev/Gallery').then((m) => ({ default: m.Gallery })))
   : null;
 
-const showGallery = import.meta.env.DEV && Gallery !== null && location.hash === '#gallery';
+const showGallery = import.meta.env.DEV && Gallery !== null && location.hash.startsWith('#gallery');
 
 if (!showGallery) joinFromUrl();
 

@@ -37,13 +37,13 @@ export const output = [
   chip('lcd-16x2', 'LCD 16×2', C, { left: ['VSS', 'VDD', 'V0', 'RS', 'RW', 'E', 'D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'A', 'K'], title: 'LCD 16×2', prefix: 'DS', value: 'HD44780', keywords: 'character display', minW: 80 }),
   chip('oled-i2c', 'OLED display (I²C)', C, { left: ['VCC', 'GND', 'SCL', 'SDA'], title: 'OLED', prefix: 'DS', value: 'SSD1306', keywords: 'display screen i2c', numbers: false }),
   sym('neon-lamp', 'Neon lamp', C, {
-    w: 60, h: 40, prefix: 'DS', value: '', keywords: 'neon lamp indicator discharge',
-    draw: 'L 0 20 16 20; L 44 20 60 20; CB 30 20 14; CF 30 20 2; L 20 10 40 30; L 40 10 20 30',
+    w: 60, h: 40, prefix: 'DS', value: 'NE-2', keywords: 'neon glow lamp indicator discharge',
+    draw: 'CB 30 20 14; L 0 20 24 20; L 36 20 60 20; W 2.5; L 24 12 24 28; L 36 12 36 28; W 2; CF 30 27 1.8',
     ports: '1:0,20 2:60,20',
   }),
   sym('photo-interrupter', 'Photo interrupter (slotted)', C, {
-    w: 80, h: 60, prefix: 'U', value: 'TCST2103', keywords: 'optical interrupter photointerrupter slotted slot',
-    draw: 'W 1.5; R 10 4 60 52 3; W 2; L 0 20 26 20 26 31; GF 18 31 34 31 26 43; W 2.5; L 18 43 34 43; W 2; L 26 43 26 56 0 56; L 54 26 80 26; GF 66 26 60 23 60 29; L 54 34 80 34; GF 66 34 60 31 60 37; L 40 8 40 4; L 40 52 40 56; L 10 30 50 30',
-    ports: 'A:0,20 K:0,56 C:80,26 E:80,34',
+    w: 100, h: 80, prefix: 'U', value: 'TCST2103', keywords: 'optical interrupter photointerrupter slotted slot opto switch encoder',
+    draw: 'W 1.5; G 6 6 45 6 45 54 55 54 55 6 94 6 94 74 6 74; W 2; L 0 20 30 20 30 31; GF 22 31 38 31 30 45; W 2.5; L 22 45 38 45; W 2; L 30 45 30 60 0 60; L 40 34 52 34; GF 58 34 52 31 52 37; L 40 44 52 44; GF 58 44 52 41 52 47; W 3; L 64 26 64 54; W 2; L 64 34 82 24 82 20 100 20; L 64 46 82 56 82 60 100 60; GF 79 54.3 72.4 54 74.8 49',
+    ports: 'A:0,20 K:0,60 C:100,20 E:100,60',
   }),
 ];

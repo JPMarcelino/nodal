@@ -43,19 +43,17 @@ export const ics = [
   chip('dac', 'DAC', C, { left: ['VDD', 'SCL', 'SDA', 'GND'], right: ['OUT'], title: 'DAC', value: 'MCP4725', keywords: 'digital analog converter' }),
   chip('motor-driver', 'H-bridge driver', C, { left: ['IN1', 'IN2', 'EN', 'VCC', 'GND'], right: ['OUT1', 'OUT2', 'VS'], title: 'H-BRIDGE', value: 'L298N', keywords: 'motor driver h bridge' }),
   chip('usb-uart', 'USB-UART bridge', C, { left: ['D+', 'D-', 'VBUS', 'GND'], right: ['TXD', 'RXD', '~RTS', '~CTS'], title: 'UART', value: 'CH340G', keywords: 'ftdi cp2102 serial usb' }),
-  sym('tl431', 'TL431 (shunt reference)', C, {
-    w: 60, h: 60, prefix: 'U', value: 'TL431', keywords: 'tl431 shunt voltage reference zener',
-    draw: 'CB 30 30 20; L 30 0 30 14; L 0 30 18 30; L 30 46 30 60; GF 32 28 32 32 38 30; W 2.5; L 24 14 32 14 30 22; W 2',
+  sym('tl431', 'Shunt reference (TL431)', C, {
+    w: 60, h: 60, prefix: 'U', value: 'TL431', keywords: 'tl431 shunt programmable voltage reference zener',
+    draw: 'L 30 0 30 22; W 2.5; L 16 26 20 22 40 22 44 18; W 2; GF 20 40 40 40 30 22; L 30 40 30 60; L 0 30 25 30',
     ports: 'K:30,0 A:30,60 REF:0,30',
   }),
-  chip('opamp-dual', 'Op-amp (dual)', C, {
+  chip('opamp-dual', 'Op-amp (dual, 8-pin)', C, {
     left: ['OUTA', '-INA', '+INA', 'V-'],
-    right: ['+INB', '-INB', 'OUTB', 'V+'],
+    right: ['V+', 'OUTB', '-INB', '+INB'],
     title: 'LM358',
     value: 'LM358',
-    prefix: 'U',
-    keywords: 'opamp operational amplifier dual',
-    minW: 60,
+    keywords: 'opamp operational amplifier dual dip8 soic8',
   }),
   chip('ldo-en', 'LDO regulator (enable)', C, {
     left: ['IN', 'EN'],
