@@ -1,7 +1,7 @@
 import { produce, type Draft } from 'immer';
 import { create } from 'zustand';
 import { createDoc, groupMembers, normalizeDoc, topGroup } from '../model/doc';
-import { setUserLibrary } from '../model/registry';
+import { setUserLibrary, usedSymbols } from '../model/registry';
 import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
 import type { CircuitDoc, Point, SymbolDef, Tool } from '../model/types';
@@ -359,11 +359,20 @@ export function deleteUserSymbol(id: string) {
 export function removeSymbolFromLibrary(id: string): { inUse: number } {
   const { doc, userLibrary } = S();
   const ids = [id, ...Object.values({ ...doc.symbols, ...userLibrary }).filter((d) => d.variantOf === id).map((d) => d.id)];
-  const uses = (sid: string) => Object.values(doc.items).filter((it) => it.type === 'component' && it.symbol === sid).length;
+  // same fold as registry.usedSymbols: a base counts as used while any of its types is placed
+  const used = usedSymbols(doc);
   for (const sid of ids) deleteUserSymbol(sid);
-  const unused = ids.filter((sid) => doc.symbols[sid] && !uses(sid));
+  const unused = ids.filter((sid) => doc.symbols[sid] && !used.has(sid));
   if (unused.length) mutate((d) => unused.forEach((sid) => delete d.symbols[sid]));
-  return { inUse: ids.reduce((n, sid) => n + uses(sid), 0) };
+  // distinct parts using the family (a part placed as a type counts once, not twice)
+  const family = new Set(ids);
+  const inUse = Object.values(doc.items).filter((it) => {
+    if (it.type !== 'component') return false;
+    if (family.has(it.symbol)) return true;
+    const base = doc.symbols[it.symbol]?.variantOf;
+    return !!base && family.has(base);
+  }).length;
+  return { inUse };
 }
 
 export function toggleFavorite(id: string) {
