@@ -46,7 +46,7 @@ export function baseSymbols(doc: Pick<CircuitDoc, 'symbols'>): SymbolDef[] {
 }
 
 /** Symbols placed in the circuit, counting a base symbol as used when one of its types is. */
-function usedSymbols(doc: Pick<CircuitDoc, 'symbols' | 'items'>): Set<string> {
+export function usedSymbols(doc: Pick<CircuitDoc, 'symbols' | 'items'>): Set<string> {
   const used = new Set<string>();
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'component') continue;
