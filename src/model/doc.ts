@@ -121,6 +121,7 @@ export const SHAPE_DEFAULTS: Record<ShapeKind, Partial<ShapeItem>> = {
   ellipse: { stroke: '#000000', strokeWidth: 2, fill: '#000000', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
   line: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'none', layer: 'above' },
   arrow: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'open', layer: 'above' },
+  image: { stroke: '#000000', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
   text: { stroke: 'none', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above', fontSize: 16, text: 'Text' },
 };
 

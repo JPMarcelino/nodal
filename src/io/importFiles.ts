@@ -5,12 +5,15 @@ import type { Point } from '../model/types';
 import { placeComponent } from '../store/actions';
 import { S, saveUserSymbol, toast } from '../store/store';
 import { openCircuitText } from './fileActions';
-import { openTextFile } from './files';
+import { openAnyFile } from './files';
+import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from './imageImport';
 import { importLibraryText, importTemplateText } from './sharing';
 import { svgToPrims } from './svgImport';
 
 /** Everything "Import file…" and drag & drop understand. */
-export const IMPORT_FILTER = [{ name: 'Nodal circuit, library, template or SVG', extensions: ['nodal', 'json', 'svg'] }];
+export const IMPORT_FILTER = [
+  { name: 'Nodal files, SVG, PDF and images', extensions: ['nodal', 'json', 'svg', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'] },
+];
 
 const viewCentre = (): Point => {
   const { view, canvasSize } = S();
@@ -33,7 +36,7 @@ export async function importFileText(name: string, text: string, path: string | 
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error('Nodal can import circuits (.nodal), symbol libraries, templates and SVG images');
+      throw new Error('Nodal can import circuits (.nodal), symbol libraries, templates, SVG, PDF and images');
     }
     switch (data?.format) {
       case 'nodal':
@@ -82,21 +85,37 @@ function importSvgSymbol(fileName: string, text: string, at: Point) {
   toast(`Added “${name}” to My symbols — edit it to add pins`, 'success');
 }
 
+/** Imports one file of any supported kind; text formats go through `importFileText`. */
+async function importOneFile(file: File, path: string | null, at?: Point) {
+  if (isRaster(file) || isPdf(file)) {
+    try {
+      let pictures;
+      let note = '';
+      if (isPdf(file)) {
+        const { pages, total } = await pdfToPictures(file);
+        if (!pages.length) throw new Error('The PDF has no pages');
+        pictures = pages;
+        note = total > pages.length ? ` (first ${pages.length} of ${total} pages)` : pages.length > 1 ? ` (${pages.length} pages)` : '';
+      } else {
+        pictures = [await rasterToPicture(file)];
+      }
+      insertPictures(pictures, at ?? viewCentre());
+      toast(`Inserted ${file.name}${note}`, 'success');
+    } catch (e) {
+      toast(`Could not import ${file.name}: ${(e as Error).message}`, 'error');
+    }
+    return;
+  }
+  await importFileText(file.name, await file.text(), path, at);
+}
+
 /** Imports files dropped onto the app, in order. */
 export async function importDroppedFiles(files: FileList | File[], at?: Point) {
-  const list = [...files];
-  if (!list.length) return;
-  for (const f of list) {
-    if (/^image\//.test(f.type) && f.type !== 'image/svg+xml') {
-      toast(`Can't import ${f.name}: raster images aren't supported — use an SVG`, 'error');
-      continue;
-    }
-    await importFileText(f.name, await f.text(), null, at);
-  }
+  for (const f of [...files]) await importOneFile(f, null, at);
 }
 
 /** File → Import…: picks any supported file. */
 export async function importFile() {
-  const f = await openTextFile(IMPORT_FILTER);
-  if (f) await importFileText(f.name, f.text, f.path);
+  const picked = await openAnyFile(IMPORT_FILTER);
+  if (picked) await importOneFile(picked.file, picked.path);
 }

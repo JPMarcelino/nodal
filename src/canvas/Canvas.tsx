@@ -322,7 +322,7 @@ export function Canvas() {
         const r = itemBounds(d, s)!;
         if (hasMovableTitle(s) && pointInRect(p, shapeTitle(s).box, 3)) return true;
         if (s.kind === 'line' || s.kind === 'arrow') return projectOnSegment(p, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }).d < t + s.strokeWidth;
-        if (s.kind === 'text') return pointInRect(p, r, 4);
+        if (s.kind === 'text' || s.kind === 'image') return pointInRect(p, r, 4);
         const inside = pointInRect(p, r, t);
         if (!inside) return false;
         if (s.fillOpacity > 0) return true;

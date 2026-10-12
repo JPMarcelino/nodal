@@ -148,7 +148,7 @@ export interface JunctionItem extends ItemBase {
   y: number;
 }
 
-export type ShapeKind = 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text';
+export type ShapeKind = 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'image';
 
 export type HeadKind = 'none' | 'open' | 'filled' | 'circle' | 'bar';
 
@@ -173,6 +173,8 @@ export interface ShapeItem extends ItemBase {
   /** 'below' renders behind wires and components; 'above' on top of everything. */
   layer: 'below' | 'above';
   text?: string;
+  /** Image shapes: the picture as a data URL (PNG / JPEG). */
+  src?: string;
   fontSize?: number;
   textColor?: string;
   bold?: boolean;

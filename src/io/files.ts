@@ -35,6 +35,28 @@ export async function openTextFile(filters: FileFilter[]): Promise<OpenedFile | 
   });
 }
 
+/** Picks a file of any kind (binary too) as a File; `path` is set on desktop. */
+export async function openAnyFile(filters: FileFilter[]): Promise<{ file: File; path: string | null } | null> {
+  if (isDesktop()) {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const { readFile } = await import('@tauri-apps/plugin-fs');
+    const path = await open({ multiple: false, directory: false, filters });
+    if (!path || Array.isArray(path)) return null;
+    const name = path.split(/[\\/]/).pop() ?? path;
+    return { file: new File([await readFile(path)], name, { type: mimeOf(name) }), path };
+  }
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = filters.flatMap((f) => f.extensions.map((e) => `.${e}`)).join(',');
+    input.onchange = () => {
+      const file = input.files?.[0];
+      resolve(file ? { file, path: null } : null);
+    };
+    input.click();
+  });
+}
+
 /**
  * Saves data. When `path` is given (desktop) it is overwritten silently;
  * otherwise the user is asked where to save. Returns the path written (desktop) or null.
@@ -93,6 +115,15 @@ function mimeOf(name: string) {
       return 'image/svg+xml';
     case 'png':
       return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'pdf':
+      return 'application/pdf';
     case 'json':
     case 'nodal':
       return 'application/json';

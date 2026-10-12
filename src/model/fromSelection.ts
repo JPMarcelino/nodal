@@ -148,6 +148,9 @@ function shapePrims(s: ShapeItem, at: (p: Point) => Point): Prim[] {
       return [{ t: 'rect', x, y, w, h, rx: s.radius || undefined, fill: 'none', sw: s.strokeWidth }, ...textLines(x + 8, y + 2, Math.min(fs, 14))];
     case 'ellipse':
       return [{ t: 'ellipse', cx: r(x + w / 2), cy: r(y + h / 2), rx: r(w / 2), ry: r(h / 2), fill: 'none', w: s.strokeWidth }];
+    case 'image':
+      // symbols are vector-only; keep just the frame if it has one
+      return s.strokeWidth > 0 ? [{ t: 'rect', x, y, w, h, fill: 'none', sw: s.strokeWidth }] : [];
     case 'line':
     case 'arrow': {
       const out: Prim[] = [{ t: 'line', pts: [a.x, a.y, z.x, z.y], w: s.strokeWidth, ...(s.dash !== 'solid' ? { dash: true } : {}) }];
