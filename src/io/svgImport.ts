@@ -267,6 +267,13 @@ interface RawShape {
   fill: Fill | null;
   /** Stroke width in source units (0 = no stroke). */
   sw: number;
+  /** Computed colours, as #rrggbb ('' = none). */
+  stroke: string;
+  fillColor: string;
+  fillOpacity: number;
+  dashed: boolean;
+  /** Set for <rect>/<circle>/<ellipse> drawn without rotation or skew (source units). */
+  box?: { kind: 'rect' | 'ellipse'; x: number; y: number; w: number; h: number; rx: number };
 }
 interface RawText {
   x: number;
@@ -274,6 +281,33 @@ interface RawText {
   size: number;
   anchor: 'start' | 'middle' | 'end';
   text: string;
+  color: string;
+}
+
+/** 'rgb(r, g, b)' → '#rrggbb' ('' for none / unparsable). */
+function hexOf(paint: string): string {
+  const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(paint);
+  if (!m) return '';
+  return '#' + [m[1], m[2], m[3]].map((v) => (+v).toString(16).padStart(2, '0')).join('');
+}
+
+function axisBox(el: Element, m: DOMMatrix): RawShape['box'] {
+  if (Math.abs(m.b) > 1e-6 || Math.abs(m.c) > 1e-6) return undefined;
+  const tag = el.tagName.toLowerCase();
+  let x: number, y: number, w: number, h: number, rx = 0;
+  if (tag === 'rect') {
+    const r = el as SVGRectElement;
+    [x, y, w, h] = [len(r.x), len(r.y), len(r.width), len(r.height)];
+    rx = len(r.rx) || len(r.ry);
+  } else if (tag === 'circle' || tag === 'ellipse') {
+    const e = el as SVGCircleElement & SVGEllipseElement;
+    const ex = tag === 'circle' ? len(e.r) : len(e.rx);
+    const ey = tag === 'circle' ? len(e.r) : len(e.ry);
+    [x, y, w, h] = [len(e.cx) - ex, len(e.cy) - ey, 2 * ex, 2 * ey];
+  } else return undefined;
+  const x0 = m.a * x + m.e, y0 = m.d * y + m.f;
+  const x1 = m.a * (x + w) + m.e, y1 = m.d * (y + h) + m.f;
+  return { kind: tag === 'rect' ? 'rect' : 'ellipse', x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0), rx: rx * Math.abs(m.a) };
 }
 
 function collect(live: SVGSVGElement): { shapes: RawShape[]; texts: RawText[] } {
@@ -293,7 +327,7 @@ function collect(live: SVGSVGElement): { shapes: RawShape[]; texts: RawText[] } 
       const x = t.x.baseVal.numberOfItems ? t.x.baseVal.getItem(0).value : 0;
       const y = t.y.baseVal.numberOfItems ? t.y.baseVal.getItem(0).value : 0;
       const anchor = cs.textAnchor === 'middle' ? 'middle' : cs.textAnchor === 'end' ? 'end' : 'start';
-      texts.push({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f, size: (parseFloat(cs.fontSize) || 16) * scale, anchor, text: text.replace(/;/g, ',') });
+      texts.push({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f, size: (parseFloat(cs.fontSize) || 16) * scale, anchor, text: text.replace(/;/g, ','), color: hexOf(cs.fill) });
       continue;
     }
     const d = elementPathData(el);
@@ -314,7 +348,16 @@ function collect(live: SVGSVGElement): { shapes: RawShape[]; texts: RawText[] } 
       for (let i = 0; i < p.length; i += 2) o.push(m.a * p[i] + m.c * p[i + 1] + m.e, m.b * p[i] + m.d * p[i + 1] + m.f);
       return o;
     };
-    shapes.push({ segs: segs.map((s) => ({ c: s.c, p: T(s.p) })), fill: filled ? fillKind(cs.fill) : null, sw });
+    shapes.push({
+      segs: segs.map((s) => ({ c: s.c, p: T(s.p) })),
+      fill: filled ? fillKind(cs.fill) : null,
+      sw,
+      stroke: sw ? hexOf(cs.stroke) : '',
+      fillColor: filled ? hexOf(cs.fill) : '',
+      fillOpacity: filled ? +cs.fillOpacity : 0,
+      dashed: !!cs.strokeDasharray && cs.strokeDasharray !== 'none',
+      box: axisBox(el, m),
+    });
   }
   return { shapes, texts };
 }
@@ -372,6 +415,35 @@ function toPrim(segs: Seg[], fill: Fill | null, w: number): Prim | null {
  * size (capped at 1000 px). Needs a live DOM to resolve CSS and transforms.
  */
 export function svgToPrims(text: string, size?: number): { prims: Prim[]; w: number; h: number } {
+  const { shapes, texts, b } = readSvg(text);
+  const bw = b.maxX - b.minX || 1;
+  const bh = b.maxY - b.minY || 1;
+  const k = size ? (size - 20) / Math.max(bw, bh) : Math.min(1, 1000 / Math.max(bw, bh));
+  const w = r20(bw * k + 20);
+  const h = r20(bh * k + 20);
+  const ox = (w - bw * k) / 2 - b.minX * k;
+  const oy = (h - bh * k) / 2 - b.minY * k;
+  const map = (p: number[]) => p.map((v, i) => v * k + (i % 2 === 0 ? ox : oy));
+  const prims: Prim[] = [];
+  for (const s of shapes) {
+    // keep hairlines visible, otherwise line weights scale with the drawing
+    const sw = s.sw ? Math.max(0.25, r2(s.sw * k)) : 0;
+    const prim = toPrim(
+      s.segs.map((g) => ({ c: g.c, p: map(g.p) })),
+      s.fill,
+      sw,
+    );
+    if (prim) prims.push(prim);
+  }
+  for (const t of texts) {
+    const [x, y] = map([t.x, t.y]);
+    prims.push({ t: 'text', x: r2(x), y: r2(y), size: Math.max(4, r2(t.size * k)), anchor: t.anchor, text: t.text });
+  }
+  return { prims, w, h };
+}
+
+/** Parses SVG markup in a live (off-screen) DOM and collects its shapes, text and bounds. */
+function readSvg(text: string): { shapes: RawShape[]; texts: RawText[]; b: { minX: number; minY: number; maxX: number; maxY: number } } {
   const parsed = new DOMParser().parseFromString(text, 'image/svg+xml');
   if (parsed.querySelector('parsererror')) throw new Error('The SVG could not be parsed');
   const svg = parsed.querySelector('svg');
@@ -393,31 +465,134 @@ export function svgToPrims(text: string, size?: number): { prims: Prim[]; w: num
       b.minY = Math.min(b.minY, t.y - t.size);
       b.maxY = Math.max(b.maxY, t.y);
     }
-    const bw = b.maxX - b.minX || 1;
-    const bh = b.maxY - b.minY || 1;
-    const k = size ? (size - 20) / Math.max(bw, bh) : Math.min(1, 1000 / Math.max(bw, bh));
-    const w = r20(bw * k + 20);
-    const h = r20(bh * k + 20);
-    const ox = (w - bw * k) / 2 - b.minX * k;
-    const oy = (h - bh * k) / 2 - b.minY * k;
-    const map = (p: number[]) => p.map((v, i) => v * k + (i % 2 === 0 ? ox : oy));
-    const prims: Prim[] = [];
-    for (const s of shapes) {
-      // keep hairlines visible, otherwise line weights scale with the drawing
-      const sw = s.sw ? Math.max(0.25, r2(s.sw * k)) : 0;
-      const prim = toPrim(
-        s.segs.map((g) => ({ c: g.c, p: map(g.p) })),
-        s.fill,
-        sw,
-      );
-      if (prim) prims.push(prim);
-    }
-    for (const t of texts) {
-      const [x, y] = map([t.x, t.y]);
-      prims.push({ t: 'text', x: r2(x), y: r2(y), size: Math.max(4, r2(t.size * k)), anchor: t.anchor, text: t.text });
-    }
-    return { prims, w, h };
+    return { shapes, texts, b };
   } finally {
     host.remove();
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* SVG → editable drawing (wires, shapes, text)                        */
+/* ------------------------------------------------------------------ */
+
+export interface SvgPolyline {
+  pts: { x: number; y: number }[];
+  closed: boolean;
+  width: number;
+  color: string;
+  dashed: boolean;
+}
+export interface SvgBox {
+  kind: 'rect' | 'ellipse';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rx: number;
+  stroke: string;
+  strokeWidth: number;
+  fill: string;
+  fillOpacity: number;
+  dashed: boolean;
+}
+export interface SvgDrawing {
+  lines: SvgPolyline[];
+  boxes: SvgBox[];
+  /** Small filled dots — connection points in a schematic. */
+  dots: { x: number; y: number }[];
+  texts: { x: number; y: number; size: number; anchor: 'start' | 'middle' | 'end'; text: string; color: string }[];
+}
+
+/** Largest dot (canvas units) treated as a junction rather than a filled shape. */
+const DOT_MAX = 10;
+
+/** Flattens segments into polylines (one per subpath); curves are subdivided finely enough to look smooth. */
+export function flattenSegs(segs: Seg[], k = 1): { pts: number[]; closed: boolean }[] {
+  const out: { pts: number[]; closed: boolean }[] = [];
+  let cur: number[] = [];
+  let closed = false;
+  const flush = () => {
+    if (cur.length >= 4) out.push({ pts: cur, closed });
+    cur = [];
+    closed = false;
+  };
+  for (const g of segs) {
+    const px = cur[cur.length - 2], py = cur[cur.length - 1];
+    if (g.c === 'M') {
+      flush();
+      cur = [g.p[0], g.p[1]];
+    } else if (g.c === 'L') cur.push(g.p[0], g.p[1]);
+    else if (g.c === 'Z') {
+      if (cur.length >= 2 && (cur[0] !== px || cur[1] !== py)) cur.push(cur[0], cur[1]);
+      closed = true;
+      const start = [cur[0], cur[1]];
+      flush();
+      cur = start; // a following command continues from the subpath start
+    } else {
+      const ctrl = g.p;
+      let lenEst = Math.hypot(ctrl[0] - px, ctrl[1] - py);
+      for (let i = 2; i < ctrl.length; i += 2) lenEst += Math.hypot(ctrl[i] - ctrl[i - 2], ctrl[i + 1] - ctrl[i - 1]);
+      const n = Math.min(64, Math.max(4, Math.ceil((lenEst * k) / 4)));
+      for (let s = 1; s <= n; s++) {
+        const t = s / n, u = 1 - t;
+        if (g.c === 'C') cur.push(u * u * u * px + 3 * u * u * t * ctrl[0] + 3 * u * t * t * ctrl[2] + t * t * t * ctrl[4], u * u * u * py + 3 * u * u * t * ctrl[1] + 3 * u * t * t * ctrl[3] + t * t * t * ctrl[5]);
+        else cur.push(u * u * px + 2 * u * t * ctrl[0] + t * t * ctrl[2], u * u * py + 2 * u * t * ctrl[1] + t * t * ctrl[3]);
+      }
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
+ * Converts SVG markup into an editable drawing at its own size (capped at
+ * 2000 px), centred on (0, 0): strokes become polylines (for wires), plain
+ * rectangles / circles / ellipses become boxes, small dots become junctions.
+ */
+export function svgToDrawing(text: string): SvgDrawing {
+  const { shapes, texts, b } = readSvg(text);
+  const bw = b.maxX - b.minX || 1;
+  const bh = b.maxY - b.minY || 1;
+  const k = Math.min(1, 2000 / Math.max(bw, bh));
+  const cx = (b.minX + b.maxX) / 2;
+  const cy = (b.minY + b.maxY) / 2;
+  const X = (v: number) => r2((v - cx) * k);
+  const Y = (v: number) => r2((v - cy) * k);
+  const out: SvgDrawing = { lines: [], boxes: [], dots: [], texts: [] };
+  for (const s of shapes) {
+    const width = s.sw ? Math.max(0.25, r2(s.sw * k)) : 0;
+    if (s.box) {
+      const bx = { x: X(s.box.x), y: Y(s.box.y), w: r2(s.box.w * k), h: r2(s.box.h * k) };
+      if (s.box.kind === 'ellipse' && s.fill && bx.w <= DOT_MAX && bx.h <= DOT_MAX) {
+        out.dots.push({ x: r2(bx.x + bx.w / 2), y: r2(bx.y + bx.h / 2) });
+        continue;
+      }
+      out.boxes.push({ kind: s.box.kind, ...bx, rx: r2(s.box.rx * k), stroke: s.stroke || '#000000', strokeWidth: width, fill: s.fillColor || 'none', fillOpacity: s.fill ? s.fillOpacity : 0, dashed: s.dashed });
+      continue;
+    }
+    const polys = flattenSegs(s.segs, k);
+    // a small, round, filled blob (a path-drawn dot) is a connection point too; arrowheads etc. are not
+    if (s.fill && polys.length && s.segs.some((g) => g.c === 'C' || g.c === 'Q')) {
+      const xs = polys.flatMap((p) => p.pts.filter((_, i) => i % 2 === 0));
+      const ys = polys.flatMap((p) => p.pts.filter((_, i) => i % 2 === 1));
+      const w = (Math.max(...xs) - Math.min(...xs)) * k;
+      const h = (Math.max(...ys) - Math.min(...ys)) * k;
+      if (w <= DOT_MAX && h <= DOT_MAX && w > 0 && Math.abs(w - h) < Math.max(w, h) * 0.3) {
+        out.dots.push({ x: X((Math.max(...xs) + Math.min(...xs)) / 2), y: Y((Math.max(...ys) + Math.min(...ys)) / 2) });
+        continue;
+      }
+    }
+    const color = s.stroke || s.fillColor || '#000000';
+    for (const p of polys) {
+      const pts: { x: number; y: number }[] = [];
+      for (let i = 0; i < p.pts.length; i += 2) {
+        const q = { x: X(p.pts[i]), y: Y(p.pts[i + 1]) };
+        const last = pts[pts.length - 1];
+        if (!last || last.x !== q.x || last.y !== q.y) pts.push(q);
+      }
+      if (pts.length >= 2) out.lines.push({ pts, closed: p.closed, width: width || Math.max(0.5, r2((s.sw || 1) * k)), color, dashed: s.dashed });
+    }
+  }
+  for (const t of texts) out.texts.push({ x: X(t.x), y: Y(t.y), size: Math.max(4, r2(t.size * k)), anchor: t.anchor, text: t.text, color: t.color || '#000000' });
+  return out;
 }

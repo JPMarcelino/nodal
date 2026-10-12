@@ -56,3 +56,41 @@ describe('imported drawings survive the symbol DSL', () => {
     expect(back.map((p) => ('w' in p ? p.w : undefined))).toEqual([0, 0.5, 1.25]);
   });
 });
+
+describe('insertSvgDrawing', () => {
+  it('turns strokes into straight wires joined by junctions where they meet', async () => {
+    const { createDoc } = await import('../model/doc');
+    const { insertSvgDrawing } = await import('../model/svgDrawing');
+    const doc = createDoc();
+    const line = (pts: [number, number][], width = 2) => ({ pts: pts.map(([x, y]) => ({ x, y })), closed: false, width, color: '#000000', dashed: false });
+    const ids = insertSvgDrawing(
+      doc,
+      {
+        // a horizontal bus, a branch teeing into its middle, and an L whose end meets the bus end
+        lines: [line([[0, 0], [100, 0]]), line([[50, 0], [50, 40]], 1), line([[100, 0], [100, 30], [130, 30]])],
+        boxes: [{ kind: 'rect', x: 0, y: 50, w: 20, h: 10, rx: 0, stroke: '#000000', strokeWidth: 1, fill: 'none', fillOpacity: 0, dashed: false }],
+        dots: [{ x: 50, y: 0 }],
+        texts: [],
+      },
+      { x: 200, y: 100 },
+      undefined,
+      'drawing',
+    );
+    const items = ids.map((id) => doc.items[id]);
+    const wires = items.filter((i) => i.type === 'wire');
+    const junctions = items.filter((i) => i.type === 'junction');
+    // bus split at the tee → 2 pieces, plus the branch and the L
+    expect(wires).toHaveLength(4);
+    expect(junctions.map((j) => j.type === 'junction' && [j.x, j.y])).toEqual(expect.arrayContaining([[250, 100], [300, 100]]));
+    for (const w of wires) if (w.type === 'wire') expect(w.routing).toBe('straight');
+    const branch = wires.find((w) => w.type === 'wire' && w.style?.width === 1);
+    expect(branch && branch.type === 'wire' && branch.a.kind).toBe('junction');
+    // the L keeps its corner as a vertex
+    expect(wires.some((w) => w.type === 'wire' && w.pts.length === 1 && w.pts[0].x === 300 && w.pts[0].y === 130)).toBe(true);
+    expect(items.filter((i) => i.type === 'shape')).toHaveLength(1);
+    // all grouped together under the file name
+    const g = items[0].group!;
+    expect(doc.groups[g].name).toBe('drawing');
+    expect(items.every((i) => i.group === g)).toBe(true);
+  });
+});

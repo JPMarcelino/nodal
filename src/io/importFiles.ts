@@ -1,14 +1,12 @@
-import { uid } from '../model/doc';
 import { snap } from '../model/geometry';
-import { compileSource, primsToDsl } from '../model/symbols/dsl';
-import type { Point } from '../model/types';
-import { placeComponent } from '../store/actions';
-import { S, saveUserSymbol, toast } from '../store/store';
+import { insertSvgDrawing } from '../model/svgDrawing';
+import type { CircuitDoc, Point } from '../model/types';
+import { S, mutate, toast } from '../store/store';
 import { openCircuitText } from './fileActions';
 import { openAnyFile } from './files';
 import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from './imageImport';
 import { importLibraryText, importTemplateText } from './sharing';
-import { svgToPrims } from './svgImport';
+import { svgToDrawing } from './svgImport';
 
 /** Everything "Import file…" and drag & drop understand. */
 export const IMPORT_FILTER = [
@@ -23,13 +21,13 @@ const viewCentre = (): Point => {
 /**
  * Imports one file by sniffing its contents: a circuit opens, a symbol library
  * merges into "My symbols", a template / copied selection is inserted at `at`,
- * and an SVG becomes a new symbol placed at `at`.
+ * and an SVG becomes editable wires and shapes placed at `at`.
  */
 export async function importFileText(name: string, text: string, path: string | null = null, at?: Point): Promise<void> {
   try {
     const trimmed = text.trimStart();
     if (/\.svg$/i.test(name) || (trimmed.startsWith('<') && /<svg[\s>]/i.test(text))) {
-      importSvgSymbol(name, text, at ?? viewCentre());
+      importSvgDrawing(name, text, at ?? viewCentre());
       return;
     }
     let data: { format?: unknown };
@@ -61,28 +59,17 @@ export async function importFileText(name: string, text: string, path: string | 
   }
 }
 
-/** Turns an SVG drawing into a pin-less symbol in "My symbols" and places it. */
-function importSvgSymbol(fileName: string, text: string, at: Point) {
-  const { prims, w, h } = svgToPrims(text);
+/** Adds an SVG as editable wires, shapes and text (grouped), centred on `at`, in one undo step. */
+function importSvgDrawing(fileName: string, text: string, at: Point) {
+  const drawing = svgToDrawing(text);
   const name = fileName.replace(/\.svg$/i, '').trim() || 'Imported SVG';
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'svg';
-  const def = compileSource({
-    id: `user-${slug}-${uid('').slice(-5)}`,
-    name,
-    category: 'My symbols',
-    w,
-    h,
-    draw: primsToDsl(prims),
-    ports: '',
-    prefix: 'U',
-    value: '',
-    fields: '',
-    keywords: 'svg import',
-  });
-  saveUserSymbol(def);
   const g = S().doc.settings.grid;
-  placeComponent(def.id, snap(at.x, g), snap(at.y, g));
-  toast(`Added “${name}” to My symbols — edit it to add pins`, 'success');
+  const ids: string[] = [];
+  mutate((d) => {
+    ids.push(...insertSvgDrawing(d as CircuitDoc, drawing, { x: snap(at.x, g), y: snap(at.y, g) }, S().scope, name));
+  }, ids);
+  const wires = ids.filter((id) => S().doc.items[id]?.type === 'wire').length;
+  toast(`Imported “${name}” — ${wires} wire${wires === 1 ? '' : 's'}${ids.length > wires ? ` and ${ids.length - wires} other item${ids.length - wires === 1 ? '' : 's'}` : ''} (grouped; double-click to edit inside)`, 'success');
 }
 
 /** Imports one file of any supported kind; text formats go through `importFileText`. */
