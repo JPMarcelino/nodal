@@ -63,7 +63,7 @@ export async function importFileText(name: string, text: string, path: string | 
 
 /** Turns an SVG drawing into a pin-less symbol in "My symbols" and places it. */
 function importSvgSymbol(fileName: string, text: string, at: Point) {
-  const { prims, w, h } = svgToPrims(text, 80);
+  const { prims, w, h } = svgToPrims(text);
   const name = fileName.replace(/\.svg$/i, '').trim() || 'Imported SVG';
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'svg';
   const def = compileSource({
