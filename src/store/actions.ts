@@ -18,6 +18,7 @@ import {
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, Item, ShapeItem, Tool } from '../model/types';
+import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { S, mutate, pushRecent, select, set, toast } from './store';
 
 const sel = () => new Set(S().selection);
@@ -106,13 +107,48 @@ export function cutSelection() {
 }
 
 export async function paste(at?: { x: number; y: number }) {
-  let frag = clipboard;
+  let text: string | null = null;
   try {
-    const text = await navigator.clipboard?.readText();
-    if (text && text.includes('"nodal-fragment"')) frag = JSON.parse(text) as Fragment;
+    text = (await navigator.clipboard?.readText()) ?? null;
   } catch {
-    /* clipboard permission denied: use internal clipboard */
+    /* clipboard permission denied: fall back below */
   }
+  // A Nodal fragment in the text always wins, so skip the permission-gated
+  // read() when one is already present.
+  let imageBlob: Blob | null = null;
+  let svgText: string | null = null;
+  if (!(text && text.includes('"nodal-fragment"'))) {
+    const cb = navigator.clipboard as unknown as { read?: () => Promise<ClipboardItem[]> } | undefined;
+    if (typeof cb?.read === 'function') {
+      try {
+        for (const item of await cb.read()) {
+          const types: readonly string[] = item.types ?? [];
+          if (!imageBlob) {
+            const raster = types.find((t) => PASTE_IMAGE_RE.test(t));
+            if (raster) {
+              try {
+                imageBlob = await item.getType(raster);
+              } catch {
+                /* unreadable item: try the rest */
+              }
+            }
+          }
+          if (!svgText && types.includes('image/svg+xml')) {
+            try {
+              svgText = await (await item.getType('image/svg+xml')).text();
+            } catch {
+              /* unreadable item: try the rest */
+            }
+          }
+          if (imageBlob && svgText) break;
+        }
+      } catch {
+        /* denied or unsupported (Tauri/WebKitGTK/Firefox): fall back below */
+      }
+    }
+  }
+  if ((await pasteClipboardContent({ text, imageBlob, svgText }, at)) !== 'none') return;
+  const frag = clipboard;
   if (!frag || !frag.items.length) return;
   pasteFragment(frag, at);
 }
