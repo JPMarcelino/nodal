@@ -341,6 +341,13 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
           )}
         </g>
       );
+    case 'image':
+      return (
+        <g className="shape" data-id={s.id}>
+          <image href={s.src} x={Math.min(s.x, s.x + s.w)} y={Math.min(s.y, s.y + s.h)} width={Math.abs(s.w)} height={Math.abs(s.h)} preserveAspectRatio="none" />
+          {s.strokeWidth > 0 && <rect x={s.x} y={s.y} width={s.w} height={s.h} fill="none" stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} />}
+        </g>
+      );
     case 'line':
     case 'arrow': {
       const { ux, uy, size, endTip, startTip } = shapeHeads(s);

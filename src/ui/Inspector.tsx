@@ -460,42 +460,45 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
     );
   const isText = first.kind === 'text';
   const isLine = first.kind === 'line' || first.kind === 'arrow';
-  const title = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text' }[first.kind];
+  const isImage = first.kind === 'image';
+  const title = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text', image: 'Image' }[first.kind];
   return (
     <>
       <div className="panel-title">{shapes.length > 1 ? `${shapes.length} shapes` : title}</div>
-      <Section title={isText ? 'Text' : 'Label'}>
-        <Field label={isText ? 'Content' : 'Title'} wide>
-          <TextInput value={first.text ?? ''} multiline={isText} focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder={isText ? '' : 'Optional title'} />
-        </Field>
-        <Field label="Font size">
-          <NumberInput value={first.fontSize ?? (isText ? 16 : 13)} min={6} max={120} suffix="px" onChange={(v) => upd((s) => (s.fontSize = v))} />
-        </Field>
-        <Field label="Bold">
-          <Toggle checked={first.bold ?? !isText} onChange={(v) => upd((s) => (s.bold = v))} />
-        </Field>
-        <Field label="Text colour">
-          <ColorInput value={first.textColor ?? ''} allowNone onChange={(v) => upd((s) => (s.textColor = v || undefined))} />
-        </Field>
-        {!isText && first.kind !== 'line' && first.kind !== 'arrow' && (
-          <Field label="Position" hint="Select the shape, then drag its title — inside it or just outside the edge">
-            <button
-              className="secondary-btn"
-              disabled={!first.textDx && !first.textDy}
-              onClick={() =>
-                upd((s) => {
-                  delete s.textDx;
-                  delete s.textDy;
-                })
-              }
-            >
-              Reset
-            </button>
+      {!isImage && (
+        <Section title={isText ? 'Text' : 'Label'}>
+          <Field label={isText ? 'Content' : 'Title'} wide>
+            <TextInput value={first.text ?? ''} multiline={isText} focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder={isText ? '' : 'Optional title'} />
           </Field>
-        )}
-      </Section>
+          <Field label="Font size">
+            <NumberInput value={first.fontSize ?? (isText ? 16 : 13)} min={6} max={120} suffix="px" onChange={(v) => upd((s) => (s.fontSize = v))} />
+          </Field>
+          <Field label="Bold">
+            <Toggle checked={first.bold ?? !isText} onChange={(v) => upd((s) => (s.bold = v))} />
+          </Field>
+          <Field label="Text colour">
+            <ColorInput value={first.textColor ?? ''} allowNone onChange={(v) => upd((s) => (s.textColor = v || undefined))} />
+          </Field>
+          {!isText && first.kind !== 'line' && first.kind !== 'arrow' && (
+            <Field label="Position" hint="Select the shape, then drag its title — inside it or just outside the edge">
+              <button
+                className="secondary-btn"
+                disabled={!first.textDx && !first.textDy}
+                onClick={() =>
+                  upd((s) => {
+                    delete s.textDx;
+                    delete s.textDy;
+                  })
+                }
+              >
+                Reset
+              </button>
+            </Field>
+          )}
+        </Section>
+      )}
       {!isText && (
-        <Section title="Stroke">
+        <Section title={isImage ? 'Border' : 'Stroke'}>
           <Field label="Colour">
             <ColorInput value={first.stroke} onChange={(v) => upd((s) => (s.stroke = v))} />
           </Field>
@@ -525,7 +528,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
           )}
         </Section>
       )}
-      {!isLine && (
+      {!isLine && !isImage && (
         <Section title="Fill">
           <Field label="Colour">
             <ColorInput value={first.fill === 'none' ? '' : first.fill} allowNone onChange={(v) => upd((s) => ((s.fill = v || 'none'), v && s.fillOpacity === 0 && (s.fillOpacity = 0.15)))} />

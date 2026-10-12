@@ -41,4 +41,31 @@ describe('importFileText', () => {
     await importFileText('notes.txt', 'hello');
     expect(S().toasts[S().toasts.length - 1]?.kind).toBe('error');
   });
+
+  it('places pictures as image shapes stacked around the drop point, in one undo step', async () => {
+    const { S, set, undo } = await import('../store/store');
+    const { createDoc } = await import('../model/doc');
+    const { insertPictures, isPdf, isRaster } = await import('../io/imageImport');
+
+    expect(isPdf(new File([], 'scan.PDF'))).toBe(true);
+    expect(isRaster(new File([], 'photo.jpg'))).toBe(true);
+    expect(isRaster(new File([], 'logo.svg', { type: 'image/svg+xml' }))).toBe(false);
+
+    set({ doc: createDoc(), past: [], selection: [] });
+    const ids = insertPictures(
+      [
+        { src: 'data:image/png;base64,AA==', w: 200, h: 100 },
+        { src: 'data:image/png;base64,AA==', w: 200, h: 100 },
+      ],
+      { x: 0, y: 0 },
+    );
+    const [a, b] = ids.map((id) => S().doc.items[id]);
+    expect(a.type === 'shape' && a.kind === 'image' && a.src).toBeTruthy();
+    // second page sits below the first, both roughly centred on the point
+    expect(a.type === 'shape' && b.type === 'shape' && b.y > a.y + a.h).toBe(true);
+    expect(a.type === 'shape' && Math.abs(a.x + a.w / 2) <= S().doc.settings.grid).toBe(true);
+    expect(S().selection).toEqual(ids);
+    undo();
+    expect(Object.keys(S().doc.items)).toHaveLength(0);
+  });
 });
