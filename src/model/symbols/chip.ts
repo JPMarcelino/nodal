@@ -29,8 +29,26 @@ export function buildChip(spec: ChipSpec): { w: number; h: number; prims: Prim[]
   const nameW = (arr: string[]) => Math.max(0, ...arr.map((s) => display(s).length));
   const textW = (nameW(L) + nameW(R)) * 6 + (spec.title ? Math.max(0, spec.title.length * 6.5 - 10) : 0) + 24;
   const r20 = (v: number) => Math.ceil(v / 20) * 20;
-  const bodyW = Math.max(spec.minW ?? 60, r20(textW), (cols + 1) * 20);
   const bodyH = Math.max(40, (rows + 1) * 20);
+  // widen the body wherever a row's names would run into each other or into the title beside them
+  const nameLen = (n: string | undefined) => (n ? (isClock(n) ? 9 : 4) + [...display(n)].filter((c) => c !== '\u0305').length * 5.6 : 0);
+  const titleW = spec.title ? spec.title.length * 6.3 : 0;
+  const titleRow = (bodyH / 2 + 4 - 20) / 20;
+  const gap = 3;
+  let rowW = 0;
+  for (let i = 0; i < rows; i++) {
+    const l = nameLen(L[i]);
+    const r = nameLen(R[i]);
+    let need = l + r + gap + 4;
+    if (titleW && Math.abs(i - titleRow) < 0.8) {
+      // the title is centred, or pushed to the free side when only one side has pins
+      if (L.length && !R.length) need = l + gap + titleW + 6;
+      else if (R.length && !L.length) need = r + gap + titleW + 6;
+      else need = 2 * (Math.max(l, r) + gap) + titleW;
+    }
+    rowW = Math.max(rowW, need);
+  }
+  const bodyW = Math.max(spec.minW ?? 60, r20(textW), r20(rowW), (cols + 1) * 20);
   const w = bodyW + (L.length ? lead : 0) + (R.length ? lead : 0);
   const h = bodyH + (T.length ? lead : 0) + (B.length ? lead : 0);
   const x0 = L.length ? lead : 0;

@@ -134,39 +134,39 @@ export const passive = [
     draw: 'L 0 20 20 20; RB 20 13 40 14; L 60 20 80 20; L 22 34 30 34 54 6; T 58 38 9 s +t°',
     ports: '1:0,20 2:80,20',
   }),
-  sym('capacitor-bipolar', 'Capacitor (bipolar)', C, {
-    w: 40, h: 40, prefix: 'C', value: '10µF', fields: 'Voltage rating=50V, Dielectric=Electrolytic, Package=0805', keywords: 'non-polarized electrolytic',
-    draw: 'L 0 20 16 20; W 3; E 20 20 4 14; E 24 20 4 14; W 2; L 24 20 40 20',
+  sym('capacitor-bipolar', 'Capacitor (bipolar electrolytic)', C, {
+    w: 40, h: 40, prefix: 'C', value: '10µF', fields: 'Voltage rating=50V, Dielectric=Electrolytic, Package=Radial', keywords: 'non-polarized non-polarised bipolar np electrolytic audio',
+    draw: 'L 0 20 15.5 20; W 3; P M 12 6 Q 19 20 12 34; P M 28 6 Q 21 20 28 34; W 2; L 24.5 20 40 20',
     ports: '1:0,20 2:40,20',
   }),
-  sym('inductor-coupled', 'Coupled inductor', C, {
-    w: 100, h: 60, prefix: 'L', value: 'k=0.99', fields: 'Coupling coefficient=0.99', keywords: 'transformer coupled coil mutual inductance',
-    draw: 'L 0 20 8 20; A 13 20 5 180 360; A 23 20 5 180 360; L 28 20 38 20; L 38 40 8 40; L 38 40 38 40; D 48 20 48 40; L 48 20 56 20; A 61 20 5 180 360; A 71 20 5 180 360; L 76 20 100 20; L 48 40 56 40; A 61 40 5 180 360; A 71 40 5 180 360; L 76 40 100 40; C 20 30 2; C 80 30 2',
-    ports: 'P1:0,20 P2:0,40 S1:100,20 S2:100,40',
+  sym('inductor-coupled', 'Coupled inductors', C, {
+    w: 80, h: 60, prefix: 'L', value: 'k=0.99', fields: 'Inductance=10µH, Coupling coefficient=0.99', keywords: 'coupled inductor mutual inductance common mode choke transformer',
+    draw: 'L 0 20 20 20; A 25 20 5 180 360; A 35 20 5 180 360; A 45 20 5 180 360; A 55 20 5 180 360; L 60 20 80 20; L 0 40 20 40; A 25 40 5 0 180; A 35 40 5 0 180; A 45 40 5 0 180; A 55 40 5 0 180; L 60 40 80 40; L 20 28 60 28; L 20 32 60 32; CF 14 13 2; CF 14 47 2',
+    ports: '1:0,20 2:80,20 3:0,40 4:80,40',
   }),
   sym('transformer-dual', 'Transformer (dual secondary)', C, {
-    w: 100, h: 80, prefix: 'T', value: '1:1:1', fields: 'Ratio=1:1:1, Power=10VA', keywords: 'xfmr dual secondary two windings',
-    draw: 'L 0 10 15 10 15 26; A 15 31 5 270 450; A 15 41 5 270 450; L 15 46 15 70 0 70; L 55 10 70 10; L 55 26 55 10; A 55 31 5 90 270; A 55 41 5 90 270; L 55 46 55 70 70 70; L 55 80 70 80; A 55 75 5 90 270; L 55 70 55 80; L 70 80 100 80; L 32 20 32 70; L 36 20 36 70; L 78 10 100 10; L 78 70 100 70',
-    ports: 'P1:0,10 P2:0,70 S1:100,10 S2:100,70 S3:100,20 S4:100,60',
+    w: 60, h: 120, prefix: 'T', value: '230V:12V+12V', fields: 'Ratio=1:1:1, Power=10VA', keywords: 'xfmr dual secondary two windings split mains',
+    draw: 'L 0 0 20 0 20 20; A 20 25 5 270 450; A 20 35 5 270 450; A 20 45 5 270 450; A 20 55 5 270 450; A 20 65 5 270 450; A 20 75 5 270 450; A 20 85 5 270 450; A 20 95 5 270 450; L 20 100 20 120 0 120; L 60 0 40 0 40 10; A 40 15 5 90 270; A 40 25 5 90 270; A 40 35 5 90 270; L 40 40 40 50 60 50; L 60 70 40 70 40 80; A 40 85 5 90 270; A 40 95 5 90 270; A 40 105 5 90 270; L 40 110 40 120 60 120; L 28 18 28 102; L 32 18 32 102',
+    ports: 'P1:0,0 P2:0,120 S1:60,0 S2:60,50 S3:60,70 S4:60,120',
   }),
   sym('resistor-network-4', 'Resistor network (4×)', C, {
-    w: 80, h: 80, prefix: 'RN', value: '4×10kΩ', fields: 'Configuration=isolated, Tolerance=±5%', keywords: 'sip dip array resistor pack',
-    draw: 'D 8 2 72 2 72 78 8 78 8 2; L 0 10 8 10; L 0 30 8 30; L 0 50 8 50; L 0 70 8 70; L 72 10 80 10; L 72 30 80 30; L 72 50 80 50; L 72 70 80 70; RB 15 14 20 12; RB 15 34 20 12; RB 15 54 20 12; RB 15 74 20 12; L 8 10 15 10; L 35 10 72 10; L 8 30 15 30; L 35 30 72 30; L 8 50 15 50; L 35 50 72 50; L 8 70 15 70; L 35 70 72 70; T 45 77 8 m 1; T 45 57 8 m 2; T 45 37 8 m 3; T 45 17 8 m 4; T 45 72 8 m 5; T 45 52 8 m 6; T 45 32 8 m 7; T 45 12 8 m 8',
-    ports: '1:0,10 2:80,10 3:0,30 4:80,30 5:0,50 6:80,50 7:0,70 8:80,70',
+    w: 80, h: 80, prefix: 'RN', value: '4×10kΩ', fields: 'Tolerance=±5%, Package=SIP-8', keywords: 'array pack isolated resistor network',
+    draw: 'W 1; D 14 2 66 2 66 78 14 78 14 2; W 2; L 0 10 24 10; RB 24 5 32 10; L 56 10 80 10; L 0 30 24 30; RB 24 25 32 10; L 56 30 80 30; L 0 50 24 50; RB 24 45 32 10; L 56 50 80 50; L 0 70 24 70; RB 24 65 32 10; L 56 70 80 70; T 7 7 7 m 1; T 7 27 7 m 2; T 7 47 7 m 3; T 7 67 7 m 4; T 73 7 7 m 8; T 73 27 7 m 7; T 73 47 7 m 6; T 73 67 7 m 5',
+    ports: '1:0,10 8:80,10 2:0,30 7:80,30 3:0,50 6:80,50 4:0,70 5:80,70',
   }),
-  sym('resistor-shunt', 'Shunt resistor (4-terminal)', C, {
-    w: 80, h: 60, prefix: 'R', value: '10mΩ', fields: 'Power rating=1W, Tolerance=±1%', keywords: 'kelvin current sense shunt 4-terminal',
-    draw: 'L 0 20 20 20; RB 20 10 40 20; L 60 20 80 20; L 0 40 20 40; L 60 40 80 40; L 22 4 24 6; L 24 6 58 6; L 58 6 60 4; L 22 56 24 54; L 24 54 58 54; L 58 54 60 56; T 20 5 8 m S+; T 20 55 8 m S−; T 64 20 8 m I+; T 64 40 8 m I−',
-    ports: 'Ip:0,20 In:80,20 Sp:0,40 Sn:80,40',
+  sym('resistor-shunt', 'Current-sense resistor (4-terminal)', C, {
+    w: 80, h: 40, prefix: 'R', value: '10mΩ', fields: 'Power rating=1W, Tolerance=±1%', keywords: 'kelvin current sense shunt 4-terminal four wire',
+    draw: 'L 0 20 16 20; RB 16 14 48 12; L 64 20 80 20; L 20 0 20 14; L 60 0 60 14',
+    ports: 'I+:0,20 I-:80,20 S+:20,0 S-:60,0',
   }),
   sym('spark-gap', 'Spark gap', C, {
-    w: 60, h: 40, prefix: 'E', value: '', keywords: 'gap overvoltage protection discharge',
-    draw: 'L 0 20 18 20; GF 18 12 18 28 28 20; GF 32 20 42 12 42 28; L 42 20 60 20; L 22 20 38 20',
+    w: 60, h: 40, prefix: 'E', value: '', keywords: 'spark gap arrester overvoltage protection discharge',
+    draw: 'L 0 20 18 20; GF 18 14 18 26 27 20; GF 42 14 42 26 33 20; L 42 20 60 20',
     ports: '1:0,20 2:60,20',
   }),
   sym('gdt', 'Gas discharge tube', C, {
-    w: 60, h: 40, prefix: 'E', value: '', keywords: 'gdt esd surge protection overvoltage',
-    draw: 'L 0 20 20 20; CB 30 20 10; L 20 18 40 18; L 20 22 40 22; L 40 20 60 20; CF 30 20 2',
+    w: 60, h: 40, prefix: 'E', value: '90V', keywords: 'gdt gas discharge arrester surge protection overvoltage',
+    draw: 'CB 30 20 14; L 0 20 18 20; GF 18 15 18 25 26 20; GF 42 15 42 25 34 20; L 42 20 60 20; CF 30 29 1.8',
     ports: '1:0,20 2:60,20',
   }),
 ];

@@ -69,13 +69,13 @@ export const power = [
     ports: '+:20,0 -:20,80',
   }),
   sym('vccs', 'Voltage-controlled current source', C, {
-    w: 40, h: 80, prefix: 'G', value: 'g·V', keywords: 'controlled vccs voltage diamond arrow',
-    draw: 'L 20 0 20 20; GB 20 20 40 40 20 60 0 40; L 20 60 20 80; L 14 32 26 32; L 20 26 20 38; L 20 52 20 30; GF 14 32 20 24 26 32',
-    ports: '+:20,0 -:20,80',
+    w: 80, h: 80, prefix: 'G', value: 'g=1m', keywords: 'controlled vccs transconductance dependent diamond',
+    draw: 'L 0 20 20 20; L 0 60 20 60; T 24 24 10 s +; T 24 64 10 s −; L 60 0 60 20; GB 60 20 80 40 60 60 40 40; L 60 60 60 80; L 60 52 60 30; GF 54 32 60 24 66 32',
+    ports: '+:60,0 -:60,80 C+:0,20 C-:0,60',
   }),
   sym('ccvs', 'Current-controlled voltage source', C, {
-    w: 40, h: 80, prefix: 'H', value: 'r·I', keywords: 'controlled ccvs current diamond',
-    draw: 'L 20 0 20 20; GB 20 20 40 40 20 60 0 40; L 20 60 20 80; L 14 32 26 32; L 20 26 20 38; L 20 32 20 32; L 14 50 26 50',
+    w: 40, h: 80, prefix: 'H', value: 'r=1k', keywords: 'controlled ccvs transresistance dependent diamond',
+    draw: 'L 20 0 20 20; GB 20 20 40 40 20 60 0 40; L 20 60 20 80; L 14 32 26 32; L 20 26 20 38; L 14 50 26 50',
     ports: '+:20,0 -:20,80',
   }),
   sym('cccs', 'Dependent current source', C, {
