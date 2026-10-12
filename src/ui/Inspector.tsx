@@ -28,7 +28,7 @@ import { computeNets, netOfWire } from '../model/netlist';
 import { measureRich } from '../model/richText';
 import { DNP, PART_FIELDS, customFieldKeys, hasPartFields, isDnp } from '../model/partFields';
 import { getSymbol } from '../model/registry';
-import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
+import type { CircuitDoc, ComponentItem, LabelSide, Dash, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { docBounds } from '../model/doc';
 import * as A from '../store/actions';
@@ -443,6 +443,11 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
             <TextInput value={c.props[f.key] ?? ''} placeholder={f.default} onChange={(v) => upd((x) => (x.props[f.key] = v))} />
           </Field>
         ))}
+        {def.valueIsLabel && (
+          <Field label="Show name" hint="Hide the name on the canvas; the label still joins the net">
+            <Toggle checked={c.showValue} onChange={(v) => upd((x) => (x.showValue = v))} />
+          </Field>
+        )}
         {!def.valueIsLabel && (
           <Field label="Show labels">
             <span className="row-gap">
@@ -519,6 +524,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
   const ids = wires.map((w) => w.id);
   const upd = (p: Partial<WireStyle>) => mutate((d) => ids.forEach((id) => ((d.items[id] as WireItem).style = { ...(d.items[id] as WireItem).style, ...p })));
   const net = useMemo(() => netOfWire(computeNets(doc), first.id), [doc, first.id]);
+  const updLabel = (fn: (w: WireItem) => void) => mutate((d) => fn(d.items[first.id] as WireItem));
   return (
     <>
       <div className="panel-title">
@@ -571,6 +577,40 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           <Field label="Text">
             <TextInput value={first.label ?? ''} focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => mutate((d) => void ((d.items[first.id] as WireItem).label = v || undefined))} />
           </Field>
+          {first.label && (
+            <>
+              <Field label="Show on canvas" hint="A hidden label still names the net in Find and in the lists">
+                <Toggle checked={!first.labelHidden} onChange={(v) => updLabel((x) => (v ? delete x.labelHidden : (x.labelHidden = true)))} />
+              </Field>
+              {!first.labelHidden && (
+                <>
+                  <Field label="Side">
+                    <Segmented
+                      value={first.labelSide ?? 'auto'}
+                      options={[
+                        { value: 'auto', label: 'Auto', title: 'Above horizontal runs, right of vertical ones' },
+                        { value: 'above', label: '↑', title: 'Above' },
+                        { value: 'below', label: '↓', title: 'Below' },
+                        { value: 'left', label: '←', title: 'Left' },
+                        { value: 'right', label: '→', title: 'Right' },
+                      ]}
+                      onChange={(v) => updLabel((x) => (v === 'auto' ? delete x.labelSide : (x.labelSide = v as LabelSide)))}
+                    />
+                  </Field>
+                  <Field label="Along wire" hint="Or drag the label on the canvas — onto any wire of the net, on either side">
+                    <span className="row-gap">
+                      <Slider value={first.labelAt ?? 0.5} min={0} max={1} step={0.01} onChange={(v) => updLabel((x) => (x.labelAt = v))} />
+                      {first.labelAt !== undefined && (
+                        <button className="link-btn" title="Back to the middle of the longest segment" onClick={() => updLabel((x) => delete x.labelAt)}>
+                          Reset
+                        </button>
+                      )}
+                    </span>
+                  </Field>
+                </>
+              )}
+            </>
+          )}
         </Section>
       )}
       {net && (
