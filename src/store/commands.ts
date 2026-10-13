@@ -4,6 +4,9 @@ import { exportLibraryFile, exportTemplateFile, importLibraryFile, importTemplat
 import { selectionToDrawing } from '../model/fromSelection';
 import { computeNets, netOfWire } from '../model/netlist';
 import * as A from './actions';
+import { clearExplainOverlays } from './explain';
+import { startPresenting } from '../ui/Presenter';
+import { renumberCallouts } from '../ui/ExplainDock';
 import { S, redo, set, setPrefs, toast, undo, mutate } from './store';
 
 export interface Command {
@@ -86,6 +89,18 @@ export const COMMANDS: Command[] = [
   { id: 'tool.arrow', label: 'Arrow', category: 'Tools', keys: ['A'], run: () => A.setTool('arrow') },
   { id: 'tool.text', label: 'Text', category: 'Tools', keys: ['T'], run: () => A.setTool('text') },
   { id: 'tool.pan', label: 'Hand (pan) tool', category: 'Tools', keys: ['H'], run: () => A.setTool('pan') },
+  // Explain: talk a circuit through
+  { id: 'explain.toggle', label: 'Explain mode (draw, point, trace, spotlight)', category: 'Tools', keys: [], run: A.toggleExplain },
+  { id: 'tool.pen', label: 'Pen (free drawing; hold still to snap into a shape)', category: 'Tools', keys: ['D'], run: () => A.setTool('pen') },
+  { id: 'tool.highlighter', label: 'Highlighter', category: 'Tools', keys: ['I'], run: () => A.setTool('highlighter') },
+  { id: 'tool.laser', label: 'Laser pointer', category: 'Tools', keys: ['K'], run: () => A.setTool('laser') },
+  { id: 'tool.eraser', label: 'Eraser (ink and callouts)', category: 'Tools', keys: ['U'], run: () => A.setTool('eraser') },
+  { id: 'tool.trace', label: 'Trace net (light a net and watch the signal flow)', category: 'Tools', keys: ['Q'], run: () => A.setTool('trace') },
+  { id: 'tool.spotlight', label: 'Spotlight (dim everything else)', category: 'Tools', keys: ['J'], run: () => A.setTool('spotlight') },
+  { id: 'tool.callout', label: 'Numbered callout (a step of the walkthrough)', category: 'Tools', keys: ['C'], run: () => A.setTool('callout') },
+  { id: 'explain.present', label: 'Present walkthrough (step through the callouts)', category: 'View', keys: ['F5', 'Shift+P'], run: () => startPresenting() },
+  { id: 'explain.clear', label: 'Turn off traces and spotlight', category: 'View', keys: [], run: () => void clearExplainOverlays() },
+  { id: 'explain.renumber', label: 'Renumber callouts 1, 2, 3…', category: 'Edit', keys: [], run: () => renumberCallouts() },
   { id: 'tool.placeLast', label: 'Place last used symbol', category: 'Tools', keys: ['P'], run: () => S().recent[0] && A.startPlacing(S().recent[0]) },
   { id: 'tool.netLabel', label: 'Place net label', category: 'Tools', keys: ['Shift+L'], run: () => A.startPlacing('net-label') },
   { id: 'tool.ground', label: 'Place ground', category: 'Tools', keys: ['Shift+G'], run: () => A.startPlacing('gnd') },
@@ -236,6 +251,7 @@ export function cancel() {
   if (s.contextMenu) return set({ contextMenu: null });
   if (s.placing) return set({ placing: null });
   if (s.highlight) return set({ highlight: null });
+  if (clearExplainOverlays()) return;
   if (s.wirePart) return set({ wirePart: null });
   if (s.selection.length) return set({ selection: [] });
   if (A.exitGroup()) return;

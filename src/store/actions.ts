@@ -22,6 +22,7 @@ import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool } from '../model/ty
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { viewCentre } from '../io/importFiles';
 import { S, mutate, pushRecent, select, set, toast } from './store';
+import { X, isExplainTool, setX } from './explain';
 
 const sel = () => new Set(S().selection);
 const editable = () => S().selection.filter((id) => S().doc.items[id] && !S().doc.items[id].locked);
@@ -32,6 +33,12 @@ const editable = () => S().selection.filter((id) => S().doc.items[id] && !S().do
 
 export function setTool(tool: Tool) {
   set({ tool, altMove: false, placing: null, contextMenu: null });
+  if (isExplainTool(tool)) setX({ lastTool: tool });
+}
+
+/** Explain mode on/off: back to the last explain tool, or back to editing. */
+export function toggleExplain() {
+  setTool(isExplainTool(S().tool) ? 'select' : X().lastTool);
 }
 
 /** Select tool in alt-move mode: only the selection moves, connections to it are left behind. */

@@ -1,6 +1,7 @@
 import { current, isDraft } from 'immer';
 import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, nextRef, refersTo, uid } from './doc';
 import { eq, projectOnSegment, rotate, simplify, snap } from './geometry';
+import { inkPoints, packInk } from './ink';
 import { getSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, WireItem } from './types';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
@@ -439,6 +440,18 @@ function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
       } else if (b.kind === 'text') {
         it.x = p1.x;
         it.y = p1.y;
+      } else if (b.kind === 'callout') {
+        it.x = p1.x;
+        it.y = p1.y;
+        // a loose leader end travels with the note; one pinned to a part stays on the part
+        if (b.anchor && it.anchor && !(b.anchor.id && base.items[b.anchor.id])) {
+          const a = map({ x: b.anchor.x, y: b.anchor.y });
+          it.anchor.x = a.x;
+          it.anchor.y = a.y;
+        }
+      } else if (b.kind === 'ink') {
+        // map every point, so rotating or flipping a drawing turns the drawing, not just its box
+        Object.assign(it, packInk(inkPoints(b).map((q) => ({ ...map(q), p: q.p }))));
       } else {
         it.x = Math.min(p1.x, p2.x);
         it.y = Math.min(p1.y, p2.y);

@@ -72,6 +72,19 @@ You can also share without a live session. Open **File → Share & collaborate�
 - Stroke, fill, opacity, corner radius and dash settings; z-ordering within each layer
 - Locking a zone lets clicks pass through it
 
+### Explaining a circuit
+Click the **Explain** button at the end of the tool rail (or press a key below) and a dock of tools for talking a circuit through appears.
+- **Pen** (**D**): smooth, tapered, pressure-sensitive ink. **Hold the pen still** at the end of a stroke and the scribble snaps into a clean line, circle or box; **Shift** draws straight. **1**–**7** pick a colour, **[** / **]** change the size. Turn on **vanishing ink** to have strokes fade away after a few seconds.
+- **Highlighter** (**I**): wide, translucent marker that goes *under* the circuit, so wires and parts stay crisp.
+- **Laser pointer** (**K**): a glowing trail that fades by itself. In a live session everyone sees your laser.
+- **Eraser** (**U**): swipe over ink or callouts.
+- **Trace net** (**Q**): click a wire or pin and its whole net lights up, spreading from the point you clicked along the copper, then current dots flow through it. Click a part to trace every net it touches, each in its own colour. A panel lists each lit net with the pins on it.
+- **Spotlight** (**J**): click parts or wires (a wire lights its whole net) or drag an area. Everything else is dimmed.
+- **Numbered callouts** (**C**): click a part, pin or wire to pin a numbered note to it (drag to place the bubble). The leader stays attached when the part moves. Notes support `$LaTeX$`.
+- **Present** (**F5** / **Shift+P**): full-screen walkthrough of your callouts in order. The camera glides to each step, the part (or the whole net, with the signal flowing) is spotlit, and the note becomes the caption. Use **→** / **Space** and **←**. The laser is on by default, and the pen draws vanishing ink so the drawing stays clean.
+
+Ink and callouts are saved with the circuit and included in exports. Traces and the spotlight are temporary; **Esc** clears them.
+
 ### Checking the circuit
 - **Check tab** (**Ctrl+Alt+R**): a live electrical rules check. It lists unconnected pins (open power pins are errors), duplicate reference designators, supply rails shorted together, net labels used only once, nets that reach a single pin, loose wire ends, wire ends touching something without connecting, no-connect flags on wired pins, and parts stacked on the same spot. Markers show each problem on the canvas; click one to select and zoom to it. Put a **no-connect flag** (**Shift+X**) on pins you leave open on purpose.
 - **Find** (**Ctrl+F**): jump to any part (by reference, value or any field), net, label or text.

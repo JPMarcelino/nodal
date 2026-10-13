@@ -1,3 +1,4 @@
+import { calloutLayout } from './callout';
 import { componentBounds, polylineBounds, unionRects } from './geometry';
 import { measureRich } from './richText';
 import { getSymbol } from './registry';
@@ -76,6 +77,11 @@ export function itemBounds(doc: CircuitDoc, it: Item): Rect | null {
     case 'shape':
       // free text is sized by its content, so the outline always follows the text
       if (it.kind === 'text') return { x: it.x, y: it.y, ...measureRich(it.text ?? '', it.fontSize ?? 16, it.bold ? 700 : 400) };
+      if (it.kind === 'callout') return calloutLayout(it).box;
+      if (it.kind === 'ink') {
+        const pad = it.strokeWidth / 2;
+        return { x: Math.min(it.x, it.x + it.w) - pad, y: Math.min(it.y, it.y + it.h) - pad, w: Math.abs(it.w) + 2 * pad, h: Math.abs(it.h) + 2 * pad };
+      }
       return { x: Math.min(it.x, it.x + it.w), y: Math.min(it.y, it.y + it.h), w: Math.abs(it.w), h: Math.abs(it.h) };
     case 'wire': {
       const pts = wirePolyline(doc, it);
@@ -123,6 +129,8 @@ export const SHAPE_DEFAULTS: Record<ShapeKind, Partial<ShapeItem>> = {
   line: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'none', layer: 'above' },
   arrow: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'open', layer: 'above' },
   image: { stroke: '#000000', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
+  ink: { stroke: '#000000', strokeWidth: 3, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above' },
+  callout: { stroke: '#f03e3e', strokeWidth: 1.5, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above', fontSize: 14, text: '' },
   text: { stroke: 'none', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above', fontSize: 16, text: 'Text' },
 };
 

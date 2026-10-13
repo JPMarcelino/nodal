@@ -14,6 +14,9 @@ import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
+import { ExplainLayer } from './ExplainLayer';
+import { inkHit } from '../model/ink';
+import { setX } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
@@ -327,7 +330,8 @@ export function Canvas() {
         const r = itemBounds(d, s)!;
         if (hasMovableTitle(s) && pointInRect(p, shapeTitle(s).box, 3)) return true;
         if (s.kind === 'line' || s.kind === 'arrow') return projectOnSegment(p, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }).d < t + s.strokeWidth;
-        if (s.kind === 'text' || s.kind === 'image') return pointInRect(p, r, 4);
+        if (s.kind === 'text' || s.kind === 'image' || s.kind === 'callout') return pointInRect(p, r, 4);
+        if (s.kind === 'ink') return inkHit(s, p, t);
         const inside = pointInRect(p, r, t);
         if (!inside) return false;
         if (s.fillOpacity > 0) return true;
@@ -394,7 +398,7 @@ export function Canvas() {
         { h: 'p1', p: { x: s.x, y: s.y } },
         { h: 'p2', p: { x: s.x + s.w, y: s.y + s.h } },
       ];
-    if (s.kind === 'text') return [];
+    if (s.kind === 'text' || s.kind === 'callout') return [];
     const { x, y, w, h } = s;
     return [
       { h: 'nw', p: { x, y } },
@@ -817,6 +821,10 @@ export function Canvas() {
     }
     if (it.type === 'shape' && (it.kind === 'text' || it.kind === 'rect' || it.kind === 'zone' || it.kind === 'ellipse') && !it.locked) {
       setEditingText(id);
+      return;
+    }
+    if (it.type === 'shape' && it.kind === 'callout' && !it.locked) {
+      setX({ editing: id });
       return;
     }
     if (it.type === 'component' || it.type === 'wire' || it.type === 'shape') {
@@ -1457,6 +1465,7 @@ export function Canvas() {
           <RemotePresence doc={doc} polys={data.polys} z={z} />
         </g>
       </svg>
+      <ExplainLayer data={data} wrapRef={wrapRef} />
       <FollowFrame />
       {scope && (
         <div className="scope-banner">
