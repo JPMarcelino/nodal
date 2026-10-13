@@ -225,6 +225,8 @@ export interface DocSettings {
   titleBlock: boolean;
   author: string;
   revision: string;
+  /** Keys of rule-check findings the user chose to ignore (see ErcIssue.key). */
+  ercIgnored?: string[];
   /** Frame size and title block fields; used while `titleBlock` is on. */
   sheet?: SheetSettings;
 }
