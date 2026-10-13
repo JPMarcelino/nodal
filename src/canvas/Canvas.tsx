@@ -513,29 +513,6 @@ export function Canvas() {
     return newId !== null;
   };
 
-  /**
-   * Whether the wire being drawn has reached a point that should end it:
-   * another wire's end or bend, a junction, a pin that already has a wire,
-   * or the drawn wire's own start / earlier bends.
-   */
-  const reachesEnd = (g: Extract<Gesture, { kind: 'wire' }>, cur: Target): boolean => {
-    const last = g.pts.length ? g.pts[g.pts.length - 1] : g.start.pt;
-    if (eq(cur.pt, last)) return false;
-    // back at the start: closes a loop once there is more than one leg
-    if (eq(cur.pt, g.start.pt)) return g.pts.length >= 2;
-    switch (cur.kind) {
-      case 'wireEnd':
-      case 'junction':
-        return true;
-      case 'port':
-        return (data.portDegree.get(`${cur.comp}:${cur.port}`) ?? 0) > 0;
-      case 'wire':
-        return (data.polys.get(cur.wire) ?? []).some((q) => eq(q, cur.pt));
-      case 'grid':
-        return g.pts.slice(0, -1).some((q) => eq(q, cur.pt));
-    }
-  };
-
   /** After a click adds vertices, the next leg should turn 90°. */
   const nextHFirst = (pts: Point[]) => {
     if (pts.length < 2) return true;
@@ -878,12 +855,6 @@ export function Canvas() {
         const cur = findTarget(w);
         // only a held button counts as dragging; plain mouse moves in click-to-click mode don't
         const dragging = g.dragging || (!!(e.buttons & 1) && dist(g.downClient, { x: e.clientX, y: e.clientY }) > 5);
-        // click-to-click mode (no button held): reaching a connection point ends the wire
-        if (S().prefs.autoFinishWire && !(e.buttons & 1) && reachesEnd(g, cur)) {
-          commitWire(g, cur);
-          setGesture(null);
-          break;
-        }
         setGesture({ ...g, cur, dragging });
         break;
       }

@@ -402,9 +402,6 @@ export function SettingsDialog() {
           <Field label="Unconnected pin markers">
             <Toggle checked={prefs.showPortMarkers} onChange={(showPortMarkers) => setPrefs({ showPortMarkers })} />
           </Field>
-          <Field label="Finish wire on reaching a wire end, junction or bend">
-            <Toggle checked={prefs.autoFinishWire} onChange={(autoFinishWire) => setPrefs({ autoFinishWire })} />
-          </Field>
           <Field label="Autosave (restores your work on restart)">
             <Toggle checked={prefs.autosave} onChange={(autosave) => setPrefs({ autosave })} />
           </Field>
