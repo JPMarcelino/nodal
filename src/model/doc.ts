@@ -61,7 +61,7 @@ export function normalizeDoc(raw: unknown): CircuitDoc {
     format: 'nodal',
     version: 1,
     name: d.name || 'Untitled circuit',
-    settings: { ...structuredClone(DEFAULT_SETTINGS), ...d.settings, wire: { ...DEFAULT_SETTINGS.wire, ...d.settings?.wire } },
+    settings: { ...structuredClone(DEFAULT_SETTINGS), ...d.settings, wire: { ...DEFAULT_SETTINGS.wire, ...d.settings?.wire }, ercIgnored: Array.isArray(d.settings?.ercIgnored) ? d.settings.ercIgnored : undefined },
     items: migrateItems(d.items ?? {}),
     groups: d.groups ?? {},
     symbols: d.symbols ?? {},
