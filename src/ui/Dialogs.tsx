@@ -614,9 +614,6 @@ export function AboutDialog() {
             return d ? <SymbolPreview key={id} def={d} size={36} /> : null;
           })}
         </div>
-        <p className="muted small">
-          Based on the MIT-licensed ngDiagram circuit editor template by Synergy Codes. Rewritten in React.
-        </p>
         <button className="primary-btn" onClick={close}>
           Close
         </button>

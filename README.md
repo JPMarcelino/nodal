@@ -164,7 +164,3 @@ sym('resistor', 'Resistor', 'Passive', {
 ```
 
 For box-style parts, `chip()` in `src/model/symbols/chip.ts` takes pin-name lists. A test checks that every symbol's pins land on the 10 px grid.
-
-## Credits
-
-Nodal began as a copy of the MIT-licensed [ngDiagram electric-circuit template](https://github.com/synergycodes/ng-diagram-electric-circuit) by Synergy Codes and was then rewritten in React.
