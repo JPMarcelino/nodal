@@ -3,6 +3,7 @@ import { isDesktop } from '../io/files';
 import { createDoc } from '../model/doc';
 import type { CircuitDoc, Point } from '../model/types';
 import * as A from '../store/actions';
+import { X, useExplain } from '../store/explain';
 import { S, applyExternal, pauseAutosave, replaceDoc, set as setApp, toast, useStore } from '../store/store';
 import { importRoomKey, newRoomKey, open, randomId, seal } from './crypto';
 import { SyncState, changedKeys, docFromEntries, writeEntries, type Entry } from './sync';
@@ -31,6 +32,8 @@ export interface Peer {
   cursor?: Point;
   selection: string[];
   view?: PeerView;
+  /** Laser pointer: 1 = laser tool on, 2 = button held (draws a trail). */
+  laser?: number;
 }
 
 export interface Me {
@@ -325,6 +328,7 @@ async function handle(msg: ServerMsg) {
         cursor: p.cursor,
         selection: Array.isArray(p.selection) ? p.selection : [],
         view: p.view,
+        laser: p.laser === 1 || p.laser === 2 ? p.laser : 0,
       };
       setC((s) => ({ peers: { ...s.peers, [msg.from]: peer } }));
       if (C().following === msg.from && peer.view) followView(peer.view);
@@ -381,7 +385,11 @@ useStore.subscribe((s, prev) => {
   if (!live() || applying) return;
   if (s.doc !== prev.doc && !flushTimer) flushTimer = setTimeout(flushLocal, 50);
   if (s.view !== prev.view && !followApplying && C().following) setC({ following: null });
-  if (s.cursor !== prev.cursor || s.selection !== prev.selection || s.view !== prev.view || s.canvasSize !== prev.canvasSize) schedulePresence();
+  if (s.cursor !== prev.cursor || s.selection !== prev.selection || s.view !== prev.view || s.canvasSize !== prev.canvasSize || s.tool !== prev.tool) schedulePresence();
+});
+
+useExplain.subscribe((s, prev) => {
+  if (live() && s.laserDown !== prev.laserDown) schedulePresence();
 });
 
 window.addEventListener('beforeunload', () => {
@@ -414,6 +422,7 @@ function sendPresence() {
     name,
     color,
     cursor,
+    laser: S().tool === 'laser' ? (X().laserDown ? 2 : 1) : 0,
     selection: selection.slice(0, 500),
     view: { cx: (canvasSize.w / 2 - view.x) / view.zoom, cy: (canvasSize.h / 2 - view.y) / view.zoom, zoom: view.zoom },
   });

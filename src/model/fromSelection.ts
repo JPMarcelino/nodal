@@ -4,6 +4,7 @@ import { toWorld } from './geometry';
 import { getSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Point, Prim, ShapeItem, SymbolDef } from './types';
 import { wirePolyline } from './wires';
+import { inkPoints } from './ink';
 
 /*
  * "Create symbol from selection": turns selected parts, wires, junctions and
@@ -170,6 +171,13 @@ function shapePrims(s: ShapeItem, at: (p: Point) => Point): Prim[] {
     }
     case 'text':
       return textLines(a.x, a.y, fs);
+    case 'ink':
+      return [{ t: 'line', pts: inkPoints(s).flatMap((p) => {
+        const q = at(p);
+        return [r(q.x), r(q.y)];
+      }), w: s.strokeWidth }];
+    case 'callout':
+      return textLines(a.x + 30, a.y, s.fontSize ?? 14);
   }
 }
 

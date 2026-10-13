@@ -11,6 +11,8 @@ import { RichText } from './RichText';
 import { hasMath } from '../model/latex';
 import { layoutRich, measureRich } from '../model/richText';
 import { SymbolBody } from './SymbolGraphic';
+import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
+import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
 
 export interface Palette {
   sym: string;
@@ -379,7 +381,7 @@ export function clampTitleOffset(s: ShapeItem, dx: number, dy: number): { dx: nu
   return { dx: dx + Math.min(Math.max(cx, x0), x1) - cx, dy: dy + Math.min(Math.max(cy, y0), y1) - cy };
 }
 
-export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem; palette: Palette }) {
+export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: ShapeItem; palette: Palette; ax?: number; ay?: number }) {
   const da = dashArray(s.dash, s.strokeWidth || 1);
   const ink = inkColor(s.stroke, palette);
   const stroke = s.strokeWidth > 0 ? ink : 'none';
@@ -430,6 +432,48 @@ export const ShapeView = memo(function ShapeView({ s, palette }: { s: ShapeItem;
         </g>
       );
     }
+    case 'ink': {
+      const pts = inkPoints(s);
+      if (s.highlighter) {
+        return (
+          <g className="shape ink" data-id={s.id}>
+            <path d={inkCenterPath(pts)} fill="none" stroke={ink} strokeOpacity={0.36} strokeWidth={s.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+          </g>
+        );
+      }
+      return (
+        <g className="shape ink" data-id={s.id}>
+          <path d={inkOutline(pts, s.strokeWidth)} fill={ink} />
+        </g>
+      );
+    }
+    case 'callout': {
+      const L = calloutLayout(s);
+      const fs = s.fontSize ?? 14;
+      const leader = ax !== undefined && ay !== undefined ? leaderPath({ x: L.badge.cx, y: L.badge.cy }, L.badge.r, { x: ax, y: ay }) : null;
+      return (
+        <g className="shape callout" data-id={s.id}>
+          {leader && <path d={leader} fill="none" stroke={ink} strokeWidth={s.strokeWidth || 1.5} strokeLinecap="round" />}
+          {ax !== undefined && ay !== undefined && (
+            <>
+              <circle cx={ax} cy={ay} r={7} fill={ink} fillOpacity={0.18} className="callout-ping" />
+              <circle cx={ax} cy={ay} r={3.2} fill={ink} stroke={palette.bg} strokeWidth={1.2} />
+            </>
+          )}
+          {L.card && (
+            <g className="callout-card">
+              <rect x={L.card.x} y={L.card.y} width={L.card.w} height={L.card.h} rx={8} fill={palette.bg} stroke={ink} strokeWidth={1.25} />
+              <rect x={L.card.x} y={L.card.y} width={L.card.w} height={L.card.h} rx={8} fill={ink} fillOpacity={0.07} />
+              <RichText text={(s.text ?? '').trim()} x={L.card.tx} y={L.card.ty} fontSize={fs} fill={s.textColor ? inkColor(s.textColor, palette) : palette.label} fontWeight={500} />
+            </g>
+          )}
+          <circle cx={L.badge.cx} cy={L.badge.cy} r={L.badge.r} fill={ink} />
+          <text x={L.badge.cx} y={L.badge.cy + 4.4} textAnchor="middle" fontSize={12.5} fontWeight={700} fill={s.stroke === '#000000' ? palette.bg : '#ffffff'}>
+            {s.step ?? ''}
+          </text>
+        </g>
+      );
+    }
     case 'text': {
       const fs = s.fontSize ?? 16;
       const lines = (s.text ?? '').split('\n');
@@ -461,6 +505,10 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
   const byOrder = (a: { id: string }, b: { id: string }) => order.get(a.id)! - order.get(b.id)!;
   const wires = items.filter((i): i is WireItem => i.type === 'wire').sort(byOrder);
   const comps = items.filter((i): i is ComponentItem => i.type === 'component').sort(byOrder);
+  const shapeEl = (s: ShapeItem) => {
+    const a = s.kind === 'callout' ? calloutAnchor(doc, s) : null;
+    return <ShapeView key={s.id} s={s} palette={palette} ax={a?.x} ay={a?.y} />;
+  };
   const dots: { x: number; y: number; color: string; key: string }[] = [];
   const js = doc.settings.junctionSize;
   for (const it of items) {
@@ -480,7 +528,7 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
   return (
     <>
       <SheetFrame doc={doc} ink={palette.sym} dim={palette.value} />
-      <g className="layer-below">{below.map((s) => <ShapeView key={s.id} s={s} palette={palette} />)}</g>
+      <g className="layer-below">{below.map(shapeEl)}</g>
       <g className="layer-wires">
         {wires.map((w) => (
           <WireView key={w.id} w={w} pts={data.polys.get(w.id) ?? []} hops={data.hops.get(w.id)} settings={doc.settings} palette={palette} dim={!!highlight && !highlight.has(w.id)} />
@@ -496,7 +544,7 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
           <circle key={d.key} cx={d.x} cy={d.y} r={js} fill={inkColor(d.color, palette)} />
         ))}
       </g>
-      <g className="layer-above">{above.map((s) => <ShapeView key={s.id} s={s} palette={palette} />)}</g>
+      <g className="layer-above">{above.map(shapeEl)}</g>
     </>
   );
 }

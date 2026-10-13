@@ -20,7 +20,9 @@ import {
   Sun,
   Type,
   Undo2,
+  Presentation,
 } from 'lucide-react';
+import { isExplainTool, useExplain } from '../store/explain';
 import { useEffect, useRef, useState } from 'react';
 import type { Tool } from '../model/types';
 import * as A from '../store/actions';
@@ -52,6 +54,10 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
     ],
   },
   { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.corners'] },
+  {
+    label: 'Explain',
+    items: ['explain.toggle', '-', 'tool.pen', 'tool.highlighter', 'tool.laser', 'tool.eraser', '-', 'tool.trace', 'tool.spotlight', 'tool.callout', '-', 'explain.present', 'explain.renumber', 'explain.clear'],
+  },
   {
     label: 'View',
     items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.grid', 'view.snap', 'view.minimap', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
@@ -213,6 +219,7 @@ export function ToolRail() {
   const tool = useStore((s) => s.tool);
   const placing = useStore((s) => s.placing);
   const altMove = useStore((s) => s.altMove);
+  const lastExplain = useExplain((s) => s.lastTool);
   return (
     <div className="tool-rail" onPointerDown={(e) => e.stopPropagation()}>
       {TOOLS.map((t, i) => (
@@ -228,6 +235,15 @@ export function ToolRail() {
           </button>
         </span>
       ))}
+      <span className="rail-sep" />
+      <button
+        className={isExplainTool(tool) ? 'tool-btn explain-btn active' : 'tool-btn explain-btn'}
+        onClick={A.toggleExplain}
+        title="Explain: draw, point, trace nets, spotlight, numbered steps (D · K · Q · J · C · F5)"
+      >
+        <Presentation size={17} />
+        <span className="tool-key">{prettyKey(keysFor(`tool.${lastExplain}`)[0] ?? '')}</span>
+      </button>
     </div>
   );
 }

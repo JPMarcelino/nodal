@@ -299,11 +299,12 @@ function itemLabel(doc: CircuitDoc, it: Item, netName?: string): string {
     case 'junction':
       return 'Junction';
     case 'shape':
+      if (it.kind === 'callout') return `Callout ${it.step ?? ''}${it.text ? ` “${it.text.split('\n')[0].slice(0, 24)}”` : ''}`;
       return it.text ? `${kindName(it.kind)} “${it.text.split('\n')[0].slice(0, 24)}”` : kindName(it.kind);
   }
 }
 
-const kindName = (k: string) => ({ rect: 'Rectangle', zone: 'Zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text' })[k] ?? k;
+const kindName = (k: string) => ({ rect: 'Rectangle', zone: 'Zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text', ink: 'Ink', callout: 'Callout' })[k] ?? k;
 
 type VisFilter = 'any' | 'shown' | 'hidden';
 type LockFilter = 'any' | 'locked' | 'unlocked';
