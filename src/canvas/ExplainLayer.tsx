@@ -61,7 +61,8 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
   const [hover, setHover] = useState<{ item: string | null; seed: TraceSeed | null }>({ item: null, seed: null });
   const [snapFlash, setSnapFlash] = useState(0);
   const holdTimer = useRef<number>();
-  const laser = useRef<{ x: number; y: number; t: number }[]>([]);
+  /** Laser trails, one per press, so separate strokes are never joined. */
+  const laser = useRef<LaserPt[][]>([]);
   const [fading, setFading] = useState<Fading[]>([]);
   const [, setTick] = useState(0);
 
@@ -80,12 +81,16 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
   useEffect(() => {
     if (!laser.current.length && !fading.length && tool !== 'laser' && !remoteLaser) return;
     let raf = 0;
+    let painted = false;
     const loop = () => {
       const now = performance.now();
-      laser.current = laser.current.filter((p) => now - p.t < LASER_LIFE);
+      // the trail being drawn stays even when the pointer rests and its points fade
+      laser.current = fadeTrails(laser.current, now, gRef.current?.kind === 'laser');
       setFading((f) => (f.some((s) => now - s.born > VANISH_LIFE) ? f.filter((s) => now - s.born <= VANISH_LIFE) : f));
-      // only repaint while something is actually moving or fading
-      if (laser.current.length || fadingRef.current || remoteLaserRef.current) setTick((t) => (t + 1) % 1e6);
+      // repaint while something is moving or fading, plus one last frame to clear what just faded out
+      const busy = laser.current.length > 0 || fadingRef.current || remoteLaserRef.current;
+      if (busy || painted) setTick((t) => (t + 1) % 1e6);
+      painted = busy;
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -253,7 +258,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
         return;
       }
       case 'laser':
-        laser.current.push({ ...w, t: performance.now() });
+        laser.current.push([{ ...w, t: performance.now() }]);
         setX({ laserDown: true });
         setGesture({ kind: 'laser' });
         return;
@@ -354,7 +359,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
         return;
       }
       case 'laser':
-        laser.current.push({ ...w, t: performance.now() });
+        laser.current[laser.current.length - 1]?.push({ ...w, t: performance.now() });
         return;
       case 'erase':
         eraseAt(cur.last, w, cur.hits);
@@ -615,7 +620,9 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
           })()}
 
           {/* laser pointer */}
-          <LaserTrail pts={laser.current} now={now} z={z} color={laserColor} />
+          {laser.current.map((tr, i) => (
+            <LaserTrail key={i} pts={tr} now={now} z={z} color={laserColor} />
+          ))}
           {tool === 'laser' && cursor && <LaserDot p={cursor} z={z} color={laserColor} />}
           <RemoteLasers z={z} />
 
@@ -681,6 +688,19 @@ const TraceView = memo(function TraceView({ t, flow, z }: { t: Trace; flow: NetF
   );
 });
 
+interface LaserPt {
+  x: number;
+  y: number;
+  t: number;
+}
+
+/** Drops faded points, and trails that have faded completely (keeping the one being drawn). */
+function fadeTrails(trails: LaserPt[][], now: number, keepLast = false): LaserPt[][] {
+  return trails
+    .map((tr) => tr.filter((p) => now - p.t < LASER_LIFE))
+    .filter((tr, i, all) => tr.length > 0 || (keepLast && i === all.length - 1));
+}
+
 function LaserTrail({ pts, now, z, color }: { pts: { x: number; y: number; t: number }[]; now: number; z: number; color: string }) {
   if (pts.length < 2) return null;
   const ink = pts.map((p) => ({ x: p.x, y: p.y, p: Math.max(0, 1 - (now - p.t) / LASER_LIFE) }));
@@ -703,10 +723,10 @@ function LaserDot({ p, z, color }: { p: Point; z: number; color: string }) {
   );
 }
 
-/** Collaborators' laser pointers: a dot, and a fading trail while they hold the button. */
+/** Collaborators' laser pointers: a dot, and a fading trail for each press of the button. */
 function RemoteLasers({ z }: { z: number }) {
   const peers = useCollab((s) => s.peers);
-  const trails = useRef(new Map<string, { x: number; y: number; t: number }[]>());
+  const trails = useRef(new Map<string, { strokes: LaserPt[][]; down: boolean }>());
   const now = performance.now();
   const out: JSX.Element[] = [];
   for (const p of Object.values(peers)) {
@@ -714,14 +734,21 @@ function RemoteLasers({ z }: { z: number }) {
       trails.current.delete(p.id);
       continue;
     }
-    let tr = trails.current.get(p.id) ?? [];
-    const last = tr[tr.length - 1];
-    if (p.laser === 2 && (!last || last.x !== p.cursor.x || last.y !== p.cursor.y)) tr.push({ ...p.cursor, t: now });
-    tr = tr.filter((q) => now - q.t < LASER_LIFE);
-    trails.current.set(p.id, tr);
+    const st = trails.current.get(p.id) ?? { strokes: [], down: false };
+    const down = p.laser === 2;
+    // a fresh press starts a new trail instead of joining the last one
+    if (down && !st.down) st.strokes.push([]);
+    st.down = down;
+    const cur = st.strokes[st.strokes.length - 1];
+    const last = cur?.[cur.length - 1];
+    if (down && cur && (!last || last.x !== p.cursor.x || last.y !== p.cursor.y)) cur.push({ ...p.cursor, t: now });
+    st.strokes = fadeTrails(st.strokes, now, down);
+    trails.current.set(p.id, st);
     out.push(
       <g key={p.id}>
-        <LaserTrail pts={tr} now={now} z={z} color={p.color} />
+        {st.strokes.map((tr, i) => (
+          <LaserTrail key={i} pts={tr} now={now} z={z} color={p.color} />
+        ))}
         <LaserDot p={p.cursor} z={z} color={p.color} />
       </g>,
     );
