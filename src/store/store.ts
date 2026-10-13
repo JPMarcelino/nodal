@@ -258,6 +258,9 @@ export function endGesture(commit = true) {
 
 export const inGesture = () => gestureBase !== null;
 
+/** Document the running gesture applies its updates to. */
+export const gestureBaseDoc = () => gestureBase;
+
 export function undo() {
   const s = S();
   if (!s.past.length) return;
@@ -279,7 +282,11 @@ export function redo() {
  */
 export function applyExternal(patch: (doc: CircuitDoc) => CircuitDoc) {
   const s = S();
-  if (gestureBase) gestureBase = patch(gestureBase);
+  if (gestureBase) {
+    const same = gestureUndo === gestureBase;
+    gestureBase = patch(gestureBase);
+    gestureUndo = same ? gestureBase : gestureUndo && patch(gestureUndo);
+  }
   const doc = patch(s.doc);
   // a node/segment sub-selection only survives if its wire was left untouched
   const wirePart = s.wirePart && doc.items[s.wirePart.wire] === s.doc.items[s.wirePart.wire] ? s.wirePart : null;
