@@ -26,7 +26,7 @@ export function startPresenting() {
   saved = { left: s.leftPanel, right: s.rightPanel, tool: s.tool, view: s.view };
   set({ leftPanel: false, rightPanel: false, contextMenu: null, selection: [], wirePart: null, highlight: null });
   A.setTool('laser');
-  setX({ presenting: -1, traces: [], focus: [], regions: [], editing: null });
+  setX({ presenting: -1, traces: [], editing: null });
   document.body.classList.add('is-presenting');
   wentFullscreen = false;
   document.documentElement
@@ -38,7 +38,7 @@ export function startPresenting() {
 
 export function stopPresenting() {
   if (X().presenting === null) return;
-  setX({ presenting: null, traces: [], focus: [], regions: [] });
+  setX({ presenting: null, traces: [] });
   document.body.classList.remove('is-presenting');
   if (saved) {
     set({ leftPanel: saved.left, rightPanel: saved.right });
@@ -91,32 +91,29 @@ function frame(r: Rect, maxZoom = 2.4): View {
   return { x: w / 2 - cx * zoom, y: avail / 2 + 10 - cy * zoom, zoom };
 }
 
-/** Shows one step: spotlights its target (a wire's whole net, traced) and frames it with the note. */
+/** Shows one step: frames its target and the note; a wire target has its whole net traced. */
 function showStep(c: ShapeItem) {
   const doc = S().doc;
   const anchor = calloutAnchor(doc, c);
   const target = c.anchor?.id ? doc.items[c.anchor.id] : undefined;
-  const focus = [c.id];
+  const framed = [c.id];
   const traces: Trace[] = [];
-  const regions: Rect[] = [];
   if (target?.type === 'wire') {
     const net = resolveNet(computeNets(doc), { wire: target.id });
-    focus.push(...(net?.wires ?? [target.id]));
+    framed.push(...(net?.wires ?? [target.id]));
     traces.push({ id: `p${c.id}`, seed: { wire: target.id }, color: c.stroke === '#000000' ? TRACE_COLORS[0] : c.stroke, origin: anchor ?? { x: 0, y: 0 } });
   } else if (target) {
-    focus.push(target.id);
-  } else if (anchor) {
-    regions.push({ x: anchor.x - 50, y: anchor.y - 50, w: 100, h: 100 });
+    framed.push(target.id);
   }
-  setX({ focus, traces, regions });
-  const rects = focus.map((id) => (doc.items[id] ? itemBounds(doc, doc.items[id]) : null)).filter((r): r is Rect => !!r);
-  if (anchor) rects.push({ x: anchor.x - 20, y: anchor.y - 20, w: 40, h: 40 });
-  const r = unionRects([...rects, ...regions]);
+  setX({ traces });
+  const rects = framed.map((id) => (doc.items[id] ? itemBounds(doc, doc.items[id]) : null)).filter((r): r is Rect => !!r);
+  if (anchor) rects.push({ x: anchor.x - 50, y: anchor.y - 50, w: 100, h: 100 });
+  const r = unionRects(rects);
   if (r) flyTo(frame(r));
 }
 
 function showAll() {
-  setX({ focus: [], traces: [], regions: [] });
+  setX({ traces: [] });
   const r = docBounds(S().doc);
   if (r) flyTo(frame(r, 1.6));
 }

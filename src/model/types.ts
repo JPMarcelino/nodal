@@ -259,4 +259,4 @@ export interface CircuitDoc {
 export type Tool =
   | 'select' | 'node' | 'wire' | 'solder' | 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pan'
   // explain tools: annotate and talk through a circuit
-  | 'pen' | 'highlighter' | 'laser' | 'eraser' | 'trace' | 'spotlight' | 'callout';
+  | 'pen' | 'highlighter' | 'laser' | 'eraser' | 'trace' | 'callout';
