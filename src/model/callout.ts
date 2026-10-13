@@ -55,7 +55,7 @@ export function nextStep(doc: CircuitDoc): number {
   return Math.max(0, ...callouts(doc).map((c) => c.step ?? 0)) + 1;
 }
 
-/** Leader curve from the badge edge to the anchor, bowed slightly so it reads as hand-placed. */
+/** Leader curve from the badge edge to the anchor, slightly bowed. */
 export function leaderPath(from: Point, r: number, to: Point): string | null {
   const dx = to.x - from.x;
   const dy = to.y - from.y;

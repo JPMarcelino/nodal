@@ -21,7 +21,7 @@ const VANISH_LIFE = 2600;
 const VANISH_FADE = 700;
 /** Hold the pen still this long to snap a scribble into a clean shape. */
 const HOLD_MS = 520;
-/** Speed at which a traced signal spreads through the copper (world units / s). */
+/** Reveal speed of a traced net (world units / s). */
 const TRACE_SPEED = 900;
 
 type G =
@@ -406,7 +406,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
       case 'ink': {
         const pts = cur.pts;
         if (!cur.highlighter && (X().vanish || X().presenting !== null)) {
-          // vanishing ink: say it, draw it, let it go
+          // vanishing ink is kept out of the document
           setFading((f) => [...f, { id: ++fadeId, d: inkOutline(pts, cur.width), color: cur.color, born: performance.now() }]);
           return;
         }
@@ -790,7 +790,7 @@ function CalloutEditor({ s }: { s: ShapeItem }) {
         height: Math.max(28 * view.zoom, (m.h + 14) * view.zoom),
       }}
       value={text}
-      placeholder="What happens here?  ($LaTeX$ works)"
+      placeholder="Note"
       onChange={(e) => setText(e.target.value)}
       onPointerDown={(e) => e.stopPropagation()}
       onBlur={finish}

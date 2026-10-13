@@ -19,7 +19,7 @@ const TOOLS: { tool: ExplainTool; icon: JSX.Element; label: string; cmd: string 
   { tool: 'eraser', icon: <Eraser size={17} />, label: 'Eraser', cmd: 'tool.eraser' },
 ];
 const REASON: typeof TOOLS = [
-  { tool: 'trace', icon: <Waypoints size={17} />, label: 'Trace net (watch the signal flow)', cmd: 'tool.trace' },
+  { tool: 'trace', icon: <Waypoints size={17} />, label: 'Trace net', cmd: 'tool.trace' },
   { tool: 'spotlight', icon: <Flashlight size={17} />, label: 'Spotlight', cmd: 'tool.spotlight' },
   { tool: 'callout', icon: <MessageSquareText size={17} />, label: 'Numbered callout', cmd: 'tool.callout' },
 ];
@@ -27,29 +27,29 @@ const REASON: typeof TOOLS = [
 export const EXPLAIN_HINTS: Record<ExplainTool, JSX.Element> = {
   pen: (
     <>
-      Draw anywhere · <b>hold still</b> at the end to snap it into a clean line, circle or box · <kbd>Shift</kbd> straight · <kbd>1</kbd>–<kbd>7</kbd> colour · <kbd>[</kbd> <kbd>]</kbd> size
+      Drag to draw · hold still at the end to snap to a line, ellipse or box · <kbd>Shift</kbd> straight · <kbd>1</kbd>–<kbd>7</kbd> colour · <kbd>[</kbd> <kbd>]</kbd> size
     </>
   ),
   highlighter: (
     <>
-      Mark up parts and paths — it sits <b>under</b> the circuit so wires stay crisp · hold still to straighten · <kbd>Shift</kbd> straight
+      Drag to highlight (drawn under the circuit) · hold still to straighten · <kbd>Shift</kbd> straight
     </>
   ),
-  laser: <>Point things out — the trail fades by itself, and people in a live session see it too</>,
-  eraser: <>Swipe over ink or callouts to erase them</>,
+  laser: <>Drag to point · trails fade after a moment · visible to others in a live session</>,
+  eraser: <>Drag over ink or callouts to erase them</>,
   trace: (
     <>
-      Click a <b>wire or pin</b> to light its net and watch the signal spread from there · click a <b>part</b> to trace every net it touches · click again to turn off
+      Click a wire or pin to highlight its net · click a part to highlight all its nets · click again to turn off
     </>
   ),
   spotlight: (
     <>
-      Click parts or wires to put them in the <b>spotlight</b> · drag to light an area · click empty space to clear
+      Click parts or wires to spotlight them · drag to spotlight an area · click empty space to clear
     </>
   ),
   callout: (
     <>
-      Click a part, pin or wire to pin a <b>numbered note</b> (drag to place the bubble) · the numbers become your walkthrough — <kbd>F5</kbd> presents it
+      Click a part, pin or wire to add a numbered note · drag to place it · <kbd>F5</kbd> presents the notes in order
     </>
   ),
 };
@@ -129,7 +129,7 @@ export function ExplainDock() {
                 </button>
               ))}
               {tool === 'pen' && (
-                <button className={ex.vanish ? 'xd-btn active' : 'xd-btn'} onClick={() => setX({ vanish: !ex.vanish })} title="Vanishing ink: strokes fade away after a few seconds">
+                <button className={ex.vanish ? 'xd-btn active' : 'xd-btn'} onClick={() => setX({ vanish: !ex.vanish })} title="Vanishing ink (strokes fade after a few seconds)">
                   <Ghost size={17} />
                 </button>
               )}
@@ -138,7 +138,7 @@ export function ExplainDock() {
         )}
         <span className="xd-sep" />
         <div className="xd-group">
-          <button className="xd-present" onClick={startPresenting} title={`Present the walkthrough (${prettyKey(keysFor('explain.present')[0] ?? 'F5')})`}>
+          <button className="xd-present" onClick={startPresenting} title={`Present (${prettyKey(keysFor('explain.present')[0] ?? 'F5')})`}>
             <Play size={15} fill="currentColor" />
             Present
           </button>
@@ -170,7 +170,7 @@ function clearShapes(kind: 'ink' | 'callout') {
     .map((i) => i.id);
   if (!ids.length) return toast(kind === 'ink' ? 'No ink to erase' : 'No callouts yet');
   mutate((d) => ids.forEach((id) => delete d.items[id]), S().selection.filter((id) => !ids.includes(id)));
-  toast(`${kind === 'ink' ? 'Erased' : 'Deleted'} ${ids.length} ${kind === 'ink' ? 'stroke' : 'callout'}${ids.length === 1 ? '' : 's'} · Ctrl+Z brings them back`);
+  toast(`${kind === 'ink' ? 'Erased' : 'Deleted'} ${ids.length} ${kind === 'ink' ? 'stroke' : 'callout'}${ids.length === 1 ? '' : 's'}`);
 }
 
 export function renumberCallouts() {

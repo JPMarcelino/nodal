@@ -11,7 +11,7 @@ export interface Trace {
   origin: Point;
 }
 
-/** Explain-mode state. None of it is part of the circuit: it is how you talk about the circuit. */
+/** Explain-mode state; none of it is saved with the circuit. */
 export interface ExplainState {
   /** Pen colour; highlighter keeps its own. */
   color: string;
