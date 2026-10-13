@@ -2,6 +2,7 @@ import { uid } from './doc';
 import { eq, simplify } from './geometry';
 import { cleanup, splitWire } from './ops';
 import type { CircuitDoc, Endpoint, Point, WireItem, WireStyle } from './types';
+import { routeLeg, routeObstacles } from './route';
 import { hitWire, wirePolyline } from './wires';
 
 /* ------------------------------------------------------------------ */
@@ -35,16 +36,27 @@ export function wireTargetForEndpoint(ep: Endpoint): WireTarget {
 }
 
 /**
- * Orthogonal preview polyline for a wire gesture: the start point, any
- * clicked vertices, one elbow keeping the last leg square, and the cursor.
+ * Routes the live leg of a wire gesture (from the last clicked point to the
+ * cursor); `first` is true while no vertex has been clicked yet. Returns null
+ * to fall back to a plain L-shape.
  */
-export function buildWirePreview(start: Point, via: Point[], hFirst: boolean, end: Point): Point[] {
+export type LegRouter = (from: Point, to: Point, hFirst: boolean, prevDir: Point | undefined, first: boolean) => Point[] | null;
+
+/**
+ * Orthogonal preview polyline for a wire gesture: the start point, any
+ * clicked vertices, then the live leg to the cursor — routed around
+ * instances by `route` when given, else one elbow keeping it square.
+ */
+export function buildWirePreview(start: Point, via: Point[], hFirst: boolean, end: Point, route?: LegRouter): Point[] {
   const last = via.length ? via[via.length - 1] : start;
   const out = [start, ...via];
+  const prev = out.length >= 2 ? out[out.length - 2] : null;
+  const prevDir = prev ? { x: Math.sign(last.x - prev.x), y: Math.sign(last.y - prev.y) } : undefined;
+  const routed = route && !eq(last, end) ? route(last, end, hFirst, prevDir, !via.length) : null;
+  if (routed && routed.length >= 2) return simplify([...out, ...routed.slice(1)]);
   if (Math.abs(last.x - end.x) > ORTHO_EPS && Math.abs(last.y - end.y) > ORTHO_EPS) {
     let elbow = hFirst ? { x: end.x, y: last.y } : { x: last.x, y: end.y };
     // never run back over the leg just drawn: take the other elbow instead
-    const prev = out.length >= 2 ? out[out.length - 2] : null;
     if (prev && (elbow.x - last.x) * (last.x - prev.x) + (elbow.y - last.y) * (last.y - prev.y) < 0) {
       elbow = hFirst ? { x: last.x, y: end.y } : { x: end.x, y: last.y };
     }
@@ -52,6 +64,17 @@ export function buildWirePreview(start: Point, via: Point[], hFirst: boolean, en
   }
   out.push(end);
   return simplify(out);
+}
+
+/**
+ * Leg router for a wire gesture between two targets: avoids instance bodies,
+ * unrelated terminals and existing wires, leaving / entering pins along
+ * their lead. Build it from the document as it was when the gesture started.
+ */
+export function wireRouter(doc: CircuitDoc, start: WireTarget, end: WireTarget, grid: number, obs = routeObstacles(doc)): LegRouter {
+  const startDir = start.kind === 'port' ? start.dir : undefined;
+  const endDir = end.kind === 'port' ? end.dir : undefined;
+  return (from, to, hFirst, prevDir, first) => routeLeg(obs, from, to, { grid, hFirst, prevDir, startDir: first ? startDir : undefined, endDir });
 }
 
 /**
@@ -102,6 +125,8 @@ export interface CommitWireOptions {
   hFirst?: boolean;
   group?: string;
   style?: Partial<WireStyle>;
+  /** Route the last leg around instances (pass the grid to route on). */
+  routeGrid?: number;
 }
 
 /**
@@ -110,7 +135,8 @@ export interface CommitWireOptions {
  * both ends without a loop). Mirrors the Canvas commitWire behaviour.
  */
 export function commitWire(doc: CircuitDoc, start: WireTarget, end: WireTarget, opts: CommitWireOptions = {}): string | null {
-  const pts = buildWirePreview(start.pt, opts.via ?? [], opts.hFirst ?? true, end.pt);
+  const route = opts.routeGrid ? wireRouter(doc, start, end, opts.routeGrid) : undefined;
+  const pts = buildWirePreview(start.pt, opts.via ?? [], opts.hFirst ?? true, end.pt, route);
   if (pts.length < 2 || (pts.length === 2 && eq(pts[0], pts[1]))) return null;
   // same start and end is only fine when the wire goes somewhere and comes back (a loop)
   if (sameWireTarget(start, end) && pts.length < 4) return null;

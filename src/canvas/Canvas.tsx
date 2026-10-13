@@ -7,7 +7,8 @@ import { getSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireLabelSpot, wireStyle } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
-import { buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd } from '../model/wireCommit';
+import { buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd, wireRouter } from '../model/wireCommit';
+import { routeObstacles } from '../model/route';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
@@ -46,8 +47,14 @@ type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'p1' | 'p2';
 type Gesture =
   | { kind: 'pan'; client: Point; view: { x: number; y: number } }
   | { kind: 'marquee'; start: Point; cur: Point; additive: boolean }
-  | { kind: 'move'; start: Point; ids: Set<string>; moved: boolean; client: Point; detach: boolean; dx: number; dy: number }
-  | { kind: 'wire'; start: Target; pts: Point[]; hFirst: boolean; fromDrag: boolean; downClient: Point; cur: Target; dragging: boolean }
+  /**
+   * `pick`: the item pressed when it was already part of a larger selection (a
+   * click without a drag narrows the selection to it). `floating`: a keyboard
+   * move (Cadence m / c) that follows the pointer until the next click.
+   */
+  | { kind: 'move'; start: Point; ids: Set<string>; moved: boolean; client: Point; detach: boolean; dx: number; dy: number; pick?: string; floating?: boolean }
+  /** `postureSet`: the bend direction was flipped by hand, so the pointer no longer picks it. */
+  | { kind: 'wire'; start: Target; pts: Point[]; hFirst: boolean; fromDrag: boolean; downClient: Point; cur: Target; dragging: boolean; postureSet?: boolean }
   | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean }
   | { kind: 'endpoint'; wire: string; end: 'a' | 'b'; cur: Target; moved: boolean }
   | { kind: 'node'; wire: string; idx: number; base: Point[]; cur: Point; free: boolean; moved: boolean }
@@ -129,6 +136,8 @@ export function Canvas() {
   const altMove = useStore((s) => s.altMove);
   const layerHover = useStore((s) => s.layerHover);
   const data = useSceneData(doc);
+  const wireAvoid = useStore((s) => s.prefs.wireAvoid);
+  const routeObs = useMemo(() => (wireAvoid ? routeObstacles(doc) : null), [doc, wireAvoid]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const gRef = useRef<Gesture | null>(null);
   const [gesture, setGestureState] = useState<Gesture | null>(null);
@@ -501,13 +510,19 @@ export function Canvas() {
   /* ------------------------- wire commit ------------------------- */
 
   const wirePreview = (g: Extract<Gesture, { kind: 'wire' }>): Point[] =>
-    buildWirePreview(g.start.pt, g.pts, g.hFirst, g.cur.pt);
+    buildWirePreview(g.start.pt, g.pts, g.hFirst, g.cur.pt, routeObs ? wireRouter(S().doc, g.start, g.cur, grid, routeObs) : undefined);
 
   const commitWire = (g: Extract<Gesture, { kind: 'wire' }>, end: Target) => {
     const brush = S().wireBrush;
     let newId: string | null = null;
     mutate((dd) => {
-      newId = commitWireDoc(dd as CircuitDoc, g.start, end, { via: g.pts, hFirst: g.hFirst, group: S().scope, ...(brush ? { style: { ...brush } } : {}) });
+      newId = commitWireDoc(dd as CircuitDoc, g.start, end, {
+        via: g.pts,
+        hFirst: g.hFirst,
+        group: S().scope,
+        routeGrid: S().prefs.wireAvoid ? grid : undefined,
+        ...(brush ? { style: { ...brush } } : {}),
+      });
     });
     if (newId && S().doc.items[newId]) set({ selection: [] });
     return newId !== null;
@@ -559,7 +574,7 @@ export function Canvas() {
           return true;
         }
         if (combo === 'Space' || combo === '/') {
-          setGesture({ ...g, hFirst: !g.hFirst });
+          setGesture({ ...g, hFirst: !g.hFirst, postureSet: true });
           return true;
         }
         if (combo === 'Enter') {
@@ -642,7 +657,7 @@ export function Canvas() {
         setGesture(null);
         return;
       }
-      setGesture({ ...g, pts: committed, hFirst: nextHFirst(pts), cur: t });
+      setGesture({ ...g, pts: committed, hFirst: nextHFirst(pts), cur: t, postureSet: false });
       return;
     }
 
@@ -763,8 +778,10 @@ export function Canvas() {
         return;
       }
       // clicking a wire that is already the sole selection selects one of its segments
-      const wasSoleWire = selSet.has(hit) && S().selection.length === 1;
-      if (!wasSoleWire) select([hit]);
+      // pressing an item of a multi-selection keeps the whole selection so it all moves together
+      const wasSelected = selSet.has(hit);
+      const wasSoleWire = wasSelected && S().selection.length === 1;
+      if (!wasSelected) select([hit]);
       const cur = S().selection;
       if (item.type === 'wire' && cur.length === 1 && cur[0] === hit) {
         const pts = data.polys.get(hit) ?? [];
@@ -775,7 +792,17 @@ export function Canvas() {
         return;
       }
       beginGesture();
-      setGesture({ kind: 'move', start: w, ids: new Set(cur.filter((id) => !S().doc.items[id]?.locked)), moved: false, client, detach: S().altMove, dx: 0, dy: 0 });
+      setGesture({
+        kind: 'move',
+        start: w,
+        ids: new Set(cur.filter((id) => !S().doc.items[id]?.locked)),
+        moved: false,
+        client,
+        detach: S().altMove,
+        dx: 0,
+        dy: 0,
+        pick: wasSelected && cur.length > 1 ? hit : undefined,
+      });
       return;
     }
     if (isDouble && S().scope) {
@@ -855,7 +882,15 @@ export function Canvas() {
         const cur = findTarget(w);
         // only a held button counts as dragging; plain mouse moves in click-to-click mode don't
         const dragging = g.dragging || (!!(e.buttons & 1) && dist(g.downClient, { x: e.clientX, y: e.clientY }) > 5);
-        setGesture({ ...g, cur, dragging });
+        // Cadence-style posture: the way the pointer first heads off the last
+        // point decides which way the wire leaves it; it locks once the pointer
+        // is a grid step and a half away, and is re-read when it comes back
+        const anchor = g.pts.length ? g.pts[g.pts.length - 1] : g.start.pt;
+        const ox = w.x - anchor.x;
+        const oy = w.y - anchor.y;
+        const r = Math.max(Math.abs(ox), Math.abs(oy));
+        const hFirst = !g.postureSet && r > grid * 0.3 && r <= grid * 1.5 ? Math.abs(ox) >= Math.abs(oy) : g.hFirst;
+        setGesture({ ...g, cur, dragging, hFirst });
         break;
       }
       case 'segment': {
@@ -1036,6 +1071,7 @@ export function Canvas() {
         }
         endGesture(true);
         setGesture(null);
+        if (!g.moved && g.pick) select([g.pick]);
         break;
       case 'segment':
       case 'resize':

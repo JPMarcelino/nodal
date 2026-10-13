@@ -399,6 +399,9 @@ export function SettingsDialog() {
           <Field label="Minimap">
             <Toggle checked={prefs.showMinimap} onChange={(showMinimap) => setPrefs({ showMinimap })} />
           </Field>
+          <Field label="Wires route around parts and stay off other pins">
+            <Toggle checked={prefs.wireAvoid} onChange={(wireAvoid) => setPrefs({ wireAvoid })} />
+          </Field>
           <Field label="Unconnected pin markers">
             <Toggle checked={prefs.showPortMarkers} onChange={(showPortMarkers) => setPrefs({ showPortMarkers })} />
           </Field>

@@ -52,6 +52,12 @@ export interface Prefs {
   showMinimap: boolean;
   showPortMarkers: boolean;
   uiScale: number;
+  /** Shortcut scheme: Nodal's own, or Cadence Virtuoso schematic bindkeys. */
+  shortcuts: 'nodal' | 'cadence';
+  /** New wires route around instances and stay off unrelated terminals. */
+  wireAvoid: boolean;
+  /** Alignment guides (and snapping to them) while moving. */
+  alignGuides: boolean;
 }
 
 export interface Toast {
@@ -127,6 +133,9 @@ const DEFAULT_PREFS: Prefs = {
   showMinimap: true,
   showPortMarkers: true,
   uiScale: 1,
+  shortcuts: 'nodal',
+  wireAvoid: true,
+  alignGuides: true,
 };
 
 function initialDoc(): CircuitDoc {
