@@ -8,12 +8,15 @@ import { clearExplainOverlays } from './explain';
 import { startPresenting } from '../ui/Presenter';
 import { renumberCallouts } from '../ui/ExplainDock';
 import { S, redo, set, setPrefs, toast, undo, mutate } from './store';
+import { canvasActions } from './canvasActions';
 
 export interface Command {
   id: string;
   label: string;
   category: 'File' | 'Edit' | 'Tools' | 'Arrange' | 'View' | 'Wire' | 'Symbols' | 'Help';
   keys: string[];
+  /** Keys in the Cadence (Virtuoso schematic) scheme; when absent the Nodal keys apply minus any Cadence uses. */
+  cadence?: string[];
   run: () => void;
   /** Shown in the palette only when this returns true. */
   when?: () => boolean;
@@ -48,21 +51,21 @@ export const COMMANDS: Command[] = [
   { id: 'collab.importTemplate', label: 'Insert a template…', category: 'File', keys: [], run: importTemplateFile },
 
   // Edit
-  { id: 'edit.undo', label: 'Undo', category: 'Edit', keys: ['Mod+Z'], run: undo },
-  { id: 'edit.redo', label: 'Redo', category: 'Edit', keys: ['Mod+Shift+Z', 'Mod+Y'], run: redo },
+  { id: 'edit.undo', label: 'Undo', category: 'Edit', keys: ['Mod+Z'], cadence: ['U', 'Mod+Z'], run: undo },
+  { id: 'edit.redo', label: 'Redo', category: 'Edit', keys: ['Mod+Shift+Z', 'Mod+Y'], cadence: ['Shift+U', 'Mod+Shift+Z', 'Mod+Y'], run: redo },
   { id: 'edit.cut', label: 'Cut', category: 'Edit', keys: ['Mod+X'], run: A.cutSelection, when: hasSel },
   { id: 'edit.copy', label: 'Copy', category: 'Edit', keys: ['Mod+C'], run: A.copySelection, when: hasSel },
   { id: 'edit.paste', label: 'Paste (at the mouse pointer)', category: 'Edit', keys: ['Mod+V'], run: () => void A.paste(A.pastePoint()) },
   { id: 'edit.pasteHere', label: 'Paste in place (next to the original)', category: 'Edit', keys: ['Mod+Shift+V'], run: () => void A.paste() },
-  { id: 'edit.duplicate', label: 'Duplicate', category: 'Edit', keys: ['Mod+D'], run: A.duplicateSelection, when: hasSel },
+  { id: 'edit.duplicate', label: 'Duplicate', category: 'Edit', keys: ['Mod+D'], cadence: [], run: A.duplicateSelection, when: hasSel },
   { id: 'edit.delete', label: 'Delete', category: 'Edit', keys: ['Delete', 'Backspace'], run: A.deleteSelection, when: hasSel },
   { id: 'edit.find', label: 'Find part, net or text…', category: 'Edit', keys: ['Mod+F', 'F3'], run: () => set({ dialog: 'find' }) },
   { id: 'edit.selectAll', label: 'Select all', category: 'Edit', keys: ['Mod+A'], run: A.selectAll },
-  { id: 'edit.deselect', label: 'Deselect / cancel', category: 'Edit', keys: ['Escape'], run: () => cancel() },
+  { id: 'edit.deselect', label: 'Deselect / cancel', category: 'Edit', keys: ['Escape'], cadence: ['Escape', 'Mod+D'], run: () => cancel() },
   { id: 'edit.annotate', label: 'Renumber reference designators', category: 'Edit', keys: ['Mod+Shift+A'], run: A.annotateAll },
   { id: 'edit.lock', label: 'Lock / unlock selection', category: 'Edit', keys: ['Mod+Shift+L'], run: A.toggleLock, when: hasSel },
   { id: 'edit.hide', label: 'Hide / show selection', category: 'Edit', keys: ['Mod+Shift+H'], run: () => A.toggleHidden(S().selection), when: hasSel },
-  { id: 'edit.properties', label: 'Edit value of selection', category: 'Edit', keys: ['F2', 'Enter'], run: focusValue },
+  { id: 'edit.properties', label: 'Edit value of selection', category: 'Edit', keys: ['F2', 'Enter'], cadence: ['Q', 'F2', 'Enter'], run: focusValue },
   { id: 'edit.nudgeLeft', label: 'Nudge left', category: 'Edit', keys: ['ArrowLeft'], run: () => A.nudge(-g(), 0) },
   { id: 'edit.nudgeRight', label: 'Nudge right', category: 'Edit', keys: ['ArrowRight'], run: () => A.nudge(g(), 0) },
   { id: 'edit.nudgeUp', label: 'Nudge up', category: 'Edit', keys: ['ArrowUp'], run: () => A.nudge(0, -g()) },
@@ -76,18 +79,22 @@ export const COMMANDS: Command[] = [
   { id: 'edit.nudgeUpFine', label: 'Nudge up 1px', category: 'Edit', keys: ['Mod+ArrowUp'], run: () => A.nudge(0, -1) },
   { id: 'edit.nudgeDownFine', label: 'Nudge down 1px', category: 'Edit', keys: ['Mod+ArrowDown'], run: () => A.nudge(0, 1) },
 
+  { id: 'edit.move', label: 'Move selection with the pointer (wires stay connected; click to drop)', category: 'Edit', keys: [], cadence: ['M', 'S'], run: () => canvasActions.floatMove?.({ detach: false, copy: false }) },
+  { id: 'edit.moveDetached', label: 'Move selection with the pointer, leaving its wires behind', category: 'Edit', keys: [], cadence: ['Shift+M'], run: () => canvasActions.floatMove?.({ detach: true, copy: false }) },
+  { id: 'edit.copyMove', label: 'Copy selection and place it with the pointer', category: 'Edit', keys: [], cadence: ['C'], run: () => canvasActions.floatMove?.({ detach: true, copy: true }) },
+
   // Tools
   { id: 'tool.select', label: 'Move / select tool (wires stay connected)', category: 'Tools', keys: ['M'], run: () => A.setTool('select') },
   { id: 'tool.altMove', label: 'Alt move (only the selection moves; wires to it are left behind)', category: 'Tools', keys: ['Shift+M'], run: () => A.setAltMove() },
   { id: 'tool.node', label: 'Edit points tool (drag wire bends & ends)', category: 'Tools', keys: ['E'], run: () => A.setTool('node') },
   { id: 'tool.solder', label: 'Solder tool (click crossings / pins to solder, junctions to unsolder)', category: 'Tools', keys: ['S'], run: () => A.setTool('solder') },
-  { id: 'tool.wire', label: 'Wire tool', category: 'Tools', keys: ['W'], run: () => A.setTool('wire') },
+  { id: 'tool.wire', label: 'Wire tool', category: 'Tools', keys: ['W'], cadence: ['W', 'Shift+W'], run: () => A.setTool('wire') },
   { id: 'tool.rect', label: 'Rectangle (outline)', category: 'Tools', keys: ['B'], run: () => A.setTool('rect') },
   { id: 'tool.zone', label: 'Filled zone', category: 'Tools', keys: ['Z'], run: () => A.setTool('zone') },
   { id: 'tool.ellipse', label: 'Ellipse', category: 'Tools', keys: ['O'], run: () => A.setTool('ellipse') },
   { id: 'tool.line', label: 'Line', category: 'Tools', keys: ['L'], run: () => A.setTool('line') },
   { id: 'tool.arrow', label: 'Arrow', category: 'Tools', keys: ['A'], run: () => A.setTool('arrow') },
-  { id: 'tool.text', label: 'Text', category: 'Tools', keys: ['T'], run: () => A.setTool('text') },
+  { id: 'tool.text', label: 'Text', category: 'Tools', keys: ['T'], cadence: ['N', 'T'], run: () => A.setTool('text') },
   { id: 'tool.pan', label: 'Hand (pan) tool', category: 'Tools', keys: ['H'], run: () => A.setTool('pan') },
   // Explain: talk a circuit through
   { id: 'explain.toggle', label: 'Explain tools', category: 'Tools', keys: [], run: A.toggleExplain },
@@ -100,8 +107,9 @@ export const COMMANDS: Command[] = [
   { id: 'explain.present', label: 'Present callouts', category: 'View', keys: ['F5', 'Shift+P'], run: () => startPresenting() },
   { id: 'explain.clear', label: 'Clear traced nets', category: 'View', keys: [], run: () => void clearExplainOverlays() },
   { id: 'explain.renumber', label: 'Renumber callouts 1, 2, 3…', category: 'Edit', keys: [], run: () => renumberCallouts() },
-  { id: 'tool.placeLast', label: 'Place last used symbol', category: 'Tools', keys: ['P'], run: () => S().recent[0] && A.startPlacing(S().recent[0]) },
-  { id: 'tool.netLabel', label: 'Place net label', category: 'Tools', keys: ['Shift+L'], run: () => A.startPlacing('net-label') },
+  { id: 'tool.placeLast', label: 'Place last used symbol', category: 'Tools', keys: ['P'], cadence: ['Shift+I'], run: () => S().recent[0] && A.startPlacing(S().recent[0]) },
+  { id: 'tool.netLabel', label: 'Place net label (wire name)', category: 'Tools', keys: ['Shift+L'], cadence: ['L'], run: () => A.startPlacing('net-label') },
+  { id: 'tool.pin', label: 'Place pin (port)', category: 'Tools', keys: [], cadence: ['P'], run: () => A.startPlacing('port-in') },
   { id: 'tool.ground', label: 'Place ground', category: 'Tools', keys: ['Shift+G'], run: () => A.startPlacing('gnd') },
   { id: 'tool.vcc', label: 'Place supply rail', category: 'Tools', keys: ['Shift+V'], run: () => A.startPlacing('vcc') },
   { id: 'tool.resistor', label: 'Place resistor', category: 'Tools', keys: ['Shift+R'], run: () => A.startPlacing('resistor') },
@@ -111,7 +119,7 @@ export const COMMANDS: Command[] = [
   // Arrange
   { id: 'arrange.rotateCw', label: 'Rotate 90° clockwise', category: 'Arrange', keys: ['R'], run: () => A.rotateSelection(90) },
   { id: 'arrange.rotateCcw', label: 'Rotate 90° counter-clockwise', category: 'Arrange', keys: ['Alt+R'], run: () => A.rotateSelection(-90) },
-  { id: 'arrange.flipH', label: 'Flip horizontally', category: 'Arrange', keys: ['X'], run: () => A.flipSelection('x') },
+  { id: 'arrange.flipH', label: 'Flip horizontally', category: 'Arrange', keys: ['X'], cadence: ['Shift+R'], run: () => A.flipSelection('x') },
   { id: 'arrange.flipV', label: 'Flip vertically', category: 'Arrange', keys: ['Y'], run: () => A.flipSelection('y') },
   { id: 'arrange.group', label: 'Group', category: 'Arrange', keys: ['Mod+G'], run: A.groupSelection },
   { id: 'arrange.ungroup', label: 'Ungroup', category: 'Arrange', keys: ['Mod+Shift+G'], run: A.ungroupSelection },
@@ -128,7 +136,8 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.alignVCenter', label: 'Align centres vertically', category: 'Arrange', keys: ['Alt+V'], run: () => A.align('vcenter') },
   { id: 'arrange.distH', label: 'Distribute horizontally', category: 'Arrange', keys: ['Alt+Shift+H'], run: () => A.distribute('x') },
   { id: 'arrange.distV', label: 'Distribute vertically', category: 'Arrange', keys: ['Alt+Shift+V'], run: () => A.distribute('y') },
-  { id: 'arrange.enterGroup', label: 'Enter group', category: 'Arrange', keys: ['Mod+Enter'], run: () => S().selection[0] && A.enterGroup(S().selection[0]) },
+  { id: 'arrange.enterGroup', label: 'Enter group', category: 'Arrange', keys: ['Mod+Enter'], cadence: ['E', 'Shift+E', 'Mod+Enter'], run: () => S().selection[0] && A.enterGroup(S().selection[0]) },
+  { id: 'arrange.exitGroup', label: 'Return from group', category: 'Arrange', keys: [], cadence: ['Shift+B'], run: () => void A.exitGroup() },
 
   // Wire
   { id: 'wire.reroute', label: 'Re-route selected wires', category: 'Wire', keys: ['Shift+W'], run: A.rerouteWires },
@@ -137,8 +146,8 @@ export const COMMANDS: Command[] = [
   { id: 'wire.corners', label: 'Toggle rounded wire corners', category: 'Wire', keys: ['Mod+Shift+K'], run: toggleCorners },
 
   // View
-  { id: 'view.zoomIn', label: 'Zoom in', category: 'View', keys: ['=', 'Mod+=', '+'], run: () => A.zoomBy(1.25) },
-  { id: 'view.zoomOut', label: 'Zoom out', category: 'View', keys: ['-', 'Mod+-'], run: () => A.zoomBy(0.8) },
+  { id: 'view.zoomIn', label: 'Zoom in', category: 'View', keys: ['=', 'Mod+=', '+'], cadence: ['[', 'Mod+=', '='], run: () => A.zoomBy(1.25) },
+  { id: 'view.zoomOut', label: 'Zoom out', category: 'View', keys: ['-', 'Mod+-'], cadence: [']', 'Shift+Z', 'Mod+-', '-'], run: () => A.zoomBy(0.8) },
   { id: 'view.fit', label: 'Zoom to fit', category: 'View', keys: ['Shift+1', 'F'], run: () => A.fitView() },
   { id: 'view.fitSel', label: 'Zoom to selection', category: 'View', keys: ['Shift+2'], run: () => A.fitView(S().selection) },
   { id: 'view.100', label: 'Zoom to 100%', category: 'View', keys: ['Mod+0', 'Shift+0'], run: () => A.zoomTo(1) },
@@ -150,8 +159,9 @@ export const COMMANDS: Command[] = [
   { id: 'view.minimap', label: 'Toggle minimap', category: 'View', keys: ['Alt+M'], run: () => setPrefs({ showMinimap: !S().prefs.showMinimap }) },
   { id: 'view.theme', label: 'Toggle light / dark theme', category: 'View', keys: ['Mod+Shift+D'], run: () => setPrefs({ theme: S().prefs.theme === 'dark' ? 'light' : 'dark' }) },
   { id: 'view.focus', label: 'Focus mode (hide panels)', category: 'View', keys: ['Mod+.'], run: focusMode },
-  { id: 'view.search', label: 'Search symbol library', category: 'View', keys: ['/'], run: focusSearch },
-  { id: 'view.check', label: 'Check circuit (electrical rules check)', category: 'View', keys: ['Mod+Alt+R'], run: () => set({ leftPanel: true, leftTab: 'check' }) },
+  { id: 'view.search', label: 'Search symbol library', category: 'View', keys: ['/'], cadence: ['I', '/'], run: focusSearch },
+  { id: 'view.check', label: 'Check circuit (electrical rules check)', category: 'View', keys: ['Mod+Alt+R'], cadence: ['X', 'Mod+Alt+R'], run: () => set({ leftPanel: true, leftTab: 'check' }) },
+  { id: 'view.checkSave', label: 'Check and save', category: 'File', keys: [], cadence: ['Shift+X'], run: checkAndSave },
 
   // Symbols
   { id: 'symbols.new', label: 'Create new symbol…', category: 'Symbols', keys: ['Mod+Shift+N'], run: () => set({ dialog: 'symbol-editor', editingSymbol: null }) },
@@ -183,7 +193,8 @@ export const COMMANDS: Command[] = [
   // Help
   { id: 'help.palette', label: 'Command palette', category: 'Help', keys: ['Mod+K', 'Mod+Shift+P'], run: () => set({ dialog: 'palette' }) },
   { id: 'help.shortcuts', label: 'Keyboard shortcuts', category: 'Help', keys: ['Shift+/', 'F1'], run: () => set({ dialog: 'shortcuts' }) },
-  { id: 'help.settings', label: 'Settings', category: 'Help', keys: ['Mod+,'], run: () => set({ dialog: 'settings' }) },
+  { id: 'help.settings', label: 'Settings', category: 'Help', keys: ['Mod+,'], cadence: ['O', 'Mod+,'], run: () => set({ dialog: 'settings' }) },
+  { id: 'help.shortcutScheme', label: 'Switch shortcut scheme (Nodal / Cadence)', category: 'Help', keys: [], run: toggleScheme },
   { id: 'help.about', label: 'About Nodal', category: 'Help', keys: [], run: () => set({ dialog: 'about' }) },
 ];
 
@@ -292,17 +303,44 @@ export function eventToCombo(e: KeyboardEvent): string {
   return parts.join('+');
 }
 
+/** Every combo the Cadence scheme binds explicitly; Nodal defaults using one of them are dropped in that scheme. */
+const CADENCE_USED = new Set(COMMANDS.flatMap((c) => c.cadence ?? []));
+
+/** Built-in keys of a command in a scheme. */
+export function defaultKeys(c: Command, scheme: 'nodal' | 'cadence'): string[] {
+  if (scheme === 'nodal') return c.keys;
+  return c.cadence ?? c.keys.filter((k) => !CADENCE_USED.has(k));
+}
+
+/** Custom key overrides of the active scheme (each scheme keeps its own). */
+export function activeKeymap(): Record<string, string[]> {
+  const p = S().prefs;
+  return (p.shortcuts === 'cadence' ? p.keymapCadence : p.keymap) ?? {};
+}
+
+export function setActiveKeymap(km: Record<string, string[]>) {
+  setPrefs(S().prefs.shortcuts === 'cadence' ? { keymapCadence: km } : { keymap: km });
+}
+
 export function keysFor(id: string): string[] {
-  return S().prefs.keymap[id] ?? COMMAND_MAP.get(id)?.keys ?? [];
+  const c = COMMAND_MAP.get(id);
+  return activeKeymap()[id] ?? (c ? defaultKeys(c, S().prefs.shortcuts) : []);
 }
 
 export function findCommand(combo: string): Command | undefined {
-  const km = S().prefs.keymap;
-  for (const c of COMMANDS) {
-    const keys = km[c.id] ?? c.keys;
-    if (keys.includes(combo)) return c;
-  }
+  for (const c of COMMANDS) if (keysFor(c.id).includes(combo)) return c;
   return undefined;
+}
+
+function toggleScheme() {
+  const next = S().prefs.shortcuts === 'cadence' ? 'nodal' : 'cadence';
+  setPrefs({ shortcuts: next });
+  toast(next === 'cadence' ? 'Cadence shortcuts: W wire, I instance, M move, C copy, L label, N note, Q properties, U undo' : 'Nodal shortcuts');
+}
+
+function checkAndSave() {
+  set({ leftPanel: true, leftTab: 'check' });
+  void fileSave();
 }
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);

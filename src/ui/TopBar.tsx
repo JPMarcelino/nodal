@@ -148,6 +148,7 @@ export function TopBar() {
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const theme = useStore((s) => s.prefs.theme);
+  const scheme = useStore((s) => s.prefs.shortcuts);
   const zoom = useStore((s) => s.view.zoom);
   const left = useStore((s) => s.leftPanel);
   const right = useStore((s) => s.rightPanel);
@@ -187,6 +188,13 @@ export function TopBar() {
         </button>
         <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">
           <Keyboard size={16} />
+        </button>
+        <button
+          className={scheme === 'cadence' ? 'zoom-chip active' : 'zoom-chip'}
+          onClick={() => setPrefs({ shortcuts: scheme === 'cadence' ? 'nodal' : 'cadence' })}
+          title={scheme === 'cadence' ? 'Cadence shortcuts are on (W wire, I instance, M move, C copy, L label, N note, Q properties, U undo). Click for Nodal shortcuts.' : 'Switch to Cadence Virtuoso shortcuts'}
+        >
+          {scheme === 'cadence' ? 'Cadence keys' : 'Nodal keys'}
         </button>
         <button className="icon-btn" onClick={() => setPrefs({ theme: theme === 'dark' ? 'light' : 'dark' })} title="Toggle theme">
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}

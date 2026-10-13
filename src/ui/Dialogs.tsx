@@ -21,7 +21,7 @@ import { librarySymbols, variantDefs } from '../model/registry';
 import { BUILTIN_SYMBOLS } from '../model/symbols';
 import type { SymbolDef } from '../model/types';
 import * as A from '../store/actions';
-import { COMMANDS, eventToCombo, keysFor, prettyKey, type Command } from '../store/commands';
+import { COMMANDS, activeKeymap, eventToCombo, keysFor, prettyKey, setActiveKeymap, type Command } from '../store/commands';
 import { S, set, setPrefs, toast, useStore } from '../store/store';
 import { Field, Kbd, Segmented, Toggle } from './controls';
 import { FindDialog } from './FindDialog';
@@ -214,7 +214,8 @@ export function CommandPalette() {
 /* ------------------------------------------------------------------ */
 
 export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
-  const keymap = useStore((s) => s.prefs.keymap);
+  const scheme = useStore((s) => s.prefs.shortcuts);
+  const keymap = useStore((s) => (s.prefs.shortcuts === 'cadence' ? s.prefs.keymapCadence : s.prefs.keymap) ?? {});
   const [q, setQ] = useState('');
   const [recording, setRecording] = useState<string | null>(null);
   useEffect(() => {
@@ -226,9 +227,9 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
       if (e.key === 'Escape') return setRecording(null);
       const combo = eventToCombo(e);
       const conflicts = COMMANDS.filter((c) => c.id !== recording && keysFor(c.id).includes(combo));
-      const next = { ...S().prefs.keymap, [recording]: [combo] };
+      const next = { ...activeKeymap(), [recording]: [combo] };
       for (const c of conflicts) next[c.id] = keysFor(c.id).filter((k) => k !== combo);
-      setPrefs({ keymap: next });
+      setActiveKeymap(next);
       setRecording(null);
     };
     window.addEventListener('keydown', onKey, true);
@@ -239,9 +240,17 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
   const content = (
     <>
       <div className="shortcuts-toolbar">
+        <Segmented
+          value={scheme}
+          options={[
+            { value: 'nodal', label: 'Nodal' },
+            { value: 'cadence', label: 'Cadence' },
+          ]}
+          onChange={(shortcuts) => setPrefs({ shortcuts })}
+        />
         <input className="input" placeholder="Filter shortcuts…" value={q} onChange={(e) => setQ(e.target.value)} />
         {editable && Object.keys(keymap).length > 0 && (
-          <button className="secondary-btn" onClick={() => setPrefs({ keymap: {} })}>
+          <button className="secondary-btn" onClick={() => setActiveKeymap({})}>
             <RotateCcw size={13} /> Reset all
           </button>
         )}
@@ -276,7 +285,7 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
                                 onClick={() => {
                                   const next = { ...keymap };
                                   delete next[c.id];
-                                  setPrefs({ keymap: next });
+                                  setActiveKeymap(next);
                                 }}
                               >
                                 <RotateCcw size={11} />

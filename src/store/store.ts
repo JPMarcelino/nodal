@@ -47,6 +47,8 @@ export type Dialog = null | 'palette' | 'find' | 'shortcuts' | 'settings' | 'sym
 export interface Prefs {
   theme: 'dark' | 'light';
   keymap: Record<string, string[]>;
+  /** Custom keys of the Cadence scheme. */
+  keymapCadence: Record<string, string[]>;
   wheel: 'zoom' | 'pan';
   autosave: boolean;
   showMinimap: boolean;
@@ -128,6 +130,7 @@ function load<T>(key: string, fallback: T): T {
 const DEFAULT_PREFS: Prefs = {
   theme: 'dark',
   keymap: {},
+  keymapCadence: {},
   wheel: 'zoom',
   autosave: true,
   showMinimap: true,
@@ -216,8 +219,17 @@ export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: strin
 }
 
 /** Starts a continuous edit (drag); intermediate states are not recorded. */
-export function beginGesture() {
+/** Document to restore on cancel / record for undo; differs from gestureBase when the gesture started from a staged change (a copy being placed). */
+let gestureUndo: CircuitDoc | null = null;
+
+export function beginGesture(undoBase?: CircuitDoc) {
   gestureBase = S().doc;
+  gestureUndo = undoBase ?? gestureBase;
+}
+
+/** Makes the current document the base later gestureUpdate calls apply to (undo still returns to where the gesture began). */
+export function rebaseGesture() {
+  if (gestureBase) gestureBase = S().doc;
 }
 
 /** Re-applies a recipe against the gesture's starting document. */
@@ -232,8 +244,9 @@ export function gestureUpdate(recipe: (d: Draft<CircuitDoc>, base: CircuitDoc) =
 }
 
 export function endGesture(commit = true) {
-  const base = gestureBase;
+  const base = gestureUndo;
   gestureBase = null;
+  gestureUndo = null;
   if (!base) return;
   const s = S();
   if (!commit) {
