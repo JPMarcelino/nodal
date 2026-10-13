@@ -1,7 +1,7 @@
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
-import { createDoc, makeComponent, uid } from '../model/doc';
-import { runErc } from '../model/erc';
+import { createDoc, makeComponent, normalizeDoc, uid } from '../model/doc';
+import { runErc, splitIgnored, type ErcIssue } from '../model/erc';
 import { loadMath, splitMath, stripMath, texToSvg } from '../model/latex';
 import { computeNets } from '../model/netlist';
 import { measureRich } from '../model/richText';
@@ -63,6 +63,50 @@ describe('electrical rules check', () => {
     wire(doc, a, 'VCC', b, 'VCC');
     const short = runErc(doc).find((i) => i.rule === 'shorted-nets');
     expect(short?.severity).toBe('error');
+  });
+});
+
+describe('splitIgnored', () => {
+  const keys = ['a', 'b', 'c'];
+  const issues = (ks: string[]): ErcIssue[] => ks.map((key) => ({ key, rule: 'loose-end', severity: 'warning', message: key, items: [], at: null }));
+  it('treats a missing list as empty', () => {
+    const { active, ignored } = splitIgnored(issues(keys), undefined);
+    expect(active.map((i) => i.key)).toEqual(keys);
+    expect(ignored).toEqual([]);
+  });
+  it('treats an empty list as empty', () => {
+    const { active, ignored } = splitIgnored(issues(keys), []);
+    expect(active).toHaveLength(3);
+    expect(ignored).toEqual([]);
+  });
+  it('ignores one key out of several and keeps order', () => {
+    const { active, ignored } = splitIgnored(issues(keys), ['b']);
+    expect(active.map((i) => i.key)).toEqual(['a', 'c']);
+    expect(ignored.map((i) => i.key)).toEqual(['b']);
+  });
+  it('ignores stale keys that match nothing', () => {
+    const { active, ignored } = splitIgnored(issues(['a']), ['stale', 'a']);
+    expect(active).toEqual([]);
+    expect(ignored.map((i) => i.key)).toEqual(['a']);
+  });
+  it('does not change runErc output, only the split', () => {
+    const doc = createDoc();
+    const label = place(doc, 'net-label', 0, 0);
+    const all = runErc(doc);
+    const single = all.find((i) => i.key === `single-label:${label.id}`);
+    expect(single).toBeDefined();
+    const { active, ignored } = splitIgnored(all, [`single-label:${label.id}`]);
+    expect(ignored.map((i) => i.key)).toContain(`single-label:${label.id}`);
+    expect(active.every((i) => i.key !== `single-label:${label.id}`)).toBe(true);
+    // other findings for the same label (e.g. unconnected-label) stay active
+    expect(active.length).toBe(all.length - 1);
+    // runErc itself still reports it
+    expect(runErc(doc).some((i) => i.key === `single-label:${label.id}`)).toBe(true);
+  });
+  it('loading a file without ercIgnored, or with a non-array value, does not crash', () => {
+    const base = createDoc();
+    expect(normalizeDoc(structuredClone({ ...base, settings: {} })).settings.ercIgnored).toBeUndefined();
+    expect(normalizeDoc(structuredClone({ ...base, settings: { ercIgnored: 'nope' } })).settings.ercIgnored).toBeUndefined();
   });
 });
 
