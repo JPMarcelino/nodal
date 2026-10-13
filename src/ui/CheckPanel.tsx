@@ -124,6 +124,7 @@ export function CheckPanel() {
                       onClick={(e) => {
                         e.stopPropagation();
                         ignoreIssue(i.key);
+                        set({ layerHover: [] });
                       }}
                       onMouseEnter={() => set({ layerHover: i.items })}
                       onMouseLeave={() => set({ layerHover: [] })}
