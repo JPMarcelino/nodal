@@ -12,7 +12,8 @@ import { routeObstacles } from '../model/route';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
-import { S, beginGesture, endGesture, gestureUpdate, mutate, select, set, toast, useStore } from '../store/store';
+import { S, beginGesture, endGesture, gestureUpdate, mutate, rebaseGesture, select, set, toast, useStore } from '../store/store';
+import { canvasActions } from '../store/canvasActions';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
@@ -547,6 +548,50 @@ export function Canvas() {
     setGesture({ kind: 'wire', start: t, pts: [], hFirst, fromDrag, downClient: client, cur: t, dragging: false });
   };
 
+  /* ------------------------ pointer-carried move ------------------------ */
+
+  /** Cadence m / Shift+m / c: the selection (or the item under the pointer) follows the pointer until the next click. */
+  const floatMove = (detach: boolean, copy: boolean) => {
+    if (gRef.current || !S().pointerOnCanvas) return;
+    const at = S().cursor;
+    if (!S().selection.length) {
+      const hit = hitItem(at);
+      if (!hit) {
+        toast(copy ? 'Select something to copy first' : 'Select something to move first');
+        return;
+      }
+      select([hit]);
+    }
+    const before = S().doc;
+    if (copy) A.copyInPlace();
+    const ids = new Set(S().selection.filter((id) => !S().doc.items[id]?.locked));
+    if (!ids.size) return;
+    set({ wirePart: null });
+    beginGesture(before);
+    setGesture({ kind: 'move', start: sp(at), ids, moved: true, client: at, detach, dx: 0, dy: 0, floating: true });
+  };
+
+  /** Rotates what a pointer-carried move is holding (Cadence: R or the right mouse button). */
+  const rotateFloating = (g: Extract<Gesture, { kind: 'move' }>) => {
+    rebaseGesture();
+    A.rotateSelection(90);
+    rebaseGesture();
+    setGesture({ ...g, start: sp(S().cursor), dx: 0, dy: 0 });
+  };
+
+  const finishMove = (g: Extract<Gesture, { kind: 'move' }>) => {
+    if (g.detach && g.moved) {
+      // alt move: drop junctions that lost their wires and rejoin split runs, in the same undo step
+      gestureUpdate((d, base) => {
+        translateDetached(base, d as CircuitDoc, g.ids, g.dx, g.dy);
+        cleanup(d as CircuitDoc);
+      });
+    }
+    endGesture(true);
+    setGesture(null);
+    if (!g.moved && g.pick) select([g.pick]);
+  };
+
   /* ---------------------------- keyboard ---------------------------- */
 
   useEffect(() => {
@@ -563,6 +608,10 @@ export function Canvas() {
         return true;
       }
       const g = gRef.current;
+      if (g?.kind === 'move' && g.floating && (combo === 'R' || combo === 'Space')) {
+        rotateFloating(g);
+        return true;
+      }
       if (g?.kind === 'wire') {
         if (combo === 'Escape') {
           setGesture(null);
@@ -586,13 +635,17 @@ export function Canvas() {
       if (g && combo === 'Escape') {
         if (g.kind === 'move' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
         setGesture(null);
+        // a cancelled copy takes its staged items with it
+        if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => S().doc.items[id]) });
         set({ wirePart: null });
         return true;
       }
       return false;
     };
+    canvasActions.floatMove = ({ detach, copy }) => floatMove(detach, copy);
     return () => {
       canvasKeys.handle = null;
+      canvasActions.floatMove = null;
     };
   });
 
@@ -630,6 +683,11 @@ export function Canvas() {
       return;
     }
     if (e.button !== 0) return;
+    const carried = gRef.current;
+    if (carried?.kind === 'move' && carried.floating) {
+      finishMove(carried);
+      return;
+    }
     const now = performance.now();
     const isDouble = now - lastClick.current.t < 350 && dist(lastClick.current.p, client) < 6;
     lastClick.current = { t: now, p: client };
@@ -664,7 +722,8 @@ export function Canvas() {
     if (placing) {
       const p = sp(w);
       A.placeComponent(placing.symbol, p.x, p.y, placing.rot, placing.flipX);
-      if (!e.shiftKey) set({ placing: null });
+      // Cadence keeps placing copies until Esc; Nodal places one (Shift for more)
+      if (!e.shiftKey && S().prefs.shortcuts !== 'cadence') set({ placing: null });
       return;
     }
 
@@ -1062,16 +1121,7 @@ export function Canvas() {
         break;
       }
       case 'move':
-        if (g.detach && g.moved) {
-          // alt move: drop junctions that lost their wires and rejoin split runs, in the same undo step
-          gestureUpdate((d, base) => {
-            translateDetached(base, d as CircuitDoc, g.ids, g.dx, g.dy);
-            cleanup(d as CircuitDoc);
-          });
-        }
-        endGesture(true);
-        setGesture(null);
-        if (!g.moved && g.pick) select([g.pick]);
+        if (!g.floating) finishMove(g);
         break;
       case 'segment':
       case 'resize':
@@ -1175,12 +1225,22 @@ export function Canvas() {
       set({ exportArea: null });
       return;
     }
-    if (gRef.current?.kind === 'wire') {
-      setGesture(null);
+    const g0 = gRef.current;
+    if (g0?.kind === 'move' && g0.floating) {
+      rotateFloating(g0);
       return;
     }
-    if (S().placing) {
-      set({ placing: null });
+    if (g0?.kind === 'wire') {
+      // Cadence: the right button flips which way the wire bends; elsewhere it cancels the wire
+      if (S().prefs.shortcuts === 'cadence') setGesture({ ...g0, hFirst: !g0.hFirst, postureSet: true });
+      else setGesture(null);
+      return;
+    }
+    const pl = S().placing;
+    if (pl) {
+      // Cadence: the right button rotates the instance being placed
+      if (S().prefs.shortcuts === 'cadence') set({ placing: { ...pl, rot: (((pl.rot ?? 0) + 90) % 360) as typeof pl.rot } });
+      else set({ placing: null });
       return;
     }
     const w = toWorldPt(e.clientX, e.clientY);

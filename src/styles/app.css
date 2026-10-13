@@ -357,6 +357,10 @@ kbd {
   background: var(--panel-3);
 }
 
+.zoom-chip.active {
+  color: var(--accent);
+}
+
 .primary-btn {
   display: inline-flex;
   align-items: center;

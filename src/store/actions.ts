@@ -1,3 +1,4 @@
+import { produce } from 'immer';
 import { docBounds, makeComponent, topGroup } from '../model/doc';
 import { snap, unionRects } from '../model/geometry';
 import { sheetRect } from '../model/sheet';
@@ -193,6 +194,18 @@ export function duplicateSelection() {
     ids = insertFragment(d as CircuitDoc, frag, g, g, S().scope);
   });
   set({ selection: ids });
+}
+
+/** Stages an exact copy of the selection on top of the original (no undo step) and selects it; for placing with the pointer. */
+export function copyInPlace(): string[] {
+  if (!S().selection.length) return [];
+  const frag = extractFragment(S().doc, sel());
+  let ids: string[] = [];
+  const next = produce(S().doc, (d) => {
+    ids = insertFragment(d as CircuitDoc, frag, 0, 0, S().scope);
+  });
+  set({ doc: next, selection: ids });
+  return ids;
 }
 
 export function selectAll() {
