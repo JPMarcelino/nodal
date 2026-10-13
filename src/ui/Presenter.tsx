@@ -33,7 +33,7 @@ export function startPresenting() {
     .requestFullscreen?.()
     .then(() => (wentFullscreen = true))
     .catch(() => undefined);
-  if (!callouts(s.doc).length) toast('Tip: pin numbered callouts (C) to turn this into a step-by-step walkthrough');
+  if (!callouts(s.doc).length) toast('No callouts to step through. Add some with the Callout tool (C).');
 }
 
 export function stopPresenting() {
@@ -91,7 +91,7 @@ function frame(r: Rect, maxZoom = 2.4): View {
   return { x: w / 2 - cx * zoom, y: avail / 2 + 10 - cy * zoom, zoom };
 }
 
-/** Lights up one step: its part (or the whole net of its wire, with the signal flowing) and the note. */
+/** Shows one step: spotlights its target (a wire's whole net, traced) and frames it with the note. */
 function showStep(c: ShapeItem) {
   const doc = S().doc;
   const anchor = calloutAnchor(doc, c);
@@ -217,11 +217,11 @@ export function Presenter() {
         ) : idx < 0 ? (
           <div className="presenter-intro">
             <b>{doc.name}</b>
-            <span>{n ? `${n} step${n === 1 ? '' : 's'} · press → to begin` : 'Point with the laser (K), sketch with the pen (D), trace nets (Q)'}</span>
+            <span>{n ? `${n} step${n === 1 ? '' : 's'} · → next` : 'No callouts · K laser · D pen · Q trace'}</span>
           </div>
         ) : (
           <div className="presenter-intro">
-            <b>That’s the walkthrough</b>
+            <b>End</b>
             <span>← to go back · Esc to finish</span>
           </div>
         )}

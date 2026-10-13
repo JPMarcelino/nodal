@@ -239,7 +239,7 @@ export function ToolRail() {
       <button
         className={isExplainTool(tool) ? 'tool-btn explain-btn active' : 'tool-btn explain-btn'}
         onClick={A.toggleExplain}
-        title="Explain: draw, point, trace nets, spotlight, numbered steps (D · K · Q · J · C · F5)"
+        title="Explain tools"
       >
         <Presentation size={17} />
         <span className="tool-key">{prettyKey(keysFor(`tool.${lastExplain}`)[0] ?? '')}</span>

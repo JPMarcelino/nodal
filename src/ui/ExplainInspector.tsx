@@ -20,8 +20,8 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
       <div className="panel-title">{title}</div>
       {allCallouts && shapes.length === 1 && (
         <Section title="Note">
-          <Field label="Text" wide hint="Shown next to the number and as the caption when presenting · $LaTeX$ works">
-            <TextInput value={first.text ?? ''} multiline focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder="What happens here?" />
+          <Field label="Text" wide hint="Also the caption when presenting · supports $LaTeX$">
+            <TextInput value={first.text ?? ''} multiline focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder="Note" />
           </Field>
           <Field label="Step">
             <NumberInput value={first.step ?? 1} min={1} max={999} onChange={(v) => upd((s) => (s.step = Math.round(v)))} />
@@ -50,7 +50,7 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
             <Field label="Width">
               <NumberInput value={first.strokeWidth} min={0.5} max={80} step={0.5} suffix="px" onChange={(v) => upd((s) => (s.strokeWidth = v))} />
             </Field>
-            <Field label="Highlighter" hint="Wide and translucent, drawn under the circuit">
+            <Field label="Highlighter" hint="Drawn under the circuit">
               <Toggle
                 checked={!!first.highlighter}
                 onChange={(v) =>
