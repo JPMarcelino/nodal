@@ -79,11 +79,10 @@ The **Explain** button at the end of the tool rail opens a toolbar of annotation
 - **Laser pointer** (**K**): a trail that fades after a moment. Visible to others in a live session.
 - **Eraser** (**U**): drag over ink or callouts.
 - **Trace net** (**Q**): click a wire or pin to highlight its net, with an animation along the wires starting from the click. Click a part to highlight all its nets. A panel lists the pins on each highlighted net.
-- **Spotlight** (**J**): click parts or wires (a wire selects its whole net) or drag an area; everything else is dimmed.
 - **Numbered callouts** (**C**): click a part, pin or wire to attach a numbered note; drag to place it. The leader follows the part when it moves. Notes support `$LaTeX$`.
-- **Present** (**F5** / **Shift+P**): full screen, steps through the callouts in order, zooming to and spotlighting each target, with the note as a caption. **→** / **Space** next, **←** back. Pen strokes vanish while presenting.
+- **Present** (**F5** / **Shift+P**): full screen, steps through the callouts in order, zooming to each target (a wire's net is traced), with the note as a caption. **→** / **Space** next, **←** back. Pen strokes vanish while presenting.
 
-Ink and callouts are saved with the circuit and exported. Traces and the spotlight are temporary; **Esc** clears them.
+Ink and callouts are saved with the circuit and exported. Traced nets are temporary; **Esc** clears them.
 
 ### Checking the circuit
 - **Check tab** (**Ctrl+Alt+R**): a live electrical rules check. It lists unconnected pins (open power pins are errors), duplicate reference designators, supply rails shorted together, net labels used only once, nets that reach a single pin, loose wire ends, wire ends touching something without connecting, no-connect flags on wired pins, and parts stacked on the same spot. Markers show each problem on the canvas; click one to select and zoom to it. Put a **no-connect flag** (**Shift+X**) on pins you leave open on purpose.

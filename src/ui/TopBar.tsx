@@ -56,7 +56,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.corners'] },
   {
     label: 'Explain',
-    items: ['explain.toggle', '-', 'tool.pen', 'tool.highlighter', 'tool.laser', 'tool.eraser', '-', 'tool.trace', 'tool.spotlight', 'tool.callout', '-', 'explain.present', 'explain.renumber', 'explain.clear'],
+    items: ['explain.toggle', '-', 'tool.pen', 'tool.highlighter', 'tool.laser', 'tool.eraser', '-', 'tool.trace', 'tool.callout', '-', 'explain.present', 'explain.renumber', 'explain.clear'],
   },
   {
     label: 'View',

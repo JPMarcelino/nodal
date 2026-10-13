@@ -3194,13 +3194,13 @@ select.input {
 }
 
 /* ------------------------------------------------------------------ */
-/* Explain mode: ink, laser, traces, spotlight, callouts, presenting   */
+/* Explain mode: ink, laser, traces, callouts, presenting              */
 /* ------------------------------------------------------------------ */
 
-.explain-svg,
-.explain-veil {
+.explain-svg {
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
   overflow: hidden;
 }
@@ -3212,31 +3212,8 @@ select.input {
   touch-action: none;
 }
 
-.explain-svg {
-  z-index: 1;
-}
-
 .canvas-wrap .minimap {
   z-index: 3;
-}
-
-.explain-veil {
-  z-index: 1;
-  animation: xp-fade-in 0.35s ease-out;
-}
-
-.explain-veil-fill {
-  fill: rgba(20, 17, 12, 0.5);
-}
-
-[data-theme='dark'] .explain-veil-fill {
-  fill: rgba(3, 3, 6, 0.68);
-}
-
-.spot-drag {
-  stroke: #fff;
-  stroke-dasharray: 6 5;
-  opacity: 0.8;
 }
 
 .explain-hover {

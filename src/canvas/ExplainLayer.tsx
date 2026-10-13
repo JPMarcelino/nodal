@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'reac
 import { useCollab } from '../collab/session';
 import { calloutAnchor, calloutLayout, makeAnchor, nextStep } from '../model/callout';
 import { itemBounds, makeShape } from '../model/doc';
-import { pointInRect, rectFromPoints } from '../model/geometry';
+import { pointInRect } from '../model/geometry';
 import { EXPLAIN_COLORS, inkHit, inkOutline, inkCenterPath, packInk, recognizeInk, type InkPoint, type InkShape } from '../model/ink';
 import { computeNets, type Net } from '../model/netlist';
 import { getSymbol } from '../model/registry';
@@ -28,7 +28,6 @@ type G =
   | { kind: 'ink'; pts: InkPoint[]; highlighter: boolean; color: string; width: number; snapped: InkShape | null; still: Point }
   | { kind: 'laser' }
   | { kind: 'erase'; hits: Set<string>; last: Point }
-  | { kind: 'region'; start: Point; cur: Point }
   | { kind: 'callout-new'; at: Point; target: string | null; cur: Point; client: Point }
   | { kind: 'callout-move'; id: string; start: Point }
   | { kind: 'callout-anchor'; id: string };
@@ -66,7 +65,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
   const [fading, setFading] = useState<Fading[]>([]);
   const [, setTick] = useState(0);
 
-  const needNets = ex.traces.length > 0 || tool === 'trace' || tool === 'spotlight' || ex.presenting !== null;
+  const needNets = ex.traces.length > 0 || tool === 'trace' || ex.presenting !== null;
   const nets = useMemo(() => (needNets ? computeNets(doc) : []), [doc, needNets]);
 
   /* ----------------------------- frame loop ----------------------------- */
@@ -286,10 +285,6 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
         }
         return;
       }
-      case 'spotlight': {
-        setGesture({ kind: 'region', start: w, cur: w });
-        return;
-      }
       case 'callout': {
         const hitC = hitCallout(w, d);
         if (hitC) {
@@ -337,7 +332,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
     setCursor(w);
     const cur = gRef.current;
     if (!cur) {
-      if (tool === 'trace' || tool === 'spotlight' || tool === 'callout') {
+      if (tool === 'trace' || tool === 'callout') {
         const t = hitThing(w, S().doc);
         if (t.item !== hover.item || JSON.stringify(t.seed) !== JSON.stringify(hover.seed)) setHover({ item: t.item, seed: t.seed });
       }
@@ -364,9 +359,6 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
       case 'erase':
         eraseAt(cur.last, w, cur.hits);
         setGesture({ ...cur, last: w });
-        return;
-      case 'region':
-        setGesture({ ...cur, cur: w });
         return;
       case 'callout-new':
         setGesture({ ...cur, cur: w });
@@ -401,7 +393,6 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
     const cur = gRef.current;
     setGesture(null);
     if (!cur) return;
-    const zz = S().view.zoom;
     switch (cur.kind) {
       case 'ink': {
         const pts = cur.pts;
@@ -429,27 +420,6 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
       case 'erase':
         if (cur.hits.size) mutate((d) => cur.hits.forEach((id) => delete d.items[id]), S().selection.filter((id) => !cur.hits.has(id)));
         return;
-      case 'region': {
-        const r = rectFromPoints(cur.start, cur.cur);
-        if (r.w * zz > 8 && r.h * zz > 8) {
-          setX((s) => ({ regions: [...s.regions, r] }));
-          return;
-        }
-        // a click: light (or unlight) what is under the pointer; empty space clears
-        const t = hitThing(cur.start, S().doc);
-        if (!t.item) {
-          setX({ focus: [], regions: [] });
-          return;
-        }
-        let ids = [t.item];
-        const it = S().doc.items[t.item];
-        if (it?.type === 'wire') ids = resolveNet(computeNets(S().doc), { wire: it.id })?.wires ?? ids;
-        setX((s) => {
-          const on = ids.every((id) => s.focus.includes(id));
-          return { focus: on ? s.focus.filter((id) => !ids.includes(id)) : [...new Set([...s.focus, ...ids])] };
-        });
-        return;
-      }
       case 'callout-new': {
         const dragged = Math.hypot(e.clientX - cur.client.x, e.clientY - cur.client.y) > 6;
         const badge = dragged ? cur.cur : { x: cur.at.x + 36, y: cur.at.y - 54 };
@@ -490,7 +460,6 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
   const hoverTraced = hoverNet && flows.some((f) => f.net === hoverNet);
 
   const eraseHits = g?.kind === 'erase' ? [...g.hits] : [];
-  const showSpot = ex.focus.length > 0 || ex.regions.length > 0 || g?.kind === 'region';
   const laserColor = '#ff2b2b';
 
   const editing = ex.editing ? (doc.items[ex.editing] as ShapeItem | undefined) : undefined;
@@ -503,7 +472,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
         ? penCursor(tool === 'highlighter' ? ex.highlightColor : ex.color, theme, tool === 'highlighter')
         : tool === 'eraser'
           ? ERASER_CURSOR
-          : tool === 'trace' || tool === 'spotlight'
+          : tool === 'trace'
             ? hover.item
               ? 'pointer'
               : 'crosshair'
@@ -513,41 +482,6 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
     <>
       {/* eraser preview: the strokes about to go fade out */}
       {eraseHits.length > 0 && <style>{eraseHits.map((id) => `.canvas [data-id="${id}"]`).join(',') + '{opacity:.18;transition:opacity .12s}'}</style>}
-
-      {/* spotlight veil */}
-      {showSpot && (
-        <svg className="explain-veil" width="100%" height="100%">
-          <defs>
-            <filter id="spot-soft" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation={9} />
-            </filter>
-            <mask id="spot-mask" maskUnits="userSpaceOnUse">
-              <rect width="100%" height="100%" fill="#fff" />
-              <g filter="url(#spot-soft)" transform={`translate(${view.x} ${view.y}) scale(${z})`}>
-                {ex.focus.map((id) => {
-                  const it = doc.items[id];
-                  if (!it) return null;
-                  if (it.type === 'wire') {
-                    return <path key={id} d={buildWirePath(data.polys.get(id) ?? [], 0)} fill="none" stroke="#000" strokeWidth={30 / z} strokeLinecap="round" strokeLinejoin="round" />;
-                  }
-                  const b = itemBounds(doc, it);
-                  if (!b) return null;
-                  const pad = 16 / z;
-                  return <rect key={id} x={b.x - pad} y={b.y - pad} width={b.w + 2 * pad} height={b.h + 2 * pad} rx={14 / z} fill="#000" />;
-                })}
-                {ex.regions.map((r, i) => (
-                  <rect key={`r${i}`} x={r.x} y={r.y} width={r.w} height={r.h} rx={14 / z} fill="#000" />
-                ))}
-                {g?.kind === 'region' && (() => {
-                  const r = rectFromPoints(g.start, g.cur);
-                  return <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={14 / z} fill="#000" />;
-                })()}
-              </g>
-            </mask>
-          </defs>
-          <rect width="100%" height="100%" className="explain-veil-fill" mask="url(#spot-mask)" />
-        </svg>
-      )}
 
       {/* world-space overlays: traces, previews, laser */}
       <svg className="explain-svg" width="100%" height="100%">
@@ -569,8 +503,8 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
             <TraceView key={t.id} t={t} flow={flow} z={z} />
           ))}
 
-          {/* hover outline for spotlight / callout targets */}
-          {(tool === 'spotlight' || tool === 'callout') && !g && hover.item && (() => {
+          {/* hover outline for callout targets */}
+          {tool === 'callout' && !g && hover.item && (() => {
             const it = doc.items[hover.item];
             if (!it) return null;
             if (it.type === 'wire') return <path d={buildWirePath(data.polys.get(it.id) ?? [], 0)} className="explain-hover" fill="none" strokeWidth={6 / z} strokeLinecap="round" />;
@@ -613,12 +547,6 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
             );
           })()}
 
-          {/* spotlight region being dragged */}
-          {g?.kind === 'region' && (() => {
-            const r = rectFromPoints(g.start, g.cur);
-            return <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={14 / z} className="spot-drag" strokeWidth={1.5 / z} fill="none" />;
-          })()}
-
           {/* laser pointer */}
           {laser.current.map((tr, i) => (
             <LaserTrail key={i} pts={tr} now={now} z={z} color={laserColor} />
@@ -644,7 +572,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
 
       {editing && editing.kind === 'callout' && <CalloutEditor s={editing} />}
       {flows.length > 0 && ex.presenting === null && <TracePanel flows={flows} />}
-      {(active || showSpot || flows.length > 0) && ex.presenting === null && <ExplainDock />}
+      {(active || flows.length > 0) && ex.presenting === null && <ExplainDock />}
     </>
   );
 }

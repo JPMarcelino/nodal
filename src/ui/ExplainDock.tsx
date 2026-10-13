@@ -1,4 +1,4 @@
-import { Eraser, Flashlight, Focus, Ghost, Highlighter, MessageSquareText, PenLine, Play, Sparkles, Trash2, Waypoints, X as Close, Zap } from 'lucide-react';
+import { Eraser, Ghost, Highlighter, MessageSquareText, PenLine, Play, Sparkles, Trash2, Waypoints, X as Close, Zap } from 'lucide-react';
 import { useState, type CSSProperties } from 'react';
 import { callouts } from '../model/callout';
 import { EXPLAIN_COLORS } from '../model/ink';
@@ -20,7 +20,6 @@ const TOOLS: { tool: ExplainTool; icon: JSX.Element; label: string; cmd: string 
 ];
 const REASON: typeof TOOLS = [
   { tool: 'trace', icon: <Waypoints size={17} />, label: 'Trace net', cmd: 'tool.trace' },
-  { tool: 'spotlight', icon: <Flashlight size={17} />, label: 'Spotlight', cmd: 'tool.spotlight' },
   { tool: 'callout', icon: <MessageSquareText size={17} />, label: 'Numbered callout', cmd: 'tool.callout' },
 ];
 
@@ -40,11 +39,6 @@ export const EXPLAIN_HINTS: Record<ExplainTool, JSX.Element> = {
   trace: (
     <>
       Click a wire or pin to highlight its net · click a part to highlight all its nets · click again to turn off
-    </>
-  ),
-  spotlight: (
-    <>
-      Click parts or wires to spotlight them · drag to spotlight an area · click empty space to clear
     </>
   ),
   callout: (
@@ -68,7 +62,7 @@ export function ExplainDock() {
   const active = isExplainTool(tool);
 
   if (!active) {
-    // lit nets / spotlight stay on while editing; a small chip turns them off
+    // traced nets stay on while editing; a small chip turns them off
     return (
       <div className="explain-chip" onPointerDown={stop}>
         <Sparkles size={14} />
@@ -148,7 +142,7 @@ export function ExplainDock() {
             </button>
             {clearOpen && (
               <div className="xd-menu" onMouseLeave={() => setClearOpen(false)}>
-                <button onClick={() => (clearExplainOverlays(), setClearOpen(false))}>Turn off traces &amp; spotlight</button>
+                <button onClick={() => (clearExplainOverlays(), setClearOpen(false))}>Clear traced nets</button>
                 <button onClick={() => (clearShapes('ink'), setClearOpen(false))}>Erase all ink</button>
                 <button onClick={() => (clearShapes('callout'), setClearOpen(false))}>Delete all callouts</button>
                 <button onClick={() => (renumberCallouts(), setClearOpen(false))}>Renumber callouts 1, 2, 3…</button>
@@ -195,9 +189,6 @@ export function TracePanel({ flows }: { flows: { t: Trace; net: Net; flow: NetFl
             <span className="trace-meta">
               {net.pins.length} pin{net.pins.length === 1 ? '' : 's'} · {net.wires.length} wire{net.wires.length === 1 ? '' : 's'}
             </span>
-            <button className="trace-x" title="Spotlight this net" onClick={() => setX({ focus: [...net.wires, ...new Set(net.pins.map((p) => p.comp))] })}>
-              <Focus size={13} />
-            </button>
             <button className="trace-x" title="Turn off" onClick={() => setX((s) => ({ traces: s.traces.filter((x) => x.id !== t.id) }))}>
               <Close size={13} />
             </button>
