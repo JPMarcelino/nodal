@@ -4073,3 +4073,10 @@ body.is-presenting .scope-banner {
   width: 24px;
   background: var(--c);
 }
+
+.align-guide {
+  stroke: var(--accent);
+  fill: none;
+  pointer-events: none;
+  opacity: 0.9;
+}

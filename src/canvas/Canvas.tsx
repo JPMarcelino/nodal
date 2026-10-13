@@ -12,7 +12,8 @@ import { routeObstacles } from '../model/route';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
-import { S, beginGesture, endGesture, gestureUpdate, mutate, rebaseGesture, select, set, toast, useStore } from '../store/store';
+import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, mutate, rebaseGesture, select, set, toast, useStore } from '../store/store';
+import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
@@ -144,6 +145,9 @@ export function Canvas() {
   const [gesture, setGestureState] = useState<Gesture | null>(null);
   const [hover, setHover] = useState<{ item: string | null; port: PortInfo | null }>({ item: null, port: null });
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 });
+  const [guides, setGuides] = useState<Guide[]>([]);
+  /** Alignment anchors of the running move, keyed by its id set. */
+  const alignRef = useRef<{ ids: Set<string>; moving: Point[]; index: AlignIndex } | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
   const [fileDrag, setFileDrag] = useState(false);
   const [editingText, setEditingText] = useState<string | null>(null);
@@ -574,6 +578,7 @@ export function Canvas() {
 
   /** Rotates what a pointer-carried move is holding (Cadence: R or the right mouse button). */
   const rotateFloating = (g: Extract<Gesture, { kind: 'move' }>) => {
+    alignRef.current = null;
     rebaseGesture();
     A.rotateSelection(90);
     rebaseGesture();
@@ -934,6 +939,14 @@ export function Canvas() {
         const step = snapOn ? grid : 1;
         dx = snap(dx, step);
         dy = snap(dy, step);
+        if (S().prefs.alignGuides) {
+          if (alignRef.current?.ids !== g.ids) alignRef.current = { ids: g.ids, ...alignAnchors(gestureBaseDoc() ?? S().doc, g.ids) };
+          // off the grid, guides also pull the selection onto them; on it they just show what lines up
+          const a = alignMove(alignRef.current.moving, alignRef.current.index, dx, dy, 6 / S().view.zoom, !snapOn);
+          if (!e.shiftKey || dx) dx = a.dx;
+          if (!e.shiftKey || dy) dy = a.dy;
+          setGuides(a.guides);
+        } else if (guides.length) setGuides([]);
         gestureUpdate((d, base) => (g.detach ? translateDetached : translateItems)(base, d as CircuitDoc, g.ids, dx, dy));
         if (!g.moved || dx !== g.dx || dy !== g.dy) setGesture({ ...g, moved: true, dx, dy });
         break;
@@ -1510,6 +1523,14 @@ export function Canvas() {
             const r = rectFromPoints(g.start, g.cur);
             return <rect x={r.x} y={r.y} width={r.w} height={r.h} className="marquee crossing" strokeWidth={1.5 / z} strokeDasharray={`${5 / z} ${4 / z}`} />;
           })()}
+          {g?.kind === 'move' && g.moved && prefs.alignGuides &&
+            guides.map((gd) =>
+              gd.axis === 'x' ? (
+                <line key={`x${gd.v}`} x1={gd.v} x2={gd.v} y1={gd.from - 12 / z} y2={gd.to + 12 / z} className="align-guide" strokeWidth={1 / z} strokeDasharray={`${4 / z} ${3 / z}`} />
+              ) : (
+                <line key={`y${gd.v}`} y1={gd.v} y2={gd.v} x1={gd.from - 12 / z} x2={gd.to + 12 / z} className="align-guide" strokeWidth={1 / z} strokeDasharray={`${4 / z} ${3 / z}`} />
+              ),
+            )}
           {g?.kind === 'wire' && (() => {
             const pts = wirePreview(g);
             const st = { ...doc.settings.wire, ...S().wireBrush };
