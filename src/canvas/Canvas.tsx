@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
-import { itemBounds, makeShape } from '../model/doc';
+import { itemBounds, labelsShown, makeShape } from '../model/doc';
 import { dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
 import { getSymbol } from '../model/registry';
@@ -368,8 +368,9 @@ export function Canvas() {
       const def = getSymbol(d, c.symbol);
       const L = labelLayout(c, def);
       const texts: [{ x: number; y: number; anchor: 'start' | 'middle' | 'end' } | null | undefined, string, number, 'ref' | 'value'][] = [];
-      if (c.showRef) texts.push([L.ref, c.ref, 11, 'ref']);
-      if (c.showValue && c.value) texts.push([L.value, c.value, def.valueIsLabel ? 11 : 10.5, 'value']);
+      const shown = labelsShown(d.settings, c, def);
+      if (shown.ref) texts.push([L.ref, c.ref, 11, 'ref']);
+      if (shown.value && c.value) texts.push([L.value, c.value, def.valueIsLabel ? 11 : 10.5, 'value']);
       for (const [at, text, size, which] of texts) {
         if (!at) continue;
         const m = measureRich(text, size, 500);
@@ -385,7 +386,7 @@ export function Canvas() {
     (p: Point): string | null => {
       const d = S().doc;
       for (const it of Object.values(d.items)) {
-        if (it.type !== 'wire' || !it.label || it.labelHidden || it.hidden || it.locked) continue;
+        if (it.type !== 'wire' || !it.label || it.labelHidden || it.hidden || it.locked || d.settings.hideWireLabels) continue;
         const spot = wireLabelSpot(it, data.polys.get(it.id) ?? [], wireStyle(d, it).width);
         if (!spot) continue;
         const m = measureRich(it.label, 10, 600);

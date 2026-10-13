@@ -151,6 +151,10 @@ export const COMMANDS: Command[] = [
   { id: 'view.fit', label: 'Zoom to fit', category: 'View', keys: ['Shift+1', 'F'], run: () => A.fitView() },
   { id: 'view.fitSel', label: 'Zoom to selection', category: 'View', keys: ['Shift+2'], run: () => A.fitView(S().selection) },
   { id: 'view.100', label: 'Zoom to 100%', category: 'View', keys: ['Mod+0', 'Shift+0'], run: () => A.zoomTo(1) },
+  { id: 'view.refs', label: 'Show / hide all instance names', category: 'View', keys: ['Alt+N'], run: () => toggleSetting('hideRefs', 'Instance names') },
+  { id: 'view.values', label: 'Show / hide all instance values', category: 'View', keys: ['Alt+U'], run: () => toggleSetting('hideValues', 'Instance values') },
+  { id: 'view.wireLabels', label: 'Show / hide all wire names', category: 'View', keys: ['Alt+W'], run: () => toggleSetting('hideWireLabels', 'Wire names') },
+  { id: 'view.alignGuides', label: 'Alignment guides while moving', category: 'View', keys: ['Alt+G'], run: () => { setPrefs({ alignGuides: !S().prefs.alignGuides }); toast(S().prefs.alignGuides ? 'Alignment guides on' : 'Alignment guides off'); } },
   { id: 'view.grid', label: 'Toggle grid', category: 'View', keys: ['G'], run: () => mutateSettings((s) => (s.showGrid = !s.showGrid)) },
   { id: 'view.snap', label: 'Toggle snap to grid', category: 'View', keys: ["Mod+'"], run: () => mutateSettings((s) => (s.snap = !s.snap)) },
   { id: 'view.library', label: 'Toggle library panel', category: 'View', keys: ['Mod+B'], run: () => set((s) => ({ leftPanel: !s.leftPanel })) },
@@ -202,6 +206,12 @@ export const COMMAND_MAP = new Map(COMMANDS.map((c) => [c.id, c]));
 
 function mutateSettings(fn: (s: import('../model/types').DocSettings) => void) {
   mutate((d) => fn(d.settings));
+}
+
+function toggleSetting(key: 'hideRefs' | 'hideValues' | 'hideWireLabels', what: string) {
+  const hide = !S().doc.settings[key];
+  mutateSettings((s) => (s[key] = hide));
+  toast(`${what} ${hide ? 'hidden' : 'shown'}`);
 }
 
 function cycleHops() {

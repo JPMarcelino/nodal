@@ -60,7 +60,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   },
   {
     label: 'View',
-    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.grid', 'view.snap', 'view.minimap', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
+    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.grid', 'view.snap', 'view.minimap', 'view.alignGuides', '-', 'view.refs', 'view.values', 'view.wireLabels', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
   },
   { label: 'Help', items: ['help.palette', 'help.shortcuts', '-', 'help.about'] },
 ];
@@ -149,6 +149,9 @@ export function TopBar() {
   const canRedo = useStore((s) => s.future.length > 0);
   const theme = useStore((s) => s.prefs.theme);
   const scheme = useStore((s) => s.prefs.shortcuts);
+  const guides = useStore((s) => s.prefs.alignGuides);
+  const hideRefs = useStore((s) => !!s.doc.settings.hideRefs);
+  const hideValues = useStore((s) => !!s.doc.settings.hideValues);
   const zoom = useStore((s) => s.view.zoom);
   const left = useStore((s) => s.leftPanel);
   const right = useStore((s) => s.rightPanel);
@@ -188,6 +191,16 @@ export function TopBar() {
         </button>
         <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">
           <Keyboard size={16} />
+        </button>
+        <span className="divider" />
+        <button className={hideRefs ? 'zoom-chip' : 'zoom-chip active'} onClick={() => COMMAND_MAP.get('view.refs')!.run()} title={`${hideRefs ? 'Show' : 'Hide'} all instance names (${prettyKey(keysFor('view.refs')[0] ?? '')})`}>
+          Names
+        </button>
+        <button className={hideValues ? 'zoom-chip' : 'zoom-chip active'} onClick={() => COMMAND_MAP.get('view.values')!.run()} title={`${hideValues ? 'Show' : 'Hide'} all instance values (${prettyKey(keysFor('view.values')[0] ?? '')})`}>
+          Values
+        </button>
+        <button className={guides ? 'zoom-chip active' : 'zoom-chip'} onClick={() => COMMAND_MAP.get('view.alignGuides')!.run()} title={`Alignment guides while moving: ${guides ? 'on' : 'off'} (${prettyKey(keysFor('view.alignGuides')[0] ?? '')})`}>
+          Guides
         </button>
         <button
           className={scheme === 'cadence' ? 'zoom-chip active' : 'zoom-chip'}
