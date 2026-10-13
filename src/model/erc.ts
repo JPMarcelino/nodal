@@ -258,6 +258,15 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
   return issues.sort((a, b) => rank(a) - rank(b) || (a.at?.y ?? 0) - (b.at?.y ?? 0) || (a.at?.x ?? 0) - (b.at?.x ?? 0));
 }
 
+/** Splits rule-check findings into active and user-ignored ones (by stable key). Keeps order; missing list = empty. */
+export function splitIgnored(issues: ErcIssue[], ignored: readonly string[] | undefined): { active: ErcIssue[]; ignored: ErcIssue[] } {
+  const set = new Set(ignored ?? []);
+  const active: ErcIssue[] = [];
+  const ign: ErcIssue[] = [];
+  for (const i of issues) (set.has(i.key) ? ign : active).push(i);
+  return { active, ignored: ign };
+}
+
 const isLabelLike = (def: SymbolDef) => !!def.valueIsLabel;
 
 function describePin(doc: CircuitDoc, comp: string, port: string) {
