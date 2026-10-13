@@ -2,7 +2,7 @@ import { calloutLayout } from './callout';
 import { componentBounds, polylineBounds, unionRects } from './geometry';
 import { measureRich } from './richText';
 import { getSymbol } from './registry';
-import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, Item, Rect, ShapeItem, ShapeKind } from './types';
+import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, Item, Rect, ShapeItem, ShapeKind, SymbolDef } from './types';
 import { wirePolyline } from './wires';
 
 let counter = 0;
@@ -203,4 +203,9 @@ export function groupMembers(doc: CircuitDoc, groupId: string): string[] {
 /** Front-to-back key of every item: its z, or its creation position when unset (higher = in front). */
 export function drawOrder(doc: CircuitDoc): Map<string, number> {
   return new Map(Object.values(doc.items).map((it, i) => [it.id, it.z ?? i]));
+}
+
+/** Which of a part's labels are drawn, after the document-wide hide switches. */
+export function labelsShown(settings: Pick<DocSettings, 'hideRefs' | 'hideValues'>, c: Pick<ComponentItem, 'showRef' | 'showValue'>, def: Pick<SymbolDef, 'valueIsLabel'>) {
+  return { ref: c.showRef && !settings.hideRefs, value: c.showValue && (!settings.hideValues || !!def.valueIsLabel) };
 }

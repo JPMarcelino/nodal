@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react';
 import { componentBounds, measureText, segmentIntersectsRect, sideVector, toWorld } from '../model/geometry';
-import { drawOrder } from '../model/doc';
+import { drawOrder, labelsShown } from '../model/doc';
 import { touchingPins } from '../model/netlist';
 import { isDnp } from '../model/partFields';
 import { getSymbol } from '../model/registry';
@@ -220,6 +220,8 @@ export const ComponentView = memo(function ComponentView({
   palette: Palette;
   ghost?: boolean;
 }) {
+  const shown = labelsShown(settings, c, def);
+  if (shown.ref !== c.showRef || shown.value !== c.showValue) c = { ...c, showRef: shown.ref, showValue: shown.value };
   const color = c.color || settings.componentColor || palette.sym;
   const tf = `translate(${c.x} ${c.y}) rotate(${c.rot}) scale(${c.flipX ? -1 : 1} 1) translate(${-def.w / 2} ${-def.h / 2})`;
   const labels = labelLayout(c, def);
@@ -284,7 +286,7 @@ export const WireView = memo(function WireView({
   const st = { ...settings.wire, ...w.style };
   const color = inkColor(st.color, palette);
   const d = buildWirePath(pts, st.radius, hops, settings.hops, settings.hopSize);
-  const spot = w.label && !w.labelHidden ? wireLabelSpot(w, pts, st.width) : null;
+  const spot = w.label && !w.labelHidden && !settings.hideWireLabels ? wireLabelSpot(w, pts, st.width) : null;
   return (
     <g className="wire" data-id={w.id} opacity={dim ? 0.25 : 1}>
       <path
