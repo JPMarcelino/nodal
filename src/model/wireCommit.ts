@@ -3,7 +3,7 @@ import { eq, simplify } from './geometry';
 import { cleanup, splitWire } from './ops';
 import type { CircuitDoc, Endpoint, Point, WireItem, WireStyle } from './types';
 import { routeLeg, routeObstacles } from './route';
-import { hitWire, wirePolyline } from './wires';
+import { adjustWireForMove, hitWire, wirePolyline } from './wires';
 
 /* ------------------------------------------------------------------ */
 /* Wire gesture targets (UI-agnostic copy of the Canvas Target type)   */
@@ -150,19 +150,23 @@ export function commitWire(doc: CircuitDoc, start: WireTarget, end: WireTarget, 
 }
 
 /**
- * Drags one segment of a wire's base polyline by (dx, dy). Attached ends stay
- * put (a stub keeps the connection, inserted as an endpoint copy); free ends
- * travel with the segment. Mutates the wire in place; the caller runs
- * cleanup(). Returns false when the wire or segment is missing.
+ * Drags one segment of a wire's base polyline by (dx, dy). Free ends travel
+ * with the segment; so does a junction at the end of the dragged segment (with
+ * `baseDoc`, the document the drag started from): the solder dot comes along
+ * and the other wires meeting there bend to stay connected. Ends attached to
+ * pins stay put (a stub keeps the connection, inserted as an endpoint copy).
+ * Mutates the document in place; the caller runs cleanup(). Returns false when
+ * the wire or segment is missing.
  */
-export function moveWireSegment(doc: CircuitDoc, wireId: string, base: Point[], seg: number, dx: number, dy: number): boolean {
+export function moveWireSegment(doc: CircuitDoc, wireId: string, base: Point[], seg: number, dx: number, dy: number, baseDoc?: CircuitDoc): boolean {
   const wire = doc.items[wireId] as WireItem | undefined;
   if (!wire || wire.type !== 'wire') return false;
   if (seg < 0 || seg >= base.length - 1) return false;
   const pts = base.map((p) => ({ ...p }));
-  // attached ends stay put (a stub keeps the connection); free ends travel with the segment
-  const freeA = wire.a.kind === 'free';
-  const freeB = wire.b.kind === 'free';
+  const jA = !!baseDoc && wire.a.kind === 'junction' && seg === 0 ? wire.a.id : null;
+  const jB = !!baseDoc && wire.b.kind === 'junction' && seg === base.length - 2 ? wire.b.id : null;
+  const freeA = wire.a.kind === 'free' || !!jA;
+  const freeB = wire.b.kind === 'free' || !!jB;
   let s = seg;
   if (s === 0 && !freeA) {
     pts.splice(1, 0, { ...pts[0] });
@@ -172,10 +176,31 @@ export function moveWireSegment(doc: CircuitDoc, wireId: string, base: Point[], 
   pts[s] = { x: pts[s].x + dx, y: pts[s].y + dy };
   pts[s + 1] = { x: pts[s + 1].x + dx, y: pts[s + 1].y + dy };
   const full = simplify(pts);
-  if (freeA) wire.a = { kind: 'free', ...full[0] };
-  if (freeB) wire.b = { kind: 'free', ...full[full.length - 1] };
+  if (wire.a.kind === 'free') wire.a = { kind: 'free', ...full[0] };
+  if (wire.b.kind === 'free') wire.b = { kind: 'free', ...full[full.length - 1] };
   wire.pts = full.slice(1, -1);
+  for (const j of new Set([jA, jB])) if (j) moveJunction(doc, baseDoc!, j, dx, dy, wireId);
   return true;
+}
+
+/** Moves a junction by (dx, dy) from where it was in `baseDoc`; the other wires meeting there bend to follow. */
+function moveJunction(doc: CircuitDoc, baseDoc: CircuitDoc, id: string, dx: number, dy: number, except: string) {
+  const bj = baseDoc.items[id];
+  const j = doc.items[id];
+  if (bj?.type !== 'junction' || j?.type !== 'junction') return;
+  j.x = bj.x + dx;
+  j.y = bj.y + dy;
+  const d = { x: dx, y: dy };
+  for (const bw of Object.values(baseDoc.items)) {
+    if (bw.type !== 'wire' || bw.id === except) continue;
+    const atA = bw.a.kind === 'junction' && bw.a.id === id;
+    const atB = bw.b.kind === 'junction' && bw.b.id === id;
+    if (!atA && !atB) continue;
+    const w = doc.items[bw.id] as WireItem | undefined;
+    if (!w) continue;
+    const adj = adjustWireForMove(wirePolyline(baseDoc, bw), atA ? d : null, atB ? d : null, bw.routing !== 'straight');
+    w.pts = simplify(adj).slice(1, -1);
+  }
 }
 
 /**

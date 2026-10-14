@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
 import { itemBounds, labelsShown, makeShape } from '../model/doc';
-import { componentBounds, dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, snap, toWorld } from '../model/geometry';
+import { componentBounds, dist, eq, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
 import { getSymbol, instanceSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
@@ -23,6 +23,7 @@ import { setX } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
+import { marqueeHits } from '../model/marquee';
 import { gestureSlots, hitSlop, useTouchInput } from './touch';
 import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
@@ -1037,8 +1038,8 @@ export function Canvas() {
         const dx = vert || !horiz ? snap(w.x - g.start.x, step) : 0;
         const dy = horiz || !vert ? snap(w.y - g.start.y, step) : 0;
         if (!dx && !dy && !g.moved) return;
-        gestureUpdate((d) => {
-          moveWireSegment(d as CircuitDoc, g.wire, g.base, g.seg, dx, dy);
+        gestureUpdate((d, baseDoc) => {
+          moveWireSegment(d as CircuitDoc, g.wire, g.base, g.seg, dx, dy, baseDoc);
         });
         if (!g.moved) {
           set({ wirePart: null }); // dragging a segment reshapes it instead of selecting it
@@ -1187,20 +1188,7 @@ export function Canvas() {
           if (!g.additive) set({ selection: [] });
         } else {
           const crossing = w.x < g.start.x;
-          const d = S().doc;
-          const ids = Object.values(d.items)
-            .filter((it) => !it.hidden && !it.locked)
-            .filter((it) => {
-              const b = itemBounds(d, it);
-              if (!b) return false;
-              if (it.type === 'wire') {
-                const pts = data.polys.get(it.id) ?? [];
-                if (crossing) return pts.some((p) => pointInRect(p, r)) || rectsIntersect(b, r);
-                return pts.every((p) => pointInRect(p, r));
-              }
-              return crossing ? rectsIntersect(b, r) : rectContains(r, b);
-            })
-            .map((it) => it.id);
+          const ids = marqueeHits(S().doc, data.polys, r, crossing);
           select(ids, g.additive ? 'add' : 'replace');
         }
         setGesture(null);
