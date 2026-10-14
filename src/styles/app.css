@@ -2501,29 +2501,6 @@ select.input {
 /* Symbol hover / type picker                                          */
 /* ------------------------------------------------------------------ */
 
-.lib-actions {
-  display: flex;
-  padding: 8px 8px 0 10px;
-}
-
-.lib-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.8em;
-  font-weight: 600;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 5px 10px;
-  transition: background 0.12s, border-color 0.12s;
-}
-
-.lib-action:hover {
-  border-color: var(--accent);
-}
-
 .tile-types {
   position: absolute;
   bottom: 4px;

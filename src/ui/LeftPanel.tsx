@@ -1,4 +1,4 @@
-import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, History, Lock, LockOpen, Pencil, Plus, Search, Share2, Star, Trash2, X } from 'lucide-react';
+import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, History, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { drawOrder } from '../model/doc';
 import { computeNets } from '../model/netlist';
@@ -209,11 +209,6 @@ function Library() {
   const mine = all.filter((d) => d.custom);
   return (
     <div className="library">
-      <div className="lib-actions">
-        <button className="lib-action" onClick={() => set({ dialog: 'share' })} title="Share or import your symbols and templates">
-          <Share2 size={12} /> Share & collaborate
-        </button>
-      </div>
       <div className="search">
         <Search size={14} />
         <input
