@@ -874,9 +874,10 @@ export function Canvas() {
     }
     const wireLabel = tool === 'select' ? hitWireLabel(w) : null;
     if (wireLabel) {
-      // other wires of the net that carry a label of their own are not landing spots
+      // other wires of the net that carry a label of their own are not landing spots; only
+      // physically connected wires qualify (same-label wires elsewhere join the net by name)
       const d0 = S().doc;
-      const net = (netOfWire(computeNets(d0), wireLabel)?.wires ?? [wireLabel]).filter((id) => id === wireLabel || !(d0.items[id] as WireItem | undefined)?.label);
+      const net = (netOfWire(computeNets(d0, { ignoreLabels: true }), wireLabel)?.wires ?? [wireLabel]).filter((id) => id === wireLabel || !(d0.items[id] as WireItem | undefined)?.label);
       select([wireLabel]);
       beginGesture();
       setGesture({ kind: 'wireLabel', id: wireLabel, net });

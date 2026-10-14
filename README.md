@@ -67,7 +67,7 @@ You can also share without a live session. Open **File â†’ Share & collaborateâ€
 - Junction dots appear wherever three or more conductors meet. Deleting a branch merges the remaining wire back into one.
 - To reshape a selected wire, drag one of its segments. To reconnect it, drag an end handle. To **move it whole, keeping its shape**, drag anywhere else inside its selection box: wires moved on their own let go of the pins they leave, and ends set down exactly on a pin, junction or wire end connect there.
 - **Wire style is fully customisable**, both per wire and as the document default: colour, thickness, sharp or rounded corners (with a radius), and solid/dashed/dotted lines. "Use for new wires" turns the current style into a brush, and "Apply style to whole net" restyles a net in one click.
-- Wire labels (net names): **drag a label along its wire, onto any other wire of the same net, and to either side** (above, below, left, right), set its side and position in the inspector, or hide it while it still names the net. Net-label, port and rail symbols can hide their name too, and their name can be dragged.
+- Wire labels (net names): **drag a label along its wire, onto any other wire of the same net, and to either side** (above, below, left, right), set its side and position in the inspector, or hide it while it still names the net. Wires with the same label are connected. Net-label, port and rail symbols can hide their name too, and their name can be dragged.
 - Net highlighting (**N**), and a list of the pins on each net
 - Unconnected pins are marked, so dangling connections are easy to spot
 

@@ -64,6 +64,20 @@ describe('electrical rules check', () => {
     const short = runErc(doc).find((i) => i.rule === 'shorted-nets');
     expect(short?.severity).toBe('error');
   });
+
+  it('does not flag a net label joined by a wire label as single-use', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'port', comp: a.id, port: '2' }, b: { kind: 'port', comp: b.id, port: '1' }, pts: [], label: 'SDA' };
+    doc.items[w.id] = w;
+    const c = place(doc, 'resistor', 400, 0);
+    const lbl = place(doc, 'net-label', 800, 0);
+    lbl.value = 'SDA';
+    wire(doc, c, '1', lbl, 'N');
+    expect(computeNets(doc).filter((n) => n.name === 'SDA')).toHaveLength(1);
+    expect(runErc(doc).some((i) => i.rule === 'single-label')).toBe(false);
+  });
 });
 
 describe('splitIgnored', () => {
