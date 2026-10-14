@@ -239,7 +239,7 @@ export const ComponentView = memo(function ComponentView({
         if (anchor !== 'middle' && (c.flipX ? c.rot !== 180 : c.rot === 180)) anchor = anchor === 'start' ? 'end' : 'start';
         if (c.rot === 90 || c.rot === 270) anchor = 'middle';
         return (
-          <text key={i} x={w.x} y={w.y + p.size * 0.35} fontSize={p.size} textAnchor={anchor} fill="currentColor" className="sym-text">
+          <text key={i} x={w.x} y={w.y + p.size * 0.35} fontSize={p.size} textAnchor={anchor} fill={p.color ?? 'currentColor'} className="sym-text">
             {p.text}
           </text>
         );

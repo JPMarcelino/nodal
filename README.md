@@ -34,6 +34,8 @@ Many parts can be drawn more than one way. A symbol with types shows a small **t
 ### Making your own symbols
 Open the symbol editor with **Ctrl+Shift+N**, the **+ New** button, or **Customise symbol** on any part:
 - **Draw:** lines, polylines/polygons, rectangles, circles and text on a grid, plus pins that snap onto the symbol outline
+- **Style:** line colour, fill colour, line width (presets or any value) and solid or dashed lines, for the selected shapes or for new ones. Leave a colour empty to follow the theme.
+- **Nothing gets lost:** closing with unsaved changes (Esc, ×, or clicking outside) asks whether to save, and your unsaved work is kept, so it can be restored the next time the editor opens.
 - **Chip / IC builder:** type the pin names for each side and the box, leads, labels and pin numbers are generated
 - **Import SVG:** paste or load an SVG; it is converted and scaled to fit
 - **Code:** a short text format, for precise edits
