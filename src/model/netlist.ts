@@ -53,8 +53,8 @@ class DSU {
   }
 }
 
-/** Computes electrical nets. Wires joined by junctions/ports share a net; net labels and rails with equal names are joined. */
-export function computeNets(doc: CircuitDoc): Net[] {
+/** Computes electrical nets. Wires joined by junctions/ports share a net; wire labels name their net like net-label and rail symbols, and equal names are joined. Hidden labels name the net too. */
+export function computeNets(doc: CircuitDoc, opts?: { ignoreLabels?: boolean }): Net[] {
   const dsu = new DSU();
   const comps = Object.values(doc.items).filter((i): i is ComponentItem => i.type === 'component');
   for (const it of Object.values(doc.items)) {
@@ -66,42 +66,71 @@ export function computeNets(doc: CircuitDoc): Net[] {
   }
   for (const group of touchingPins(doc)) for (const k of group.slice(1)) dsu.union(`p:${group[0]}`, `p:${k}`);
   const labelOf = new Map<string, string>();
+  const wireLabelOf = new Map<string, string>();
   const byLabel = new Map<string, string>();
-  for (const c of comps) {
-    const def = instanceSymbol(doc, c);
-    if (!def.valueIsLabel && !def.prefix.startsWith('#PWR')) continue;
-    const name = (c.value || def.value || '').trim();
-    if (!name) continue;
-    for (const p of def.ports) {
-      const k = `p:${c.id}:${p.id}`;
+  const nameKey = (name: string, k: string) => {
+    const prev = byLabel.get(name);
+    if (prev) dsu.union(prev, k);
+    else byLabel.set(name, k);
+  };
+  if (!opts?.ignoreLabels) {
+    for (const c of comps) {
+      const def = instanceSymbol(doc, c);
+      if (!def.valueIsLabel && !def.prefix.startsWith('#PWR')) continue;
+      const name = (c.value || def.value || '').trim();
+      if (!name) continue;
+      for (const p of def.ports) {
+        const k = `p:${c.id}:${p.id}`;
+        dsu.find(k);
+        labelOf.set(k, name);
+        nameKey(name, k);
+      }
+    }
+    for (const it of Object.values(doc.items)) {
+      if (it.type !== 'wire') continue;
+      const name = (it.label ?? '').trim();
+      if (!name) continue;
+      const k = `w:${it.id}`;
       dsu.find(k);
-      labelOf.set(k, name);
-      const prev = byLabel.get(name);
-      if (prev) dsu.union(prev, k);
-      else byLabel.set(name, k);
+      wireLabelOf.set(k, name);
+      nameKey(name, k);
     }
   }
   for (const c of comps) for (const p of instanceSymbol(doc, c).ports) dsu.find(`p:${c.id}:${p.id}`);
 
   const groups = new Map<string, Net>();
   let auto = 1;
+  const symFirst = new Map<string, string>();
   const roots = [...dsu.parent.keys()].map((k) => dsu.find(k));
   for (const root of new Set(roots)) groups.set(root, { name: '', names: [], wires: [], pins: [] });
   for (const k of dsu.parent.keys()) {
-    const net = groups.get(dsu.find(k))!;
-    if (k.startsWith('w:')) net.wires.push(k.slice(2));
-    else if (k.startsWith('p:')) {
+    const root = dsu.find(k);
+    const net = groups.get(root)!;
+    if (k.startsWith('w:')) {
+      net.wires.push(k.slice(2));
+      const label = wireLabelOf.get(k);
+      if (label) {
+        if (!net.names.includes(label)) net.names.push(label);
+        if (!net.name) net.name = label;
+      }
+    } else if (k.startsWith('p:')) {
       const [, comp, port] = k.split(':');
       const c = doc.items[comp] as ComponentItem;
       const def = instanceSymbol(doc, c);
       if (def.valueIsLabel || def.prefix.startsWith('#')) {
         const label = labelOf.get(k);
         if (label && !net.names.includes(label)) net.names.push(label);
+        if (label) symFirst.set(root, symFirst.get(root) ?? label);
         if (!net.name && label) net.name = label;
         continue;
       }
       net.pins.push({ comp, ref: c.ref, port, portName: def.ports.find((p) => p.id === port)?.name ?? port });
     }
+  }
+  // A net named by both a symbol and a wire label keeps the symbol's name; both stay in names so ERC reports the mismatch.
+  for (const [root, net] of groups) {
+    const s = symFirst.get(root);
+    if (s) net.name = s;
   }
   const nets = [...groups.values()].filter((n) => n.pins.length || n.wires.length || n.name);
   // every net gets a name: unnamed ones become net1, net2… numbered by their oldest item,

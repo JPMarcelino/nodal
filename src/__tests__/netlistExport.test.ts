@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, uid } from '../model/doc';
-import { spiceValue, toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
-import type { CircuitDoc, ComponentItem } from '../model/types';
+import { runErc } from '../model/erc';
+import { computeNets, spiceValue, toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
+import type { CircuitDoc, ComponentItem, WireItem } from '../model/types';
 
 function place(doc: CircuitDoc, symbol: string, x: number, y: number) {
   const c = makeComponent(doc, symbol, x, y);
@@ -77,5 +78,102 @@ describe('BOM and KiCad export', () => {
     expect(out).toContain('(comp (ref "R1") (value "10kΩ") (footprint "Resistor_SMD:R_0603")');
     expect(out).toMatch(/\(node \(ref "R1"\) \(pin "2"\)/);
     expect(out).toMatch(/\(node \(ref "C1"\) \(pin "1"\)/);
+  });
+});
+
+describe('wire labels name nets', () => {
+  function labelledWire(doc: CircuitDoc, a: ComponentItem, pa: string, b: ComponentItem, pb: string, label: string, hidden = false) {
+    const id = uid('w');
+    const w: WireItem = { id, type: 'wire', a: { kind: 'port', comp: a.id, port: pa }, b: { kind: 'port', comp: b.id, port: pb }, pts: [], label };
+    if (hidden) w.labelHidden = true;
+    doc.items[id] = w;
+    return w;
+  }
+
+  it('names the net after a single labelled wire', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    const w = labelledWire(doc, a, '2', b, '1', 'VOUT');
+    const net = computeNets(doc).find((n) => n.wires.includes(w.id))!;
+    expect(net.name).toBe('VOUT');
+    expect(net.pins).toHaveLength(2);
+  });
+
+  it('joins physically separate wires that share a label', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    const c = place(doc, 'resistor', 400, 0);
+    const d = place(doc, 'resistor', 600, 0);
+    const w1 = labelledWire(doc, a, '2', b, '1', 'SDA');
+    const w2 = labelledWire(doc, c, '2', d, '1', ' SDA ');
+    const named = computeNets(doc).filter((n) => n.name === 'SDA');
+    expect(named).toHaveLength(1);
+    expect(named[0].wires).toEqual(expect.arrayContaining([w1.id, w2.id]));
+    expect(named[0].pins).toHaveLength(4);
+  });
+
+  it('joins a wire label with a net-label symbol of the same name', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    const c = place(doc, 'resistor', 400, 0);
+    const w1 = labelledWire(doc, a, '2', b, '1', 'SDA');
+    const lbl = place(doc, 'net-label', 800, 0);
+    lbl.value = 'SDA';
+    wire(doc, c, '1', lbl, 'N');
+    const nets = computeNets(doc);
+    const named = nets.filter((n) => n.name === 'SDA');
+    expect(named).toHaveLength(1);
+    expect(named[0].wires).toContain(w1.id);
+    expect(named[0].pins.map((p) => p.comp)).toEqual(expect.arrayContaining([a.id, b.id, c.id]));
+  });
+
+  it('keeps the symbol name but reports a disagreeing wire label as shorted', () => {
+    const doc = createDoc();
+    const v = place(doc, 'vcc', 0, -200);
+    v.value = '5V';
+    const r = place(doc, 'resistor', 0, 0);
+    const w = labelledWire(doc, r, '1', v, 'VCC', '3V3');
+    const net = computeNets(doc).find((n) => n.wires.includes(w.id))!;
+    expect(net.names).toEqual(expect.arrayContaining(['5V', '3V3']));
+    expect(net.name).toBe('5V');
+    const short = runErc(doc).find((i) => i.rule === 'shorted-nets');
+    expect(short?.message).toMatch(/5V/);
+    expect(short?.message).toMatch(/3V3/);
+  });
+
+  it('uses the wire label in SPICE and KiCad exports', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    labelledWire(doc, a, '2', b, '1', 'VOUT');
+    const spice = toSpiceNetlist(doc);
+    expect(spice.split('\n').find((l) => l.startsWith('R1'))).toContain('VOUT');
+    expect(toKicadNetlist(doc)).toContain('(name "VOUT")');
+  });
+
+  it('a hidden wire label still names its net', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    const w = labelledWire(doc, a, '2', b, '1', 'VOUT', true);
+    expect(computeNets(doc).find((n) => n.wires.includes(w.id))!.name).toBe('VOUT');
+  });
+
+  it('label-blind nets stay physical (wire-label drag targets)', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    const c = place(doc, 'resistor', 400, 0);
+    const d = place(doc, 'resistor', 600, 0);
+    const w1 = labelledWire(doc, a, '2', b, '1', 'SDA');
+    const w2 = labelledWire(doc, c, '2', d, '1', 'SDA');
+    expect(computeNets(doc).filter((n) => n.name === 'SDA')).toHaveLength(1);
+    const physical = computeNets(doc, { ignoreLabels: true });
+    const n1 = physical.find((n) => n.wires.includes(w1.id))!;
+    const n2 = physical.find((n) => n.wires.includes(w2.id))!;
+    expect(n1).not.toBe(n2);
   });
 });
