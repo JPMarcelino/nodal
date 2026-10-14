@@ -63,7 +63,7 @@ export async function pasteClipboardContent(
   }
   const svg = svgText || (text && isSvgText(text) ? text : null);
   if (svg) {
-    await (deps.importSvg ?? ((name: string, body: string, p?: Point) => importFileText(name, body, null, p)))('Pasted SVG.svg', svg, at);
+    await (deps.importSvg ?? ((name: string, body: string, p?: Point) => importFileText(name, body, p)))('Pasted SVG.svg', svg, at);
     return 'svg';
   }
   return 'none';

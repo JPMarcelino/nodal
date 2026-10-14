@@ -1,11 +1,11 @@
+import { normalizeDoc } from '../model/doc';
 import { snap } from '../model/geometry';
 import { insertSvgDrawing } from '../model/svgDrawing';
 import type { CircuitDoc, Point } from '../model/types';
 import { S, mutate, toast } from '../store/store';
-import { openCircuitText } from './fileActions';
 import { openAnyFile } from './files';
 import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from './imageImport';
-import { importLibraryText, importTemplateText } from './sharing';
+import { importLibraryText, importTemplateText, insertCircuit } from './sharing';
 import { svgToDrawing } from './svgImport';
 
 /** Everything "Import file…" and drag & drop understand. */
@@ -19,11 +19,11 @@ export const viewCentre = (): Point => {
 };
 
 /**
- * Imports one file by sniffing its contents: a circuit opens, a symbol library
+ * Imports one file by sniffing its contents: a circuit is added to the open one, a symbol library
  * merges into "My symbols", a template / copied selection is inserted at `at`,
  * and an SVG becomes editable wires and shapes placed at `at`.
  */
-export async function importFileText(name: string, text: string, path: string | null = null, at?: Point): Promise<void> {
+export async function importFileText(name: string, text: string, at?: Point): Promise<void> {
   try {
     const trimmed = text.trimStart();
     if (/\.svg$/i.test(name) || (trimmed.startsWith('<') && /<svg[\s>]/i.test(text))) {
@@ -37,9 +37,12 @@ export async function importFileText(name: string, text: string, path: string | 
       throw new Error('Nodal can import circuits (.nodal), symbol libraries, templates, SVG, PDF and images');
     }
     switch (data?.format) {
-      case 'nodal':
-        await openCircuitText(name, text, path);
+      case 'nodal': {
+        // dropped or imported circuits are added to this one; File → Open replaces it
+        const ids = insertCircuit(normalizeDoc(data), at);
+        toast(`Added “${name.replace(/\.(nodal|json)$/i, '')}” (${ids.length} items, grouped; double-click to edit inside)`, 'success');
         return;
+      }
       case 'nodal-library': {
         const n = importLibraryText(text, { overwrite: false });
         toast(n ? `Imported ${n} symbol${n > 1 ? 's' : ''}` : 'Every symbol was already in your library', n ? 'success' : 'info');
@@ -73,7 +76,7 @@ function importSvgDrawing(fileName: string, text: string, at: Point) {
 }
 
 /** Imports one file of any supported kind; text formats go through `importFileText`. */
-async function importOneFile(file: File, path: string | null, at?: Point) {
+async function importOneFile(file: File, at?: Point) {
   if (isRaster(file) || isPdf(file)) {
     try {
       let pictures;
@@ -93,16 +96,16 @@ async function importOneFile(file: File, path: string | null, at?: Point) {
     }
     return;
   }
-  await importFileText(file.name, await file.text(), path, at);
+  await importFileText(file.name, await file.text(), at);
 }
 
 /** Imports files dropped onto the app, in order. */
 export async function importDroppedFiles(files: FileList | File[], at?: Point) {
-  for (const f of [...files]) await importOneFile(f, null, at);
+  for (const f of [...files]) await importOneFile(f, at);
 }
 
 /** File → Import…: picks any supported file. */
 export async function importFile() {
   const picked = await openAnyFile(IMPORT_FILTER);
-  if (picked) await importOneFile(picked.file, picked.path);
+  if (picked) await importOneFile(picked.file);
 }

@@ -1,4 +1,4 @@
-import { docBounds } from '../model/doc';
+import { docBounds, uid } from '../model/doc';
 import { extractFragment, insertFragment, type Fragment } from '../model/ops';
 import { snap } from '../model/geometry';
 import type { CircuitDoc, Point, SymbolDef } from '../model/types';
@@ -70,6 +70,21 @@ export function importTemplateText(text: string, at?: Point): string[] {
   const data = parseTemplate(text);
   const frag = data.fragment;
   if (!frag?.items?.length) throw new Error('This template has no items.');
+  return insertFragmentAt(frag, at);
+}
+
+/**
+ * Adds a whole circuit to the open one (instead of replacing it), centred on
+ * `at`, as one group named after it. Its symbols come along. One undo step.
+ */
+export function insertCircuit(src: CircuitDoc, at?: Point): string[] {
+  const frag = extractFragment(src, new Set(Object.keys(src.items)));
+  if (!frag.items.length) throw new Error('This circuit is empty.');
+  return insertFragmentAt(frag, at, src.name);
+}
+
+/** Inserts a fragment centred on `at` (or the view); with `groupName`, inside a new group of that name. */
+function insertFragmentAt(frag: Fragment, at?: Point, groupName?: string): string[] {
   const { view, canvasSize, doc } = S();
   const g = doc.settings.grid;
   const tmp = { ...doc, items: Object.fromEntries(frag.items.map((i) => [i.id, i])) } as CircuitDoc;
@@ -80,7 +95,13 @@ export function importTemplateText(text: string, at?: Point): string[] {
   const dy = b ? snap(targetY - (b.y + b.h / 2), g) : 0;
   let ids: string[] = [];
   mutate((d) => {
-    ids = insertFragment(d, frag, dx, dy, S().scope);
+    let scope = S().scope;
+    if (groupName) {
+      const g = uid('g');
+      d.groups[g] = { id: g, name: groupName, group: scope };
+      scope = g;
+    }
+    ids = insertFragment(d, frag, dx, dy, scope);
   });
   set({ selection: ids });
   return ids;

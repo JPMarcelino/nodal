@@ -118,7 +118,8 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 
 ### Files and export
 - Native open/save dialogs on desktop (`.nodal` files), with autosave and restore
-- **No accidental data loss:** New, Open or dropping a file onto unsaved changes asks whether to save first. Deleting library symbols or named versions asks for confirmation. Closing the page warns when changes exist nowhere else. A restore point is saved whenever you switch away, and *History → Other circuits on this device* reopens any circuit you closed or replaced.
+- **Combine circuits:** drag a `.nodal` file onto the canvas (or use *File → Import…*) to **add** it to the open circuit at that spot, as one group named after it; its custom symbols come along and clashing references are renumbered. *File → Open* still opens a circuit on its own.
+- **No accidental data loss:** New or Open with unsaved changes asks whether to save first. Deleting library symbols or named versions asks for confirmation. Closing the page warns when changes exist nowhere else. A restore point is saved whenever you switch away, and *History → Other circuits on this device* reopens any circuit you closed or replaced.
 - Export to **PNG** (1–4×, light/dark), **SVG**, **DXF** (layered, for AutoCAD/LibreCAD), **SPICE netlist** (correct transistor pin order, engineering values such as `4k7` converted), **KiCad netlist** (parts, footprints and nets for PCB layout), **bill of materials (CSV)** with footprints, part numbers and DNP, and **JSON**; print or save as PDF
 - Buses: draw a thick wire as the bus and attach signals with **bus entry** symbols; signals connect by their net labels
 - Copy the selection as SVG to paste into other apps
