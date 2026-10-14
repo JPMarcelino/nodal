@@ -4204,6 +4204,24 @@ body.is-presenting .scope-banner {
   flex: none;
 }
 
+.history-others {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.history-others-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.history-others .chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
 /* ==================================================================== */
 /* Touch screens and tablets                                             */
 /* ==================================================================== */
@@ -4258,7 +4276,8 @@ body {
   flex: 1;
 }
 
-.se-confirm-backdrop {
+.se-confirm-backdrop,
+.ask-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -4268,7 +4287,8 @@ body {
   background: rgb(0 0 0 / 0.35);
 }
 
-.se-confirm {
+.se-confirm,
+.ask {
   width: 400px;
   max-width: calc(100% - 32px);
   display: flex;
@@ -4283,6 +4303,19 @@ body {
 
 .se-confirm .btn-row {
   margin-top: 8px;
+}
+
+.ask-backdrop {
+  z-index: 1000;
+}
+
+.ask .btn-row {
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.ask .btn-row > :first-child {
+  margin-right: auto;
 }
 
 .se-confirm .grow {

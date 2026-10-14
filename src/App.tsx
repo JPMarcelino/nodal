@@ -11,6 +11,7 @@ import { ContextMenu, StatusBar, Toasts } from './ui/Overlays';
 import { SymbolEditor } from './ui/SymbolEditor';
 import { ToolRail, TopBar } from './ui/TopBar';
 import { Presenter } from './ui/Presenter';
+import { AskHost } from './ui/Ask';
 
 function isTyping(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
@@ -110,6 +111,7 @@ export function App() {
       {dialog === 'symbol-editor' && <SymbolEditor key={editingSymbol ?? 'new'} />}
       <Presenter />
       <Toasts />
+      <AskHost />
     </div>
   );
 }

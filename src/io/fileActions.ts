@@ -6,22 +6,39 @@ import { S, newDoc, replaceDoc, set, toast } from '../store/store';
 import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, printDoc, type SvgOptions } from './export';
 import { openTextFile, sanitizeName, saveFile } from './files';
+import { ask } from '../ui/Ask';
 
 export const NODAL_FILTER = [{ name: 'Nodal circuit', extensions: ['nodal', 'json'] }];
 
-async function confirmDiscard(): Promise<boolean> {
+/**
+ * Before the open circuit is replaced: with unsaved changes, asks whether to
+ * save them first. Resolves false when the user would rather keep editing.
+ */
+async function confirmDiscard(action: string): Promise<boolean> {
   if (!S().dirty || !Object.keys(S().doc.items).length) return true;
-  return window.confirm('Discard unsaved changes to the current circuit?');
+  const choice = await ask(
+    `Save changes to “${S().doc.name}”?`,
+    `You have unsaved changes. ${action} replaces this circuit; anything not saved is only kept in the History tab.`,
+    [
+      { label: 'Don’t save', value: 'discard', kind: 'danger' },
+      { label: 'Keep editing', value: 'cancel' },
+      { label: 'Save', value: 'save', kind: 'primary' },
+    ],
+    'cancel',
+  );
+  if (choice === 'cancel') return false;
+  if (choice === 'save') return fileSave();
+  return true;
 }
 
 export async function fileNew() {
-  if (!(await confirmDiscard())) return;
+  if (!(await confirmDiscard('A new circuit'))) return;
   newDoc();
   setTimeout(() => fitView(), 0);
 }
 
 export async function fileOpen() {
-  if (!(await confirmDiscard())) return;
+  if (!(await confirmDiscard('Opening a file'))) return;
   try {
     const f = await openTextFile(NODAL_FILTER);
     if (!f) return;
@@ -34,7 +51,17 @@ export async function fileOpen() {
 /** Opens circuit text that arrived some other way (drag & drop, Import…). Throws if it isn't a circuit. */
 export async function openCircuitText(name: string, text: string, path: string | null) {
   const doc = normalizeDoc(JSON.parse(text));
-  if (await confirmDiscard()) loadCircuit(name, doc, path);
+  if (await confirmDiscard(`Opening ${name}`)) loadCircuit(name, doc, path);
+}
+
+/** Opens a circuit kept in version history (one that was closed or replaced). */
+export async function openFromHistory(doc: CircuitDoc) {
+  if (!(await confirmDiscard('Opening another circuit'))) return;
+  replaceDoc(doc, null);
+  // it only exists on this device until it is saved to a file
+  set({ dirty: true });
+  setTimeout(() => fitView(), 0);
+  toast(`Opened ${doc.name}`, 'success');
 }
 
 function loadCircuit(name: string, doc: CircuitDoc, path: string | null) {
@@ -43,15 +70,19 @@ function loadCircuit(name: string, doc: CircuitDoc, path: string | null) {
   toast(`Opened ${name}`, 'success');
 }
 
-export async function fileSave(saveAs = false) {
+/** Saves the circuit to a file; resolves true once it is saved. */
+export async function fileSave(saveAs = false): Promise<boolean> {
   const { doc, filePath } = S();
   try {
     const res = await saveFile(JSON.stringify(doc, null, 1), `${sanitizeName(doc.name)}.nodal`, NODAL_FILTER, saveAs ? null : filePath);
-    if (res === false) return;
-    set({ dirty: false, filePath: res || filePath });
+    if (res === false) return false;
+    // edits made while the save dialog was open are still unsaved
+    set({ dirty: S().doc !== doc, filePath: res || filePath });
     toast('Saved', 'success');
+    return true;
   } catch (e) {
     toast(`Save failed: ${(e as Error).message}`, 'error');
+    return false;
   }
 }
 

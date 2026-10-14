@@ -425,16 +425,31 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((s, prev) => {
   if (s.doc === prev.doc || !s.prefs.autosave || autosavePaused) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const doc = S().doc;
-    // never overwrite the last good autosave with something that isn't a circuit
-    if (!doc || typeof doc !== 'object' || doc.format !== 'nodal' || typeof doc.items !== 'object' || !doc.settings) return;
-    try {
-      localStorage.setItem(LS.doc, JSON.stringify(doc));
-    } catch {
-      /* quota exceeded — ignore */
-    }
-  }, 600);
+  saveTimer = setTimeout(autosaveNow, 600);
 });
+
+function autosaveNow() {
+  saveTimer = undefined;
+  const doc = S().doc;
+  // never overwrite the last good autosave with something that isn't a circuit
+  if (!doc || typeof doc !== 'object' || doc.format !== 'nodal' || typeof doc.items !== 'object' || !doc.settings) return;
+  try {
+    localStorage.setItem(LS.doc, JSON.stringify(doc));
+  } catch {
+    /* quota exceeded — ignore */
+  }
+}
+
+if (typeof window !== 'undefined') {
+  // an edit made just before the page goes away is still written
+  window.addEventListener('pagehide', () => saveTimer !== undefined && (clearTimeout(saveTimer), autosaveNow()));
+  // leaving with changes that exist nowhere else (autosave off, or not yet saved to the open file)
+  window.addEventListener('beforeunload', (e) => {
+    const s = S();
+    if (!s.dirty || !Object.keys(s.doc.items).length || (s.prefs.autosave && !s.filePath)) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+}
 
 if (import.meta.env.DEV) (window as unknown as { __nodal: unknown }).__nodal = { S, set };

@@ -62,7 +62,7 @@ You can also share without a live session. Open **File → Share & collaborate�
 - Ending a wire on another wire creates a **junction** automatically. **Alt-drag** on a wire starts a branch from it.
 - **Crossings hop:** where wires cross without connecting, a small arc is drawn (you can switch to a gap or a plain crossing).
 - Junction dots appear wherever three or more conductors meet. Deleting a branch merges the remaining wire back into one.
-- To reshape a selected wire, drag one of its segments. To reconnect it, drag an end handle.
+- To reshape a selected wire, drag one of its segments. To reconnect it, drag an end handle. To **move it whole, keeping its shape**, drag anywhere else inside its selection box: wires moved on their own let go of the pins they leave, and ends set down exactly on a pin, junction or wire end connect there.
 - **Wire style is fully customisable**, both per wire and as the document default: colour, thickness, sharp or rounded corners (with a radius), and solid/dashed/dotted lines. "Use for new wires" turns the current style into a brush, and "Apply style to whole net" restyles a net in one click.
 - Wire labels (net names): **drag a label along its wire, onto any other wire of the same net, and to either side** (above, below, left, right), set its side and position in the inspector, or hide it while it still names the net. Net-label, port and rail symbols can hide their name too, and their name can be dragged.
 - Net highlighting (**N**), and a list of the pins on each net
@@ -111,6 +111,7 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 
 ### Files and export
 - Native open/save dialogs on desktop (`.nodal` files), with autosave and restore
+- **No accidental data loss:** New, Open or dropping a file onto unsaved changes asks whether to save first. Deleting library symbols or named versions asks for confirmation. Closing the page warns when changes exist nowhere else. A restore point is saved whenever you switch away, and *History → Other circuits on this device* reopens any circuit you closed or replaced.
 - Export to **PNG** (1–4×, light/dark), **SVG**, **DXF** (layered, for AutoCAD/LibreCAD), **SPICE netlist** (correct transistor pin order, engineering values such as `4k7` converted), **KiCad netlist** (parts, footprints and nets for PCB layout), **bill of materials (CSV)** with footprints, part numbers and DNP, and **JSON**; print or save as PDF
 - Buses: draw a thick wire as the bus and attach signals with **bus entry** symbols; signals connect by their net labels
 - Copy the selection as SVG to paste into other apps
