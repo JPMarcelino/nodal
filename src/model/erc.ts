@@ -201,6 +201,14 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
     labelUses.set(name, [...(labelUses.get(name) ?? []), c]);
   }
   const rails = new Set(comps.filter((c) => defOf.get(c.id)!.prefix.startsWith('#PWR')).map((c) => (c.value || defOf.get(c.id)!.value || '').trim()));
+  // wire labels join nets by name too, so a label used by a wire connects to something else
+  const wireLabelNames = new Map<string, string[]>();
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'wire') continue;
+    const name = (it.label ?? '').trim();
+    if (!name) continue;
+    wireLabelNames.set(name, [...(wireLabelNames.get(name) ?? []), it.id]);
+  }
   for (const n of nets) {
     if (n.names.length > 1) {
       const powered = n.names.filter((x) => rails.has(x));
@@ -239,6 +247,8 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
     const c = uses[0];
     const others = comps.filter((o) => o.id !== c.id && (o.value || '').trim() === name && isLabelLike(defOf.get(o.id)!));
     if (others.length) continue;
+    // fine if a wire elsewhere carries the same label: it names and joins the same net
+    if (wireLabelNames.has(name)) continue;
     issues.push({ key: `single-label:${c.id}`, rule: 'single-label', severity: 'warning', message: `Net label “${name}” is used only once, so it connects to nothing else`, items: [c.id], at: { x: c.x, y: c.y } });
   }
 
