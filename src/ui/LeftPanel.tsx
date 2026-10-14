@@ -301,7 +301,7 @@ function itemLabel(doc: CircuitDoc, it: Item, netName?: string): string {
   }
 }
 
-const kindName = (k: string) => ({ rect: 'Rectangle', zone: 'Zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text', ink: 'Ink', callout: 'Callout' })[k] ?? k;
+const kindName = (k: string) => ({ rect: 'Rectangle', zone: 'Zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text', ink: 'Ink', callout: 'Callout', frame: 'Frame' })[k] ?? k;
 
 type VisFilter = 'any' | 'shown' | 'hidden';
 type LockFilter = 'any' | 'locked' | 'unlocked';

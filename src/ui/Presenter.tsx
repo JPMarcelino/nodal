@@ -1,17 +1,14 @@
-import { ChevronLeft, ChevronRight, PenLine, Waypoints, X as Close, Zap } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pause, PenLine, Play, Waypoints, X as Close, Zap } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { RichText } from '../canvas/RichText';
 import { inkColor, EDITOR_PALETTE } from '../canvas/Scene';
-import { calloutAnchor, callouts } from '../model/callout';
-import { docBounds, itemBounds } from '../model/doc';
-import { unionRects } from '../model/geometry';
-import { computeNets } from '../model/netlist';
+import { presentationSteps, stepShot, transitionOf } from '../model/presentation';
 import { measureRich } from '../model/richText';
-import { resolveNet } from '../model/trace';
-import type { Rect, ShapeItem, Tool } from '../model/types';
+import type { ShapeItem, Tool } from '../model/types';
 import * as A from '../store/actions';
-import { TRACE_COLORS, X, setX, useExplain, type Trace } from '../store/explain';
+import { X, setX, useExplain } from '../store/explain';
 import { S, set, toast, useStore, type View } from '../store/store';
+import { flyTo, flyToShot, pause, playPlan, seek, stepTime, stepTraces, togglePlay } from './playback';
 
 /* ------------------------------------------------------------------ */
 /* Starting and stopping                                               */
@@ -26,18 +23,20 @@ export function startPresenting() {
   saved = { left: s.leftPanel, right: s.rightPanel, tool: s.tool, view: s.view };
   set({ leftPanel: false, rightPanel: false, contextMenu: null, selection: [], wirePart: null, highlight: null });
   A.setTool('laser');
-  setX({ presenting: -1, traces: [], editing: null });
+  pause();
+  setX({ presenting: -1, traces: [], editing: null, playT: 0 });
   document.body.classList.add('is-presenting');
   wentFullscreen = false;
   document.documentElement
     .requestFullscreen?.()
     .then(() => (wentFullscreen = true))
     .catch(() => undefined);
-  if (!callouts(s.doc).length) toast('No callouts to step through. Add some with the Callout tool (C).');
+  if (!presentationSteps(s.doc).length) toast('Nothing to step through yet. Draw frames (Shift+F) or add callouts (C).');
 }
 
 export function stopPresenting() {
   if (X().presenting === null) return;
+  pause();
   setX({ presenting: null, traces: [] });
   document.body.classList.remove('is-presenting');
   if (saved) {
@@ -50,75 +49,6 @@ export function stopPresenting() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Camera                                                              */
-/* ------------------------------------------------------------------ */
-
-let flight = 0;
-/** Glides the view to `to` (ease in-out). */
-function flyTo(to: View, ms = 650) {
-  const id = ++flight;
-  const from = S().view;
-  const t0 = performance.now();
-  // zoom interpolates in log space, so it feels even whether zooming in or out
-  const lz0 = Math.log(from.zoom);
-  const lz1 = Math.log(to.zoom);
-  const step = () => {
-    if (id !== flight) return;
-    const k = Math.min(1, (performance.now() - t0) / ms);
-    const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
-    const zoom = Math.exp(lz0 + (lz1 - lz0) * e);
-    // keep the world point at the screen centre moving in a straight line
-    const { w, h } = S().canvasSize;
-    const c0 = { x: (w / 2 - from.x) / from.zoom, y: (h / 2 - from.y) / from.zoom };
-    const c1 = { x: (w / 2 - to.x) / to.zoom, y: (h / 2 - to.y) / to.zoom };
-    const cx = c0.x + (c1.x - c0.x) * e;
-    const cy = c0.y + (c1.y - c0.y) * e;
-    set({ view: { x: w / 2 - cx * zoom, y: h / 2 - cy * zoom, zoom } });
-    if (k < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
-/** View that frames `r` above the caption. */
-function frame(r: Rect, maxZoom = 2.4): View {
-  const { w, h } = S().canvasSize;
-  const capH = 170;
-  const avail = Math.max(120, h - capH);
-  const pad = 70;
-  const zoom = Math.max(0.15, Math.min(maxZoom, (w - 2 * pad) / Math.max(r.w, 1), (avail - 2 * pad) / Math.max(r.h, 1)));
-  const cx = r.x + r.w / 2;
-  const cy = r.y + r.h / 2;
-  return { x: w / 2 - cx * zoom, y: avail / 2 + 10 - cy * zoom, zoom };
-}
-
-/** Shows one step: frames its target and the note; a wire target has its whole net traced. */
-function showStep(c: ShapeItem) {
-  const doc = S().doc;
-  const anchor = calloutAnchor(doc, c);
-  const target = c.anchor?.id ? doc.items[c.anchor.id] : undefined;
-  const framed = [c.id];
-  const traces: Trace[] = [];
-  if (target?.type === 'wire') {
-    const net = resolveNet(computeNets(doc), { wire: target.id });
-    framed.push(...(net?.wires ?? [target.id]));
-    traces.push({ id: `p${c.id}`, seed: { wire: target.id }, color: c.stroke === '#000000' ? TRACE_COLORS[0] : c.stroke, origin: anchor ?? { x: 0, y: 0 } });
-  } else if (target) {
-    framed.push(target.id);
-  }
-  setX({ traces });
-  const rects = framed.map((id) => (doc.items[id] ? itemBounds(doc, doc.items[id]) : null)).filter((r): r is Rect => !!r);
-  if (anchor) rects.push({ x: anchor.x - 50, y: anchor.y - 50, w: 100, h: 100 });
-  const r = unionRects(rects);
-  if (r) flyTo(frame(r));
-}
-
-function showAll() {
-  setX({ traces: [] });
-  const r = docBounds(S().doc);
-  if (r) flyTo(frame(r, 1.6));
-}
-
-/* ------------------------------------------------------------------ */
 /* Overlay                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -127,32 +57,43 @@ export function Presenter() {
   const doc = useStore((s) => s.doc);
   const tool = useStore((s) => s.tool);
   const theme = useStore((s) => s.prefs.theme);
-  const steps = useMemo(() => callouts(doc), [doc]);
+  const playing = useExplain((s) => s.playing);
+  const playT = useExplain((s) => s.playT);
+  const steps = useMemo(() => presentationSteps(doc), [doc]);
   const n = steps.length;
 
-  // move the camera when the step changes (after the panels have collapsed)
+  // move the camera when the step changes by hand (after the panels have collapsed); playback drives it itself
   const stepId = idx !== null && idx >= 0 && idx < n ? steps[idx].id : null;
   useEffect(() => {
-    if (idx === null) return;
+    if (idx === null || X().playing) return;
     const t = window.setTimeout(() => {
-      const c = stepId ? (S().doc.items[stepId] as ShapeItem | undefined) : undefined;
-      if (c) showStep(c);
-      else showAll();
+      const d = S().doc;
+      const c = stepId ? (d.items[stepId] as ShapeItem | undefined) : undefined;
+      setX({ traces: stepTraces(d, c) });
+      if (c) flyToShot(stepShot(d, c), Math.max(250, transitionOf(c) * 1000));
+      else flyToShot(playPlan(d).overview, 650);
     }, 60);
     return () => window.clearTimeout(t);
   }, [idx, stepId]);
 
   useEffect(() => {
     if (idx === null) return;
-    const go = (d: number) => setX((s) => ({ presenting: Math.max(-1, Math.min(callouts(S().doc).length, (s.presenting ?? -1) + d)) }));
+    // stepping by hand stops the clock; play resumes from the step on screen
+    const goTo = (i: number) => {
+      pause();
+      const to = Math.max(-1, Math.min(presentationSteps(S().doc).length, i));
+      setX({ presenting: to, playT: to < 0 ? 0 : stepTime(Math.min(to, playPlan().entries.length - 1)) });
+    };
+    const go = (d: number) => goTo((X().presenting ?? -1) + d);
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
       let handled = true;
       if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) go(1);
       else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(e.key)) go(-1);
-      else if (e.key === 'Home') setX({ presenting: -1 });
-      else if (e.key === 'End') setX({ presenting: callouts(S().doc).length - 1 });
+      else if (e.key === 'Home') goTo(-1);
+      else if (e.key === 'End') goTo(presentationSteps(S().doc).length - 1);
+      else if (e.key === 'p' || e.key === 'P' || e.key === 'MediaPlayPause') togglePlay();
       else if (e.key === 'Escape') stopPresenting();
       else handled = false;
       if (handled) {
@@ -174,6 +115,11 @@ export function Presenter() {
 
   if (idx === null) return null;
   const cur = idx >= 0 && idx < n ? steps[idx] : null;
+  const { entries, total } = playPlan(doc);
+  const goTo = (i: number) => {
+    pause();
+    setX({ presenting: i, playT: i < 0 ? 0 : stepTime(Math.min(i, n - 1)) });
+  };
   const color = cur ? inkColor(cur.stroke, EDITOR_PALETTE) : 'var(--accent)';
   const fs = 21;
   const text = cur ? (cur.text ?? '').trim() || `Step ${cur.step ?? idx + 1}` : '';
@@ -214,7 +160,7 @@ export function Presenter() {
         ) : idx < 0 ? (
           <div className="presenter-intro">
             <b>{doc.name}</b>
-            <span>{n ? `${n} step${n === 1 ? '' : 's'} · → next` : 'No callouts · K laser · D pen · Q trace'}</span>
+            <span>{n ? `${n} step${n === 1 ? '' : 's'} · → next · P play` : 'No frames or callouts · K laser · D pen · Q trace'}</span>
           </div>
         ) : (
           <div className="presenter-intro">
@@ -223,18 +169,38 @@ export function Presenter() {
           </div>
         )}
         <div className="presenter-nav">
-          <button onClick={() => setX({ presenting: Math.max(-1, idx - 1) })} disabled={idx <= -1} title="Back (←)">
+          <button onClick={() => goTo(Math.max(-1, idx - 1))} disabled={idx <= -1} title="Back (←)">
             <ChevronLeft size={18} />
           </button>
           <div className="presenter-dots">
             {steps.map((s, i) => (
-              <button key={s.id} className={i === idx ? 'on' : i < idx ? 'done' : ''} onClick={() => setX({ presenting: i })} title={(s.text ?? '').split('\n')[0] || `Step ${i + 1}`} />
+              <button key={s.id} className={i === idx ? 'on' : i < idx ? 'done' : ''} onClick={() => goTo(i)} title={(s.text ?? '').split('\n')[0] || `Step ${i + 1}`} />
             ))}
           </div>
-          <button onClick={() => setX({ presenting: Math.min(n, idx + 1) })} disabled={idx >= n} title="Next (→ / Space)">
+          <button onClick={() => goTo(Math.min(n, idx + 1))} disabled={idx >= n} title="Next (→ / Space)">
             <ChevronRight size={18} />
           </button>
+          {total > 0 && (
+            <button className="presenter-play" onClick={togglePlay} title={playing ? 'Pause (P)' : 'Play the timeline (P)'}>
+              {playing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+            </button>
+          )}
         </div>
+        {total > 0 && (
+          <div
+            className="presenter-progress"
+            title="Click to jump"
+            onPointerDown={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              seek(((e.clientX - r.left) / r.width) * total);
+            }}
+          >
+            {entries.map((en) => (
+              <span key={en.id} style={{ left: `${(en.start / total) * 100}%`, width: `${((en.end - en.start) / total) * 100}%` }} />
+            ))}
+            <i style={{ width: `${(playT / total) * 100}%` }} />
+          </div>
+        )}
       </div>
     </div>
   );

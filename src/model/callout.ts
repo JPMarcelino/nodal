@@ -51,8 +51,10 @@ export function callouts(doc: CircuitDoc): ShapeItem[] {
     .sort((a, b) => (a.step ?? 0) - (b.step ?? 0) || a.z - b.z);
 }
 
+/** Next free step number; callouts and presentation frames share one sequence. */
 export function nextStep(doc: CircuitDoc): number {
-  return Math.max(0, ...callouts(doc).map((c) => c.step ?? 0)) + 1;
+  const steps = Object.values(doc.items).filter((i): i is ShapeItem => i.type === 'shape' && (i.kind === 'callout' || i.kind === 'frame') && !i.hidden);
+  return Math.max(0, ...steps.map((c) => c.step ?? 0)) + 1;
 }
 
 /** Leader curve from the badge edge to the anchor, slightly bowed. */

@@ -11,6 +11,8 @@ import { ContextMenu, StatusBar, Toasts } from './ui/Overlays';
 import { SymbolEditor } from './ui/SymbolEditor';
 import { ToolRail, TopBar } from './ui/TopBar';
 import { Presenter } from './ui/Presenter';
+import { Timeline } from './ui/Timeline';
+import { useExplain } from './store/explain';
 import { AskHost } from './ui/Ask';
 
 function isTyping(e: KeyboardEvent) {
@@ -27,6 +29,7 @@ export function App() {
   const left = useStore((s) => s.leftPanel);
   const right = useStore((s) => s.rightPanel);
   const dialog = useStore((s) => s.dialog);
+  const showTimeline = useExplain((s) => s.timelineOpen && s.presenting === null);
   const editingSymbol = useStore((s) => s.editingSymbol);
   const name = useStore((s) => s.doc.name);
   const dirty = useStore((s) => s.dirty);
@@ -99,9 +102,10 @@ export function App() {
       <TopBar />
       <div className="workspace">
         {left && <LeftPanel />}
-        <main className="stage">
+        <main className={showTimeline ? 'stage with-timeline' : 'stage'}>
           <ToolRail />
           <Canvas />
+          {showTimeline && <Timeline />}
         </main>
         {right && <Inspector />}
       </div>

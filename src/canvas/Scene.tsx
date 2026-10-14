@@ -385,6 +385,15 @@ export function clampTitleOffset(s: ShapeItem, dx: number, dy: number): { dx: nu
   return { dx: dx + Math.min(Math.max(cx, x0), x1) - cx, dy: dy + Math.min(Math.max(cy, y0), y1) - cy };
 }
 
+/** Name tag of a presentation frame, sitting on its top-left corner. */
+export function frameTag(s: ShapeItem): { x: number; y: number; w: number; h: number; label: string; fs: number } {
+  const fs = s.fontSize ?? 13;
+  const label = `${s.step ?? ''}${s.text ? `  ${s.text.split('\n')[0]}` : '  Frame'}`.trim();
+  const m = measureRich(label, fs, 600);
+  const h = fs + 10;
+  return { x: Math.min(s.x, s.x + s.w), y: Math.min(s.y, s.y + s.h) - h - 4, w: m.w + 16, h, label, fs };
+}
+
 export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: ShapeItem; palette: Palette; ax?: number; ay?: number }) {
   const da = dashArray(s.dash, s.strokeWidth || 1);
   const ink = inkColor(s.stroke, palette);
@@ -402,6 +411,18 @@ export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: Sh
           )}
         </g>
       );
+    case 'frame': {
+      const t = frameTag(s);
+      return (
+        <g className="shape frame" data-id={s.id}>
+          <rect x={s.x} y={s.y} width={s.w} height={s.h} fill="none" stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} vectorEffect="non-scaling-stroke" />
+          <rect x={t.x} y={t.y} width={t.w} height={t.h} rx={t.h / 2} fill={ink} />
+          <text x={t.x + 8} y={t.y + t.h / 2 + t.fs * 0.35} fontSize={t.fs} fontWeight={600} fill="#fff">
+            {t.label}
+          </text>
+        </g>
+      );
+    }
     case 'ellipse':
       return (
         <g className="shape" data-id={s.id}>
@@ -499,8 +520,9 @@ export { measureText };
 /* Whole scene                                                         */
 /* ------------------------------------------------------------------ */
 
-export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data: SceneData; palette: Palette; highlight?: Set<string> | null }) {
-  const items = Object.values(doc.items).filter((i) => !i.hidden);
+export function Scene({ doc, data, palette, highlight, frames = false }: { doc: CircuitDoc; data: SceneData; palette: Palette; highlight?: Set<string> | null; frames?: boolean }) {
+  // presentation frames are only drawn while editing
+  const items = Object.values(doc.items).filter((i) => !i.hidden && (frames || !(i.type === 'shape' && i.kind === 'frame')));
   const shapes = items.filter((i): i is ShapeItem => i.type === 'shape').sort((a, b) => a.z - b.z);
   const below = shapes.filter((s) => s.layer === 'below');
   const above = shapes.filter((s) => s.layer === 'above');

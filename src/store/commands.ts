@@ -7,6 +7,7 @@ import * as A from './actions';
 import { clearExplainOverlays } from './explain';
 import { startPresenting } from '../ui/Presenter';
 import { renumberCallouts } from '../ui/ExplainDock';
+import { toggleTimeline } from '../ui/Timeline';
 import { S, redo, set, setPrefs, toast, undo, mutate } from './store';
 import { canvasActions } from './canvasActions';
 import { copyStyle, pasteStyle } from '../ui/StyleSection';
@@ -109,9 +110,12 @@ export const COMMANDS: Command[] = [
   { id: 'tool.eraser', label: 'Eraser (ink and callouts)', category: 'Tools', keys: ['U'], run: () => A.setTool('eraser') },
   { id: 'tool.trace', label: 'Trace net', category: 'Tools', keys: ['Q'], run: () => A.setTool('trace') },
   { id: 'tool.callout', label: 'Numbered callout', category: 'Tools', keys: ['C'], run: () => A.setTool('callout') },
-  { id: 'explain.present', label: 'Present callouts', category: 'View', keys: ['F5', 'Shift+P'], run: () => startPresenting() },
+  { id: 'explain.present', label: 'Present (frames and callouts)', category: 'View', keys: ['F5', 'Shift+P'], run: () => startPresenting() },
+  { id: 'tool.frame', label: 'Presentation frame (drag an area; click frames the view)', category: 'Tools', keys: ['Shift+F'], run: () => A.setTool('frame') },
+  { id: 'present.timeline', label: 'Presentation timeline', category: 'View', keys: ['Alt+T'], run: () => toggleTimeline() },
+  { id: 'present.video', label: 'Export presentation video…', category: 'File', keys: [], run: () => set({ dialog: 'video' }) },
   { id: 'explain.clear', label: 'Clear traced nets', category: 'View', keys: [], run: () => void clearExplainOverlays() },
-  { id: 'explain.renumber', label: 'Renumber callouts 1, 2, 3…', category: 'Edit', keys: [], run: () => renumberCallouts() },
+  { id: 'explain.renumber', label: 'Renumber steps (callouts and frames) 1, 2, 3…', category: 'Edit', keys: [], run: () => renumberCallouts() },
   { id: 'tool.placeLast', label: 'Place last used symbol', category: 'Tools', keys: ['P'], cadence: ['Shift+I'], run: () => S().recent[0] && A.startPlacing(S().recent[0]) },
   { id: 'tool.netLabel', label: 'Place net label (wire name)', category: 'Tools', keys: ['Shift+L'], cadence: ['L'], run: () => A.startPlacing('net-label') },
   { id: 'tool.pin', label: 'Place pin (port)', category: 'Tools', keys: [], cadence: ['P'], run: () => A.startPlacing('port-in') },

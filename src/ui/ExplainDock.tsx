@@ -1,6 +1,7 @@
 import { Eraser, Ghost, Highlighter, MessageSquareText, PenLine, Play, Sparkles, Trash2, Waypoints, X as Close, Zap } from 'lucide-react';
 import { useState, type CSSProperties } from 'react';
-import { callouts } from '../model/callout';
+import { presentationSteps, renumberSteps } from '../model/presentation';
+import type { CircuitDoc } from '../model/types';
 import { EXPLAIN_COLORS } from '../model/ink';
 import type { Net } from '../model/netlist';
 import type { NetFlow } from '../model/trace';
@@ -167,9 +168,10 @@ function clearShapes(kind: 'ink' | 'callout') {
   toast(`${kind === 'ink' ? 'Erased' : 'Deleted'} ${ids.length} ${kind === 'ink' ? 'stroke' : 'callout'}${ids.length === 1 ? '' : 's'}`);
 }
 
+/** Renumbers the walkthrough (callouts and presentation frames) 1, 2, 3… in its current order. */
 export function renumberCallouts() {
-  const list = callouts(S().doc);
-  mutate((d) => list.forEach((c, i) => ((d.items[c.id] as typeof c).step = i + 1)));
+  const order = presentationSteps(S().doc).map((s) => s.id);
+  mutate((d) => renumberSteps(d as CircuitDoc, order));
 }
 
 /** Lit nets with what is on them; hovering a pin outlines its part. */

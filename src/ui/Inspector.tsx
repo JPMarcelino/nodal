@@ -34,7 +34,7 @@ import { docBounds } from '../model/doc';
 import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './controls';
-import { ExplainShapePanel } from './ExplainInspector';
+import { ExplainShapePanel, FramePanel } from './ExplainInspector';
 import { Row, StyleSection } from './StyleSection';
 
 /** Small sample of a line style (fits narrow panels better than words). */
@@ -661,7 +661,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   const isText = first.kind === 'text';
   const isLine = first.kind === 'line' || first.kind === 'arrow';
   const isImage = first.kind === 'image';
-  const title = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text', image: 'Image', ink: 'Ink', callout: 'Callout' }[first.kind];
+  const title = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text', image: 'Image', ink: 'Ink', callout: 'Callout', frame: 'Frame' }[first.kind];
   return (
     <>
       <div className="panel-title">{shapes.length > 1 ? `${shapes.length} shapes` : title}</div>
@@ -865,6 +865,7 @@ export function Inspector() {
   else if (items.length === 1 && items[0].type === 'component') body = <ComponentPanel c={items[0]} />;
   else if (items.every((i) => i.type === 'wire' || i.type === 'junction') && items.some((i) => i.type === 'wire'))
     body = <WirePanel wires={items.filter((i): i is WireItem => i.type === 'wire')} />;
+  else if (items.every((i) => i.type === 'shape' && i.kind === 'frame')) body = <FramePanel shapes={items as ShapeItem[]} />;
   else if (items.every((i) => i.type === 'shape' && (i.kind === 'ink' || i.kind === 'callout'))) body = <ExplainShapePanel shapes={items as ShapeItem[]} />;
   else if (items.every((i) => i.type === 'shape')) body = <ShapePanel shapes={items as ShapeItem[]} />;
   else if (items.length === 1 && items[0].type === 'junction') body = <div className="panel-title">Junction</div>;

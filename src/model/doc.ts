@@ -135,6 +135,8 @@ export const SHAPE_DEFAULTS: Record<ShapeKind, Partial<ShapeItem>> = {
   ink: { stroke: '#000000', strokeWidth: 3, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above' },
   callout: { stroke: '#f03e3e', strokeWidth: 1.5, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above', fontSize: 14, text: '' },
   text: { stroke: 'none', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above', fontSize: 16, text: 'Text' },
+  // presentation frame: an editor-only outline (never drawn when presenting or exporting)
+  frame: { stroke: '#a855f7', strokeWidth: 1.5, fill: 'none', fillOpacity: 0, dash: 'dashed', radius: 0, layer: 'above', fontSize: 13, text: '' },
 };
 
 export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number, w: number, h: number): ShapeItem {

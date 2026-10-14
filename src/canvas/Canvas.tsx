@@ -15,11 +15,11 @@ import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, rebaseGesture, select, set, toast, useStore } from '../store/store';
 import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
-import { setX } from '../store/explain';
+import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
@@ -94,6 +94,7 @@ const BADGE_GLYPHS: Partial<Record<Tool, string>> = {
   arrow: '<path d="M3 9.5L9 3.5M6.4 3.5H9v2.6" fill="none" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
   solder: '<circle cx="6.5" cy="6.5" r="4.3" fill="none" stroke="#1f2433" stroke-width="1.1"/><circle cx="6.5" cy="6.5" r="2.3" fill="#1f2433"/>',
   text: '<text x="6.5" y="9.8" font-family="sans-serif" font-size="9" fill="#1f2433" text-anchor="middle" stroke="none">T</text>',
+  frame: '<rect x="3" y="4" width="7" height="5" fill="none" stroke="#a855f7" stroke-width="1.3" stroke-dasharray="1.8 1.2"/>',
 };
 
 const CURSOR_THEMES = {
@@ -138,6 +139,7 @@ export function Canvas() {
   const tool = useStore((s) => s.tool);
   const placing = useStore((s) => s.placing);
   const highlight = useStore((s) => s.highlight);
+  const presenting = useExplain((s) => s.presenting !== null);
   const prefs = useStore((s) => s.prefs);
   const scope = useStore((s) => s.scope);
   const exportAreaJob = useStore((s) => s.exportArea);
@@ -363,10 +365,12 @@ export function Canvas() {
       const z = S().view.zoom;
       const t = (6 / z) * hitSlop();
       const items = Object.values(d.items).filter((i) => !i.hidden && !i.locked);
-      const shapes = items.filter((i): i is ShapeItem => i.type === 'shape').sort((a, b) => b.z - a.z);
+      // frames are not drawn (so not clickable) while presenting
+      const shapes = items.filter((i): i is ShapeItem => i.type === 'shape' && (X().presenting === null || i.kind !== 'frame')).sort((a, b) => b.z - a.z);
       const shapeHit = (s: ShapeItem) => {
         const r = itemBounds(d, s)!;
         if (hasMovableTitle(s) && pointInRect(p, shapeTitle(s).box, 3)) return true;
+        if (s.kind === 'frame' && pointInRect(p, frameTag(s), 2)) return true;
         if (s.kind === 'line' || s.kind === 'arrow') return projectOnSegment(p, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }).d < t + s.strokeWidth;
         if (s.kind === 'text' || s.kind === 'image' || s.kind === 'callout') return pointInRect(p, r, 4);
         if (s.kind === 'ink') return inkHit(s, p, t);
@@ -1276,6 +1280,10 @@ export function Canvas() {
             });
             set({ selection: [id] });
           }
+        } else if (g.shape === 'frame') {
+          // a bare click frames what is on screen
+          const fr = r.w >= grid && r.h >= grid ? r : A.visibleFrameRect();
+          set({ selection: [A.addFrame(fr)] });
         } else if (r.w >= grid && r.h >= grid) {
           let id = '';
           mutate((d) => {
@@ -1472,7 +1480,7 @@ export function Canvas() {
           {scopeBounds && (
             <rect x={scopeBounds.x - 16} y={scopeBounds.y - 16} width={scopeBounds.w + 32} height={scopeBounds.h + 32} rx={10} className="scope-box" strokeWidth={1.5 / z} />
           )}
-          <Scene doc={doc} data={data} palette={EDITOR_PALETTE} highlight={highlight} />
+          <Scene doc={doc} data={data} palette={EDITOR_PALETTE} highlight={highlight} frames={!presenting} />
 
           {/* unconnected port markers */}
           {prefs.showPortMarkers && z > 0.45 && (
@@ -1755,6 +1763,7 @@ function ShapePreview({ g }: { g: Extract<Gesture, { kind: 'shape' }> }) {
     );
   }
   if (g.shape === 'ellipse') return <ellipse cx={r.x + r.w / 2} cy={r.y + r.h / 2} rx={r.w / 2} ry={r.h / 2} className="shape-preview" />;
+  if (g.shape === 'frame') return <rect x={r.x} y={r.y} width={r.w} height={r.h} className="shape-preview frame" />;
   return <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={g.shape === 'zone' ? 8 : 6} className={g.shape === 'zone' ? 'shape-preview zone' : 'shape-preview'} />;
 }
 

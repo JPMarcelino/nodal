@@ -1,5 +1,6 @@
 import { produce } from 'immer';
-import { docBounds, makeComponent, topGroup } from '../model/doc';
+import { docBounds, makeComponent, makeShape, topGroup } from '../model/doc';
+import { nextPresentationStep } from '../model/presentation';
 import { snap, unionRects } from '../model/geometry';
 import { sheetRect } from '../model/sheet';
 import {
@@ -416,4 +417,30 @@ export function revealItems(ids: string[], at?: Point | null) {
 export function symbolOfSelection() {
   const c = S().selection.map((id) => S().doc.items[id]).find((i) => i?.type === 'component');
   return c && c.type === 'component' ? getSymbol(S().doc, c.symbol) : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Presentation frames                                                 */
+/* ------------------------------------------------------------------ */
+
+/** What is on screen right now, slightly inset (a click with the frame tool frames this). */
+export function visibleFrameRect(): Rect {
+  const { view, canvasSize } = S();
+  const inset = 0.06;
+  const w = canvasSize.w / view.zoom;
+  const h = canvasSize.h / view.zoom;
+  return { x: -view.x / view.zoom + w * inset, y: -view.y / view.zoom + h * inset, w: w * (1 - 2 * inset), h: h * (1 - 2 * inset) };
+}
+
+/** Adds a presentation frame as the last step; returns its id. */
+export function addFrame(r: Rect): string {
+  let id = '';
+  mutate((d) => {
+    const s = makeShape(d as CircuitDoc, 'frame', r.x, r.y, r.w, r.h);
+    s.group = S().scope;
+    s.step = nextPresentationStep(d as CircuitDoc);
+    d.items[s.id] = s;
+    id = s.id;
+  });
+  return id;
 }
