@@ -35,6 +35,7 @@ import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './controls';
 import { ExplainShapePanel } from './ExplainInspector';
+import { Row, StyleSection } from './StyleSection';
 
 /** Small sample of a line style (fits narrow panels better than words). */
 function DashIcon({ dash }: { dash: Dash }) {
@@ -139,15 +140,20 @@ function AlignBar() {
   );
 }
 
-function WireStyleEditor({ style, onChange, showBrush }: { style: WireStyle; onChange: (p: Partial<WireStyle>) => void; showBrush?: boolean }) {
+/** `corners`: only the corner settings (colour, width and dash come from the Style section). */
+function WireStyleEditor({ style, onChange, showBrush, corners }: { style: WireStyle; onChange: (p: Partial<WireStyle>) => void; showBrush?: boolean; corners?: boolean }) {
   return (
     <>
-      <Field label="Colour">
-        <ColorInput value={style.color} onChange={(color) => onChange({ color })} />
-      </Field>
-      <Field label="Thickness">
-        <NumberInput value={style.width} min={0.5} max={20} step={0.5} suffix="px" onChange={(width) => onChange({ width })} />
-      </Field>
+      {!corners && (
+        <>
+          <Field label="Colour">
+            <ColorInput value={style.color} onChange={(color) => onChange({ color })} />
+          </Field>
+          <Field label="Thickness">
+            <NumberInput value={style.width} min={0.5} max={20} step={0.5} suffix="px" onChange={(width) => onChange({ width })} />
+          </Field>
+        </>
+      )}
       <Field label="Corners">
         <Segmented
           value={style.radius > 0 ? 'round' : 'sharp'}
@@ -163,9 +169,11 @@ function WireStyleEditor({ style, onChange, showBrush }: { style: WireStyle; onC
           <NumberInput value={style.radius} min={1} max={60} suffix="px" onChange={(radius) => onChange({ radius })} />
         </Field>
       )}
-      <Field label="Line">
-        <Segmented value={style.dash} options={DASHES} onChange={(dash) => onChange({ dash })} />
-      </Field>
+      {!corners && (
+        <Field label="Line">
+          <Segmented value={style.dash} options={DASHES} onChange={(dash) => onChange({ dash })} />
+        </Field>
+      )}
       {showBrush && null}
     </>
   );
@@ -486,9 +494,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
         <Field label="Mirrored">
           <Toggle checked={!!c.flipX} onChange={(v) => upd((x) => (x.flipX = v))} />
         </Field>
-        <Field label="Colour">
-          <ColorInput value={c.color ?? ''} allowNone onChange={(v) => upd((x) => (x.color = v || undefined))} />
-        </Field>
+        <SizeField ids={[c.id]} />
         <Field label="Position">
           <span className="row-gap">
             <NumberInput value={c.x} step={doc.settings.grid} suffix="x" onChange={(v) => upd((x) => (x.x = v))} />
@@ -496,6 +502,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
           </span>
         </Field>
       </Section>
+      <StyleSection ids={[c.id]} />
       {def.ports.length > 0 && (
         <Section title={`Pins (${def.ports.length})`}>
           <div className="pin-list">
@@ -777,6 +784,29 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   );
 }
 
+const SIZES = [0.5, 0.75, 1, 1.5, 2];
+
+/** Size of parts: the drawing, pins and text scale together, line widths don't. */
+function SizeField({ ids }: { ids: string[] }) {
+  const doc = useStore((s) => s.doc);
+  const comps = ids.map((id) => doc.items[id]).filter((i): i is ComponentItem => i?.type === 'component');
+  if (!comps.length) return null;
+  const k = comps[0].scale ?? 1;
+  const same = comps.every((c) => (c.scale ?? 1) === k);
+  const setK = (v: number) => {
+    const s = Math.round(Math.min(10, Math.max(0.1, v)) * 1000) / 1000;
+    mutate((d) => comps.forEach((c) => ((d.items[c.id] as ComponentItem).scale = s === 1 ? undefined : s)));
+  };
+  return (
+    <Row label={same ? 'Size' : 'Size (mixed)'} hint="Scales the drawing, its pins and text; line widths stay the same. Drag a corner handle on the canvas too (Shift: any size)">
+      <span className="row-gap wrap">
+        <Segmented value={same && SIZES.includes(k) ? k : -1} options={SIZES.map((v) => ({ value: v, label: `${v * 100}%` }))} onChange={setK} />
+        <NumberInput value={Math.round(k * 100)} min={10} max={1000} step={5} suffix="%" onChange={(v) => setK(v / 100)} />
+      </span>
+    </Row>
+  );
+}
+
 function MultiPanel({ ids }: { ids: string[] }) {
   const doc = useStore((s) => s.doc);
   const items = ids.map((id) => doc.items[id]).filter(Boolean);
@@ -807,17 +837,17 @@ function MultiPanel({ ids }: { ids: string[] }) {
       <Section title="Align & distribute">
         <AlignBar />
       </Section>
+      <StyleSection ids={ids} title={`Style · ${items.length} items`} />
       {comps.length > 0 && (
         <Section title="Parts">
-          <Field label="Colour">
-            <ColorInput value={comps[0].color ?? ''} allowNone onChange={(v) => mutate((d) => comps.forEach((c) => ((d.items[c.id] as ComponentItem).color = v || undefined)))} />
-          </Field>
+          <SizeField ids={comps.map((c) => c.id)} />
         </Section>
       )}
       {wires.length > 0 && (
-        <Section title="Wires">
+        <Section title="Wire corners">
           <WireStyleEditor
             style={{ ...doc.settings.wire, ...wires[0].style }}
+            corners
             onChange={(p) => mutate((d) => wires.forEach((w) => ((d.items[w.id] as WireItem).style = { ...(d.items[w.id] as WireItem).style, ...p })))}
           />
         </Section>

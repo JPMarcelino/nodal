@@ -1,4 +1,4 @@
-import { getSymbol } from './registry';
+import { instanceSymbol } from './registry';
 import type { CircuitDoc, Item, Point } from './types';
 import { endpointInfo, wirePolyline } from './wires';
 
@@ -29,7 +29,7 @@ const k = (v: number) => Math.round(v * 100) / 100;
 function itemPoints(doc: CircuitDoc, it: Item): Point[] {
   switch (it.type) {
     case 'component': {
-      const def = getSymbol(doc, it.symbol);
+      const def = instanceSymbol(doc, it);
       const pins = def.ports.map((p) => endpointInfo(doc, { kind: 'port', comp: it.id, port: p.id })?.pt).filter((p): p is Point => !!p);
       return [{ x: it.x, y: it.y }, ...pins];
     }

@@ -3,7 +3,7 @@ import { componentBounds, measureText, segmentIntersectsRect, sideVector, toWorl
 import { drawOrder, labelsShown } from '../model/doc';
 import { touchingPins } from '../model/netlist';
 import { isDnp } from '../model/partFields';
-import { getSymbol } from '../model/registry';
+import { instanceSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
 import { buildWirePath, wireLabelSpot, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
 import { SheetFrame } from './SheetFrame';
@@ -225,12 +225,14 @@ export const ComponentView = memo(function ComponentView({
   const color = c.color || settings.componentColor || palette.sym;
   const tf = `translate(${c.x} ${c.y}) rotate(${c.rot}) scale(${c.flipX ? -1 : 1} 1) translate(${-def.w / 2} ${-def.h / 2})`;
   const labels = labelLayout(c, def);
-  const labelColor = settings.labelColor || palette.label;
+  const labelColor = c.labelColor || settings.labelColor || palette.label;
+  const lw = c.lineWidth ?? 2;
+  const look = useMemo(() => ({ sw: lw, k: lw / 2, fill: c.fill, fillOpacity: c.fillOpacity }), [lw, c.fill, c.fillOpacity]);
   const dnp = isDnp(c);
   return (
     <g className={`comp${ghost ? ' ghost' : ''}${dnp ? ' dnp' : ''}`} data-id={c.id} style={{ color, ['--sym-bg' as string]: palette.symBg }}>
-      <g transform={tf}>
-        <SymbolBody def={def} />
+      <g transform={tf} strokeDasharray={c.dash === 'dashed' ? `${3 * lw} ${2 * lw}` : c.dash === 'dotted' ? `0.01 ${2 * lw}` : undefined}>
+        <SymbolBody def={def} look={look} />
       </g>
       {def.prims.map((p, i) => {
         if (p.t !== 'text') return null;
@@ -538,7 +540,7 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
       </g>
       <g className="layer-components">
         {comps.map((c) => (
-          <ComponentView key={c.id} c={c} def={getSymbol(doc, c.symbol)} settings={doc.settings} palette={palette} />
+          <ComponentView key={c.id} c={c} def={instanceSymbol(doc, c)} settings={doc.settings} palette={palette} />
         ))}
       </g>
       <g className="layer-dots">

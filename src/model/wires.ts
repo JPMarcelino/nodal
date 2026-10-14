@@ -1,5 +1,5 @@
 import { eq, projectOnSegment, rotate, segmentIntersection, sideVector, simplify, toWorld } from './geometry';
-import { getSymbol } from './registry';
+import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, WireItem, WireStyle } from './types';
 
 export interface PortPos {
@@ -9,7 +9,7 @@ export interface PortPos {
 }
 
 export function portPosition(doc: CircuitDoc, c: ComponentItem, portId: string): PortPos | null {
-  const def = getSymbol(doc, c.symbol);
+  const def = instanceSymbol(doc, c);
   const port = def.ports.find((p) => p.id === portId);
   if (!port) return null;
   return { pt: toWorld(c, def, port.x, port.y), dir: sideVector(c, port.side) };

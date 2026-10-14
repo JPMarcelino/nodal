@@ -1,5 +1,5 @@
 import { eq, projectOnSegment, toWorld } from './geometry';
-import { getSymbol } from './registry';
+import { instanceSymbol } from './registry';
 import type { CircuitDoc, Point } from './types';
 import type { Crossing } from './wires';
 
@@ -36,7 +36,7 @@ export function computeHotSpots(doc: CircuitDoc, polys: Map<string, Point[]>, cr
   const ports: { comp: string; port: string; pt: Point }[] = [];
   for (const it of items) {
     if (it.type !== 'component') continue;
-    const def = getSymbol(doc, it.symbol);
+    const def = instanceSymbol(doc, it);
     for (const p of def.ports) ports.push({ comp: it.id, port: p.id, pt: toWorld(it, def, p.x, p.y) });
   }
 

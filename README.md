@@ -101,6 +101,13 @@ Turn on **Drawing frame** in the document properties for a sheet border with zon
 ### Maths (LaTeX)
 Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone/shape titles, wire labels and part values, e.g. `$f_c = \frac{1}{2\pi RC}$` or `$R_{load}$`. Formulas are typeset with MathJax as vector paths, so they look the same in SVG, PNG and PDF exports. Type `\$` for a literal dollar sign.
 
+### Colour, fill and size
+- The **Style** section of the inspector works on anything selected (one part, or a mix of parts, wires and shapes) and changes them all at once. It covers line colour, fill colour and opacity, line width, solid/dashed/dotted lines, and text/label colour, with one-click swatches or any colour.
+- Parts can be coloured individually: line colour, a fill for their bodies, line width, dashes and label colour.
+- **Copy style** / **Paste style** (Ctrl+Shift+Alt+C / V) carries a look from one item to others.
+- **Resize parts:** drag a corner handle of a selected part (in quarter steps; Shift for any size), or set *Size* in the inspector. The drawing, pins and text scale together and keep their aspect ratio, while line widths stay the same so the part still matches the rest of the schematic. Wires stay connected.
+- New parts start with their value hidden (net names on labels and rails still show). Turn it on per part, or use *Values* in the top bar.
+
 ### Organising
 - **Groups** (**Ctrl+G** / **Ctrl+Shift+G**), including nested groups. Double-click a grouped item to enter the group.
 - **Layers** panel: tree of groups and items, with show/hide and lock

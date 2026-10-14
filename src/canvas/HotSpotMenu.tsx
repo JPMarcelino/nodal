@@ -5,7 +5,7 @@ import { computeNets, netOfWire } from '../model/netlist';
 import { attachedWires } from '../model/doc';
 import { deleteItems } from '../model/ops';
 import { applySolder } from './solder';
-import { getSymbol } from '../model/registry';
+import { instanceSymbol } from '../model/registry';
 import type { CircuitDoc, WireItem } from '../model/types';
 import { crossingStack, restack, wireStyle } from '../model/wires';
 import { S, mutate, set, toast } from '../store/store';
@@ -245,7 +245,7 @@ const pinLabel = (doc: CircuitDoc, comp: string, port: string) => `${(doc.items[
 const portName = (doc: CircuitDoc, comp: string, port: string) => {
   const c = doc.items[comp];
   if (!c || c.type !== 'component') return port;
-  return getSymbol(doc, c.symbol).ports.find((p) => p.id === port)?.name ?? port;
+  return instanceSymbol(doc, c).ports.find((p) => p.id === port)?.name ?? port;
 };
 
 /** Same-named entries get " · 1", " · 2"… so every row is distinguishable. */

@@ -4321,3 +4321,36 @@ body {
 .se-confirm .grow {
   flex: 1;
 }
+
+/* style section: one-click colours */
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.swatch-row .swatch {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.swatch.picked {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.row-gap.wrap {
+  flex-wrap: wrap;
+}
+
+.scale-handle {
+  cursor: nwse-resize;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}

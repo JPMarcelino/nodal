@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { computeNets } from '../model/netlist';
-import { getSymbol } from '../model/registry';
+import { instanceSymbol } from '../model/registry';
 import * as A from '../store/actions';
 import { select, set, useStore } from '../store/store';
 import { Modal } from './Dialogs';
@@ -28,7 +28,7 @@ export function FindDialog() {
     const out: Hit[] = [];
     for (const it of Object.values(doc.items)) {
       if (it.type === 'component') {
-        const def = getSymbol(doc, it.symbol);
+        const def = instanceSymbol(doc, it);
         const fields = Object.values(it.props).filter(Boolean).join(' · ');
         if (def.valueIsLabel || def.prefix.startsWith('#')) {
           if (it.value) out.push({ key: it.id, kind: 'Label', label: it.value, meta: def.name, ids: [it.id] });

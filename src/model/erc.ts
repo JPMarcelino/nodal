@@ -1,7 +1,7 @@
 import { computeHotSpots } from './hotspots';
 import { toWorld } from './geometry';
 import { computeNets, touchingPins } from './netlist';
-import { getSymbol } from './registry';
+import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Point, SymbolDef } from './types';
 import { wirePolyline } from './wires';
 
@@ -59,7 +59,7 @@ const isLabel = (def: SymbolDef) => !!def.valueIsLabel || def.prefix.startsWith(
 export function runErc(doc: CircuitDoc): ErcIssue[] {
   const issues: ErcIssue[] = [];
   const comps = Object.values(doc.items).filter((i): i is ComponentItem => i.type === 'component');
-  const defOf = new Map(comps.map((c) => [c.id, getSymbol(doc, c.symbol)]));
+  const defOf = new Map(comps.map((c) => [c.id, instanceSymbol(doc, c)]));
   const pinAt = (c: ComponentItem, port: string): Point | null => {
     const def = defOf.get(c.id)!;
     const p = def.ports.find((q) => q.id === port);
@@ -272,7 +272,7 @@ const isLabelLike = (def: SymbolDef) => !!def.valueIsLabel;
 function describePin(doc: CircuitDoc, comp: string, port: string) {
   const c = doc.items[comp];
   if (!c || c.type !== 'component') return 'a pin';
-  const def = getSymbol(doc, c.symbol);
+  const def = instanceSymbol(doc, c);
   const name = def.ports.find((p) => p.id === port)?.name ?? port;
   if (!isPart(def)) return def.valueIsLabel ? `label “${c.value}”` : def.name.toLowerCase();
   return `${c.ref || def.name} pin ${name}`;

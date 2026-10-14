@@ -1,7 +1,7 @@
 import { calloutLayout } from './callout';
 import { componentBounds, polylineBounds, unionRects } from './geometry';
 import { measureRich } from './richText';
-import { getSymbol } from './registry';
+import { getSymbol, instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, Item, Rect, ShapeItem, ShapeKind, SymbolDef } from './types';
 import { wirePolyline } from './wires';
 
@@ -73,7 +73,7 @@ export function normalizeDoc(raw: unknown): CircuitDoc {
 export function itemBounds(doc: CircuitDoc, it: Item): Rect | null {
   switch (it.type) {
     case 'component':
-      return componentBounds(it, getSymbol(doc, it.symbol));
+      return componentBounds(it, instanceSymbol(doc, it));
     case 'junction':
       return { x: it.x - 3, y: it.y - 3, w: 6, h: 6 };
     case 'shape':
@@ -120,7 +120,8 @@ export function makeComponent(doc: CircuitDoc, symbolId: string, x: number, y: n
     value: def.value ?? '',
     props,
     showRef: !def.hideLabels,
-    showValue: !def.hideLabels || !!def.valueIsLabel,
+    // values start hidden (net names on labels and rails always show)
+    showValue: !!def.valueIsLabel,
   };
 }
 

@@ -128,7 +128,18 @@ export interface ComponentItem extends ItemBase {
   props: Record<string, string>;
   showRef: boolean;
   showValue: boolean;
+  /** Line colour of the drawing (default: the document's part colour). */
   color?: string;
+  /** Fills the drawing's closed shapes (outline-only ones too). */
+  fill?: string;
+  /** Opacity of `fill`, 0…1 (default 1). */
+  fillOpacity?: number;
+  /** Line width of the drawing (default 2); explicit widths scale along. */
+  lineWidth?: number;
+  dash?: Dash;
+  labelColor?: string;
+  /** Size of the drawing, pins and text (default 1); line widths stay as they are. */
+  scale?: number;
   /** Label offset relative to the component centre (unrotated). */
   /** Reference label offset (also the value's, until the value is moved on its own). */
   labelDx?: number;

@@ -2,7 +2,7 @@ import { current, isDraft } from 'immer';
 import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, nextRef, refersTo, uid } from './doc';
 import { eq, projectOnSegment, rotate, simplify, snap } from './geometry';
 import { inkPoints, packInk } from './ink';
-import { getSymbol } from './registry';
+import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, WireItem } from './types';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
 import type { TouchTarget } from './hotspots';
@@ -469,7 +469,7 @@ function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map
   for (const id of ids) {
     const c = base.items[id];
     if (c?.type !== 'component' || c.locked) continue;
-    for (const p of getSymbol(base, c.symbol).ports) {
+    for (const p of instanceSymbol(base, c).ports) {
       const at = endpointInfo(base, { kind: 'port', comp: c.id, port: p.id });
       if (at) movingPins.add(`${at.pt.x},${at.pt.y}`);
     }
@@ -650,7 +650,7 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
       it.x += dx;
       it.y += dy;
       if (refs.has(it.ref)) {
-        const prefix = getSymbol(doc, it.symbol).prefix;
+        const prefix = instanceSymbol(doc, it).prefix;
         it.ref = nextRef(doc, prefix, refs);
       }
       refs.add(it.ref);
@@ -774,7 +774,7 @@ export function annotate(doc: CircuitDoc) {
   comps.sort((a, b) => (Math.abs(a.y - b.y) > 40 ? a.y - b.y : a.x - b.x));
   const counters = new Map<string, number>();
   for (const c of comps) {
-    const prefix = getSymbol(doc, c.symbol).prefix;
+    const prefix = instanceSymbol(doc, c).prefix;
     const n = (counters.get(prefix) ?? 0) + 1;
     counters.set(prefix, n);
     c.ref = prefix.startsWith('#') ? `${prefix}${String(n).padStart(2, '0')}` : `${prefix}${n}`;

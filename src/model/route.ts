@@ -1,5 +1,5 @@
 import { componentBounds } from './geometry';
-import { getSymbol } from './registry';
+import { instanceSymbol } from './registry';
 import type { CircuitDoc, Point, Rect } from './types';
 import { endpointInfo, wirePolyline } from './wires';
 
@@ -54,7 +54,7 @@ export function routeObstacles(doc: CircuitDoc, excludeWires?: Set<string>): Rou
   for (const it of Object.values(doc.items)) {
     if (it.hidden) continue;
     if (it.type === 'component') {
-      const def = getSymbol(doc, it.symbol);
+      const def = instanceSymbol(doc, it);
       rects.push(componentBounds(it, def));
       for (const p of def.ports) {
         const info = endpointInfo(doc, { kind: 'port', comp: it.id, port: p.id });
