@@ -2,9 +2,9 @@ import { ArrowDownToLine, ArrowUpToLine, Circle, Copy, Magnet, Maximize2, Minus,
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 import { PrimEl } from '../canvas/SymbolGraphic';
 import { inferSide, type SymbolSource } from '../model/symbols/dsl';
-import type { Fill, PortDef, Prim } from '../model/types';
+import type { Fill, PortDef, Prim, PrimStyle } from '../model/types';
 import { eventToCombo } from '../store/commands';
-import { NumberInput, Segmented, TextInput } from './controls';
+import { ColorInput, NumberInput, Segmented, TextInput } from './controls';
 
 export interface Snap {
   src: SymbolSource;
@@ -76,6 +76,25 @@ export function movePrim(p: Prim, dx: number, dy: number): Prim {
 }
 
 /** The primitive a drag from a to b draws with the given tool, or null for click-only tools. */
+/** Style for new shapes; kept between editor sessions. */
+type NewStyle = PrimStyle & { w: number };
+let lastStyle: NewStyle = { w: 2 };
+
+/** Gives a new primitive the chosen colours, dash and width. */
+function withStyle(p: Prim, st: NewStyle): Prim {
+  const out = { ...p } as Prim;
+  if (st.color) out.color = st.color;
+  if (st.fc && 'fill' in out) out.fc = st.fc;
+  if (st.dash && out.t !== 'text') out.dash = true;
+  if (st.w !== 2) {
+    if (out.t === 'rect') out.sw = st.w;
+    else if (out.t !== 'text') out.w = st.w;
+  }
+  return out;
+}
+
+const widthOf = (p: Prim) => (p.t === 'rect' ? (p.sw ?? 2) : 'w' in p ? (p.w ?? 2) : 2);
+
 function dragShape(tool: Tool, a: P, b: P, fill: Fill): Prim | null {
   if (tool === 'line') return { t: 'line', pts: [a.x, a.y, b.x, b.y] };
   if (tool === 'rect') return { t: 'rect', x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y), fill };
@@ -222,6 +241,8 @@ export function SymbolDrawPane({
   const [g, setG] = useState<Gesture | null>(null);
   const [poly, setPoly] = useState<number[] | null>(null);
   const [fill, setFill] = useState<Fill>('none');
+  const [style, setStyleState] = useState<NewStyle>(lastStyle);
+  const setStyle = (patch: Partial<NewStyle>) => setStyleState((st) => (lastStyle = { ...st, ...patch }));
   const [snapOn, setSnapOn] = useState(true);
   const [cursor, setCursor] = useState<P>({ x: 0, y: 0 });
   const [view, setView] = useState<View>({ x: 40, y: 40, zoom: 4 });
@@ -287,7 +308,7 @@ export function SymbolDrawPane({
   const finishPoly = () => {
     if (poly && poly.length >= 4) {
       const pts = poly;
-      apply((s) => void s.prims.push(fill === 'none' ? { t: 'line', pts } : { t: 'poly', pts, fill }));
+      apply((s) => void s.prims.push(withStyle(fill === 'none' ? { t: 'line', pts } : { t: 'poly', pts, fill }, style)));
       setSel([prims.length]);
     }
     setPoly(null);
@@ -329,10 +350,28 @@ export function SymbolDrawPane({
   };
   const setSelFill = (f: Fill) => {
     setFill(f);
-    updSel((p) => ('fill' in p ? ({ ...p, fill: f } as Prim) : p.t === 'line' && f !== 'none' ? { t: 'poly', pts: p.pts, fill: f, w: p.w } : p));
+    updSel((p) => ('fill' in p ? ({ ...p, fill: f } as Prim) : p.t === 'line' && f !== 'none' ? ({ ...p, t: 'poly', fill: f } as Prim) : p));
   };
-  const setSelWidth = (w: number) => updSel((p) => (p.t === 'rect' ? { ...p, sw: w } : p.t === 'text' || p.t === 'path' ? p : ({ ...p, w } as Prim)));
-  const selWidth = single ? (single.t === 'rect' ? (single.sw ?? 2) : 'w' in single ? (single.w ?? 2) : 2) : 2;
+  const setSelWidth = (w: number) => {
+    setStyle({ w });
+    updSel((p) => (p.t === 'rect' ? { ...p, sw: w } : p.t === 'text' ? p : ({ ...p, w } as Prim)), 'width');
+  };
+  const setSelColor = (v: string) => {
+    const color = v || undefined;
+    setStyle({ color });
+    updSel((p) => ({ ...p, color }) as Prim, 'color');
+  };
+  const setSelFillColor = (v: string) => {
+    const fc = v || undefined;
+    setStyle({ fc });
+    updSel((p) => ('fill' in p ? ({ ...p, fc } as Prim) : p), 'fill-colour');
+  };
+  const setSelDash = (dash: boolean) => {
+    setStyle({ dash: dash || undefined });
+    updSel((p) => (p.t === 'text' ? p : ({ ...p, dash: dash || undefined } as Prim)));
+  };
+  /** What the style controls show: the selected shape's style, or the style for new shapes. */
+  const shown = single ? { color: single.color, fc: single.fc, dash: !!single.dash, w: widthOf(single), fill: 'fill' in single ? single.fill : fill } : { ...style, dash: !!style.dash, fill };
 
   const selectTool = (t: Tool) => {
     finishPoly();
@@ -477,7 +516,7 @@ export function SymbolDrawPane({
     }
     if (tool === 'text') {
       // drop a text and select it; its content is edited in the properties bar
-      apply((s) => void s.prims.push({ t: 'text', x: p.x, y: p.y, size: 10, anchor: 'middle', text: 'Text' }));
+      apply((s) => void s.prims.push(withStyle({ t: 'text', x: p.x, y: p.y, size: 10, anchor: 'middle', text: 'Text' }, style)));
       setSel([prims.length]);
       setTool('select');
       setTimeout(() => document.querySelector<HTMLInputElement>('[data-se-text]')?.select(), 30);
@@ -560,7 +599,7 @@ export function SymbolDrawPane({
       if (a.x !== b.x || a.y !== b.y) {
         const prim = dragShape(tool, a, b, fill);
         if (prim) {
-          apply((s) => void s.prims.push(prim));
+          apply((s) => void s.prims.push(withStyle(prim, style)));
           setSel([prims.length]);
         }
       }
@@ -584,7 +623,8 @@ export function SymbolDrawPane({
   /* --------------------------- render --------------------------- */
 
   const z = view.zoom;
-  const draft: Prim | null = poly ? { t: 'line', pts: [...poly, cursor.x, cursor.y] } : g?.kind === 'draw' ? dragShape(tool, g.start, g.cur, fill) : null;
+  const rawDraft: Prim | null = poly ? { t: 'line', pts: [...poly, cursor.x, cursor.y] } : g?.kind === 'draw' ? dragShape(tool, g.start, g.cur, fill) : null;
+  const draft = rawDraft && withStyle(rawDraft, style);
   const hoverHandle = tool === 'select' && !g ? hitHandle(cursor) ?? hitSize(cursor) : undefined;
   const cursorStyle =
     g?.kind === 'pan' ? 'grabbing' : space ? 'grab' : g?.kind === 'move' ? 'move' : hoverHandle ? 'nwse-resize' : tool === 'select' ? (hitPrim(cursor) !== null || hitPin(cursor) >= 0 ? 'move' : 'default') : 'crosshair';
@@ -655,7 +695,7 @@ export function SymbolDrawPane({
       <div className="se-props">
         <span className="se-props-label">{valid.length ? `${valid.length} selected` : 'New shapes'}</span>
         <Segmented
-          value={single && 'fill' in single ? single.fill : fill}
+          value={shown.fill}
           options={[
             { value: 'none', label: 'Outline' },
             { value: 'solid', label: 'Filled' },
@@ -663,17 +703,38 @@ export function SymbolDrawPane({
           ]}
           onChange={setSelFill}
         />
+        <span className="se-style" title="Line colour (empty: follows the theme)">
+          <span className="se-props-label">Line</span>
+          <ColorInput value={shown.color ?? ''} onChange={setSelColor} allowNone />
+        </span>
+        {shown.fill === 'solid' && (
+          <span className="se-style" title="Fill colour (empty: same as the line)">
+            <span className="se-props-label">Fill</span>
+            <ColorInput value={shown.fc ?? ''} onChange={setSelFillColor} allowNone />
+          </span>
+        )}
+        <Segmented
+          value={[1, 2, 3].includes(shown.w) ? shown.w : -1}
+          options={[
+            { value: 1, label: 'Thin', title: 'Line width 1' },
+            { value: 2, label: 'Normal', title: 'Line width 2' },
+            { value: 3, label: 'Thick', title: 'Line width 3' },
+          ]}
+          onChange={setSelWidth}
+        />
+        <span className="se-num" title="Line width">
+          <NumberInput value={shown.w} min={0.5} max={10} step={0.5} suffix="px" onChange={setSelWidth} />
+        </span>
+        <Segmented
+          value={shown.dash ? 'dash' : 'solid'}
+          options={[
+            { value: 'solid', label: 'Solid', title: 'Solid lines' },
+            { value: 'dash', label: 'Dashed', title: 'Dashed lines' },
+          ]}
+          onChange={(v) => setSelDash(v === 'dash')}
+        />
         {valid.length > 0 && (
           <>
-            <Segmented
-              value={selWidth}
-              options={[
-                { value: 1, label: 'Thin', title: 'Stroke width' },
-                { value: 2, label: 'Normal', title: 'Stroke width' },
-                { value: 3, label: 'Thick', title: 'Stroke width' },
-              ]}
-              onChange={setSelWidth}
-            />
             {single?.t === 'text' && (
               <>
                 <span className="se-text-input">
@@ -732,7 +793,7 @@ export function SymbolDrawPane({
             <g stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" className="se-prims">
               {prims.map((p, i) =>
                 p.t === 'text' ? (
-                  <text key={i} x={p.x} y={p.y} fontSize={p.size} textAnchor={p.anchor} fill="currentColor" stroke="none">
+                  <text key={i} x={p.x} y={p.y} fontSize={p.size} textAnchor={p.anchor} fill={p.color ?? 'currentColor'} stroke="none">
                     {p.text}
                   </text>
                 ) : (

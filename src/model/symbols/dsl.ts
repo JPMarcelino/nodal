@@ -1,10 +1,15 @@
-import type { Fill, FieldDef, PortDef, Prim, Side, SymbolDef, VariantRef } from '../types';
+import type { Fill, FieldDef, PortDef, Prim, PrimStyle, Side, SymbolDef, VariantRef } from '../types';
+
+const COLOUR = /^(#[0-9a-f]{3,8}|[a-z]+)$/i;
 
 /**
  * Symbol DSL — one command per line (or separated by `;`). Coordinates are in
  * symbol-local pixels, origin top-left, y pointing down.
  *
  *   W w                      stroke width for following commands (default 2)
+ *   SC colour | -            line colour for following commands (- = theme ink)
+ *   FC colour | -            fill colour of following filled shapes (- = line colour)
+ *   DA 1 | 0                 dashed outlines for following commands
  *   L x1 y1 x2 y2 …          open polyline
  *   D x1 y1 x2 y2 …          dashed polyline
  *   G x1 y1 x2 y2 …          closed polygon   (GF = filled, GB = background-filled)
@@ -19,14 +24,30 @@ import type { Fill, FieldDef, PortDef, Prim, Side, SymbolDef, VariantRef } from 
  * Ports:  "name:x,y name2:x,y" — side is inferred from the closest edge.
  */
 export function parseDraw(src: string): Prim[] {
-  const prims: Prim[] = [];
+  const out: Prim[] = [];
   let w: number | undefined;
+  const style: PrimStyle = {};
+  // every primitive takes the style in force where it is drawn
+  const prims = { push: (p: Prim) => out.push({ ...p, ...style, ...(p.dash ? { dash: true } : {}) } as Prim) };
   for (const raw of src.split(/[\n;]/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
     const m = /^([A-Z]{1,2})\s*(.*)$/.exec(line);
     if (!m) throw new Error(`Cannot parse "${line}"`);
     const [, cmd, rest] = m;
+    if (cmd === 'SC' || cmd === 'FC') {
+      const v = rest.trim();
+      if (v !== '-' && !COLOUR.test(v)) throw new Error(`Bad colour in "${line}"`);
+      const key = cmd === 'SC' ? 'color' : 'fc';
+      if (v === '-') delete style[key];
+      else style[key] = v;
+      continue;
+    }
+    if (cmd === 'DA') {
+      if (rest.trim() === '1') style.dash = true;
+      else delete style.dash;
+      continue;
+    }
     const op = cmd[0];
     const mod = cmd[1];
     const fill: Fill = mod === 'F' ? 'solid' : mod === 'B' ? 'bg' : 'none';
@@ -79,7 +100,7 @@ export function parseDraw(src: string): Prim[] {
         throw new Error(`Unknown command "${cmd}"`);
     }
   }
-  return prims;
+  return out;
 }
 
 function need(n: number[], count: number, line: string) {
@@ -252,11 +273,22 @@ export function primsToDsl(prims: Prim[]): string {
       w = pw;
     }
   };
+  let color: string | undefined;
+  let fc: string | undefined;
+  let dash = false;
+  const styled = (p: Prim) => {
+    if (p.color !== color) out.push(`SC ${(color = p.color) ?? '-'}`);
+    if (p.fc !== fc) out.push(`FC ${(fc = p.fc) ?? '-'}`);
+    // a dashed line has its own command; anything else follows DA
+    const want = p.t === 'line' ? dash && !!p.dash : !!p.dash;
+    if (want !== dash) out.push(`DA ${(dash = want) ? 1 : 0}`);
+  };
   for (const p of prims) {
+    styled(p);
     switch (p.t) {
       case 'line':
         width(p.w);
-        out.push(`${p.dash ? 'D' : 'L'} ${p.pts.map(r).join(' ')}`);
+        out.push(`${p.dash && !dash ? 'D' : 'L'} ${p.pts.map(r).join(' ')}`);
         break;
       case 'poly':
         width(p.w);

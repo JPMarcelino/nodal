@@ -334,7 +334,7 @@ export function exportDxf(doc: CircuitDoc): string {
         for (const run of primPolylines(p)) {
           const pts: Point[] = [];
           for (let i = 0; i < run.pts.length; i += 2) pts.push(toWorld(it, def, run.pts[i], run.pts[i + 1]));
-          poly('COMPONENTS', pts, run.closed);
+          poly('COMPONENTS', pts, run.closed, p.color ? aciColor(p.color) : undefined);
         }
       }
       const b = { x: it.x, y: it.y };

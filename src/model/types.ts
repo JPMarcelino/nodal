@@ -18,16 +18,27 @@ export type Side = 'left' | 'right' | 'top' | 'bottom';
 
 export type Fill = 'none' | 'solid' | 'bg';
 
+/** Optional styling any primitive can carry; unset parts follow the theme's ink colour. */
+export interface PrimStyle {
+  /** Line / outline colour (text: its colour). */
+  color?: string;
+  /** Fill colour of `fill: 'solid'` shapes; defaults to the line colour. */
+  fc?: string;
+  dash?: boolean;
+}
+
 /** Drawing primitives a symbol is made of (local coordinates, y down). */
-export type Prim =
-  | { t: 'line'; pts: number[]; w?: number; dash?: boolean }
+export type Prim = PrimStyle &
+  (
+  | { t: 'line'; pts: number[]; w?: number }
   | { t: 'poly'; pts: number[]; fill: Fill; w?: number }
   | { t: 'rect'; x: number; y: number; w: number; h: number; rx?: number; fill: Fill; sw?: number }
   | { t: 'circle'; cx: number; cy: number; r: number; fill: Fill; w?: number }
   | { t: 'ellipse'; cx: number; cy: number; rx: number; ry: number; fill: Fill; w?: number }
   | { t: 'arc'; cx: number; cy: number; r: number; a1: number; a2: number; w?: number }
   | { t: 'path'; d: string; fill: Fill; w?: number }
-  | { t: 'text'; x: number; y: number; size: number; anchor: 'start' | 'middle' | 'end'; text: string };
+  | { t: 'text'; x: number; y: number; size: number; anchor: 'start' | 'middle' | 'end'; text: string }
+  );
 
 export interface PortDef {
   id: string;

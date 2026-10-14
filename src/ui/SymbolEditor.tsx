@@ -1,5 +1,5 @@
-import { Cpu, Code2, Layers, PenLine, Pencil, Trash2, Upload } from 'lucide-react';
-import { useMemo, useReducer, useRef, useState } from 'react';
+import { Cpu, Code2, History, Layers, PenLine, Pencil, Trash2, Upload } from 'lucide-react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { uid } from '../model/doc';
 import { replaceWithInstance } from '../model/fromSelection';
@@ -32,6 +32,23 @@ const blank = (): SymbolSource => ({
 });
 
 const r20 = (v: number) => Math.max(20, Math.round(v / 20) * 20);
+
+/** Unsaved work in the editor, kept so closing by mistake (or a crash) loses nothing. */
+const DRAFT_KEY = 'nodal.symbolDraft';
+interface Draft {
+  /** Symbol being edited, or '' for a new one. */
+  key: string;
+  t: number;
+  src: SymbolSource;
+}
+const readDraft = (): Draft | null => {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null');
+  } catch {
+    return null;
+  }
+};
+const clearDraft = () => localStorage.removeItem(DRAFT_KEY);
 
 
 export function SymbolEditor() {
@@ -115,6 +132,57 @@ export function SymbolEditor() {
 
   const hist = { canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
 
+  /* ---------------------- drafts and closing ---------------------- */
+
+  const draftKey = editing ?? '';
+  /** Anything changed since the editor opened. */
+  const dirty = past.current.length > 0;
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [draft, setDraft] = useState<Draft | null>(() => {
+    const d = seed ? null : readDraft();
+    return d && d.key === draftKey && JSON.stringify(d.src) !== JSON.stringify(src) ? d : null;
+  });
+
+  // keep unsaved work while editing
+  useEffect(() => {
+    if (!dirty || seed) return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ key: draftKey, t: Date.now(), src } satisfies Draft));
+      } catch {
+        /* storage full: nothing to do */
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [src, dirty, seed, draftKey]);
+
+  const closeEditor = () => {
+    clearDraft();
+    set({ dialog: null, editingSymbol: null, symbolSeed: null });
+  };
+  const requestClose = () => (dirty ? setConfirmClose(true) : closeEditor());
+  /** Esc: the draw pane uses it first (cancel, deselect); then it asks before closing with unsaved changes. */
+  const onEscape = () => {
+    if (confirmClose) {
+      setConfirmClose(false);
+      return true;
+    }
+    if (tab === 'draw' && escRef.current?.()) return true;
+    if (dirty) {
+      setConfirmClose(true);
+      return true;
+    }
+    return false;
+  };
+  const restoreDraft = (d: Draft) => {
+    apply((s) => {
+      s.src = { ...d.src };
+      s.prims = safePrims(d.src.draw);
+      s.ports = safePorts(d.src.ports, d.src.w, d.src.h);
+    });
+    setDraft(null);
+  };
+
   const preview = useMemo<SymbolDef | null>(() => {
     try {
       return compileSource({ ...src, id: src.id || 'preview' });
@@ -160,7 +228,7 @@ export function SymbolEditor() {
           d.symbols[base.id] = mergedBase;
         });
         toast(`Added “${variantName}” as a type of ${base.name}`, 'success');
-        set({ dialog: null, editingSymbol: null, symbolSeed: null });
+        closeEditor();
         return;
       }
       // ---- Save as a standalone symbol ----
@@ -173,7 +241,7 @@ export function SymbolEditor() {
         mutate((d) => void (placed = replaceWithInstance(d as CircuitDoc, seed.ids, def, seed.origin)));
         set({ selection: placed ? [placed] : [] });
         toast(`Saved “${def.name}” and placed it in place of the selection`, 'success');
-        set({ dialog: null, editingSymbol: null, symbolSeed: null });
+        closeEditor();
         return;
       }
       // keep the document copy in sync so placed parts update
@@ -195,7 +263,7 @@ export function SymbolEditor() {
         }
       }
       toast(`Saved “${def.name}” to My symbols`, 'success');
-      set({ dialog: null, editingSymbol: null, symbolSeed: null });
+      closeEditor();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -224,7 +292,53 @@ export function SymbolEditor() {
   const variantName = (src.variantName ?? '').trim() || `Type ${(manageBase?.variants?.length ?? 0) + 1}`;
 
   return (
-    <Modal title={original ? (original.custom ? `Edit symbol — ${original.name}` : `Customise “${original.name}”`) : seed ? 'Create a symbol from the selection' : 'Create a symbol'} onClose={() => set({ dialog: null, editingSymbol: null, symbolSeed: null })} onEscape={() => (tab === 'draw' ? !!escRef.current?.() : false)} width={1080} className="symbol-editor">
+    <Modal title={original ? (original.custom ? `Edit symbol — ${original.name}` : `Customise “${original.name}”`) : seed ? 'Create a symbol from the selection' : 'Create a symbol'} onClose={requestClose} onEscape={onEscape} width={1080} className="symbol-editor">
+      {draft && (
+        <div className="se-banner">
+          <History size={15} />
+          <span>
+            Unsaved changes from {new Date(draft.t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} were kept.
+          </span>
+          <button className="primary-btn" onClick={() => restoreDraft(draft)}>
+            Restore them
+          </button>
+          <button
+            className="secondary-btn"
+            onClick={() => {
+              clearDraft();
+              setDraft(null);
+            }}
+          >
+            Discard
+          </button>
+        </div>
+      )}
+      {confirmClose && (
+        <div className="se-confirm-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setConfirmClose(false)}>
+          <div className="se-confirm" role="alertdialog" aria-label="Unsaved changes">
+            <strong>Save your changes to this symbol?</strong>
+            <span className="muted small">If you close without saving, your changes are lost.</span>
+            <div className="btn-row">
+              <button className="secondary-btn danger" onClick={closeEditor}>
+                Don’t save
+              </button>
+              <span className="grow" />
+              <button className="secondary-btn" autoFocus onClick={() => setConfirmClose(false)}>
+                Keep editing
+              </button>
+              <button
+                className="primary-btn"
+                onClick={() => {
+                  setConfirmClose(false);
+                  save(false);
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="se-layout">
         <div className="se-main">
           <div className="tabs inline">

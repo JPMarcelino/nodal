@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import type { Fill, Prim, SymbolDef } from '../model/types';
 
-const fillOf = (f: Fill) => (f === 'solid' ? 'currentColor' : f === 'bg' ? 'var(--sym-bg)' : 'none');
+const fillOf = (p: { fill: Fill; fc?: string; color?: string }) => (p.fill === 'solid' ? (p.fc ?? p.color ?? 'currentColor') : p.fill === 'bg' ? 'var(--sym-bg)' : 'none');
 
 function arcPath(cx: number, cy: number, r: number, a1: number, a2: number) {
   const rad = (a: number) => (a * Math.PI) / 180;
@@ -15,27 +15,38 @@ function arcPath(cx: number, cy: number, r: number, a1: number, a2: number) {
 }
 
 export function PrimEl({ p, sw }: { p: Prim; sw: number }) {
+  const el = primShape(p, sw);
+  if (!el || (!p.color && !p.dash)) return el;
+  const w = p.t === 'rect' ? (p.sw ?? sw) : 'w' in p ? (p.w ?? sw) : sw;
+  return (
+    <g stroke={p.color} strokeDasharray={p.dash ? `${2 * w} ${1.5 * w}` : undefined}>
+      {el}
+    </g>
+  );
+}
+
+function primShape(p: Prim, sw: number) {
   switch (p.t) {
     case 'line': {
       const pts = [];
       for (let i = 0; i < p.pts.length; i += 2) pts.push(`${p.pts[i]},${p.pts[i + 1]}`);
-      return <polyline points={pts.join(' ')} fill="none" strokeWidth={p.w ?? sw} strokeDasharray={p.dash ? '4 3' : undefined} />;
+      return <polyline points={pts.join(' ')} fill="none" strokeWidth={p.w ?? sw} />;
     }
     case 'poly': {
       const pts = [];
       for (let i = 0; i < p.pts.length; i += 2) pts.push(`${p.pts[i]},${p.pts[i + 1]}`);
-      return <polygon points={pts.join(' ')} fill={fillOf(p.fill)} strokeWidth={p.w ?? sw} />;
+      return <polygon points={pts.join(' ')} fill={fillOf(p)} strokeWidth={p.w ?? sw} />;
     }
     case 'rect':
-      return <rect x={p.x} y={p.y} width={p.w} height={p.h} rx={p.rx} fill={fillOf(p.fill)} strokeWidth={p.sw ?? sw} />;
+      return <rect x={p.x} y={p.y} width={p.w} height={p.h} rx={p.rx} fill={fillOf(p)} strokeWidth={p.sw ?? sw} />;
     case 'circle':
-      return <circle cx={p.cx} cy={p.cy} r={p.r} fill={fillOf(p.fill)} strokeWidth={p.w ?? sw} />;
+      return <circle cx={p.cx} cy={p.cy} r={p.r} fill={fillOf(p)} strokeWidth={p.w ?? sw} />;
     case 'ellipse':
-      return <ellipse cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} fill={fillOf(p.fill)} strokeWidth={p.w ?? sw} />;
+      return <ellipse cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} fill={fillOf(p)} strokeWidth={p.w ?? sw} />;
     case 'arc':
       return <path d={arcPath(p.cx, p.cy, p.r, p.a1, p.a2)} fill="none" strokeWidth={p.w ?? sw} />;
     case 'path':
-      return <path d={p.d} fill={fillOf(p.fill)} strokeWidth={p.w ?? sw} />;
+      return <path d={p.d} fill={fillOf(p)} strokeWidth={p.w ?? sw} />;
     case 'text':
       return null;
   }
@@ -63,7 +74,7 @@ export const SymbolPreview = memo(function SymbolPreview({ def, size = 48, pad =
         <SymbolBody def={def} sw={s > 120 ? 2.5 : 2} />
         {def.prims.map((p, i) =>
           p.t === 'text' ? (
-            <text key={i} x={p.x} y={p.y} fontSize={p.size} textAnchor={p.anchor} fill="currentColor" stroke="none" className="sym-text">
+            <text key={i} x={p.x} y={p.y} fontSize={p.size} textAnchor={p.anchor} fill={p.color ?? 'currentColor'} stroke="none" className="sym-text">
               {p.text}
             </text>
           ) : null,
