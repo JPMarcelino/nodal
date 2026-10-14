@@ -52,15 +52,16 @@ type Gesture =
   | { kind: 'pan'; client: Point; view: { x: number; y: number } }
   | { kind: 'marquee'; start: Point; cur: Point; additive: boolean }
   /**
-   * `pick`: the item pressed when it was already part of a larger selection (a
-   * click without a drag narrows the selection to it). `floating`: a keyboard
+   * `pick`: selected by a click without a drag: the item pressed when it was already
+   * part of a larger selection, or the next item down when items overlap. `floating`: a keyboard
    * move (Cadence m / c) that follows the pointer until the next click.
    */
   /** `rejoin`: a wires-only move; ends dropped exactly on a pin, junction or wire end connect there. */
   | { kind: 'move'; start: Point; ids: Set<string>; moved: boolean; client: Point; detach: boolean; dx: number; dy: number; pick?: string; floating?: boolean; rejoin?: boolean }
   /** `postureSet`: the bend direction was flipped by hand, so the pointer no longer picks it. */
   | { kind: 'wire'; start: Target; pts: Point[]; hFirst: boolean; fromDrag: boolean; downClient: Point; cur: Target; dragging: boolean; postureSet?: boolean }
-  | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean }
+  /** `pick`: a click without a drag selects this item instead (the next one down under the pointer). */
+  | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean; pick?: string }
   | { kind: 'endpoint'; wire: string; end: 'a' | 'b'; cur: Target; moved: boolean }
   | { kind: 'node'; wire: string; idx: number; base: Point[]; cur: Point; free: boolean; moved: boolean }
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
@@ -355,8 +356,9 @@ export function Canvas() {
     [findPort, data, snapOn, grid],
   );
 
-  const hitItem = useCallback(
-    (p: Point): string | null => {
+  /** Every item under the pointer, topmost first. */
+  const hitItems = useCallback(
+    (p: Point): string[] => {
       const d = S().doc;
       const z = S().view.zoom;
       const t = (6 / z) * hitSlop();
@@ -373,17 +375,25 @@ export function Canvas() {
         if (s.fillOpacity > 0) return true;
         return !pointInRect(p, { x: r.x + t, y: r.y + t, w: r.w - 2 * t, h: r.h - 2 * t });
       };
-      for (const s of shapes) if (s.layer === 'above' && shapeHit(s)) return s.id;
-      for (const it of items) if (it.type === 'junction' && dist(it, p) < t + 2) return it.id;
+      const out: string[] = [];
+      for (const s of shapes) if (s.layer === 'above' && shapeHit(s)) out.push(s.id);
+      for (const it of items) if (it.type === 'junction' && dist(it, p) < t + 2) out.push(it.id);
       const comps = items.filter((i): i is ComponentItem => i.type === 'component').reverse();
-      for (const c of comps) if (pointInRect(p, itemBounds(d, c)!, 1)) return c.id;
-      const hit = hitWire(data.polys, p, Math.max(4, t));
-      if (hit && !d.items[hit.wire].locked) return hit.wire;
-      for (const s of shapes) if (s.layer === 'below' && shapeHit(s)) return s.id;
-      return null;
+      for (const c of comps) if (pointInRect(p, itemBounds(d, c)!, 1)) out.push(c.id);
+      const wires: { id: string; d: number }[] = [];
+      for (const [id, pts] of data.polys) {
+        if (!d.items[id] || d.items[id].locked) continue;
+        let best = Infinity;
+        for (let i = 0; i < pts.length - 1; i++) best = Math.min(best, projectOnSegment(p, pts[i], pts[i + 1]).d);
+        if (best <= Math.max(4, t)) wires.push({ id, d: best });
+      }
+      out.push(...wires.sort((a, b) => a.d - b.d).map((w) => w.id));
+      for (const s of shapes) if (s.layer === 'below' && shapeHit(s)) out.push(s.id);
+      return out;
     },
     [data],
   );
+  const hitItem = useCallback((p: Point): string | null => hitItems(p)[0] ?? null, [hitItems]);
 
   /** Selected component label (reference or value *text*) under the pointer; dragging it moves just that label. */
   const hitLabel = useCallback((p: Point): { id: string; which: 'ref' | 'value' } | null => {
@@ -873,7 +883,8 @@ export function Canvas() {
       return;
     }
     const labelOf = hitLabel(w);
-    const hit = hitItem(w);
+    const stack = hitItems(w);
+    let hit: string | null = stack[0] ?? null;
     if (labelOf && (!hit || hit === labelOf.id || S().doc.items[hit]?.type !== 'component')) {
       const c = S().doc.items[labelOf.id] as ComponentItem;
       const frozen = frozenLabelOffsets(c, instanceSymbol(S().doc, c));
@@ -896,22 +907,27 @@ export function Canvas() {
         select([hit], 'toggle');
         return;
       }
+      // clicking again where several items overlap steps down to the next one; pressing still drags the current one
+      const sole = S().selection.length === 1 ? S().selection[0] : null;
+      const at = sole ? stack.indexOf(sole) : -1;
+      const next = stack.length > 1 && at >= 0 ? stack[(at + 1) % stack.length] : undefined;
+      if (next) hit = sole!;
       // clicking a wire that is already the sole selection selects one of its segments
       // pressing an item of a multi-selection keeps the whole selection so it all moves together
-      const wasSelected = selSet.has(hit);
+      const wasSelected = selSet.has(hit) || !!next;
       const wasSoleWire = wasSelected && S().selection.length === 1;
       if (!wasSelected) select([hit]);
       const cur = S().selection;
-      if (item.type === 'wire' && cur.length === 1 && cur[0] === hit) {
+      if (S().doc.items[hit].type === 'wire' && cur.length === 1 && cur[0] === hit) {
         const pts = data.polys.get(hit) ?? [];
         const h = hitWire(new Map([[hit, pts]]), w, Infinity);
-        if (wasSoleWire && h) set({ wirePart: { wire: hit, kind: 'segment', index: h.seg } });
+        if (wasSoleWire && h && !next) set({ wirePart: { wire: hit, kind: 'segment', index: h.seg } });
         beginGesture();
-        setGesture({ kind: 'segment', wire: hit, seg: h?.seg ?? 0, base: pts, start: w, moved: false });
+        setGesture({ kind: 'segment', wire: hit, seg: h?.seg ?? 0, base: pts, start: w, moved: false, pick: next });
         return;
       }
       beginGesture();
-      setGesture(moveGesture(cur, w, client, wasSelected && cur.length > 1 ? hit : undefined));
+      setGesture(moveGesture(cur, w, client, next ?? (wasSelected && cur.length > 1 ? hit : undefined)));
       return;
     }
     // pressing inside the selection's box (not on another item) moves the whole selection, keeping its shape
@@ -1205,6 +1221,7 @@ export function Canvas() {
       case 'shapeTitle':
         endGesture(true);
         if (g.kind === 'segment' && g.moved) mutate((d) => cleanup(d as CircuitDoc));
+        if (g.kind === 'segment' && !g.moved && g.pick) select([g.pick]);
         setGesture(null);
         break;
       case 'node':
