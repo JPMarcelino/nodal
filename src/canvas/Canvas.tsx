@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
 import { itemBounds, labelsShown, makeShape } from '../model/doc';
-import { dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, snap, toWorld } from '../model/geometry';
+import { componentBounds, dist, eq, pointInRect, projectOnSegment, rectContains, rectFromPoints, rectsIntersect, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
-import { getSymbol } from '../model/registry';
+import { getSymbol, instanceSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireLabelSpot, wireStyle } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
@@ -65,6 +65,8 @@ type Gesture =
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
   | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
+  /** Resizing a part from a corner handle: its size follows the distance from its centre. */
+  | { kind: 'scale'; id: string; base: number; d0: number }
   | { kind: 'label'; id: string; which: 'ref' | 'value'; start: Point; base: { dx: number; dy: number }; frozen: ReturnType<typeof frozenLabelOffsets> }
   /** Sliding a wire's net label along its net, to either side of the wire. */
   | { kind: 'wireLabel'; id: string; net: string[] }
@@ -262,7 +264,7 @@ export function Canvas() {
     const out: PortInfo[] = [];
     for (const it of Object.values(doc.items)) {
       if (it.type !== 'component' || it.hidden) continue;
-      const def = getSymbol(doc, it.symbol);
+      const def = instanceSymbol(doc, it);
       for (const p of def.ports) {
         const pt = toWorld(it, def, p.x, p.y);
         out.push({ comp: it.id, port: p.id, pt, dir: { x: 0, y: 0 } });
@@ -388,7 +390,7 @@ export function Canvas() {
     for (const id of S().selection) {
       const c = d.items[id];
       if (c?.type !== 'component') continue;
-      const def = getSymbol(d, c.symbol);
+      const def = instanceSymbol(d, c);
       const L = labelLayout(c, def);
       const texts: [{ x: number; y: number; anchor: 'start' | 'middle' | 'end' } | null | undefined, string, number, 'ref' | 'value'][] = [];
       const shown = labelsShown(d.settings, c, def);
@@ -425,6 +427,18 @@ export function Canvas() {
 
   const singleShape = selection.length === 1 && doc.items[selection[0]]?.type === 'shape' ? (doc.items[selection[0]] as ShapeItem) : null;
   const singleWire = selection.length === 1 && doc.items[selection[0]]?.type === 'wire' ? (doc.items[selection[0]] as WireItem) : null;
+  const singleComp = selection.length === 1 && doc.items[selection[0]]?.type === 'component' ? (doc.items[selection[0]] as ComponentItem) : null;
+  /** Corner handles of a selected part, just outside its body so they stay clear of its pins. */
+  const compHandles = (c: ComponentItem): Point[] => {
+    const b = componentBounds(c, instanceSymbol(doc, c));
+    const o = 6 / view.zoom;
+    return [
+      { x: b.x - o, y: b.y - o },
+      { x: b.x + b.w + o, y: b.y - o },
+      { x: b.x + b.w + o, y: b.y + b.h + o },
+      { x: b.x - o, y: b.y + b.h + o },
+    ];
+  };
 
   const shapeHandles = (s: ShapeItem): { h: Handle; p: Point }[] => {
     if (s.kind === 'line' || s.kind === 'arrow')
@@ -673,7 +687,7 @@ export function Canvas() {
         }
       }
       if (g && combo === 'Escape') {
-        if (g.kind === 'move' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
+        if (g.kind === 'move' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'scale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
         setGesture(null);
         // a cancelled copy takes its staged items with it
         if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => S().doc.items[id]) });
@@ -809,6 +823,11 @@ export function Canvas() {
     }
 
     // ---- select tool ----
+    if (singleComp && !singleComp.locked && compHandles(singleComp).some((h) => dist(h, w) < 7 / v.zoom)) {
+      beginGesture();
+      setGesture({ kind: 'scale', id: singleComp.id, base: singleComp.scale ?? 1, d0: Math.max(1, dist(w, singleComp)) });
+      return;
+    }
     if (singleShape && !singleShape.locked && hasMovableTitle(singleShape) && pointInRect(w, shapeTitle(singleShape).box, 3)) {
       beginGesture();
       setGesture({ kind: 'shapeTitle', id: singleShape.id, start: w, base: { dx: singleShape.textDx ?? 0, dy: singleShape.textDy ?? 0 } });
@@ -856,7 +875,7 @@ export function Canvas() {
     const hit = hitItem(w);
     if (labelOf && (!hit || hit === labelOf.id || S().doc.items[hit]?.type !== 'component')) {
       const c = S().doc.items[labelOf.id] as ComponentItem;
-      const frozen = frozenLabelOffsets(c, getSymbol(S().doc, c.symbol));
+      const frozen = frozenLabelOffsets(c, instanceSymbol(S().doc, c));
       const base = labelOf.which === 'ref' ? { dx: frozen.labelDx, dy: frozen.labelDy } : { dx: frozen.valueDx, dy: frozen.valueDy };
       beginGesture();
       setGesture({ kind: 'label', id: labelOf.id, which: labelOf.which, start: w, base, frozen });
@@ -1050,6 +1069,17 @@ export function Canvas() {
       case 'exportArea':
         setGesture({ ...g, cur: sp(w) });
         break;
+      case 'scale': {
+        const c = S().doc.items[g.id] as ComponentItem | undefined;
+        if (!c) return;
+        const raw = (g.base * dist(w, c)) / g.d0;
+        // quarter steps keep pins on the grid more often; Shift for any size
+        const k = Math.min(10, Math.max(0.1, e.shiftKey ? Math.round(raw * 100) / 100 : Math.max(0.25, Math.round(raw * 4) / 4)));
+        gestureUpdate((d) => {
+          (d.items[g.id] as ComponentItem).scale = k === 1 ? undefined : k;
+        });
+        break;
+      }
       case 'resize': {
         const p = snapOn ? sp(w) : w;
         gestureUpdate((d) => {
@@ -1179,6 +1209,7 @@ export function Canvas() {
       case 'move':
         if (!g.floating) finishMove(g);
         break;
+      case 'scale':
       case 'segment':
       case 'resize':
       case 'label':
@@ -1331,8 +1362,10 @@ export function Canvas() {
   const g = gesture;
   // a lone wire shows its box too: pressing anywhere inside moves the whole wire
   const selectionBounds = selection.length > 1 || doc.items[selection[0]]?.type === 'wire' ? unionBounds(doc, selection) : null;
-  const cursorStyle: string =
-    g?.kind === 'pan' || spaceDown || tool === 'pan'
+  const overScale = g?.kind === 'scale' || (tool === 'select' && !g && !placing && !!singleComp && !singleComp.locked && compHandles(singleComp).some((h) => dist(h, cursor) < 7 / z));
+  const cursorStyle: string = overScale
+    ? 'nwse-resize'
+    : g?.kind === 'pan' || spaceDown || tool === 'pan'
       ? g?.kind === 'pan'
         ? 'grabbing'
         : 'grab'
@@ -1371,7 +1404,7 @@ export function Canvas() {
         value: getSymbol(doc, placing.symbol).value ?? '',
         props: {},
         showRef: !getSymbol(doc, placing.symbol).hideLabels,
-        showValue: true,
+        showValue: !!getSymbol(doc, placing.symbol).valueIsLabel,
       }
     : null;
 
@@ -1485,6 +1518,12 @@ export function Canvas() {
             }
             return null;
           })()}
+          {singleComp &&
+            !singleComp.locked &&
+            tool === 'select' &&
+            compHandles(singleComp).map((h, i) => (
+              <rect key={i} x={h.x - 4 / z} y={h.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className="handle scale-handle" strokeWidth={1.5 / z} />
+            ))}
           {singleShape &&
             !singleShape.locked &&
             shapeHandles(singleShape).map((h) => (
@@ -1593,7 +1632,7 @@ export function Canvas() {
           {tool === 'wire' && !g && <TargetMarker t={findTarget(cursor)} z={z} subtle />}
           {ghost && (
             <g opacity={0.55} pointerEvents="none">
-              <ComponentView c={ghost} def={getSymbol(doc, ghost.symbol)} settings={doc.settings} palette={EDITOR_PALETTE} ghost />
+              <ComponentView c={ghost} def={instanceSymbol(doc, ghost)} settings={doc.settings} palette={EDITOR_PALETTE} ghost />
             </g>
           )}
           <RemotePresence doc={doc} polys={data.polys} z={z} />

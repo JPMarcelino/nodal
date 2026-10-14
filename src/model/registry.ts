@@ -1,5 +1,6 @@
 import { BUILTIN, BUILTIN_SYMBOLS, MISSING_SYMBOL } from './symbols';
-import type { CircuitDoc, SymbolDef } from './types';
+import { scaleSymbol } from './symbols/scale';
+import type { CircuitDoc, ComponentItem, SymbolDef } from './types';
 
 let userLibrary: Record<string, SymbolDef> = {};
 
@@ -13,6 +14,11 @@ export function getUserLibrary(): Record<string, SymbolDef> {
 
 export function getSymbol(doc: Pick<CircuitDoc, 'symbols'>, id: string): SymbolDef {
   return doc.symbols[id] ?? userLibrary[id] ?? BUILTIN[id] ?? MISSING_SYMBOL;
+}
+
+/** The drawing a placed part uses: its symbol at the part's size. */
+export function instanceSymbol(doc: Pick<CircuitDoc, 'symbols'>, c: Pick<ComponentItem, 'symbol' | 'scale'>): SymbolDef {
+  return scaleSymbol(getSymbol(doc, c.symbol), c.scale ?? 1);
 }
 
 /** A symbol that is an alternative drawing ("type") of another symbol. */

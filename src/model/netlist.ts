@@ -1,6 +1,6 @@
 import { toWorld } from './geometry';
 import { stripMath } from './latex';
-import { getSymbol } from './registry';
+import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint } from './types';
 
 export interface Net {
@@ -20,7 +20,7 @@ export function touchingPins(doc: CircuitDoc): string[][] {
   const at = new Map<string, string[]>();
   for (const c of Object.values(doc.items)) {
     if (c.type !== 'component') continue;
-    const def = getSymbol(doc, c.symbol);
+    const def = instanceSymbol(doc, c);
     for (const p of def.ports) {
       const w = toWorld(c, def, p.x, p.y);
       const k = `${Math.round(w.x * 2)},${Math.round(w.y * 2)}`;
@@ -68,7 +68,7 @@ export function computeNets(doc: CircuitDoc): Net[] {
   const labelOf = new Map<string, string>();
   const byLabel = new Map<string, string>();
   for (const c of comps) {
-    const def = getSymbol(doc, c.symbol);
+    const def = instanceSymbol(doc, c);
     if (!def.valueIsLabel && !def.prefix.startsWith('#PWR')) continue;
     const name = (c.value || def.value || '').trim();
     if (!name) continue;
@@ -81,7 +81,7 @@ export function computeNets(doc: CircuitDoc): Net[] {
       else byLabel.set(name, k);
     }
   }
-  for (const c of comps) for (const p of getSymbol(doc, c.symbol).ports) dsu.find(`p:${c.id}:${p.id}`);
+  for (const c of comps) for (const p of instanceSymbol(doc, c).ports) dsu.find(`p:${c.id}:${p.id}`);
 
   const groups = new Map<string, Net>();
   let auto = 1;
@@ -93,7 +93,7 @@ export function computeNets(doc: CircuitDoc): Net[] {
     else if (k.startsWith('p:')) {
       const [, comp, port] = k.split(':');
       const c = doc.items[comp] as ComponentItem;
-      const def = getSymbol(doc, c.symbol);
+      const def = instanceSymbol(doc, c);
       if (def.valueIsLabel || def.prefix.startsWith('#')) {
         const label = labelOf.get(k);
         if (label && !net.names.includes(label)) net.names.push(label);
@@ -170,7 +170,7 @@ export function toSpiceNetlist(doc: CircuitDoc): string {
     .filter((c): c is ComponentItem => c.type === 'component')
     .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
   for (const c of comps) {
-    const def = getSymbol(doc, c.symbol);
+    const def = instanceSymbol(doc, c);
     if (def.prefix.startsWith('#') || !def.ports.length) continue;
     if (c.props.dnp === '1') {
       skipped.push(`${c.ref} (not populated)`);
@@ -218,7 +218,7 @@ export function toBomCsv(doc: CircuitDoc): string {
   const rows = new Map<string, Row>();
   for (const c of Object.values(doc.items)) {
     if (c.type !== 'component') continue;
-    const def = getSymbol(doc, c.symbol);
+    const def = instanceSymbol(doc, c);
     if (def.prefix.startsWith('#') || def.valueIsLabel) continue;
     const std = new Set(['footprint', 'manufacturer', 'mpn', 'supplier', 'supplier_pn', 'datasheet', 'dnp']);
     const specs = Object.entries(c.props)
@@ -251,13 +251,13 @@ export function toKicadNetlist(doc: CircuitDoc): string {
   const comps = Object.values(doc.items)
     .filter((c): c is ComponentItem => c.type === 'component')
     .filter((c) => {
-      const def = getSymbol(doc, c.symbol);
+      const def = instanceSymbol(doc, c);
       return !def.prefix.startsWith('#') && !def.valueIsLabel;
     })
     .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
   const out = ['(export (version "E")', `  (design (source ${q(`${doc.name}.nodal`)}) (date ${q(new Date().toISOString())}) (tool "Nodal"))`, '  (components'];
   for (const c of comps) {
-    const def = getSymbol(doc, c.symbol);
+    const def = instanceSymbol(doc, c);
     const fp = c.props.footprint?.trim();
     const extra = [
       ['Manufacturer', c.props.manufacturer],

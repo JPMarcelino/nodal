@@ -5,7 +5,7 @@ import { itemBounds, makeShape } from '../model/doc';
 import { pointInRect } from '../model/geometry';
 import { EXPLAIN_COLORS, inkHit, inkOutline, inkCenterPath, packInk, recognizeInk, type InkPoint, type InkShape } from '../model/ink';
 import { computeNets, type Net } from '../model/netlist';
-import { getSymbol } from '../model/registry';
+import { instanceSymbol } from '../model/registry';
 import { measureRich } from '../model/richText';
 import { netFlow, resolveNet, type NetFlow, type TraceSeed } from '../model/trace';
 import type { CircuitDoc, Item, Point, ShapeItem } from '../model/types';
@@ -158,7 +158,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
     let bd = tol;
     for (const it of Object.values(d.items)) {
       if (it.type !== 'component' || it.hidden) continue;
-      for (const port of getSymbol(d, it.symbol).ports) {
+      for (const port of instanceSymbol(d, it).ports) {
         const at = portPosition(d, it, port.id);
         if (!at) continue;
         const dd = Math.hypot(at.pt.x - p.x, at.pt.y - p.y);
@@ -294,7 +294,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
           const comp = d.items[c];
           if (comp.type !== 'component') return;
           // a part: light every net it touches, each in its own colour
-          const seeds = getSymbol(d, comp.symbol).ports.flatMap((p) => {
+          const seeds = instanceSymbol(d, comp).ports.flatMap((p) => {
             const at = portPosition(d, comp, p.id);
             return at ? [{ seed: pinSeed(c, p.id, at.pt), origin: at.pt }] : [];
           });

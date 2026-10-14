@@ -9,6 +9,7 @@ import { startPresenting } from '../ui/Presenter';
 import { renumberCallouts } from '../ui/ExplainDock';
 import { S, redo, set, setPrefs, toast, undo, mutate } from './store';
 import { canvasActions } from './canvasActions';
+import { copyStyle, pasteStyle } from '../ui/StyleSection';
 
 export interface Command {
   id: string;
@@ -34,6 +35,8 @@ export const COMMANDS: Command[] = [
   { id: 'file.saveAs', label: 'Save as…', category: 'File', keys: ['Mod+Shift+S'], run: () => fileSave(true) },
   { id: 'file.saveVersion', label: 'Save version…', category: 'File', keys: ['Mod+Alt+V'], run: () => focusVersionName() },
   { id: 'file.history', label: 'Version history', category: 'File', keys: ['Mod+Alt+H'], run: () => set({ leftPanel: true, leftTab: 'history' }) },
+  { id: 'edit.copyStyle', label: 'Copy style', category: 'Edit', keys: ['Mod+Shift+Alt+C'], run: () => copyStyle() },
+  { id: 'edit.pasteStyle', label: 'Paste style onto the selection', category: 'Edit', keys: ['Mod+Shift+Alt+V'], run: () => pasteStyle() },
   { id: 'file.export', label: 'Export…', category: 'File', keys: ['Mod+E'], run: () => set({ dialog: 'export' }) },
   { id: 'file.exportSvg', label: 'Export as SVG', category: 'File', keys: [], run: () => doExport('svg') },
   { id: 'file.exportPng', label: 'Export as PNG', category: 'File', keys: ['Mod+Shift+E'], run: () => doExport('png') },

@@ -1,7 +1,7 @@
 import { deleteItems } from './ops';
 import { docBounds, makeComponent } from './doc';
 import { toWorld } from './geometry';
-import { getSymbol } from './registry';
+import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Point, Prim, ShapeItem, SymbolDef } from './types';
 import { wirePolyline } from './wires';
 import { inkPoints } from './ink';
@@ -52,7 +52,7 @@ export function selectionToDrawing(doc: CircuitDoc, ids: string[]): SelectionDra
 }
 
 function componentPrims(doc: CircuitDoc, c: ComponentItem, at: (p: Point) => Point): Prim[] {
-  const def = getSymbol(doc, c.symbol);
+  const def = instanceSymbol(doc, c);
   const T = (x: number, y: number) => at(toWorld(c, def, x, y));
   const mapPts = (pts: number[]) => {
     const out: number[] = [];

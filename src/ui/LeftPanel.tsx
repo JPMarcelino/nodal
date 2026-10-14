@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { drawOrder } from '../model/doc';
 import { computeNets } from '../model/netlist';
 import { reorderItem } from '../model/ops';
-import { getSymbol, librarySymbols, variantDefs } from '../model/registry';
+import { getSymbol, instanceSymbol, librarySymbols, variantDefs } from '../model/registry';
 import { CATEGORY_ORDER } from '../model/symbols';
 import type { CircuitDoc, Item, SymbolDef } from '../model/types';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
@@ -293,7 +293,7 @@ function Library() {
 function itemLabel(doc: CircuitDoc, it: Item, netName?: string): string {
   switch (it.type) {
     case 'component': {
-      const def = getSymbol(doc, it.symbol);
+      const def = instanceSymbol(doc, it);
       return `${def.valueIsLabel ? it.value : it.ref} · ${def.name}`;
     }
     case 'wire':

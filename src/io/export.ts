@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { Scene, computeSceneData, type Palette } from '../canvas/Scene';
 import { docBounds, itemBounds, uid } from '../model/doc';
 import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
-import { getSymbol } from '../model/registry';
+import { instanceSymbol } from '../model/registry';
 import { PX_PER_MM, sheetRect } from '../model/sheet';
 import { stripMath } from '../model/latex';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
@@ -324,7 +324,7 @@ export function exportDxf(doc: CircuitDoc): string {
     if (it.type === 'wire') {
       poly('WIRES', data.polys.get(it.id) ?? [], false, aciColor(wireStyle(doc, it).color));
     } else if (it.type === 'component') {
-      const def = getSymbol(doc, it.symbol);
+      const def = instanceSymbol(doc, it);
       for (const p of def.prims) {
         if (p.t === 'text') {
           const w = toWorld(it, def, p.x, p.y);
