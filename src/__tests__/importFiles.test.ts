@@ -21,19 +21,27 @@ describe('importFileText', () => {
     await importFileText('lib.json', JSON.stringify({ format: 'nodal-library', version: 1, app: 'Nodal', name: 'x', symbols: { [thing.id]: thing } }));
     expect(S().userLibrary[thing.id]).toBeTruthy();
 
-    // a circuit replaces the (empty, so no confirm) document
+    // a dropped circuit is added to the open one, grouped under its name, at the drop point
     const circuit = createDoc();
     circuit.name = 'Dropped circuit';
     const r = makeComponent(circuit, 'resistor', 0, 0);
     circuit.items[r.id] = r;
-    set({ doc: createDoc(), dirty: false });
-    await importFileText('c.nodal', JSON.stringify(circuit));
-    expect(S().doc.name).toBe('Dropped circuit');
+    const open = createDoc('Open circuit');
+    const mine = makeComponent(open, 'capacitor', 0, 0);
+    open.items[mine.id] = mine;
+    set({ doc: open, dirty: false });
+    await importFileText('c.nodal', JSON.stringify(circuit), { x: 200, y: 200 });
+    expect(S().doc.name).toBe('Open circuit');
+    expect(S().doc.items[mine.id]).toBeTruthy();
+    const dropped = Object.values(S().doc.items).find((i) => i.type === 'component' && i.symbol === 'resistor');
+    expect(dropped && S().doc.groups[dropped.group!]?.name).toBe('Dropped circuit');
+    expect(dropped && 'x' in dropped && Math.abs(dropped.x - 200) < 50).toBe(true);
+    expect(S().doc.id).toBe(open.id);
 
     // a template is inserted around the drop point
-    const tpl = templateToText(buildTemplateFile([r.id])!);
+    const tpl = templateToText(buildTemplateFile([dropped!.id])!);
     const before = Object.keys(S().doc.items).length;
-    await importFileText('t.nodal-template.json', tpl, null, { x: 400, y: 400 });
+    await importFileText('t.nodal-template.json', tpl, { x: 400, y: 400 });
     expect(Object.keys(S().doc.items).length).toBe(before + 1);
     const added = S().doc.items[S().selection[0]];
     expect(added && 'x' in added && Math.abs(added.x - 400) < 100).toBe(true);

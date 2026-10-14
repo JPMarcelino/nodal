@@ -48,12 +48,6 @@ export async function fileOpen() {
   }
 }
 
-/** Opens circuit text that arrived some other way (drag & drop, Import…). Throws if it isn't a circuit. */
-export async function openCircuitText(name: string, text: string, path: string | null) {
-  const doc = normalizeDoc(JSON.parse(text));
-  if (await confirmDiscard(`Opening ${name}`)) loadCircuit(name, doc, path);
-}
-
 /** Opens a circuit kept in version history (one that was closed or replaced). */
 export async function openFromHistory(doc: CircuitDoc) {
   if (!(await confirmDiscard('Opening another circuit'))) return;
