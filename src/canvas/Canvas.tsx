@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
-import { itemBounds, labelsShown, makeShape } from '../model/doc';
+import { drawOrder, itemBounds, labelsShown, makeShape } from '../model/doc';
 import { componentBounds, dist, eq, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
 import { getSymbol, instanceSymbol } from '../model/registry';
@@ -378,16 +378,17 @@ export function Canvas() {
       const out: string[] = [];
       for (const s of shapes) if (s.layer === 'above' && shapeHit(s)) out.push(s.id);
       for (const it of items) if (it.type === 'junction' && dist(it, p) < t + 2) out.push(it.id);
-      const comps = items.filter((i): i is ComponentItem => i.type === 'component').reverse();
-      for (const c of comps) if (pointInRect(p, itemBounds(d, c)!, 1)) out.push(c.id);
-      const wires: { id: string; d: number }[] = [];
+      // parts and wires in their shared stacking order, front first (as drawn)
+      const rank = drawOrder(d);
+      const circuit: string[] = [];
+      for (const c of items) if (c.type === 'component' && pointInRect(p, itemBounds(d, c)!, 1)) circuit.push(c.id);
       for (const [id, pts] of data.polys) {
-        if (!d.items[id] || d.items[id].locked) continue;
+        if (!d.items[id] || d.items[id].locked || d.items[id].hidden) continue;
         let best = Infinity;
         for (let i = 0; i < pts.length - 1; i++) best = Math.min(best, projectOnSegment(p, pts[i], pts[i + 1]).d);
-        if (best <= Math.max(4, t)) wires.push({ id, d: best });
+        if (best <= Math.max(4, t)) circuit.push(id);
       }
-      out.push(...wires.sort((a, b) => a.d - b.d).map((w) => w.id));
+      out.push(...circuit.sort((a, b) => rank.get(b)! - rank.get(a)!));
       for (const s of shapes) if (s.layer === 'below' && shapeHit(s)) out.push(s.id);
       return out;
     },

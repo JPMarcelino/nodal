@@ -434,6 +434,28 @@ describe('layer order', () => {
     expect(list()).toEqual([c.id, b.id, a.id]);
     expect(reorderItem(doc, a.id, a.id, 'after')).toBe(false);
   });
+
+  it('keeps parts and wires in one shared order', () => {
+    const doc = createDoc();
+    const w = freeWire(doc, 0, 0, 100, 0);
+    const r = makeComponent(doc, 'resistor', 50, 0);
+    doc.items[r.id] = r;
+    const z = makeShape(doc, 'zone', 0, 0, 200, 100);
+    doc.items[z.id] = z;
+    const front = () => {
+      const o = drawOrder(doc);
+      return [w.id, r.id, z.id].sort((x, y) => o.get(y)! - o.get(x)!);
+    };
+    // the wire goes over the part, not just within the wires
+    expect(reorderItem(doc, w.id, r.id, 'before')).toBe(true);
+    expect(front().indexOf(w.id)).toBeLessThan(front().indexOf(r.id));
+    expect(reorderItem(doc, w.id, r.id, 'after')).toBe(true);
+    expect(front().indexOf(w.id)).toBeGreaterThan(front().indexOf(r.id));
+    // anything added after a reorder lands on top, even once items are deleted
+    delete doc.items[z.id];
+    const w2 = freeWire(doc, 0, 50, 100, 50);
+    expect(drawOrder(doc).get(w2.id)).toBe(Math.max(...drawOrder(doc).values()));
+  });
 });
 
 describe('part labels', () => {

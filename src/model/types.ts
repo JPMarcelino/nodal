@@ -112,7 +112,7 @@ interface ItemBase {
   group?: string;
   locked?: boolean;
   hidden?: boolean;
-  /** Front-to-back order within its kind (higher = in front); unset = creation order. */
+  /** Stacking order shared by all items (higher = in front); unset = in front, by creation order. */
   z?: number;
 }
 

@@ -508,7 +508,7 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
   const order = drawOrder(doc);
   const byOrder = (a: { id: string }, b: { id: string }) => order.get(a.id)! - order.get(b.id)!;
   const wires = items.filter((i): i is WireItem => i.type === 'wire').sort(byOrder);
-  const comps = items.filter((i): i is ComponentItem => i.type === 'component').sort(byOrder);
+  const circuit = items.filter((i): i is WireItem | ComponentItem => i.type === 'wire' || i.type === 'component').sort(byOrder);
   const shapeEl = (s: ShapeItem) => {
     const a = s.kind === 'callout' ? calloutAnchor(doc, s) : null;
     return <ShapeView key={s.id} s={s} palette={palette} ax={a?.x} ay={a?.y} />;
@@ -533,15 +533,15 @@ export function Scene({ doc, data, palette, highlight }: { doc: CircuitDoc; data
     <>
       <SheetFrame doc={doc} ink={palette.sym} dim={palette.value} />
       <g className="layer-below">{below.map(shapeEl)}</g>
-      <g className="layer-wires">
-        {wires.map((w) => (
-          <WireView key={w.id} w={w} pts={data.polys.get(w.id) ?? []} hops={data.hops.get(w.id)} settings={doc.settings} palette={palette} dim={!!highlight && !highlight.has(w.id)} />
-        ))}
-      </g>
-      <g className="layer-components">
-        {comps.map((c) => (
-          <ComponentView key={c.id} c={c} def={instanceSymbol(doc, c)} settings={doc.settings} palette={palette} />
-        ))}
+      {/* wires and parts share one stack, so the layers panel order is what you see */}
+      <g className="layer-circuit">
+        {circuit.map((it) =>
+          it.type === 'wire' ? (
+            <WireView key={it.id} w={it} pts={data.polys.get(it.id) ?? []} hops={data.hops.get(it.id)} settings={doc.settings} palette={palette} dim={!!highlight && !highlight.has(it.id)} />
+          ) : (
+            <ComponentView key={it.id} c={it} def={instanceSymbol(doc, it)} settings={doc.settings} palette={palette} />
+          ),
+        )}
       </g>
       <g className="layer-dots">
         {dots.map((d) => (

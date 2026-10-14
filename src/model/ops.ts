@@ -787,18 +787,23 @@ export function boundsOfIds(doc: CircuitDoc, ids: Iterable<string>): Rect | null
 
 /**
  * Moves an item in the layer list (front first) to just before / after
- * another item of the same group, renumbering that group's z values.
+ * another item of the same group. The group's items are reshuffled within
+ * the stacking slots they already hold, then every item's z is rewritten to
+ * its rank so the whole document shares one consistent order.
  */
 export function reorderItem(doc: CircuitDoc, id: string, targetId: string, place: 'before' | 'after'): boolean {
   const it = doc.items[id];
   const target = doc.items[targetId];
   if (!it || !target || id === targetId || it.group !== target.group) return false;
-  const key = drawOrder(doc);
+  const rank = drawOrder(doc);
   const siblings = Object.values(doc.items)
-    .filter((i) => i.type !== 'junction' && i.group === it.group && i.id !== id)
-    .sort((a, b) => key.get(b.id)! - key.get(a.id)!);
-  const at = siblings.findIndex((i) => i.id === targetId) + (place === 'after' ? 1 : 0);
-  siblings.splice(at, 0, it);
-  siblings.forEach((s, i) => (s.z = siblings.length - i));
+    .filter((i) => i.type !== 'junction' && i.group === it.group)
+    .sort((a, b) => rank.get(b.id)! - rank.get(a.id)!);
+  const slots = siblings.map((s) => rank.get(s.id)!);
+  const moved = siblings.filter((s) => s.id !== id);
+  const at = moved.findIndex((i) => i.id === targetId) + (place === 'after' ? 1 : 0);
+  moved.splice(at, 0, it);
+  moved.forEach((s, i) => rank.set(s.id, slots[i]));
+  for (const [iid, r] of rank) if (doc.items[iid].z !== r) doc.items[iid].z = r;
   return true;
 }

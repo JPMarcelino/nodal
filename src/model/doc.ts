@@ -203,9 +203,17 @@ export function groupMembers(doc: CircuitDoc, groupId: string): string[] {
     .map((i) => i.id);
 }
 
-/** Front-to-back key of every item: its z, or its creation position when unset (higher = in front). */
+/**
+ * Stacking rank of every item (0 = back, higher = in front): by z; items
+ * without one (added since the last reorder) sit in front, newest on top.
+ * Ranks are dense and unique, so every view agrees on a single order.
+ */
 export function drawOrder(doc: CircuitDoc): Map<string, number> {
-  return new Map(Object.values(doc.items).map((it, i) => [it.id, it.z ?? i]));
+  const items = Object.values(doc.items);
+  const top = Math.max(0, ...items.map((it) => it.z ?? 0)) + 1;
+  const all = items.map((it, i) => ({ id: it.id, key: it.z ?? top + i, i }));
+  all.sort((a, b) => a.key - b.key || a.i - b.i);
+  return new Map(all.map((e, rank) => [e.id, rank]));
 }
 
 /** Which of a part's labels are drawn, after the document-wide hide switches. */
