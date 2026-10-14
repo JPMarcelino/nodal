@@ -1,11 +1,12 @@
-import { Bookmark, Download, History, RotateCcw, Trash2 } from 'lucide-react';
+import { Bookmark, ChevronDown, ChevronRight, Download, FolderOpen, History, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { exportSvg } from '../io/export';
-import { NODAL_FILTER } from '../io/fileActions';
+import { NODAL_FILTER, openFromHistory } from '../io/fileActions';
 import { sanitizeName, saveFile } from '../io/files';
-import { defaultLabel, deleteVersion, listVersions, onVersionsChanged, renameVersion, restoreVersion, saveNamedVersion } from '../io/versionStore';
+import { defaultLabel, deleteVersion, listOtherCircuits, listVersions, onVersionsChanged, renameVersion, restoreVersion, saveNamedVersion } from '../io/versionStore';
 import { countParts, diffDocs, type Version } from '../model/versions';
 import { toast, useStore } from '../store/store';
+import { confirmDelete } from './Ask';
 
 const dayOf = (t: number) => new Date(t).toDateString();
 
@@ -38,6 +39,45 @@ function useVersions(docId: string | undefined): Version[] | null {
     };
   }, [docId]);
   return list;
+}
+
+/** Circuits closed or replaced earlier, so none of them is ever out of reach. */
+function OtherCircuits({ docId }: { docId: string | undefined }) {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<Version[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const load = () => listOtherCircuits(docId).then((vs) => alive && setList(vs), () => {});
+    void load();
+    const off = onVersionsChanged(load);
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [open, docId]);
+  return (
+    <section className="history-others">
+      <button className="history-day history-others-head" onClick={() => setOpen(!open)}>
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Other circuits on this device
+      </button>
+      {open &&
+        (list.length ? (
+          list.map((v) => (
+            <div key={v.id} className="history-row auto" title={`Last kept ${new Date(v.t).toLocaleString()}`}>
+              <FolderOpen size={13} />
+              <span className="history-label">{v.doc.name}</span>
+              <span className="history-time muted small">{dayTitle(v.t) === 'Today' ? timeOf(v.t) : dayTitle(v.t)}</span>
+              <button className="chip" onClick={() => void openFromHistory(v.doc)}>
+                Open
+              </button>
+            </div>
+          ))
+        ) : (
+          <div className="empty-note small">No other circuits yet.</div>
+        ))}
+    </section>
+  );
 }
 
 function Preview({ v }: { v: Version }) {
@@ -82,7 +122,13 @@ function Preview({ v }: { v: Version }) {
         <button className="secondary-btn" onClick={() => void saveAsFile()} title="Save this version as a separate file">
           <Download size={14} /> Save copy
         </button>
-        <button className="secondary-btn danger" onClick={() => void deleteVersion(v.id)} title="Delete this version">
+        <button
+          className="secondary-btn danger"
+          onClick={async () => {
+            if (v.auto || (await confirmDelete(`Delete the version “${v.label}”?`, 'Named versions are otherwise kept forever. This cannot be undone.'))) void deleteVersion(v.id);
+          }}
+          title="Delete this version"
+        >
           <Trash2 size={14} />
         </button>
       </div>
@@ -163,6 +209,7 @@ export function HistoryPanel() {
           );
         })}
         {versions && !versions.length && <div className="empty-note">No versions yet. They are saved automatically while you work, or name one above.</div>}
+        <OtherCircuits docId={docId} />
       </div>
       <div className="layer-foot muted small">Kept on this device · saved automatically every few minutes</div>
     </div>

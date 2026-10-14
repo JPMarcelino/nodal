@@ -66,6 +66,18 @@ export async function listVersions(docId: string): Promise<Version[]> {
   return all.sort((a, b) => b.t - a.t);
 }
 
+/** Latest version of every other circuit kept on this device, newest first. */
+export async function listOtherCircuits(exclude?: string, limit = 25): Promise<Version[]> {
+  const all = await run<Version[]>('readonly', (os) => os.getAll());
+  const latest = new Map<string, Version>();
+  for (const v of all) {
+    if (v.docId === exclude || !Object.keys(v.doc.items).length) continue;
+    const cur = latest.get(v.docId);
+    if (!cur || v.t > cur.t) latest.set(v.docId, v);
+  }
+  return [...latest.values()].sort((a, b) => b.t - a.t).slice(0, limit);
+}
+
 export async function deleteVersion(id: string) {
   await run('readwrite', (os) => os.delete(id));
   changed();
@@ -166,6 +178,10 @@ export function startVersionHistory() {
   started = true;
   // the document as it was opened is the first restore point
   void saveVersion(S().doc, '', true).catch(() => {});
+  // switching away (another tab or app, closing, the iPad going to sleep): keep a restore point
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void saveVersion(S().doc, '', true).catch(() => {});
+  });
   useStore.subscribe((s, prev) => {
     if (s.doc === prev.doc) return;
     if (s.doc.id !== prev.doc.id) {

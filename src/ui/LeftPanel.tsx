@@ -10,6 +10,7 @@ import { SymbolPreview } from '../canvas/SymbolGraphic';
 import * as A from '../store/actions';
 import { S, mutate, removeSymbolFromLibrary, select, set, toast, toggleFavorite, useStore } from '../store/store';
 import { CheckPanel, useErcIssues } from './CheckPanel';
+import { confirmDelete } from './Ask';
 import { HistoryPanel } from './HistoryPanel';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 
@@ -112,9 +113,9 @@ function Tile({ def }: { def: SymbolDef }) {
           </button>
           <button
             title="Delete from my library"
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
-              if (!confirm(`Delete "${def.name}" from your library? Circuits that use it keep their copy.`)) return;
+              if (!(await confirmDelete(`Delete “${def.name}” from your library?`, 'Circuits that use it keep their own copy.'))) return;
               const { inUse } = removeSymbolFromLibrary(def.id);
               toast(
                 inUse
