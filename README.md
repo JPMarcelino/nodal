@@ -61,6 +61,9 @@ You can also share without a live session. Open **File â†’ Share & collaborateâ€
 - Drag from any pin to draw a wire, or press **W** and click to add bends. Wires stay orthogonal; press **Space** to flip the elbow and **Backspace** to remove the last bend.
 - Ending a wire on another wire creates a **junction** automatically. **Alt-drag** on a wire starts a branch from it.
 - **Crossings hop:** where wires cross without connecting, a small arc is drawn (you can switch to a gap or a plain crossing).
+- **Placing parts onto wires connects them:** a pin set down exactly on a loose wire end takes that end, and a part dropped across a wire is inserted into it (the wire is split at its pins, and the piece that would short the part is removed). Wires dragged over pins don't connect by accident.
+- **Wires never lie on top of each other:** if a wire is drawn, dragged or moved along another one, the shared stretch is merged into a single run with junctions at its ends, so what looks connected is connected.
+- Dragging a segment that ends at a junction takes the junction along; the other wires there bend to stay attached.
 - Junction dots appear wherever three or more conductors meet. Deleting a branch merges the remaining wire back into one.
 - To reshape a selected wire, drag one of its segments. To reconnect it, drag an end handle. To **move it whole, keeping its shape**, drag anywhere else inside its selection box: wires moved on their own let go of the pins they leave, and ends set down exactly on a pin, junction or wire end connect there.
 - **Wire style is fully customisable**, both per wire and as the document default: colour, thickness, sharp or rounded corners (with a radius), and solid/dashed/dotted lines. "Use for new wires" turns the current style into a brush, and "Apply style to whole net" restyles a net in one click.

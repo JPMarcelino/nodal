@@ -5,6 +5,7 @@ import { setUserLibrary, usedSymbols } from '../model/registry';
 import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
 import type { CircuitDoc, Point, SymbolDef, Tool } from '../model/types';
+import { settleEdit } from '../model/settle';
 
 export interface View {
   x: number;
@@ -205,9 +206,11 @@ export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: strin
   const s = S();
   // the recipe's return value is ignored on purpose: Immer would otherwise use it as the new
   // document (e.g. `(d) => (d.settings.hops = 'arc')` returns 'arc' when nothing changed)
-  const next = produce(s.doc, (d) => {
+  const changed = produce(s.doc, (d) => {
     recipe(d);
   });
+  // parts placed or moved onto wires connect to them (not mid-drag: only when the edit is committed)
+  const next = gestureBase ? changed : settleEdit(s.doc, changed);
   if (next === s.doc) {
     if (selection) set({ selection });
     return;
@@ -256,7 +259,7 @@ export function endGesture(commit = true) {
     set({ doc: base });
     return;
   }
-  if (s.doc !== base) set({ past: [...s.past.slice(-HISTORY_LIMIT), base], future: [], dirty: true });
+  if (s.doc !== base) set({ doc: settleEdit(base, s.doc), past: [...s.past.slice(-HISTORY_LIMIT), base], future: [], dirty: true });
 }
 
 export const inGesture = () => gestureBase !== null;
