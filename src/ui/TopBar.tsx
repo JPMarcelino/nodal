@@ -21,6 +21,8 @@ import {
   Type,
   Undo2,
   Presentation,
+  Frame,
+  Film,
 } from 'lucide-react';
 import { isExplainTool, useExplain } from '../store/explain';
 import { useEffect, useRef, useState } from 'react';
@@ -30,11 +32,12 @@ import { COMMANDS, COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { S, mutate, redo, set, setPrefs, undo, useStore } from '../store/store';
 import { CollabBar } from './CollabBar';
 import { Logo } from './Logo';
+import { toggleTimeline } from './Timeline';
 
 const MENUS: { label: string; items: (string | '-')[] }[] = [
   {
     label: 'File',
-    items: ['file.new', 'file.open', 'file.import', '-', 'file.save', 'file.saveAs', '-', 'file.export', 'file.exportSvg', 'file.exportPng', 'file.exportDxf', 'file.exportSpice', 'file.exportKicad', 'file.exportBom', 'file.copySvg', '-', 'file.print', '-', 'collab.share', 'collab.exportLib', 'collab.importLib', 'collab.exportTemplate', 'collab.importTemplate'],
+    items: ['file.new', 'file.open', 'file.import', '-', 'file.save', 'file.saveAs', '-', 'file.export', 'file.exportSvg', 'file.exportPng', 'file.exportDxf', 'file.exportSpice', 'file.exportKicad', 'file.exportBom', 'file.copySvg', 'present.video', '-', 'file.print', '-', 'collab.share', 'collab.exportLib', 'collab.importLib', 'collab.exportTemplate', 'collab.importTemplate'],
   },
   {
     label: 'Edit',
@@ -56,7 +59,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.corners'] },
   {
     label: 'Explain',
-    items: ['explain.toggle', '-', 'tool.pen', 'tool.highlighter', 'tool.laser', 'tool.eraser', '-', 'tool.trace', 'tool.callout', '-', 'explain.present', 'explain.renumber', 'explain.clear'],
+    items: ['explain.toggle', '-', 'tool.pen', 'tool.highlighter', 'tool.laser', 'tool.eraser', '-', 'tool.trace', 'tool.callout', '-', 'tool.frame', 'present.timeline', 'explain.present', 'present.video', '-', 'explain.renumber', 'explain.clear'],
   },
   {
     label: 'View',
@@ -234,6 +237,7 @@ const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string; alt?: 
   { tool: 'line', icon: <Minus size={17} style={{ transform: 'rotate(-45deg)' }} />, label: 'Line', cmd: 'tool.line' },
   { tool: 'arrow', icon: <ArrowUpRight size={17} />, label: 'Arrow', cmd: 'tool.arrow' },
   { tool: 'text', icon: <Type size={17} />, label: 'Text', cmd: 'tool.text' },
+  { tool: 'frame', icon: <Frame size={17} />, label: 'Presentation frame', cmd: 'tool.frame' },
 ];
 
 export function ToolRail() {
@@ -241,6 +245,7 @@ export function ToolRail() {
   const placing = useStore((s) => s.placing);
   const altMove = useStore((s) => s.altMove);
   const lastExplain = useExplain((s) => s.lastTool);
+  const timelineOpen = useExplain((s) => s.timelineOpen);
   return (
     <div className="tool-rail" onPointerDown={(e) => e.stopPropagation()}>
       {TOOLS.map((t, i) => (
@@ -264,6 +269,9 @@ export function ToolRail() {
       >
         <Presentation size={17} />
         <span className="tool-key">{prettyKey(keysFor(`tool.${lastExplain}`)[0] ?? '')}</span>
+      </button>
+      <button className={timelineOpen ? 'tool-btn active' : 'tool-btn'} onClick={toggleTimeline} title={`Presentation timeline (${prettyKey(keysFor('present.timeline')[0] ?? '')})`}>
+        <Film size={17} />
       </button>
     </div>
   );

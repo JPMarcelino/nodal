@@ -29,6 +29,12 @@ export interface ExplainState {
   lastTool: ExplainTool;
   /** Laser button held (shared with collaborators so they see the trail). */
   laserDown: boolean;
+  /** Presentation timeline panel open (editor). */
+  timelineOpen: boolean;
+  /** Timeline playing (presenting, or previewing in the editor). */
+  playing: boolean;
+  /** Playhead, in seconds from the start of the timeline. */
+  playT: number;
 }
 
 export type ExplainTool = Extract<Tool, 'pen' | 'highlighter' | 'laser' | 'eraser' | 'trace' | 'callout'>;
@@ -48,6 +54,9 @@ export const useExplain = create<ExplainState>(() => ({
   presenting: null,
   lastTool: 'pen',
   laserDown: false,
+  timelineOpen: false,
+  playing: false,
+  playT: 0,
 }));
 
 export const X = () => useExplain.getState();

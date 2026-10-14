@@ -178,7 +178,7 @@ export interface JunctionItem extends ItemBase {
   y: number;
 }
 
-export type ShapeKind = 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'image' | 'ink' | 'callout';
+export type ShapeKind = 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'image' | 'ink' | 'callout' | 'frame';
 
 export type HeadKind = 'none' | 'open' | 'filled' | 'circle' | 'bar';
 
@@ -217,8 +217,12 @@ export interface ShapeItem extends ItemBase {
   ink?: number[];
   /** Ink drawn with the highlighter (wide, translucent, under the circuit). */
   highlighter?: boolean;
-  /** Callouts: step number shown in the badge (walkthrough order). */
+  /** Callouts and frames: step number shown in the badge (walkthrough order). */
   step?: number;
+  /** Callouts and frames: seconds the presentation stays on this step (undefined = default). */
+  hold?: number;
+  /** Callouts and frames: seconds the camera takes to glide here (undefined = default). */
+  transition?: number;
   /** Callouts: what the leader line points at, as an offset from that item's bounds corner. */
   anchor?: { id?: string; dx: number; dy: number; x: number; y: number };
 }
@@ -289,6 +293,6 @@ export interface CircuitDoc {
 }
 
 export type Tool =
-  | 'select' | 'node' | 'wire' | 'solder' | 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pan'
+  | 'select' | 'node' | 'wire' | 'solder' | 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pan' | 'frame'
   // explain tools: annotate and talk through a circuit
   | 'pen' | 'highlighter' | 'laser' | 'eraser' | 'trace' | 'callout';

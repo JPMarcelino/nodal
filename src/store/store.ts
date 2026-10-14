@@ -43,7 +43,7 @@ export interface ContextMenuState {
   target: string | null;
 }
 
-export type Dialog = null | 'palette' | 'find' | 'shortcuts' | 'settings' | 'symbol-editor' | 'about' | 'export' | 'share';
+export type Dialog = null | 'palette' | 'find' | 'shortcuts' | 'settings' | 'symbol-editor' | 'about' | 'export' | 'share' | 'video';
 
 export interface Prefs {
   theme: 'dark' | 'light';

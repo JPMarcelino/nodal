@@ -178,6 +178,8 @@ function shapePrims(s: ShapeItem, at: (p: Point) => Point): Prim[] {
       }), w: s.strokeWidth }];
     case 'callout':
       return textLines(a.x + 30, a.y, s.fontSize ?? 14);
+    case 'frame':
+      return [];
   }
 }
 

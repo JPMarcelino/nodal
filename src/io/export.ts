@@ -8,6 +8,7 @@ import { PX_PER_MM, sheetRect } from '../model/sheet';
 import { stripMath } from '../model/latex';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
+import { withoutFrames } from '../model/presentation';
 
 export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string }> = {
   light: { sym: '#1f2433', symBg: '#ffffff', label: '#1f2433', value: '#5a6275', bg: '#ffffff', selection: '#3b82f6', ink: '#000000', grid: '#e6e8ee' },
@@ -103,7 +104,8 @@ const FONT = `'Inter', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-s
 
 export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bounds: Rect } {
   const palette = EXPORT_THEMES[opts.theme];
-  let d = doc;
+  // presentation frames are editor-only
+  let d = withoutFrames(doc);
   if (opts.ids?.length) {
     d = selectionDoc(doc, opts.ids);
     // a selection is exported on its own, without the drawing frame
@@ -320,7 +322,7 @@ export function exportDxf(doc: CircuitDoc): string {
 
   const data = computeSceneData(doc);
   for (const it of Object.values(doc.items)) {
-    if (it.hidden) continue;
+    if (it.hidden || (it.type === 'shape' && it.kind === 'frame')) continue;
     if (it.type === 'wire') {
       poly('WIRES', data.polys.get(it.id) ?? [], false, aciColor(wireStyle(doc, it).color));
     } else if (it.type === 'component') {

@@ -28,6 +28,7 @@ import { FindDialog } from './FindDialog';
 import { LiveSession } from './LiveSession';
 import { Logo } from './Logo';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
+import { VideoDialog } from './VideoDialog';
 
 export function Modal({
   title,
@@ -665,6 +666,8 @@ export function Dialogs() {
       return <ShareDialog />;
     case 'about':
       return <AboutDialog />;
+    case 'video':
+      return <VideoDialog />;
     default:
       return null;
   }
