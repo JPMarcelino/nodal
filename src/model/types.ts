@@ -256,6 +256,8 @@ export interface SheetSettings {
 export interface CircuitDoc {
   format: 'nodal';
   version: 1;
+  /** Stable identity across saves, used to key local version history. */
+  id?: string;
   name: string;
   settings: DocSettings;
   items: Record<string, Item>;

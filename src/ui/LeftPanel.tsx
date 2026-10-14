@@ -1,4 +1,4 @@
-import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Pencil, Plus, Search, Share2, Star, Trash2, X } from 'lucide-react';
+import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, History, Lock, LockOpen, Pencil, Plus, Search, Share2, Star, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { drawOrder } from '../model/doc';
 import { computeNets } from '../model/netlist';
@@ -10,6 +10,7 @@ import { SymbolPreview } from '../canvas/SymbolGraphic';
 import * as A from '../store/actions';
 import { S, mutate, removeSymbolFromLibrary, select, set, toast, toggleFavorite, useStore } from '../store/store';
 import { CheckPanel, useErcIssues } from './CheckPanel';
+import { HistoryPanel } from './HistoryPanel';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 
 function Tile({ def }: { def: SymbolDef }) {
@@ -534,8 +535,11 @@ export function LeftPanel() {
         <button className={tab === 'check' ? 'active' : ''} onClick={() => set({ leftTab: 'check' })} title="Electrical rules check">
           Check <CheckBadge />
         </button>
+        <button className={tab === 'history' ? 'active' : ''} onClick={() => set({ leftTab: 'history' })} title="Version history" aria-label="Version history">
+          <History size={15} />
+        </button>
       </div>
-      {tab === 'library' ? <Library /> : tab === 'layers' ? <Layers /> : <CheckPanel />}
+      {tab === 'library' ? <Library /> : tab === 'layers' ? <Layers /> : tab === 'check' ? <CheckPanel /> : <HistoryPanel />}
     </aside>
   );
 }

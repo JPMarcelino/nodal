@@ -397,6 +397,17 @@ export function SettingsDialog() {
               onChange={(wheel) => setPrefs({ wheel })}
             />
           </Field>
+          <Field label="One finger (touch)">
+            <Segmented
+              value={prefs.touch}
+              options={[
+                { value: 'auto', label: 'Pans with a stylus' },
+                { value: 'draw', label: 'Draws' },
+                { value: 'pan', label: 'Pans' },
+              ]}
+              onChange={(touch) => setPrefs({ touch })}
+            />
+          </Field>
           <Field label="Interface size">
             <Segmented
               value={prefs.uiScale}

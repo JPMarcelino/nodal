@@ -4080,3 +4080,153 @@ body.is-presenting .scope-banner {
   pointer-events: none;
   opacity: 0.9;
 }
+
+/* ==================================================================== */
+/* Version history                                                       */
+/* ==================================================================== */
+
+.history-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.history-save {
+  display: flex;
+  gap: 6px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-save .primary-btn {
+  flex: none;
+}
+
+.history-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-thumb {
+  height: 150px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.history-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  padding: 6px;
+}
+
+.history-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-list {
+  padding-top: 4px;
+}
+
+.history-day {
+  padding: 10px 4px 4px;
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  text-align: left;
+  color: var(--text);
+}
+
+.history-row:hover {
+  background: var(--panel-2);
+}
+
+.history-row.active {
+  background: var(--accent-soft);
+}
+
+.history-row svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.history-row.auto svg,
+.history-row.auto .history-label {
+  color: var(--text-dim);
+}
+
+.history-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-rename {
+  flex: 1;
+  height: 24px;
+}
+
+.history-time {
+  flex: none;
+}
+
+/* ==================================================================== */
+/* Touch screens and tablets                                             */
+/* ==================================================================== */
+
+html,
+body {
+  /* no pull-to-refresh, page bounce or double-tap zoom: the canvas handles its own gestures */
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+.canvas-wrap {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (pointer: coarse) {
+  .tool-btn {
+    width: 42px;
+    height: 40px;
+  }
+
+  .icon-btn {
+    height: 38px;
+    min-width: 38px;
+  }
+
+  .tabs button {
+    padding: 10px 12px 12px;
+  }
+
+  .history-row {
+    padding: 10px 8px;
+  }
+}

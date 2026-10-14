@@ -12,7 +12,7 @@ import { routeObstacles } from '../model/route';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
-import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, mutate, rebaseGesture, select, set, toast, useStore } from '../store/store';
+import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, rebaseGesture, select, set, toast, useStore } from '../store/store';
 import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
@@ -23,6 +23,7 @@ import { setX } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
+import { gestureSlots, hitSlop, useTouchInput } from './touch';
 import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
 
@@ -164,6 +165,23 @@ export function Canvas() {
     setGestureState(g);
   }, []);
 
+  useTouchInput(wrapRef);
+  useEffect(() => {
+    gestureSlots.canvas = {
+      get: () => gRef.current,
+      restore: (g) => {
+        const before = g as Gesture | null;
+        if (gRef.current === before) return;
+        if (inGesture()) endGesture(false);
+        // only a wire being clicked out survives between touches; anything else is dropped
+        setGesture(before?.kind === 'wire' ? before : null);
+      },
+    };
+    return () => {
+      gestureSlots.canvas = null;
+    };
+  }, [setGesture]);
+
   const HOT_DWELL = 550;
   const clearHotTimer = (k: 'open' | 'close') => {
     window.clearTimeout(hotTimers.current[k]);
@@ -282,7 +300,7 @@ export function Canvas() {
   const findPort = useCallback(
     (p: Point, exclude?: string): PortInfo | null => {
       let best: PortInfo | null = null;
-      let bd = Math.max(8, 10 / S().view.zoom);
+      let bd = Math.max(8, 10 / S().view.zoom) * hitSlop();
       for (const pi of ports) {
         if (exclude && pi.comp === exclude) continue;
         const d = dist(pi.pt, p);
@@ -308,7 +326,7 @@ export function Canvas() {
       const z = S().view.zoom;
       const pi = findPort(raw);
       if (pi) return { kind: 'port', comp: pi.comp, port: pi.port, pt: pi.pt, dir: portDir(pi) };
-      const t = Math.max(6, 9 / z);
+      const t = Math.max(6, 9 / z) * hitSlop();
       for (const it of Object.values(d.items)) {
         if (it.type === 'junction' && dist(it, raw) < t) return { kind: 'junction', id: it.id, pt: { x: it.x, y: it.y } };
       }
@@ -337,7 +355,7 @@ export function Canvas() {
     (p: Point): string | null => {
       const d = S().doc;
       const z = S().view.zoom;
-      const t = 6 / z;
+      const t = (6 / z) * hitSlop();
       const items = Object.values(d.items).filter((i) => !i.hidden && !i.locked);
       const shapes = items.filter((i): i is ShapeItem => i.type === 'shape').sort((a, b) => b.z - a.z);
       const shapeHit = (s: ShapeItem) => {
@@ -432,7 +450,7 @@ export function Canvas() {
   /** Wire vertex (end or bend) under the pointer; selected wires win over the rest. */
   const nodeAt = (p: Point): { wire: string; idx: number; pts: Point[] } | null => {
     const d = S().doc;
-    const tol = 7 / S().view.zoom;
+    const tol = (7 / S().view.zoom) * hitSlop();
     const sel = new Set(S().selection);
     let best: { wire: string; idx: number; pts: Point[] } | null = null;
     let bestScore = Infinity;
@@ -695,7 +713,7 @@ export function Canvas() {
       return;
     }
     const now = performance.now();
-    const isDouble = now - lastClick.current.t < 350 && dist(lastClick.current.p, client) < 6;
+    const isDouble = now - lastClick.current.t < 350 && dist(lastClick.current.p, client) < 6 * hitSlop() ** 2;
     lastClick.current = { t: now, p: client };
 
     // export-area mode: any drag defines the export rectangle

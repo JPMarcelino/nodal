@@ -281,7 +281,8 @@ async function handle(msg: ServerMsg) {
         awaitingRoom = false;
         sync.clear();
         const doc = snapshot ? docFromEntries(sync.accept(snapshot)) : createDoc('Shared circuit');
-        quietly(() => replaceDoc(doc));
+        // everyone in a room shares one version history key
+        quietly(() => replaceDoc({ ...doc, id: `room:${room}` }));
         lastSynced = S().doc;
         if (!snapshot && !msg.peers.length) toast('This session is empty: nobody has shared a circuit in it yet', 'info');
         setApp({ selection: [] });

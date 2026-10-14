@@ -7,7 +7,7 @@ import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, printDoc, type SvgOptions } from './export';
 import { openTextFile, sanitizeName, saveFile } from './files';
 
-const NODAL_FILTER = [{ name: 'Nodal circuit', extensions: ['nodal', 'json'] }];
+export const NODAL_FILTER = [{ name: 'Nodal circuit', extensions: ['nodal', 'json'] }];
 
 async function confirmDiscard(): Promise<boolean> {
   if (!S().dirty || !Object.keys(S().doc.items).length) return true;
