@@ -55,7 +55,8 @@ type Gesture =
    * click without a drag narrows the selection to it). `floating`: a keyboard
    * move (Cadence m / c) that follows the pointer until the next click.
    */
-  | { kind: 'move'; start: Point; ids: Set<string>; moved: boolean; client: Point; detach: boolean; dx: number; dy: number; pick?: string; floating?: boolean }
+  /** `rejoin`: a wires-only move; ends dropped exactly on a pin, junction or wire end connect there. */
+  | { kind: 'move'; start: Point; ids: Set<string>; moved: boolean; client: Point; detach: boolean; dx: number; dy: number; pick?: string; floating?: boolean; rejoin?: boolean }
   /** `postureSet`: the bend direction was flipped by hand, so the pointer no longer picks it. */
   | { kind: 'wire'; start: Target; pts: Point[]; hFirst: boolean; fromDrag: boolean; downClient: Point; cur: Target; dragging: boolean; postureSet?: boolean }
   | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean }
@@ -605,9 +606,24 @@ export function Canvas() {
 
   const finishMove = (g: Extract<Gesture, { kind: 'move' }>) => {
     if (g.detach && g.moved) {
+      // wire ends set down exactly on a pin, junction or another wire's end connect to it
+      const joins: { wire: string; end: 'a' | 'b'; t: Target }[] = [];
+      if (g.rejoin) {
+        for (const id of g.ids) {
+          const wi = S().doc.items[id];
+          if (wi?.type !== 'wire') continue;
+          for (const end of ['a', 'b'] as const) {
+            const ep = wi[end];
+            if (ep.kind !== 'free') continue;
+            const t = findTarget(ep, id);
+            if ((t.kind === 'port' || t.kind === 'junction' || t.kind === 'wireEnd') && eq(t.pt, ep)) joins.push({ wire: id, end, t });
+          }
+        }
+      }
       // alt move: drop junctions that lost their wires and rejoin split runs, in the same undo step
       gestureUpdate((d, base) => {
         translateDetached(base, d as CircuitDoc, g.ids, g.dx, g.dy);
+        for (const j of joins) reconnectWireEnd(d as CircuitDoc, j.wire, j.end, j.t);
         cleanup(d as CircuitDoc);
       });
     }
@@ -875,17 +891,14 @@ export function Canvas() {
         return;
       }
       beginGesture();
-      setGesture({
-        kind: 'move',
-        start: w,
-        ids: new Set(cur.filter((id) => !S().doc.items[id]?.locked)),
-        moved: false,
-        client,
-        detach: S().altMove,
-        dx: 0,
-        dy: 0,
-        pick: wasSelected && cur.length > 1 ? hit : undefined,
-      });
+      setGesture(moveGesture(cur, w, client, wasSelected && cur.length > 1 ? hit : undefined));
+      return;
+    }
+    // pressing inside the selection's box (not on another item) moves the whole selection, keeping its shape
+    const inBox = isDouble || e.altKey ? null : unionBounds(S().doc, S().selection.filter((id) => !S().doc.items[id]?.locked));
+    if (inBox && pointInRect(w, inBox, 4 / v.zoom)) {
+      beginGesture();
+      setGesture(moveGesture(S().selection, w, client));
       return;
     }
     if (isDouble && S().scope) {
@@ -894,6 +907,17 @@ export function Canvas() {
     }
     set({ wirePart: null });
     setGesture({ kind: 'marquee', start: w, cur: w, additive: e.shiftKey || e.ctrlKey || e.metaKey });
+  };
+
+  /**
+   * Moving the selection. Wires alone move rigidly (their shape is kept), letting go of whatever
+   * they were attached to; together with parts they stretch to stay connected, as before.
+   */
+  const moveGesture = (sel: string[], w: Point, client: Point, pick?: string): Gesture => {
+    const d = S().doc;
+    const ids = new Set(sel.filter((id) => d.items[id] && !d.items[id].locked));
+    const wiresOnly = ids.size > 0 && [...ids].every((id) => d.items[id].type === 'wire');
+    return { kind: 'move', start: w, ids, moved: false, client, detach: S().altMove || wiresOnly, dx: 0, dy: 0, pick, rejoin: wiresOnly };
   };
 
   const onDoubleClick = (id: string) => {
@@ -1305,6 +1329,8 @@ export function Canvas() {
   const dotGrid = gs >= 7;
 
   const g = gesture;
+  // a lone wire shows its box too: pressing anywhere inside moves the whole wire
+  const selectionBounds = selection.length > 1 || doc.items[selection[0]]?.type === 'wire' ? unionBounds(doc, selection) : null;
   const cursorStyle: string =
     g?.kind === 'pan' || spaceDown || tool === 'pan'
       ? g?.kind === 'pan'
@@ -1328,7 +1354,9 @@ export function Canvas() {
                 ? 'crosshair'
                 : hover.item
                   ? 'pointer'
-                  : 'default';
+                  : tool === 'select' && !g && selectionBounds && pointInRect(cursor, selectionBounds, 4 / z)
+                    ? 'move'
+                    : 'default';
 
   const ghost: ComponentItem | null = placing
     ? {
@@ -1348,7 +1376,6 @@ export function Canvas() {
     : null;
 
   const scopeBounds = scope ? groupBounds(doc, scope) : null;
-  const selectionBounds = selection.length > 1 ? unionBounds(doc, selection) : null;
   const connectedPorts = data.portDegree;
   const showErc = useStore((s) => s.leftPanel && s.leftTab === 'check');
   const ercIssues = useErcIssues(showErc);
