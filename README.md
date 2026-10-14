@@ -113,6 +113,20 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 - Buses: draw a thick wire as the bus and attach signals with **bus entry** symbols; signals connect by their net labels
 - Copy the selection as SVG to paste into other apps
 
+### Version history
+- The **History** tab (clock icon, **Ctrl+Alt+H**) keeps restore points of each circuit on this device. A version is saved automatically every few minutes while you edit and whenever you open another circuit; **Ctrl+Alt+V** saves a named one.
+- Click a version to preview it and see what changed since (added, removed and changed items). **Restore** puts it back as an ordinary edit, so Undo returns to where you were, and in a live session everyone gets it. **Save copy** writes it out as a separate file. Double-click a version to name it.
+- Named versions are kept forever; automatic ones thin out over time (recent ones, then one per hour, then one per day for a month).
+
+### iPad, tablets and touch
+- **Pinch** to zoom and drag with **two fingers** to pan. **Long-press** opens the context menu.
+- **Two-finger tap** undoes (or cancels the wire you are drawing), **three-finger tap** redoes.
+- With an **Apple Pencil** or other stylus, the pen draws and uses the tools while a finger moves the canvas. *Settings → One finger* sets what a single finger does.
+- Larger buttons and touch targets on touch screens.
+
+### Install as an app
+The web app can be installed (Chrome/Edge: the install icon in the address bar; iPad/iPhone Safari: **Share → Add to Home Screen**). It then opens in its own window and works offline.
+
 ### Interface
 - Dark and light themes, compact/normal/large UI sizes, minimap, focus mode
 - **Command palette** (**Ctrl+K**): run any command or place any part by name

@@ -11,8 +11,9 @@ import { netFlow, resolveNet, type NetFlow, type TraceSeed } from '../model/trac
 import type { CircuitDoc, Item, Point, ShapeItem } from '../model/types';
 import { buildWirePath, hitWire, portPosition } from '../model/wires';
 import { TRACE_COLORS, X, isExplainTool, setX, useExplain, type Trace } from '../store/explain';
-import { S, beginGesture, endGesture, gestureUpdate, mutate, useStore } from '../store/store';
+import { S, beginGesture, endGesture, gestureUpdate, inGesture, mutate, useStore } from '../store/store';
 import { EDITOR_PALETTE, inkColor, type SceneData } from './Scene';
+import { gestureSlots } from './touch';
 import { ExplainDock, TracePanel } from '../ui/ExplainDock';
 
 /** How long a laser trail / vanishing stroke stays on screen (ms). */
@@ -60,6 +61,22 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
   const [hover, setHover] = useState<{ item: string | null; seed: TraceSeed | null }>({ item: null, seed: null });
   const [snapFlash, setSnapFlash] = useState(0);
   const holdTimer = useRef<number>();
+
+  useEffect(() => {
+    gestureSlots.explain = {
+      get: () => gRef.current,
+      restore: (before) => {
+        window.clearTimeout(holdTimer.current);
+        if (gRef.current === before) return;
+        if (inGesture()) endGesture(false);
+        gRef.current = null;
+        setG(null);
+      },
+    };
+    return () => {
+      gestureSlots.explain = null;
+    };
+  }, []);
   /** Laser trails, one per press, so separate strokes are never joined. */
   const laser = useRef<LaserPt[][]>([]);
   const [fading, setFading] = useState<Fading[]>([]);

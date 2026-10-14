@@ -50,6 +50,8 @@ export interface Prefs {
   /** Custom keys of the Cadence scheme. */
   keymapCadence: Record<string, string[]>;
   wheel: 'zoom' | 'pan';
+  /** What one finger does on a touch screen: draw (use tools), pan, or pan once a stylus has been used. */
+  touch: 'auto' | 'draw' | 'pan';
   autosave: boolean;
   showMinimap: boolean;
   showPortMarkers: boolean;
@@ -94,7 +96,7 @@ export interface AppState {
   symbolSeed: (SelectionDrawing & { ids: string[] }) | null;
   leftPanel: boolean;
   rightPanel: boolean;
-  leftTab: 'library' | 'layers' | 'check';
+  leftTab: 'library' | 'layers' | 'check' | 'history';
   prefs: Prefs;
   userLibrary: Record<string, SymbolDef>;
   favorites: string[];
@@ -132,6 +134,7 @@ const DEFAULT_PREFS: Prefs = {
   keymap: {},
   keymapCadence: {},
   wheel: 'zoom',
+  touch: 'auto',
   autosave: true,
   showMinimap: true,
   showPortMarkers: true,

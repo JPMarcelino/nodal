@@ -31,6 +31,7 @@ export function createDoc(name = 'Untitled circuit'): CircuitDoc {
   return {
     format: 'nodal',
     version: 1,
+    id: uid('d'),
     name,
     settings: structuredClone(DEFAULT_SETTINGS),
     items: {},
@@ -60,6 +61,7 @@ export function normalizeDoc(raw: unknown): CircuitDoc {
   return {
     format: 'nodal',
     version: 1,
+    id: typeof d.id === 'string' && d.id ? d.id : uid('d'),
     name: d.name || 'Untitled circuit',
     settings: { ...structuredClone(DEFAULT_SETTINGS), ...d.settings, wire: { ...DEFAULT_SETTINGS.wire, ...d.settings?.wire }, ercIgnored: Array.isArray(d.settings?.ercIgnored) ? d.settings.ercIgnored : undefined },
     items: migrateItems(d.items ?? {}),

@@ -32,6 +32,8 @@ export const COMMANDS: Command[] = [
   { id: 'file.import', label: 'Import… (circuit, library, SVG, PDF, image)', category: 'File', keys: [], run: importFile },
   { id: 'file.save', label: 'Save', category: 'File', keys: ['Mod+S'], run: () => fileSave() },
   { id: 'file.saveAs', label: 'Save as…', category: 'File', keys: ['Mod+Shift+S'], run: () => fileSave(true) },
+  { id: 'file.saveVersion', label: 'Save version…', category: 'File', keys: ['Mod+Alt+V'], run: () => focusVersionName() },
+  { id: 'file.history', label: 'Version history', category: 'File', keys: ['Mod+Alt+H'], run: () => set({ leftPanel: true, leftTab: 'history' }) },
   { id: 'file.export', label: 'Export…', category: 'File', keys: ['Mod+E'], run: () => set({ dialog: 'export' }) },
   { id: 'file.exportSvg', label: 'Export as SVG', category: 'File', keys: [], run: () => doExport('svg') },
   { id: 'file.exportPng', label: 'Export as PNG', category: 'File', keys: ['Mod+Shift+E'], run: () => doExport('png') },
@@ -391,4 +393,10 @@ export function prettyKey(combo: string): string {
     )
     .join(IS_MAC ? '' : '+')
     .replace('⇧+/', '?');
+}
+
+/** Opens the History tab with the version name field focused. */
+function focusVersionName() {
+  set({ leftPanel: true, leftTab: 'history' });
+  setTimeout(() => document.querySelector<HTMLInputElement>('[data-focus="version-name"]')?.focus(), 30);
 }
