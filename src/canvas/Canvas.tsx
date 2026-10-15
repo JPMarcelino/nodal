@@ -335,10 +335,11 @@ export function Canvas() {
       if (pi) return { kind: 'port', comp: pi.comp, port: pi.port, pt: pi.pt, dir: portDir(pi) };
       const t = Math.max(6, 9 / z) * hitSlop();
       for (const it of Object.values(d.items)) {
+        if (it.hidden || it.locked) continue;
         if (it.type === 'junction' && dist(it, raw) < t) return { kind: 'junction', id: it.id, pt: { x: it.x, y: it.y } };
       }
       for (const it of Object.values(d.items)) {
-        if (it.type !== 'wire' || it.id === excludeWire) continue;
+        if (it.type !== 'wire' || it.id === excludeWire || it.hidden || it.locked) continue;
         for (const end of ['a', 'b'] as const) {
           const ep = it[end];
           if (ep.kind === 'free' && dist(ep, raw) < t) return { kind: 'wireEnd', wire: it.id, end, pt: { x: ep.x, y: ep.y } };
@@ -346,6 +347,10 @@ export function Canvas() {
       }
       const polys = new Map(data.polys);
       if (excludeWire) polys.delete(excludeWire);
+      for (const [id] of polys) {
+        const it = d.items[id];
+        if (it?.hidden || it?.locked) polys.delete(id);
+      }
       const hit = hitWire(polys, raw, Math.max(4, 6 / z));
       if (hit) {
         const pts = polys.get(hit.wire)!;

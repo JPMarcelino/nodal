@@ -6,7 +6,7 @@ import { clipPolylineToRect, simplify } from '../model/geometry';
 import { cleanup, deleteItems, deleteWirePart, extractFragment, groupItems, insertFragment, reorderItem, rotateItems, solderPinToWire, translateDetached, translateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
 import { computeHotSpots } from '../model/hotspots';
 import { computeNets } from '../model/netlist';
-import type { CircuitDoc, WireItem } from '../model/types';
+import type { CircuitDoc, JunctionItem, WireItem } from '../model/types';
 import { buildWirePath, computeHops, endpointInfo, crossingStack, hopLayerMap, moveWireNode, orthogonalize, restack, wireCrossings, wirePolyline } from '../model/wires';
 
 function freeWire(doc: CircuitDoc, ax: number, ay: number, bx: number, by: number): WireItem {
@@ -334,6 +334,18 @@ describe('solder / unsolder cycle', () => {
     expect(touch()).toBeTruthy();
     void top;
     void branch;
+  });
+
+  it('a loose end resting on hidden wires or junctions stays a plain end', () => {
+    const doc = createDoc();
+    const w = freeWire(doc, 0, 0, 100, 0);
+    const hj: JunctionItem = { id: 'hj', type: 'junction', x: 100, y: 0, hidden: true };
+    doc.items[hj.id] = hj;
+    const hw = freeWire(doc, 100, 0, 200, 0);
+    hw.hidden = true;
+    const spots = computeHotSpots(doc, new Map(Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire').map((x) => [x.id, wirePolyline(doc, x)])), []);
+    expect(spots.some((h) => h.kind === 'touch')).toBe(false);
+    expect(spots.some((h) => h.kind === 'end' && h.wire === w.id && h.end === 'b')).toBe(true);
   });
 });
 
