@@ -32,8 +32,18 @@ export function Timeline() {
   const track = useRef<HTMLDivElement>(null);
   const { steps, entries, total } = playPlan(doc);
   const sel = new Set(selection);
+  // true while this component holds an open edge-drag gesture (beginGesture
+  // without its matching endGesture). The unmount cleanup cancels only a
+  // gesture this component owns, so it never clobbers a canvas gesture.
+  const edgeDrag = useRef(false);
 
-  useEffect(() => () => pause(), []);
+  useEffect(
+    () => () => {
+      pause();
+      if (edgeDrag.current) endGesture(false);
+    },
+    [],
+  );
 
   const timeAt = (clientX: number) => {
     const r = track.current!.getBoundingClientRect();
@@ -62,7 +72,10 @@ export function Timeline() {
 
   const onUp = () => {
     if (!drag) return;
-    if (drag.kind === 'hold' || drag.kind === 'transition') endGesture(true);
+    if (drag.kind === 'hold' || drag.kind === 'transition') {
+      endGesture(true);
+      edgeDrag.current = false;
+    }
     if (drag.kind === 'move') {
       const i = steps.findIndex((s) => s.id === drag.id);
       if (drag.moved) {
@@ -82,6 +95,7 @@ export function Timeline() {
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     beginGesture();
+    edgeDrag.current = true;
     setDrag({ kind, id: s.id, x0: e.clientX, v0: kind === 'hold' ? holdOf(s) : transitionOf(s) });
   };
 
