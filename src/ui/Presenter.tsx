@@ -1,5 +1,6 @@
-import { ChevronLeft, ChevronRight, Pause, PenLine, Play, Waypoints, X as Close, Zap } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pause, PenLine, Play, Timer, TimerOff, Waypoints, X as Close, Zap } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
+import { EXPLAIN_COLORS } from '../model/ink';
 import { RichText } from '../canvas/RichText';
 import { inkColor, EDITOR_PALETTE } from '../canvas/Scene';
 import { presentationSteps, stepShot, transitionOf } from '../model/presentation';
@@ -48,6 +49,12 @@ export function stopPresenting() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
 }
 
+function toggleVanish() {
+  const on = !X().presentVanish;
+  setX({ presentVanish: on });
+  toast(on ? 'Pen strokes fade away' : 'Pen strokes stay in the drawing');
+}
+
 /* ------------------------------------------------------------------ */
 /* Overlay                                                             */
 /* ------------------------------------------------------------------ */
@@ -59,6 +66,8 @@ export function Presenter() {
   const theme = useStore((s) => s.prefs.theme);
   const playing = useExplain((s) => s.playing);
   const playT = useExplain((s) => s.playT);
+  const penColor = useExplain((s) => s.color);
+  const vanish = useExplain((s) => s.presentVanish);
   const steps = useMemo(() => presentationSteps(doc), [doc]);
   const n = steps.length;
 
@@ -75,6 +84,19 @@ export function Presenter() {
     }, 60);
     return () => window.clearTimeout(t);
   }, [idx, stepId]);
+
+  // the stage changes size after the show starts (panels fold away, full screen kicks in late):
+  // keep the step on screen fitted rather than leaving it framed for the old size
+  const canvasSize = useStore((s) => s.canvasSize);
+  useEffect(() => {
+    if (idx === null || X().playing) return;
+    const t = window.setTimeout(() => {
+      const d = S().doc;
+      const c = stepId ? (d.items[stepId] as ShapeItem | undefined) : undefined;
+      flyToShot(c ? stepShot(d, c) : playPlan(d).overview, 200);
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [canvasSize.w, canvasSize.h]);
 
   useEffect(() => {
     if (idx === null) return;
@@ -95,6 +117,7 @@ export function Presenter() {
       else if (e.key === 'End') goTo(presentationSteps(S().doc).length - 1);
       else if (e.key === 'p' || e.key === 'P' || e.key === 'MediaPlayPause') togglePlay();
       else if (e.key === 'Escape') stopPresenting();
+      else if (e.key === 'v' || e.key === 'V') toggleVanish();
       else handled = false;
       if (handled) {
         e.preventDefault();
@@ -133,7 +156,7 @@ export function Presenter() {
           {(
             [
               ['laser', <Zap size={16} key="l" />, 'Laser (K)'],
-              ['pen', <PenLine size={16} key="p" />, 'Vanishing pen (D)'],
+              ['pen', <PenLine size={16} key="p" />, vanish ? 'Vanishing pen (D)' : 'Pen (D) — strokes stay in the drawing'],
               ['trace', <Waypoints size={16} key="t" />, 'Trace a net (Q)'],
             ] as const
           ).map(([t, icon, label]) => (
@@ -141,6 +164,24 @@ export function Presenter() {
               {icon}
             </button>
           ))}
+          <span className="presenter-sep" />
+          {EXPLAIN_COLORS.map((c, i) => (
+            <button
+              key={c}
+              className={`presenter-swatch${penColor === c ? ' on' : ''}`}
+              title={`Pen colour (${i + 1})`}
+              onClick={() => {
+                setX({ color: c });
+                if (tool !== 'pen') A.setTool('pen');
+              }}
+            >
+              <i style={{ background: inkColor(c, EDITOR_PALETTE) }} />
+            </button>
+          ))}
+          <button className={vanish ? 'active' : ''} title={vanish ? 'Pen strokes fade away (V) — click to keep them' : 'Pen strokes are kept (V) — click to make them fade'} onClick={toggleVanish}>
+            {vanish ? <Timer size={16} /> : <TimerOff size={16} />}
+          </button>
+          <span className="presenter-sep" />
           <button title="End (Esc)" onClick={stopPresenting}>
             <Close size={16} />
           </button>
@@ -160,7 +201,7 @@ export function Presenter() {
         ) : idx < 0 ? (
           <div className="presenter-intro">
             <b>{doc.name}</b>
-            <span>{n ? `${n} step${n === 1 ? '' : 's'} · → next · P play` : 'No frames or callouts · K laser · D pen · Q trace'}</span>
+            <span>{n ? `${n} step${n === 1 ? '' : 's'} · → next · P play` : 'No frames or callouts · K laser · D pen · 1–7 colour · V fade · Q trace'}</span>
           </div>
         ) : (
           <div className="presenter-intro">

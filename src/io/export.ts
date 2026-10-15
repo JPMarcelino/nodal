@@ -9,6 +9,7 @@ import { stripMath } from '../model/latex';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 import { withoutFrames } from '../model/presentation';
+import { polyPoints } from '../model/polygon';
 
 export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string }> = {
   light: { sym: '#1f2433', symBg: '#ffffff', label: '#1f2433', value: '#5a6275', bg: '#ffffff', selection: '#3b82f6', ink: '#000000', grid: '#e6e8ee' },
@@ -362,6 +363,8 @@ export function exportDxf(doc: CircuitDoc): string {
           pts.push({ x: it.x + it.w / 2 + (it.w / 2) * Math.cos(a), y: it.y + it.h / 2 + (it.h / 2) * Math.sin(a) });
         }
         poly(layer, pts, true, aciColor(it.stroke));
+      } else if (it.kind === 'polygon') {
+        poly(layer, polyPoints(it), true, aciColor(it.stroke));
       } else if (it.kind === 'line' || it.kind === 'arrow') {
         poly(layer, [{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y + it.h }], false, aciColor(it.stroke));
       } else if (it.kind === 'text' && it.text) {

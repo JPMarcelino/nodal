@@ -413,7 +413,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
     switch (cur.kind) {
       case 'ink': {
         const pts = cur.pts;
-        if (!cur.highlighter && (X().vanish || X().presenting !== null)) {
+        if (!cur.highlighter && (X().presenting !== null ? X().presentVanish : X().vanish)) {
           // vanishing ink is kept out of the document
           setFading((f) => [...f, { id: ++fadeId, d: inkOutline(pts, cur.width), color: cur.color, born: performance.now() }]);
           return;

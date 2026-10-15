@@ -36,6 +36,7 @@ import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './controls';
 import { ExplainShapePanel, FramePanel } from './ExplainInspector';
 import { Row, StyleSection } from './StyleSection';
+import { PanelResizer, usePanelWidth } from './PanelResizer';
 
 /** Small sample of a line style (fits narrow panels better than words). */
 function DashIcon({ dash }: { dash: Dash }) {
@@ -459,7 +460,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
         )}
         {!def.valueIsLabel && (
           <Field label="Show labels">
-            <span className="row-gap">
+            <span className="row-gap wrap">
               <Toggle checked={c.showRef} onChange={(v) => upd((x) => (x.showRef = v))} label="Ref" />
               <Toggle checked={c.showValue} onChange={(v) => upd((x) => (x.showValue = v))} label="Value" />
             </span>
@@ -661,11 +662,11 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   const isText = first.kind === 'text';
   const isLine = first.kind === 'line' || first.kind === 'arrow';
   const isImage = first.kind === 'image';
-  const title = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text', image: 'Image', ink: 'Ink', callout: 'Callout', frame: 'Frame' }[first.kind];
+  const title = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', polygon: 'Polygon', line: 'Line', arrow: 'Arrow', text: 'Text', image: 'Image', ink: 'Ink', callout: 'Callout', frame: 'Frame' }[first.kind];
   return (
     <>
       <div className="panel-title">{shapes.length > 1 ? `${shapes.length} shapes` : title}</div>
-      {!isImage && (
+      {!isImage && first.kind !== 'polygon' && (
         <Section title={isText ? 'Text' : 'Label'}>
           <Field label={isText ? 'Content' : 'Title'} wide>
             <TextInput value={first.text ?? ''} multiline={isText} focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder={isText ? '' : 'Optional title'} />
@@ -860,6 +861,7 @@ export function Inspector() {
   const selection = useStore((s) => s.selection);
   const doc = useStore((s) => s.doc);
   const items = selection.map((id) => doc.items[id]).filter(Boolean);
+  const width = usePanelWidth('right', useStore((s) => s.prefs.rightWidth));
   let body: JSX.Element;
   if (!items.length) body = <DocumentPanel />;
   else if (items.length === 1 && items[0].type === 'component') body = <ComponentPanel c={items[0]} />;
@@ -871,7 +873,8 @@ export function Inspector() {
   else if (items.length === 1 && items[0].type === 'junction') body = <div className="panel-title">Junction</div>;
   else body = <MultiPanel ids={selection} />;
   return (
-    <aside className="panel right-panel">
+    <aside className="panel right-panel" style={{ width }}>
+      <PanelResizer side="right" />
       <div className="tabs">
         <button className="active">{items.length ? 'Properties' : 'Document'}</button>
       </div>

@@ -4,7 +4,7 @@ import { createDoc, groupMembers, normalizeDoc, topGroup } from '../model/doc';
 import { setUserLibrary, usedSymbols } from '../model/registry';
 import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
-import type { CircuitDoc, Point, SymbolDef, Tool } from '../model/types';
+import type { CircuitDoc, Point, SymbolDef, Tool, WireAngle } from '../model/types';
 import { settleEdit } from '../model/settle';
 
 export interface View {
@@ -63,7 +63,13 @@ export interface Prefs {
   wireAvoid: boolean;
   /** Alignment guides (and snapping to them) while moving. */
   alignGuides: boolean;
+  /** Widths of the library (left) and properties (right) panels, in px. */
+  leftWidth: number;
+  rightWidth: number;
+  /** Angles new wires are drawn at. */
+  wireAngle: WireAngle;
 }
+
 
 export interface Toast {
   id: number;
@@ -143,6 +149,9 @@ const DEFAULT_PREFS: Prefs = {
   shortcuts: 'nodal',
   wireAvoid: true,
   alignGuides: true,
+  leftWidth: 280,
+  rightWidth: 290,
+  wireAngle: 'ortho',
 };
 
 function initialDoc(): CircuitDoc {

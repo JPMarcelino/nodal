@@ -20,10 +20,10 @@ import {
   type Fragment,
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
-import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool } from '../model/types';
+import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { viewCentre } from '../io/importFiles';
-import { S, mutate, pushRecent, select, set, toast } from './store';
+import { S, mutate, pushRecent, select, set, setPrefs, toast } from './store';
 import { X, isExplainTool, setX } from './explain';
 
 const sel = () => new Set(S().selection);
@@ -46,6 +46,20 @@ export function toggleExplain() {
 /** Select tool in alt-move mode: only the selection moves, connections to it are left behind. */
 export function setAltMove() {
   set({ tool: 'select', altMove: true, placing: null, contextMenu: null });
+}
+
+export const WIRE_ANGLES: { value: WireAngle; label: string; title: string }[] = [
+  { value: 'ortho', label: '90°', title: 'Orthogonal wires (square elbows)' },
+  { value: '45', label: '45°', title: '45° wires: straight runs and diagonals that keep bends on the grid' },
+  { value: 'any', label: 'Any', title: 'Free-angle wires: straight lines between grid points' },
+];
+
+/** Sets (or cycles to the next) angle new wires are drawn at. */
+export function setWireAngle(to?: WireAngle) {
+  const i = WIRE_ANGLES.findIndex((a) => a.value === S().prefs.wireAngle);
+  const next = to ?? WIRE_ANGLES[(i + 1) % WIRE_ANGLES.length].value;
+  setPrefs({ wireAngle: next });
+  toast(WIRE_ANGLES.find((a) => a.value === next)!.title);
 }
 
 export function startPlacing(symbol: string) {

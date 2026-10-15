@@ -98,6 +98,7 @@ export const COMMANDS: Command[] = [
   { id: 'tool.rect', label: 'Rectangle (outline)', category: 'Tools', keys: ['B'], run: () => A.setTool('rect') },
   { id: 'tool.zone', label: 'Filled zone', category: 'Tools', keys: ['Z'], run: () => A.setTool('zone') },
   { id: 'tool.ellipse', label: 'Ellipse', category: 'Tools', keys: ['O'], run: () => A.setTool('ellipse') },
+  { id: 'tool.polygon', label: 'Polygon (click the corners; click the first one again to close)', category: 'Tools', keys: ['V'], run: () => A.setTool('polygon') },
   { id: 'tool.line', label: 'Line', category: 'Tools', keys: ['L'], run: () => A.setTool('line') },
   { id: 'tool.arrow', label: 'Arrow', category: 'Tools', keys: ['A'], run: () => A.setTool('arrow') },
   { id: 'tool.text', label: 'Text', category: 'Tools', keys: ['T'], cadence: ['N', 'T'], run: () => A.setTool('text') },
@@ -149,6 +150,7 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.exitGroup', label: 'Return from group', category: 'Arrange', keys: [], cadence: ['Shift+B'], run: () => void A.exitGroup() },
 
   // Wire
+  { id: 'wire.angle', label: 'Cycle wire angle: 90° / 45° / any (Tab while drawing)', category: 'Wire', keys: ['Shift+A'], run: () => A.setWireAngle() },
   { id: 'wire.reroute', label: 'Re-route selected wires', category: 'Wire', keys: ['Shift+W'], run: A.rerouteWires },
   { id: 'wire.highlightNet', label: 'Highlight net of selected wire', category: 'Wire', keys: ['N'], run: highlightNet },
   { id: 'wire.hops', label: 'Cycle wire crossing style (arc / gap / none)', category: 'Wire', keys: ['Mod+Shift+J'], run: cycleHops },

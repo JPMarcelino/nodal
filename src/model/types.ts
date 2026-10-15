@@ -172,13 +172,16 @@ export interface WireItem extends ItemBase {
 
 export type LabelSide = 'above' | 'below' | 'left' | 'right';
 
+/** Angles new wires are drawn at: square elbows, 45° steps (grid-friendly), or any angle. */
+export type WireAngle = 'ortho' | '45' | 'any';
+
 export interface JunctionItem extends ItemBase {
   type: 'junction';
   x: number;
   y: number;
 }
 
-export type ShapeKind = 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'image' | 'ink' | 'callout' | 'frame';
+export type ShapeKind = 'rect' | 'zone' | 'ellipse' | 'polygon' | 'line' | 'arrow' | 'text' | 'image' | 'ink' | 'callout' | 'frame';
 
 export type HeadKind = 'none' | 'open' | 'filled' | 'circle' | 'bar';
 
@@ -215,6 +218,8 @@ export interface ShapeItem extends ItemBase {
   z: number;
   /** Ink strokes: flat [x, y, pressure, …] list, x / y as fractions (0–1) of the box. */
   ink?: number[];
+  /** Polygon corners: flat [x, y, …] list as fractions (0–1) of the box. */
+  poly?: number[];
   /** Ink drawn with the highlighter (wide, translucent, under the circuit). */
   highlighter?: boolean;
   /** Callouts and frames: step number shown in the badge (walkthrough order). */
@@ -293,6 +298,6 @@ export interface CircuitDoc {
 }
 
 export type Tool =
-  | 'select' | 'node' | 'wire' | 'solder' | 'rect' | 'zone' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pan' | 'frame'
+  | 'select' | 'node' | 'wire' | 'solder' | 'rect' | 'zone' | 'ellipse' | 'polygon' | 'line' | 'arrow' | 'text' | 'pan' | 'frame'
   // explain tools: annotate and talk through a circuit
   | 'pen' | 'highlighter' | 'laser' | 'eraser' | 'trace' | 'callout';

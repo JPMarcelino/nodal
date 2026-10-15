@@ -7,7 +7,7 @@ import { getSymbol, instanceSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireLabelSpot, wireStyle } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
-import { buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd, wireRouter } from '../model/wireCommit';
+import { buildAngledPreview, buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd, wireRouter } from '../model/wireCommit';
 import { routeObstacles } from '../model/route';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
@@ -17,8 +17,10 @@ import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/a
 import { canvasActions } from '../store/canvasActions';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
+import { WireDock } from '../ui/WireDock';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
+import { constrain45, packPoly, polyHit } from '../model/polygon';
 import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
@@ -59,12 +61,15 @@ type Gesture =
   /** `rejoin`: a wires-only move; ends dropped exactly on a pin, junction or wire end connect there. */
   | { kind: 'move'; start: Point; ids: Set<string>; moved: boolean; client: Point; detach: boolean; dx: number; dy: number; pick?: string; floating?: boolean; rejoin?: boolean }
   /** `postureSet`: the bend direction was flipped by hand, so the pointer no longer picks it. */
-  | { kind: 'wire'; start: Target; pts: Point[]; hFirst: boolean; fromDrag: boolean; downClient: Point; cur: Target; dragging: boolean; postureSet?: boolean }
+  /** `angled`: a clicked vertex already has a diagonal, so the wire keeps them (straight-routed) whatever the angle mode. */
+  | { kind: 'wire'; start: Target; pts: Point[]; hFirst: boolean; fromDrag: boolean; downClient: Point; cur: Target; dragging: boolean; postureSet?: boolean; angled?: boolean }
   /** `pick`: a click without a drag selects this item instead (the next one down under the pointer). */
   | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean; pick?: string }
   | { kind: 'endpoint'; wire: string; end: 'a' | 'b'; cur: Target; moved: boolean }
   | { kind: 'node'; wire: string; idx: number; base: Point[]; cur: Point; free: boolean; moved: boolean }
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
+  /** Polygon being clicked out corner by corner; it closes when a click lands back on the first corner. */
+  | { kind: 'polygon'; pts: Point[]; cur: Point }
   | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
   /** Resizing a part from a corner handle: its size follows the distance from its centre. */
@@ -72,9 +77,13 @@ type Gesture =
   | { kind: 'label'; id: string; which: 'ref' | 'value'; start: Point; base: { dx: number; dy: number }; frozen: ReturnType<typeof frozenLabelOffsets> }
   /** Sliding a wire's net label along its net, to either side of the wire. */
   | { kind: 'wireLabel'; id: string; net: string[] }
-  | { kind: 'shapeTitle'; id: string; start: Point; base: { dx: number; dy: number } };
+  | { kind: 'shapeTitle'; id: string; start: Point; base: { dx: number; dy: number } }
+  /** Cadence m / c pressed: waiting for the click on the reference point (or on what to move) before anything follows the pointer. */
+  | { kind: 'arm'; detach: boolean; copy: boolean };
 
 const ORTHO_EPS = 0.01;
+
+const isDiagonal = (a: Point, b: Point) => Math.abs(a.x - b.x) > ORTHO_EPS && Math.abs(a.y - b.y) > ORTHO_EPS;
 
 const NO_HOTSPOTS: HotSpot[] = [];
 
@@ -92,6 +101,7 @@ const BADGE_GLYPHS: Partial<Record<Tool, string>> = {
   rect: '<rect x="3" y="3.5" width="7" height="6" rx="1" fill="none" stroke="#1f2433" stroke-width="1.4"/>',
   zone: '<rect x="3" y="3.5" width="7" height="6" rx="1" fill="#1f2433" fill-opacity="0.35" stroke="#1f2433" stroke-width="1.4"/>',
   ellipse: '<circle cx="6.5" cy="6.5" r="3.4" fill="none" stroke="#1f2433" stroke-width="1.4"/>',
+  polygon: '<path d="M6.5 2.8l3.7 2.7-1.4 4.4H4.2L2.8 5.5z" fill="none" stroke="#1f2433" stroke-width="1.3" stroke-linejoin="round"/>',
   line: '<path d="M3 9.5L9.5 3.5" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round"/>',
   arrow: '<path d="M3 9.5L9 3.5M6.4 3.5H9v2.6" fill="none" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
   solder: '<circle cx="6.5" cy="6.5" r="4.3" fill="none" stroke="#1f2433" stroke-width="1.1"/><circle cx="6.5" cy="6.5" r="2.3" fill="#1f2433"/>',
@@ -183,8 +193,8 @@ export function Canvas() {
         const before = g as Gesture | null;
         if (gRef.current === before) return;
         if (inGesture()) endGesture(false);
-        // only a wire being clicked out survives between touches; anything else is dropped
-        setGesture(before?.kind === 'wire' ? before : null);
+        // only a wire or polygon being clicked out survives between touches; anything else is dropped
+        setGesture(before?.kind === 'wire' || before?.kind === 'polygon' ? before : null);
       },
     };
     return () => {
@@ -382,6 +392,7 @@ export function Canvas() {
         if (s.kind === 'line' || s.kind === 'arrow') return projectOnSegment(p, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }).d < t + s.strokeWidth;
         if (s.kind === 'text' || s.kind === 'image' || s.kind === 'callout') return pointInRect(p, r, 4);
         if (s.kind === 'ink') return inkHit(s, p, t);
+        if (s.kind === 'polygon') return polyHit(s, p, t);
         const inside = pointInRect(p, r, t);
         if (!inside) return false;
         if (s.fillOpacity > 0) return true;
@@ -572,8 +583,43 @@ export function Canvas() {
 
   /* ------------------------- wire commit ------------------------- */
 
-  const wirePreview = (g: Extract<Gesture, { kind: 'wire' }>): Point[] =>
-    buildWirePreview(g.start.pt, g.pts, g.hFirst, g.cur.pt, routeObs ? wireRouter(S().doc, g.start, g.cur, grid, routeObs) : undefined);
+  const wirePreview = (g: Extract<Gesture, { kind: 'wire' }>): Point[] => {
+    const angle = S().prefs.wireAngle;
+    if (angle !== 'ortho') return buildAngledPreview(g.start.pt, g.pts, g.cur.pt, angle, g.hFirst);
+    return buildWirePreview(g.start.pt, g.pts, g.hFirst, g.cur.pt, routeObs ? wireRouter(S().doc, g.start, g.cur, grid, routeObs) : undefined);
+  };
+
+  /* ------------------------------ polygon ------------------------------ */
+
+  /** Next corner under the pointer: on the grid, at 45° steps with Shift, and pulled onto the first corner when close. */
+  const polygonPoint = (g: Extract<Gesture, { kind: 'polygon' }>, w: Point, shift: boolean): Point => {
+    const first = g.pts[0];
+    if (g.pts.length >= 3 && dist(first, w) < (8 / S().view.zoom) * hitSlop()) return first;
+    const p = sp(w);
+    return shift ? constrain45(g.pts[g.pts.length - 1], p) : p;
+  };
+
+  const closesPolygon = (g: Extract<Gesture, { kind: 'polygon' }>, p: Point) => g.pts.length > 1 && eq(p, g.pts[0]);
+
+  const commitPolygon = (pts: Point[]) => {
+    setGesture(null);
+    if (pts.length < 3) return;
+    let id = '';
+    mutate((d) => {
+      const s = makeShape(d as CircuitDoc, 'polygon', 0, 0, 1, 1);
+      Object.assign(s, packPoly(pts));
+      s.group = S().scope;
+      d.items[s.id] = s;
+      id = s.id;
+    });
+    set({ selection: [id] });
+    A.setTool('select');
+  };
+
+  // switching tools drops a half-drawn polygon
+  useEffect(() => {
+    if (gRef.current?.kind === 'polygon' && tool !== 'polygon') setGesture(null);
+  }, [tool]);
 
   const commitWire = (g: Extract<Gesture, { kind: 'wire' }>, end: Target) => {
     const brush = S().wireBrush;
@@ -582,6 +628,8 @@ export function Canvas() {
       newId = commitWireDoc(dd as CircuitDoc, g.start, end, {
         via: g.pts,
         hFirst: g.hFirst,
+        angle: S().prefs.wireAngle,
+        straight: g.angled,
         group: S().scope,
         routeGrid: S().prefs.wireAvoid ? grid : undefined,
         ...(brush ? { style: { ...brush } } : {}),
@@ -591,11 +639,12 @@ export function Canvas() {
     return newId !== null;
   };
 
-  /** After a click adds vertices, the next leg should turn 90°. */
+  /** After a click adds vertices, the next leg should turn 90° (at 45°: a diagonal is followed by a straight run). */
   const nextHFirst = (pts: Point[]) => {
     if (pts.length < 2) return true;
     const a = pts[pts.length - 2];
     const b = pts[pts.length - 1];
+    if (S().prefs.wireAngle === '45') return isDiagonal(a, b);
     return Math.abs(a.y - b.y) > ORTHO_EPS; // last leg vertical → go horizontal first
   };
 
@@ -612,25 +661,39 @@ export function Canvas() {
 
   /* ------------------------ pointer-carried move ------------------------ */
 
-  /** Cadence m / Shift+m / c: the selection (or the item under the pointer) follows the pointer until the next click. */
-  const floatMove = (detach: boolean, copy: boolean) => {
-    if (gRef.current || !S().pointerOnCanvas) return;
-    const at = S().cursor;
+  /**
+   * Cadence m / Shift+m / c, as in current Virtuoso: nothing moves until a click
+   * picks the reference point (with nothing selected, that click also picks
+   * what to move); from then on the selection follows the pointer until the
+   * next click drops it.
+   */
+  const armMove = (detach: boolean, copy: boolean) => {
+    if (gRef.current) return;
+    set({ wirePart: null });
+    setGesture({ kind: 'arm', detach, copy });
+    const what = copy ? 'copy' : 'move';
+    toast(S().selection.length ? `Click the reference point to ${what} from · Esc cancels` : `Click the item to ${what} · Esc cancels`);
+  };
+
+  /** The reference click of an armed move: starts the pointer-carried move from `at`. */
+  const floatMove = (detach: boolean, copy: boolean, at: Point) => {
     if (!S().selection.length) {
       const hit = hitItem(at);
-      if (!hit) {
-        toast(copy ? 'Select something to copy first' : 'Select something to move first');
-        return;
-      }
+      if (!hit) return false;
       select([hit]);
     }
     const before = S().doc;
     if (copy) A.copyInPlace();
     const ids = new Set(S().selection.filter((id) => !S().doc.items[id]?.locked));
-    if (!ids.size) return;
+    if (!ids.size) {
+      setGesture(null);
+      toast('The selection is locked');
+      return true;
+    }
     set({ wirePart: null });
     beginGesture(before);
     setGesture({ kind: 'move', start: sp(at), ids, moved: true, client: at, detach, dx: 0, dy: 0, floating: true });
+    return true;
   };
 
   /** Rotates what a pointer-carried move is holding (Cadence: R or the right mouse button). */
@@ -690,6 +753,26 @@ export function Canvas() {
         rotateFloating(g);
         return true;
       }
+      if (g?.kind === 'wire' || (combo === 'Tab' && !g && tool === 'wire')) {
+        if (combo === 'Tab') {
+          A.setWireAngle();
+          return true;
+        }
+      }
+      if (g?.kind === 'polygon') {
+        if (combo === 'Escape') {
+          setGesture(null);
+          return true;
+        }
+        if (combo === 'Backspace' || combo === 'Delete') {
+          setGesture(g.pts.length > 1 ? { ...g, pts: g.pts.slice(0, -1) } : null);
+          return true;
+        }
+        if (combo === 'Enter') {
+          commitPolygon(g.pts);
+          return true;
+        }
+      }
       if (g?.kind === 'wire') {
         if (combo === 'Escape') {
           setGesture(null);
@@ -720,7 +803,7 @@ export function Canvas() {
       }
       return false;
     };
-    canvasActions.floatMove = ({ detach, copy }) => floatMove(detach, copy);
+    canvasActions.floatMove = ({ detach, copy }) => armMove(detach, copy);
     return () => {
       canvasKeys.handle = null;
       canvasActions.floatMove = null;
@@ -766,6 +849,11 @@ export function Canvas() {
       finishMove(carried);
       return;
     }
+    if (carried?.kind === 'arm') {
+      // a click on empty canvas with nothing selected keeps waiting for something to move
+      if (!floatMove(carried.detach, carried.copy, w)) toast(carried.copy ? 'Click the item to copy' : 'Click the item to move');
+      return;
+    }
     const now = performance.now();
     const isDouble = now - lastClick.current.t < 350 && dist(lastClick.current.p, client) < 6 * hitSlop() ** 2;
     lastClick.current = { t: now, p: client };
@@ -793,7 +881,22 @@ export function Canvas() {
         setGesture(null);
         return;
       }
-      setGesture({ ...g, pts: committed, hFirst: nextHFirst(pts), cur: t, postureSet: false });
+      const angled = g.angled || pts.some((p, i) => i > 0 && isDiagonal(pts[i - 1], p));
+      setGesture({ ...g, pts: committed, hFirst: nextHFirst(pts), cur: t, postureSet: false, angled });
+      return;
+    }
+
+    if (g?.kind === 'polygon') {
+      const p = polygonPoint(g, w, e.shiftKey);
+      if (closesPolygon(g, p)) {
+        if (g.pts.length >= 3) commitPolygon(g.pts);
+        return;
+      }
+      if (isDouble) {
+        commitPolygon(eq(p, g.pts[g.pts.length - 1]) ? g.pts : [...g.pts, p]);
+        return;
+      }
+      if (!eq(p, g.pts[g.pts.length - 1])) setGesture({ ...g, pts: [...g.pts, p], cur: p });
       return;
     }
 
@@ -838,6 +941,11 @@ export function Canvas() {
         err = applySolder(d as CircuitDoc, h, data);
       });
       if (err) toast(err, 'error');
+      return;
+    }
+    if (tool === 'polygon') {
+      const p = sp(w);
+      setGesture({ kind: 'polygon', pts: [p], cur: p });
       return;
     }
     if (tool !== 'select') {
@@ -1003,13 +1111,13 @@ export function Canvas() {
     setCursor(w);
     set(S().pointerOnCanvas ? { cursor: w } : { cursor: w, pointerOnCanvas: true });
     const g = gRef.current;
-    if (!g) {
-      if (tool === 'select' || tool === 'wire' || tool === 'node') {
+    if (!g || g.kind === 'arm') {
+      if (tool === 'select' || tool === 'wire' || tool === 'node' || g) {
         const pi = findPort(w);
         const item = pi ? null : hitItem(w);
         if (pi?.comp !== hover.port?.comp || pi?.port !== hover.port?.port || item !== hover.item) setHover({ port: pi, item });
       }
-      if (!placing && !S().exportArea) trackHotSpot(w);
+      if (!placing && !S().exportArea && !g) trackHotSpot(w);
       return;
     }
     const v = S().view;
@@ -1054,7 +1162,9 @@ export function Canvas() {
         const ox = w.x - anchor.x;
         const oy = w.y - anchor.y;
         const r = Math.max(Math.abs(ox), Math.abs(oy));
-        const hFirst = !g.postureSet && r > grid * 0.3 && r <= grid * 1.5 ? Math.abs(ox) >= Math.abs(oy) : g.hFirst;
+        // at 45°: heading off along an axis runs straight first, heading off diagonally starts with the diagonal
+        const fresh = !g.postureSet && r > grid * 0.3 && r <= grid * 1.5;
+        const hFirst = !fresh ? g.hFirst : S().prefs.wireAngle === '45' ? Math.min(Math.abs(ox), Math.abs(oy)) < r * 0.4 : Math.abs(ox) >= Math.abs(oy);
         setGesture({ ...g, cur, dragging, hFirst });
         break;
       }
@@ -1096,6 +1206,9 @@ export function Canvas() {
       }
       case 'shape':
         setGesture({ ...g, cur: e.altKey ? w : sp(w) });
+        break;
+      case 'polygon':
+        setGesture({ ...g, cur: polygonPoint(g, w, e.shiftKey) });
         break;
       case 'exportArea':
         setGesture({ ...g, cur: sp(w) });
@@ -1394,6 +1507,8 @@ export function Canvas() {
         : 'grab'
       : exportAreaJob
         ? badgeCursor('area', prefs.theme) ?? 'crosshair'
+        : g?.kind === 'arm'
+          ? hover.item && !selection.length ? 'pointer' : 'crosshair'
         : g?.kind === 'move' || g?.kind === 'shapeTitle' || (tool === 'select' && !placing && !g && singleShape && hasMovableTitle(singleShape) && pointInRect(cursor, shapeTitle(singleShape).box, 3))
           ? 'move'
           : tool === 'node' && !placing
@@ -1652,6 +1767,7 @@ export function Canvas() {
           })()}
           {g?.kind === 'endpoint' && <TargetMarker t={g.cur} z={z} />}
           {g?.kind === 'shape' && <ShapePreview g={g} />}
+          {g?.kind === 'polygon' && <PolygonPreview g={g} z={z} closing={closesPolygon(g, g.cur) && g.pts.length >= 3} />}
           {tool === 'wire' && !g && <TargetMarker t={findTarget(cursor)} z={z} subtle />}
           {ghost && (
             <g opacity={0.55} pointerEvents="none">
@@ -1670,6 +1786,7 @@ export function Canvas() {
         </div>
       )}
       {editingText && <TextEditor id={editingText} onDone={() => setEditingText(null)} />}
+      {(tool === 'wire' || g?.kind === 'wire') && !presenting && !placing && <WireDock drawing={g?.kind === 'wire'} />}
       {prefs.showMinimap && <Minimap data={data} />}
       {hotMenu && !g && (
         <HotSpotMenu
@@ -1755,6 +1872,21 @@ function TargetMarker({ t, z, subtle }: { t: Target; z: number; subtle?: boolean
   if (t.kind === 'wire' || t.kind === 'wireEnd')
     return <rect x={t.pt.x - 5 / z} y={t.pt.y - 5 / z} width={10 / z} height={10 / z} transform={`rotate(45 ${t.pt.x} ${t.pt.y})`} className="target wire" strokeWidth={2 / z} />;
   return <circle cx={t.pt.x} cy={t.pt.y} r={7 / z} className="target port" strokeWidth={2 / z} />;
+}
+
+/** Corners clicked so far, the rubber band to the pointer and, about to close, a ring on the first corner. */
+function PolygonPreview({ g, z, closing }: { g: Extract<Gesture, { kind: 'polygon' }>; z: number; closing: boolean }) {
+  const pts = [...g.pts, g.cur].map((p) => `${p.x},${p.y}`).join(' ');
+  const first = g.pts[0];
+  return (
+    <g pointerEvents="none">
+      <polyline points={pts} className="shape-preview" fill="none" />
+      {g.pts.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={2.5 / z} className="polygon-vertex" />
+      ))}
+      {g.pts.length >= 3 && <circle cx={first.x} cy={first.y} r={(closing ? 7 : 5) / z} className={closing ? 'polygon-close on' : 'polygon-close'} strokeWidth={1.5 / z} />}
+    </g>
+  );
 }
 
 function ShapePreview({ g }: { g: Extract<Gesture, { kind: 'shape' }> }) {
