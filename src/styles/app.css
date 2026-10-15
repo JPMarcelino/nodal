@@ -1314,13 +1314,10 @@ select.input {
 }
 
 .swatch-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  /* as wide as the colour field so it never spills out of the panel; swatches wrap */
-  left: 0;
-  right: 0;
-  min-width: 150px;
-  z-index: 50;
+  /* portalled to <body> and placed by ColorInput so it never leaves the viewport; swatches wrap */
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: repeat(auto-fill, 22px);
   justify-content: space-between;
