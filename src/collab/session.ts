@@ -17,7 +17,8 @@ import { SyncState, changedKeys, docFromEntries, writeEntries, type Entry } from
  * token for the room (in localStorage, never in the link) and the relay only
  * accepts changes from connections that present it. Viewers get their own
  * circuit back when they leave, or keep a copy of the shared one with
- * "Leave and keep a copy".
+ * "Leave and keep a copy". When the host leaves, the room ends: the relay
+ * deletes it and disconnects everyone.
  */
 
 export const COLLAB_URL: string = import.meta.env.VITE_COLLAB_URL ?? 'wss://nodal-collab.nodal-collab.workers.dev';
@@ -85,6 +86,11 @@ function ownedTokens(): Record<string, string> {
   } catch {
     return {};
   }
+}
+function forgetToken(r: string) {
+  const owned = ownedTokens();
+  delete owned[r];
+  localStorage.setItem(OWNED_KEY, JSON.stringify(owned));
 }
 function rememberToken(r: string, token: string) {
   // the newest rooms only: older sessions can still be watched, just not edited from here
@@ -176,6 +182,12 @@ export async function leaveSession(opts?: { keepCopy?: boolean }) {
   await outbox;
   const viewer = S().viewOnly;
   const shared = S().doc;
+  // the host leaving ends the room for everyone, and the relay deletes it
+  const ended = !viewer && !!editToken && ws?.readyState === WebSocket.OPEN;
+  if (ended) {
+    ws!.send(JSON.stringify({ t: 'end' }));
+    forgetToken(room);
+  }
   shutdown();
   if (opts?.keepCopy && viewer) {
     // a dynamic import: fileActions pulls in the export stack, which session.ts must not depend on
@@ -183,8 +195,18 @@ export async function leaveSession(opts?: { keepCopy?: boolean }) {
     if (await openSessionCopy(shared)) toast('Left the live session. A copy of the circuit is open.', 'info');
     return;
   }
-  toast(viewer ? 'Left the live session. Your own circuit is back.' : 'Left the live session. The circuit stays open here.', 'info');
+  toast(
+    viewer
+      ? 'Left the live session. Your own circuit is back.'
+      : ended
+        ? 'Ended the live session. The circuit stays open here.'
+        : 'Left the live session. The circuit stays open here; the room is deleted within a day.',
+    'info',
+  );
 }
+
+/** Whether leaving ends the session for everyone (this client is its host). */
+export const isHost = () => live() && !!editToken && !S().viewOnly;
 
 export function setMyName(name: string) {
   const me = { ...C().me, name: name.trim().slice(0, 40) || C().me.name };
@@ -255,6 +277,8 @@ function openSocket() {
   sock.onmessage = (e) => {
     if (sock !== ws || typeof e.data !== 'string') return;
     const msg = JSON.parse(e.data);
+    // handled at once: the relay closes the socket right after, and that mustn't look like a dropped connection
+    if (msg.t === 'ended') return roomEnded();
     inbox = inbox.then(() => handle(msg)).catch((err) => console.warn('[collab]', err));
   };
   sock.onclose = () => {
@@ -270,6 +294,17 @@ function openSocket() {
     setC({ status: connectedOnce ? 'reconnecting' : 'connecting', peers: {} });
     retryTimer = setTimeout(openSocket, Math.min(15000, 1000 * 2 ** Math.min(failures - 1, 4)));
   };
+}
+
+function roomEnded() {
+  const viewer = S().viewOnly;
+  const joining = awaitingRoom;
+  forgetToken(room);
+  shutdown();
+  toast(
+    joining ? 'This live session has ended.' : viewer ? 'The host ended the live session. Your own circuit is back.' : 'The live session was ended.',
+    'info',
+  );
 }
 
 function shutdown() {

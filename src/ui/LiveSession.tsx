@@ -1,7 +1,26 @@
 import { Copy, CopyPlus, LogIn, LogOut, Radio } from 'lucide-react';
 import { useState } from 'react';
-import { PEER_COLORS, joinSession, leaveSession, parseLink, setMyColor, setMyName, startSession, useCollab } from '../collab/session';
+import { PEER_COLORS, isHost, joinSession, leaveSession, parseLink, setMyColor, setMyName, startSession, useCollab } from '../collab/session';
 import { toast, useStore } from '../store/store';
+import { ask } from './Ask';
+
+/** The host leaving ends the session for everyone, so they confirm first. */
+async function leave() {
+  if (isHost()) {
+    const others = Object.keys(useCollab.getState().peers).length;
+    const end = await ask(
+      'End the live session?',
+      `Leaving ends the session for everyone${others ? ` (${others} ${others === 1 ? 'person is' : 'people are'} watching)` : ''}. The link stops working and the shared copy is deleted. Your circuit stays open here.`,
+      [
+        { label: 'Cancel', value: false },
+        { label: 'End session', value: true, kind: 'danger' },
+      ],
+      false,
+    );
+    if (!end) return;
+  }
+  await leaveSession();
+}
 
 async function copyLink(link: string) {
   try {
@@ -94,8 +113,8 @@ export function LiveSession() {
                 <button key={c} className={c === me.color ? 'swatch active' : 'swatch'} style={{ background: c }} title="Your cursor colour" onClick={() => setMyColor(c)} />
               ))}
             </div>
-            <button className="secondary-btn danger" onClick={() => void leaveSession()}>
-              <LogOut size={14} /> Leave
+            <button className="secondary-btn danger" onClick={() => void leave()}>
+              <LogOut size={14} /> {viewOnly ? 'Leave' : 'End session'}
             </button>
             {viewOnly && (
               <button className="secondary-btn" onClick={() => void leaveSession({ keepCopy: true })}>
