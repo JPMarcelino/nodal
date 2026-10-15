@@ -1,7 +1,7 @@
 {
   "name": "nodal",
   "private": true,
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Nodal — a beautiful, fully featured electric circuit / schematic designer for Windows, Linux and the web.",
   "type": "module",
   "license": "MIT",
