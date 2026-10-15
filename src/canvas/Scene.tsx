@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import { componentBounds, measureText, segmentIntersectsRect, sideVector, toWorld } from '../model/geometry';
 import { drawOrder, labelsShown } from '../model/doc';
 import { touchingPins } from '../model/netlist';
@@ -61,7 +61,82 @@ export interface SceneData {
 }
 
 export function useSceneData(doc: CircuitDoc): SceneData {
-  return useMemo(() => computeSceneData(doc), [doc]);
+  const ref = useRef<{ doc: CircuitDoc; data: SceneData } | null>(null);
+  const prev = ref.current;
+  if (prev && prev.doc === doc) return prev.data;
+  const data = prev ? updateSceneData(prev.doc, prev.data, doc) : computeSceneData(doc);
+  ref.current = { doc, data };
+  return data;
+}
+
+export function updateSceneData(prevDoc: CircuitDoc, prev: SceneData, doc: CircuitDoc): SceneData {
+  if (prevDoc === doc) return prev;
+  if (prevDoc.settings !== doc.settings || prevDoc.symbols !== doc.symbols) return computeSceneData(doc);
+  const before = prevDoc.items;
+  const items = doc.items;
+  let wiresSame = true;
+  let compsSame = true;
+  let polysSame = true;
+  const polys = new Map<string, Point[]>();
+  for (const id of Object.keys(items)) {
+    const it = items[id];
+    const was = before[id];
+    if (was !== it) {
+      if (it.type === 'wire' || was?.type === 'wire') wiresSame = false;
+      if (it.type === 'component' || was?.type === 'component') compsSame = false;
+    }
+    if (it.type !== 'wire' || it.hidden) continue;
+    let pts: Point[] | undefined;
+    if (was === it) {
+      let stable = true;
+      for (const ep of [it.a, it.b]) {
+        if (ep.kind === 'port' && before[ep.comp] !== items[ep.comp]) {
+          stable = false;
+          break;
+        }
+        if (ep.kind === 'junction' && before[ep.id] !== items[ep.id]) {
+          stable = false;
+          break;
+        }
+      }
+      if (stable) pts = prev.polys.get(id);
+    }
+    if (pts) {
+      if (prev.polys.get(id) !== pts) polysSame = false;
+    } else {
+      pts = wirePolyline(doc, it);
+      polysSame = false;
+    }
+    polys.set(id, pts);
+  }
+  if (wiresSame || compsSame) {
+    for (const id of Object.keys(before)) {
+      if (items[id] !== undefined) continue;
+      const gone = before[id];
+      if (gone.type === 'wire') wiresSame = false;
+      else if (gone.type === 'component') compsSame = false;
+    }
+  }
+  if (polys.size !== prev.polys.size) polysSame = false;
+  let portDegree = prev.portDegree;
+  let junctionDegree = prev.junctionDegree;
+  if (!wiresSame) {
+    portDegree = new Map<string, number>();
+    junctionDegree = new Map<string, number>();
+    for (const it of Object.values(items)) {
+      if (it.type !== 'wire') continue;
+      for (const ep of [it.a, it.b]) {
+        if (ep.kind === 'port') portDegree.set(`${ep.comp}:${ep.port}`, (portDegree.get(`${ep.comp}:${ep.port}`) ?? 0) + 1);
+        if (ep.kind === 'junction') junctionDegree.set(ep.id, (junctionDegree.get(ep.id) ?? 0) + 1);
+      }
+    }
+  }
+  const layers = wiresSame ? prev.layers : hopLayerMap(Object.values(items));
+  const crossings = polysSame ? prev.crossings : wireCrossings(polys);
+  const hops = polysSame ? prev.hops : doc.settings.hops === 'none' ? new Map<string, Hop[]>() : hopsFromCrossings(crossings, doc.settings.hopSize, layers);
+  const touching = compsSame ? prev.touching : new Set(touchingPins(doc).flat());
+  if (wiresSame && compsSame && polysSame) return prev;
+  return { polys, hops, crossings, layers, portDegree, junctionDegree, touching };
 }
 
 export function computeSceneData(doc: CircuitDoc): SceneData {
