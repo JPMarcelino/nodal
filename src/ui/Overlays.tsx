@@ -1,86 +1,6 @@
 import { CheckCircle2, Info, XCircle } from 'lucide-react';
-import { useEffect, useRef } from 'react';
-import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
-import * as A from '../store/actions';
-import { set, useStore } from '../store/store';
-
-type MenuEntry = string | '-' | { label: string; run: () => void; key?: string };
-
-export function ContextMenu() {
-  const menu = useStore((s) => s.contextMenu);
-  const doc = useStore((s) => s.doc);
-  const selection = useStore((s) => s.selection);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!menu) return;
-    const closeIt = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && set({ contextMenu: null });
-    window.addEventListener('pointerdown', closeIt, true);
-    return () => window.removeEventListener('pointerdown', closeIt, true);
-  }, [menu]);
-  if (!menu) return null;
-  const target = menu.target ? doc.items[menu.target] : null;
-  const types = new Set(selection.map((id) => doc.items[id]?.type));
-  let entries: MenuEntry[];
-  if (!target) {
-    entries = [
-      { label: 'Paste here', run: () => void A.paste(menu.world), key: keysFor('edit.paste')[0] },
-      'edit.selectAll',
-      '-',
-      'tool.wire',
-      'tool.zone',
-      'tool.rect',
-      'tool.text',
-      '-',
-      'view.fit',
-      'view.grid',
-      '-',
-      'symbols.new',
-      'help.palette',
-    ];
-  } else {
-    entries = ['edit.cut', 'edit.copy', 'edit.duplicate', 'edit.delete', '-'];
-    if (types.has('component') || types.has('shape')) entries.push('arrange.rotateCw', 'arrange.rotateCcw', 'arrange.flipH', 'arrange.flipV', '-');
-    if (selection.length > 1) entries.push('arrange.group');
-    if (selection.some((id) => doc.items[id]?.group)) entries.push('arrange.ungroup');
-    if (target.group) entries.push({ label: 'Enter group', run: () => A.enterGroup(target.id), key: keysFor('arrange.enterGroup')[0] });
-    entries.push('edit.lock', '-');
-    if (types.has('shape')) entries.push('arrange.layer', 'arrange.front', 'arrange.back', '-');
-    if (types.has('wire')) entries.push('wire.highlightNet', 'wire.reroute', '-');
-    if (types.has('component')) entries.push('symbols.edit');
-    entries.push('symbols.fromSelection', '-');
-    if (selection.length > 1) entries.push('arrange.alignLeft', 'arrange.alignTop', 'arrange.distH', '-');
-    entries.push({ label: 'Zoom to selection', run: () => A.fitView(selection), key: keysFor('view.fitSel')[0] });
-    entries.push('-', 'file.exportSelection');
-  }
-  while (entries[entries.length - 1] === '-') entries.pop();
-  const x = Math.min(menu.x, window.innerWidth - 250);
-  const y = Math.min(menu.y, window.innerHeight - entries.length * 30 - 20);
-  return (
-    <div ref={ref} className="dropdown context-menu" style={{ left: x, top: Math.max(8, y) }} onContextMenu={(e) => e.preventDefault()}>
-      {entries.map((e, i) => {
-        if (e === '-') return <div key={i} className="dropdown-sep" />;
-        const item = typeof e === 'string' ? COMMAND_MAP.get(e) : null;
-        const label = typeof e === 'string' ? item?.label : e.label;
-        const key = typeof e === 'string' ? keysFor(e)[0] : e.key;
-        const run = typeof e === 'string' ? item?.run : e.run;
-        if (!label || !run) return null;
-        return (
-          <button
-            key={i}
-            className="dropdown-item"
-            onClick={() => {
-              set({ contextMenu: null });
-              run();
-            }}
-          >
-            <span>{label}</span>
-            {key && <kbd>{prettyKey(key)}</kbd>}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+import { COMMAND_MAP } from '../store/commands';
+import { useStore } from '../store/store';
 
 export function StatusBar() {
   const cursor = useStore((s) => s.cursor);
@@ -95,11 +15,11 @@ export function StatusBar() {
   const hint = placing
     ? 'Placing — click to drop, R rotate, X/Y flip, Esc cancel'
     : tool === 'wire'
-      ? 'Wire — click a pin, wire or empty grid to start · Tab: 90° / 45° / any angle'
+      ? 'Wire — click or drag from a pin, wire or the grid · click to bend, double-click to finish · Space flips the bend · Tab: 90° / 45° / any angle'
       : tool === 'select'
         ? 'Click a wire, click again on a segment to select it · Del removes the segment · Alt-drag on a wire to branch'
         : tool === 'node'
-          ? 'Drag a bend to move it · click a node, Del removes it · Alt-drag freely'
+          ? 'Drag a wire bend or polygon corner · drag a polygon edge to move it, its middle dot to add a corner · double-click or Del removes a node · Alt-drag freely'
           : tool === 'zone' || tool === 'rect' || tool === 'ellipse'
           ? 'Drag to draw · hold Shift to keep the tool'
           : tool === 'polygon'

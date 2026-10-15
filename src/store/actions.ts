@@ -20,6 +20,7 @@ import {
   type Fragment,
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
+import { deletePolyCorner } from '../model/polygon';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { viewCentre } from '../io/importFiles';
@@ -105,9 +106,18 @@ export function deleteSelection() {
   // a selected wire node/segment deletes just that part
   const wp = S().wirePart;
   if (wp && S().selection.length === 1 && S().selection[0] === wp.wire && S().doc.items[wp.wire]) {
-    mutate((d) => deleteWirePart(d as CircuitDoc, wp));
-    set({ wirePart: null });
-    return;
+    // a polygon corner picked in the edit points tool: remove it (a polygon keeps three); elsewhere Del removes the polygon
+    if (S().doc.items[wp.wire].type === 'shape') {
+      set({ wirePart: null });
+      if (S().tool === 'node') {
+        if (wp.kind === 'node') mutate((d) => void deletePolyCorner(d.items[wp.wire] as ShapeItem, wp.index));
+        return;
+      }
+    } else {
+      mutate((d) => deleteWirePart(d as CircuitDoc, wp));
+      set({ wirePart: null });
+      return;
+    }
   }
   const ids = editable();
   if (!ids.length) return;

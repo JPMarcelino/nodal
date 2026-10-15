@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, itemBounds, makeShape } from '../model/doc';
-import { constrain45, packPoly, pointInPolygon, polyHit, polyPoints } from '../model/polygon';
-import type { ShapeItem, WireItem } from '../model/types';
+import { constrain45, deletePolyCorner, dragPolyPart, packPoly, pointInPolygon, polyHit, polyPoints } from '../model/polygon';
+import type { ComponentItem, ShapeItem, WireItem } from '../model/types';
+import { sampleDoc } from '../model/sample';
+import { toSpiceNetlist } from '../model/netlist';
+import { selectionDoc } from '../io/export';
 import { angledLeg, buildAngledPreview, commitWire } from '../model/wireCommit';
 import { wirePolyline } from '../model/wires';
 import { translateItems } from '../model/ops';
@@ -83,5 +86,38 @@ describe('polygon shapes', () => {
   it('Shift constrains to 45° keeping diagonals on the grid', () => {
     expect(constrain45({ x: 0, y: 0 }, { x: 100, y: 10 })).toEqual({ x: 100, y: 0 });
     expect(constrain45({ x: 0, y: 0 }, { x: 60, y: 40 })).toEqual({ x: 50, y: 50 });
+  });
+});
+
+describe('polygon point editing', () => {
+  const sq = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+    { x: 0, y: 100 },
+  ];
+
+  it('drags one corner, or both ends of an edge', () => {
+    expect(dragPolyPart(sq, 2, false, { x: 20, y: 10 })[2]).toEqual({ x: 120, y: 110 });
+    const e = dragPolyPart(sq, 3, true, { x: -30, y: 0 });
+    expect([e[3], e[0], e[1]]).toEqual([{ x: -30, y: 100 }, { x: -30, y: 0 }, { x: 100, y: 0 }]);
+  });
+
+  it('deletes corners but keeps at least three', () => {
+    const s = { ...makeShape(createDoc(), 'polygon', 0, 0, 1, 1), ...packPoly(sq) } as ShapeItem;
+    expect(deletePolyCorner(s, 1)).toBe(true);
+    expect(polyPoints(s)).toEqual([sq[0], sq[2], sq[3]]);
+    expect(deletePolyCorner(s, 0)).toBe(false);
+  });
+});
+
+describe('exporting a selection', () => {
+  it('data formats get only the selected parts', () => {
+    const doc = sampleDoc();
+    const parts = Object.values(doc.items).filter((i): i is ComponentItem => i.type === 'component' && /^R\d/.test(i.ref));
+    const one = parts[0];
+    const net = toSpiceNetlist(selectionDoc(doc, [one.id]));
+    expect(net).toContain(one.ref);
+    for (const other of parts.slice(1)) expect(net).not.toMatch(new RegExp(`^${other.ref}\\b`, 'm'));
   });
 });

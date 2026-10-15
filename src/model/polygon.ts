@@ -58,3 +58,25 @@ export function constrain45(from: Point, p: Point): Point {
   }
   return Math.abs(Math.cos(a)) > 0.5 ? { x: p.x, y: from.y } : { x: from.x, y: p.y };
 }
+
+/** Writes new corners into a polygon shape (its box follows them). */
+export function setPolyPoints(s: ShapeItem, pts: Point[]) {
+  Object.assign(s, packPoly(pts));
+}
+
+/** Removes one corner; a polygon keeps at least three. Returns whether it changed. */
+export function deletePolyCorner(s: ShapeItem, index: number): boolean {
+  const pts = polyPoints(s);
+  if (pts.length <= 3 || index < 0 || index >= pts.length) return false;
+  pts.splice(index, 1);
+  setPolyPoints(s, pts);
+  return true;
+}
+
+/** Polygon corners after dragging corner `index` (or, with `edge`, the edge from `index` to the next corner) by `d`. */
+export function dragPolyPart(base: Point[], index: number, edge: boolean, d: Point): Point[] {
+  const pts = base.map((p) => ({ ...p }));
+  const ids = edge ? [index, (index + 1) % pts.length] : [index];
+  for (const i of ids) pts[i] = { x: base[i].x + d.x, y: base[i].y + d.y };
+  return pts;
+}

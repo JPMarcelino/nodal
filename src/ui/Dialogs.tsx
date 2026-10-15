@@ -446,7 +446,7 @@ export function SettingsDialog() {
 
 export function ExportDialog() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [bg, setBg] = useState(true);
+  const [bg, setBg] = useState(false);
   const [scale, setScale] = useState(3);
   const [onlySel, setOnlySel] = useState(false);
   const hasSel = useStore((s) => s.selection.length > 0);
@@ -505,11 +505,11 @@ export function ExportDialog() {
         <Card icon={<FileCode2 size={20} />} title="SVG vector" desc="Crisp, editable in Inkscape / Illustrator / Figma" onClick={() => doExport('svg', opts())} />
         <Card icon={<Scan size={20} />} title="Area → PNG" desc="Drag a rectangle on the canvas; wires crossing its edge are cut" onClick={() => startAreaExport('png', { theme, background: bg, scale })} />
         <Card icon={<Scan size={20} />} title="Area → SVG" desc="Drag a rectangle on the canvas; wires crossing its edge are cut" onClick={() => startAreaExport('svg', { theme, background: bg })} />
-        <Card icon={<Layers3 size={20} />} title="DXF (CAD)" desc="AutoCAD, LibreCAD, BricsCAD — layered" onClick={() => doExport('dxf')} />
-        <Card icon={<FileText size={20} />} title="SPICE netlist" desc="Simulate in LTspice / ngspice" onClick={() => doExport('spice')} />
-        <Card icon={<FileText size={20} />} title="KiCad netlist" desc="Parts, footprints and nets for PCB layout" onClick={() => doExport('kicad')} />
-        <Card icon={<FileSpreadsheet size={20} />} title="Bill of materials" desc="CSV with footprints, part numbers and DNP" onClick={() => doExport('bom')} />
-        <Card icon={<FileJson size={20} />} title="JSON" desc="Full circuit data for scripts & tools" onClick={() => doExport('json')} />
+        <Card icon={<Layers3 size={20} />} title="DXF (CAD)" desc="AutoCAD, LibreCAD, BricsCAD — layered" onClick={() => doExport('dxf', { ids: opts().ids })} />
+        <Card icon={<FileText size={20} />} title="SPICE netlist" desc="Simulate in LTspice / ngspice" onClick={() => doExport('spice', { ids: opts().ids })} />
+        <Card icon={<FileText size={20} />} title="KiCad netlist" desc="Parts, footprints and nets for PCB layout" onClick={() => doExport('kicad', { ids: opts().ids })} />
+        <Card icon={<FileSpreadsheet size={20} />} title="Bill of materials" desc="CSV with footprints, part numbers and DNP" onClick={() => doExport('bom', { ids: opts().ids })} />
+        <Card icon={<FileJson size={20} />} title="JSON" desc="Full circuit data for scripts & tools" onClick={() => doExport('json', { ids: opts().ids })} />
         <Card icon={<Printer size={20} />} title="Print / PDF" desc="Use “Save as PDF” in the print dialog" onClick={filePrint} />
       </div>
     </Modal>
