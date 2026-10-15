@@ -90,7 +90,7 @@ function wireThroughPoint(doc: CircuitDoc, polys: Map<string, Point[]>, pt: Poin
 
 function touchTarget(doc: CircuitDoc, polys: Map<string, Point[]>, ports: { comp: string; port: string; pt: Point }[], self: string, pt: Point): TouchTarget | null {
   for (const p of ports) if (eq(p.pt, pt)) return { kind: 'port', comp: p.comp, port: p.port };
-  for (const it of Object.values(doc.items)) if (it.type === 'junction' && eq(it, pt)) return { kind: 'junction', id: it.id };
+  for (const it of Object.values(doc.items)) if (it.type === 'junction' && !it.hidden && eq(it, pt)) return { kind: 'junction', id: it.id };
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'wire' || it.id === self || it.hidden) continue;
     for (const end of ['a', 'b'] as const) {
