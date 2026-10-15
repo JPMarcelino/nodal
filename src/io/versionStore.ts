@@ -98,6 +98,8 @@ const lastSaved = new Map<string, { t: number; doc: CircuitDoc }>();
 export async function saveVersion(doc: CircuitDoc, label = '', auto = false): Promise<Version | null> {
   const docId = doc.id;
   if (!docId) return null;
+  // a live session someone else shares is theirs: viewers keep no copies of it
+  if (S().viewOnly && docId.startsWith('room:')) return null;
   if (auto) {
     if (!Object.keys(doc.items).length) return null;
     let prev = lastSaved.get(docId)?.doc;

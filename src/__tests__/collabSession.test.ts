@@ -11,7 +11,8 @@ import type { CircuitDoc } from '../model/types';
  * WebSocket is faked and a scripted in-memory relay forwards messages between
  * peers and keeps the room snapshot, mirroring collab-server/src/index.ts:
  * `b`/`p` are broadcast to the others, `save` replaces the stored snapshot,
- * newcomers get `init` and everyone else gets `join`/`leave`.
+ * newcomers get `init` and everyone else gets `join`/`leave`. The first edit
+ * token (`?w=`) a room sees owns it; `b`/`save` from anyone else are dropped.
  */
 
 const mem = new Map<string, string>();
@@ -39,6 +40,12 @@ async function person(): Promise<Person> {
   return { store, session };
 }
 
+/** Someone else's browser: no edit tokens from rooms "this" browser started. */
+async function guest(): Promise<Person> {
+  mem.delete('nodal.collab.owned');
+  return person();
+}
+
 async function until(what: string, ok: () => boolean, ms = 8000) {
   const end = Date.now() + ms;
   while (!ok()) {
@@ -55,12 +62,14 @@ interface RoomState {
   sockets: Set<FakeSocket>;
   ids: Map<FakeSocket, string>;
   snapshot: string | null;
+  owner?: string;
 }
 
 const rooms = new Map<string, RoomState>();
 const dropRooms = new Set<string>();
 const connectLog: { room: string; at: number }[] = [];
 let nextPeer = 1;
+let droppedEdits = 0;
 
 class FakeSocket {
   static OPEN = 1;
@@ -72,6 +81,7 @@ class FakeSocket {
   onclose: (() => void) | null = null;
   id = '';
   room = '';
+  edit = false;
   constructor(url: string) {
     const m = String(url).match(/\/room\/([A-Za-z0-9_-]{8,64})/);
     this.room = m ? m[1] : 'bad-room';
@@ -87,15 +97,21 @@ class FakeSocket {
       r = { sockets: new Set(), ids: new Map(), snapshot: null };
       rooms.set(this.room, r);
     }
+    const token = String(url).match(/[?&]w=([^&]+)/)?.[1];
+    if (token && !r.owner) r.owner = token;
+    this.edit = !!token && token === r.owner;
     this.id = `p${nextPeer++}`;
     r.sockets.add(this);
     r.ids.set(this, this.id);
-    const peers = [...r.sockets].filter((s) => s !== this).map((s) => r!.ids.get(s)!);
+    const others = [...r.sockets].filter((s) => s !== this);
+    const peers = others.map((s) => r!.ids.get(s)!);
+    const editors = others.filter((s) => s.edit).map((s) => r!.ids.get(s)!);
     const snapshot = r.snapshot;
-    setTimeout(() => this.onmessage?.({ data: JSON.stringify({ t: 'init', you: this.id, peers, snapshot }) }), 0);
+    const edit = this.edit;
+    setTimeout(() => this.onmessage?.({ data: JSON.stringify({ t: 'init', you: this.id, peers, editors, edit, snapshot }) }), 0);
     for (const s of r.sockets) {
       if (s === this) continue;
-      const msg = JSON.stringify({ t: 'join', id: this.id });
+      const msg = JSON.stringify({ t: 'join', id: this.id, edit });
       setTimeout(() => s.onmessage?.({ data: msg }), 0);
     }
   }
@@ -106,6 +122,10 @@ class FakeSocket {
     try {
       msg = JSON.parse(raw);
     } catch {
+      return;
+    }
+    if ((msg.t === 'b' || msg.t === 'save') && !this.edit) {
+      droppedEdits++;
       return;
     }
     if (msg.t === 'save' && typeof msg.d === 'string') {
@@ -157,6 +177,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  droppedEdits = 0;
   rooms.clear();
   dropRooms.clear();
   connectLog.length = 0;
@@ -195,7 +216,7 @@ describe('session orchestration (fake relay)', () => {
     a.store.mutate((d) => void (d.name = 'Host circuit v2'));
     await until('snapshot refreshed', () => snapshotOf(room) !== null && snapshotOf(room) !== before);
 
-    const b = await person();
+    const b = await guest();
     people.push(b);
     await b.session.joinSession(link);
     await until('B live', () => b.session.useCollab.getState().status === 'live');
@@ -215,7 +236,7 @@ describe('session orchestration (fake relay)', () => {
     const link = await a.session.startSession();
     await until('A live', () => a.session.useCollab.getState().status === 'live');
 
-    const b = await person();
+    const b = await guest();
     people.push(b);
     await b.session.joinSession(link);
     await until('B live', () => b.session.useCollab.getState().status === 'live');
@@ -233,14 +254,14 @@ describe('session orchestration (fake relay)', () => {
       () => (b.store.S().doc.items[moved] as unknown as { x: number } | undefined)?.x === x0 + 100,
     );
 
-    b.store.mutate((d) => void delete d.items[removed]);
-    await until('delete reaches A', () => !a.store.S().doc.items[removed]);
+    a.store.mutate((d) => void delete d.items[removed]);
+    await until('delete reaches B', () => !b.store.S().doc.items[removed]);
 
-    // A's undo reverts A's own move, but not B's deletion
+    // A's undo reverts the deletion, then the move
     a.store.undo();
-    await until('undo reaches B', () => (b.store.S().doc.items[moved] as unknown as { x: number })?.x === x0);
-    expect(a.store.S().doc.items[removed]).toBeUndefined();
-    expect(b.store.S().doc.items[removed]).toBeUndefined();
+    await until('undo reaches B', () => !!b.store.S().doc.items[removed]);
+    a.store.undo();
+    await until('second undo reaches B', () => (b.store.S().doc.items[moved] as unknown as { x: number })?.x === x0);
 
     a.store.set({ cursor: { x: 123, y: 456 } });
     await until('cursor reaches B', () =>
@@ -250,13 +271,85 @@ describe('session orchestration (fake relay)', () => {
     expect(peerA.name).toBe(a.session.useCollab.getState().me.name);
   }, 30000);
 
+  it('guests can only watch, and get their own circuit back when they leave', async () => {
+    const a = await person();
+    people.push(a);
+    a.store.mutate((d) => void (d.name = 'Shared'));
+    const link = await a.session.startSession();
+    await until('A live', () => a.session.useCollab.getState().status === 'live');
+    expect(a.store.S().viewOnly).toBe(false);
+
+    const b = await guest();
+    people.push(b);
+    b.store.replaceDoc({ ...createDoc('Mine'), id: 'mine' });
+    await b.session.joinSession(link);
+    await until('B live', () => b.session.useCollab.getState().status === 'live');
+    await until('B has the shared circuit', () => b.store.S().doc.name === 'Shared');
+    expect(b.store.S().viewOnly).toBe(true);
+    const peerA = Object.values(b.session.useCollab.getState().peers)[0];
+    expect(peerA.edit).toBe(true);
+    await until('A sees B as a viewer', () => Object.values(a.session.useCollab.getState().peers).some((p) => p.edit === false));
+
+    // the store refuses B's edits ...
+    const shared = b.store.S().doc;
+    b.store.mutate((d) => void (d.name = 'Hijacked'));
+    expect(b.store.S().doc).toBe(shared);
+    // ... anything that slips past is put back ...
+    b.store.set({ doc: { ...shared, name: 'Hijacked' } });
+    expect(b.store.S().doc.name).toBe('Shared');
+    // ... and the relay drops edits sent without the owner's token
+    const room = a.session.parseLink(link)!.room;
+    const sockB = [...rooms.get(room)!.sockets].find((s) => !s.edit)!;
+    sockB.send(JSON.stringify({ t: 'b', d: 'x' }));
+    sockB.send(JSON.stringify({ t: 'save', d: 'x' }));
+    expect(droppedEdits).toBe(2);
+    expect(snapshotOf(room)).not.toBe('x');
+
+    // A's edits still reach B
+    a.store.mutate((d) => void (d.name = 'Shared v2'));
+    await until('edit reaches B', () => b.store.S().doc.name === 'Shared v2');
+    expect(a.store.S().doc.name).toBe('Shared v2');
+
+    await b.session.leaveSession();
+    people.splice(people.indexOf(b), 1);
+    expect(b.store.S().doc.name).toBe('Mine');
+    expect(b.store.S().doc.id).toBe('mine');
+    expect(b.store.S().viewOnly).toBe(false);
+    b.store.mutate((d) => void (d.name = 'Mine, edited'));
+    expect(b.store.S().doc.name).toBe('Mine, edited');
+  }, 30000);
+
+  it('the host can edit again after a reload; a token-less newcomer still only watches', async () => {
+    const a = await person();
+    people.push(a);
+    const link = await a.session.startSession();
+    await until('A live', () => a.session.useCollab.getState().status === 'live');
+    await a.session.leaveSession();
+    people.splice(0);
+
+    // same browser (token kept): joining the link edits
+    const a2 = await person();
+    people.push(a2);
+    await a2.session.joinSession(link);
+    await until('A2 live', () => a2.session.useCollab.getState().status === 'live');
+    expect(a2.store.S().viewOnly).toBe(false);
+    a2.store.mutate((d) => void (d.name = 'Back again'));
+
+    const c = await guest();
+    people.push(c);
+    await c.session.joinSession(link);
+    await until('C live', () => c.session.useCollab.getState().status === 'live');
+    await until('C converged', () => c.store.S().doc.name === 'Back again');
+    expect(c.store.S().viewOnly).toBe(true);
+  }, 30000);
+
   it('mirrors the followed peer view; a local view change unfollows', async () => {
     const a = await person();
     people.push(a);
     const link = await a.session.startSession();
     await until('A live', () => a.session.useCollab.getState().status === 'live');
 
-    const b = await person();
+    const b = await guest();
     people.push(b);
     await b.session.joinSession(link);
     await until('B live', () => b.session.useCollab.getState().status === 'live');
@@ -283,7 +376,7 @@ describe('session orchestration (fake relay)', () => {
     const link = await a.session.startSession();
     await until('A live', () => a.session.useCollab.getState().status === 'live');
 
-    const b = await person();
+    const b = await guest();
     people.push(b);
     await b.session.joinSession(link);
     await until('B live', () => b.session.useCollab.getState().status === 'live');

@@ -1,7 +1,7 @@
 import { Copy, LogIn, LogOut, Radio } from 'lucide-react';
 import { useState } from 'react';
 import { PEER_COLORS, joinSession, leaveSession, parseLink, setMyColor, setMyName, startSession, useCollab } from '../collab/session';
-import { toast } from '../store/store';
+import { toast, useStore } from '../store/store';
 
 async function copyLink(link: string) {
   try {
@@ -18,6 +18,7 @@ export function LiveSession() {
   const link = useCollab((s) => s.link);
   const me = useCollab((s) => s.me);
   const peers = useCollab((s) => s.peers);
+  const viewOnly = useStore((s) => s.viewOnly);
   const [paste, setPaste] = useState('');
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState(me.name);
@@ -41,10 +42,12 @@ export function LiveSession() {
           <b>Live collaboration</b>
           <div className="muted small">
             {status === 'off'
-              ? 'Share a link and edit this circuit together, with everyone’s cursor shown live. The circuit is end-to-end encrypted: the key is in the link, so only people you send it to can open it.'
-              : count
-                ? `${count} other ${count === 1 ? 'person' : 'people'} here. Click an avatar in the top bar to follow their view.`
-                : 'Nobody else is here yet. Send them the link.'}
+              ? 'Share a view-only link: others watch this circuit live as you edit it, with everyone’s cursor shown. They can’t change it, and it closes for them when they leave. The circuit is end-to-end encrypted: the key is in the link, so only people you send it to can open it.'
+              : viewOnly
+                ? 'You are viewing someone else’s circuit. You can’t change it, and when you leave your own circuit comes back.'
+                : count
+                  ? `${count} other ${count === 1 ? 'person' : 'people'} here. Click an avatar in the top bar to follow their view.`
+                  : 'Nobody else is here yet. Send them the link.'}
           </div>
         </div>
       </div>

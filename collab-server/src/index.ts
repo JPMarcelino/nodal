@@ -6,13 +6,17 @@ import { DurableObject } from 'cloudflare:workers';
  * it handles is end-to-end encrypted by the clients (the key never leaves the
  * share link's #fragment), so it can't read any of it.
  *
+ * Share links are view-only. Whoever opens a room connects with a secret
+ * edit token (`?w=`) that never goes into the link; the room keeps its hash,
+ * and only connections presenting it may change the circuit.
+ *
  * Client → server (JSON text frames):
- *   { t: 'b', d }     scene update, relayed to everyone else
+ *   { t: 'b', d }     scene update, relayed to everyone else (editors only)
  *   { t: 'p', d }     presence (cursor, selection, viewport), relayed
- *   { t: 'save', d }  replace the stored room state
+ *   { t: 'save', d }  replace the stored room state (editors only)
  * Server → client:
- *   { t: 'init', you, peers, snapshot }   on connect
- *   { t: 'join' | 'leave', id }
+ *   { t: 'init', you, peers, editors, edit, snapshot }   on connect
+ *   { t: 'join', id, edit } | { t: 'leave', id }
  *   { t: 'b' | 'p', from, d }
  */
 
@@ -39,17 +43,29 @@ export default {
 };
 
 export class Room extends DurableObject<Env> {
-  async fetch(): Promise<Response> {
+  async fetch(req: Request): Promise<Response> {
     const sockets = this.ctx.getWebSockets();
     if (sockets.length >= MAX_PEERS) return new Response('This session is full\n', { status: 429 });
+    const edit = await this.canEdit(new URL(req.url).searchParams.get('w'));
     const { 0: client, 1: server } = new WebSocketPair();
     const id = crypto.randomUUID().slice(0, 8);
     // hibernatable: the object can sleep between messages without dropping connections
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ id });
-    server.send(JSON.stringify({ t: 'init', you: id, peers: sockets.map(peerId), snapshot: await this.loadSnapshot() }));
-    this.broadcast(JSON.stringify({ t: 'join', id }), server);
+    server.serializeAttachment({ id, edit } satisfies Attachment);
+    const editors = sockets.filter((ws) => attachment(ws).edit).map(peerId);
+    server.send(JSON.stringify({ t: 'init', you: id, peers: sockets.map(peerId), editors, edit, snapshot: await this.loadSnapshot() }));
+    this.broadcast(JSON.stringify({ t: 'join', id, edit }), server);
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** The first edit token a room sees becomes its owner's; later connections must present the same one. */
+  private async canEdit(token: string | null): Promise<boolean> {
+    if (!token || token.length < 16 || token.length > 128) return false;
+    const hash = await sha256(token);
+    const owner = await this.ctx.storage.get<string>('owner');
+    if (owner) return owner === hash;
+    await this.ctx.storage.put('owner', hash);
+    return true;
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
@@ -61,7 +77,9 @@ export class Room extends DurableObject<Env> {
       return;
     }
     if (typeof m.d !== 'string') return;
-    if (m.t === 'b' || m.t === 'p') this.broadcast(JSON.stringify({ t: m.t, from: peerId(ws), d: m.d }), ws);
+    if (m.t === 'p') this.broadcast(JSON.stringify({ t: m.t, from: peerId(ws), d: m.d }), ws);
+    else if (!attachment(ws).edit) return;
+    else if (m.t === 'b') this.broadcast(JSON.stringify({ t: m.t, from: peerId(ws), d: m.d }), ws);
     else if (m.t === 'save' && m.d.length <= MAX_SNAPSHOT) await this.saveSnapshot(m.d);
   }
 
@@ -119,6 +137,21 @@ export class Room extends DurableObject<Env> {
   }
 }
 
+interface Attachment {
+  id: string;
+  edit: boolean;
+}
+
+function attachment(ws: WebSocket): Attachment {
+  const a = ws.deserializeAttachment() as Partial<Attachment> | null;
+  return { id: a?.id ?? '', edit: a?.edit === true };
+}
+
 function peerId(ws: WebSocket): string {
-  return (ws.deserializeAttachment() as { id: string } | null)?.id ?? '';
+  return attachment(ws).id;
+}
+
+async function sha256(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }

@@ -1,6 +1,6 @@
 import { Users } from 'lucide-react';
 import { follow, useCollab, type Me, type Peer } from '../collab/session';
-import { set } from '../store/store';
+import { set, useStore } from '../store/store';
 
 const initials = (name: string) =>
   name
@@ -24,6 +24,7 @@ export function CollabBar() {
   const me = useCollab((s) => s.me);
   const peers = useCollab((s) => s.peers);
   const following = useCollab((s) => s.following);
+  const viewOnly = useStore((s) => s.viewOnly);
   const openShare = () => set({ dialog: 'share' });
   if (status === 'off') {
     return (
@@ -34,12 +35,12 @@ export function CollabBar() {
   }
   const list = Object.values(peers);
   const shown = list.slice(0, 5);
-  const label = status === 'live' ? 'Live' : status === 'connecting' ? 'Connecting…' : 'Reconnecting…';
+  const label = status === 'live' ? (viewOnly ? 'Live · View only' : 'Live') : status === 'connecting' ? 'Connecting…' : 'Reconnecting…';
   return (
     <div className="collab-bar">
       <div className="avatars">
         {shown.map((p) => (
-          <Avatar key={p.id} who={p} ring={following === p.id} title={following === p.id ? `${p.name} (click to stop following)` : `${p.name} (click to follow)`} onClick={() => follow(p.id)} />
+          <Avatar key={p.id} who={p} ring={following === p.id} title={`${p.name}${p.edit ? '' : ' (viewing)'}, click to ${following === p.id ? 'stop following' : 'follow'}`} onClick={() => follow(p.id)} />
         ))}
         {list.length > shown.length && (
           <button className="avatar more" onClick={openShare} title={list.slice(5).map((p) => p.name).join(', ')}>

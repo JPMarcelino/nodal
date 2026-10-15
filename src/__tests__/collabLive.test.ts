@@ -43,17 +43,19 @@ afterAll(async () => {
 });
 
 describe.skipIf(!RUN)('live session (needs a relay)', () => {
-  it('syncs edits, deletions, undo and cursors between two people, and keeps the room', async () => {
+  it('syncs the host’s edits and cursors to a view-only guest, and keeps the room', async () => {
     const a = await person();
     people.push(a);
     const link = await a.session.startSession();
     await until('A live', () => a.session.useCollab.getState().status === 'live');
 
+    // someone else's browser: no edit token for the room
+    mem.delete('nodal.collab.owned');
     const b = await person();
     people.push(b);
     await b.session.joinSession(link);
     await until('B live', () => b.session.useCollab.getState().status === 'live');
-    expect(b.store.S().doc.items).toEqual(a.store.S().doc.items);
+    await until('B converged', () => JSON.stringify(b.store.S().doc.items) === JSON.stringify(a.store.S().doc.items));
 
     const ids = Object.keys(a.store.S().doc.items).filter((id) => a.store.S().doc.items[id].type === 'component');
     const [moved, removed] = ids;
@@ -62,14 +64,15 @@ describe.skipIf(!RUN)('live session (needs a relay)', () => {
     a.store.mutate((d) => void ((d.items[moved] as { x: number }).x = x0 + 100));
     await until('move reaches B', () => (b.store.S().doc.items[moved] as { x: number }).x === x0 + 100);
 
+    // the guest can't delete
+    expect(b.store.S().viewOnly).toBe(true);
     b.store.mutate((d) => void delete d.items[removed]);
-    await until('delete reaches A', () => !a.store.S().doc.items[removed]);
+    expect(b.store.S().doc.items[removed]).toBeDefined();
 
-    // A's undo reverts A's own move, but not B's deletion
+    a.store.mutate((d) => void delete d.items[removed]);
+    await until('delete reaches B', () => !b.store.S().doc.items[removed]);
     a.store.undo();
-    await until('undo reaches B', () => (b.store.S().doc.items[moved] as { x: number }).x === x0);
-    expect(a.store.S().doc.items[removed]).toBeUndefined();
-    expect(b.store.S().doc.items[removed]).toBeUndefined();
+    await until('undo reaches B', () => !!b.store.S().doc.items[removed]);
 
     a.store.set({ cursor: { x: 123, y: 456 } });
     await until('cursor reaches B', () => Object.values(b.session.useCollab.getState().peers).some((p) => p.cursor?.x === 123 && p.cursor?.y === 456));
@@ -82,6 +85,7 @@ describe.skipIf(!RUN)('live session (needs a relay)', () => {
     await a.session.leaveSession();
 
     // the room keeps the circuit after everyone has left
+    mem.delete('nodal.collab.owned');
     const c = await person();
     people.push(c);
     await c.session.joinSession(link);

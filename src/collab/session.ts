@@ -4,7 +4,7 @@ import { createDoc } from '../model/doc';
 import type { CircuitDoc, Point } from '../model/types';
 import * as A from '../store/actions';
 import { X, useExplain } from '../store/explain';
-import { S, applyExternal, pauseAutosave, replaceDoc, set as setApp, toast, useStore } from '../store/store';
+import { S, applyExternal, pauseAutosave, replaceDoc, set as setApp, toast, useStore, type AppState } from '../store/store';
 import { importRoomKey, newRoomKey, open, randomId, seal } from './crypto';
 import { SyncState, changedKeys, docFromEntries, writeEntries, type Entry } from './sync';
 
@@ -12,6 +12,11 @@ import { SyncState, changedKeys, docFromEntries, writeEntries, type Entry } from
  * A live session: the WebSocket to the room relay, encryption, document sync
  * and presence (cursors, selections, viewports). See sync.ts for the merge
  * rules and collab-server/ for the relay.
+ *
+ * Share links are view-only. Whoever starts a session keeps a secret edit
+ * token for the room (in localStorage, never in the link) and the relay only
+ * accepts changes from connections that present it. Viewers get their own
+ * circuit back when they leave, and keep no copy of the shared one.
  */
 
 export const COLLAB_URL: string = import.meta.env.VITE_COLLAB_URL ?? 'wss://nodal-collab.nodal-collab.workers.dev';
@@ -34,6 +39,8 @@ export interface Peer {
   view?: PeerView;
   /** Laser pointer: 1 = laser tool on, 2 = button held (draws a trail). */
   laser?: number;
+  /** Can change the circuit (the person who shared it), rather than only watch. */
+  edit?: boolean;
 }
 
 export interface Me {
@@ -68,6 +75,22 @@ function loadMe(): Me {
   return me;
 }
 
+/** Edit tokens of the rooms this browser started, by room id. */
+const OWNED_KEY = 'nodal.collab.owned';
+function ownedTokens(): Record<string, string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(OWNED_KEY) ?? 'null') as Record<string, string> | null;
+    return raw && typeof raw === 'object' ? raw : {};
+  } catch {
+    return {};
+  }
+}
+function rememberToken(r: string, token: string) {
+  // the newest rooms only: older sessions can still be watched, just not edited from here
+  const kept = Object.entries(ownedTokens()).filter(([id]) => id !== r).slice(-49);
+  localStorage.setItem(OWNED_KEY, JSON.stringify(Object.fromEntries([...kept, [r, token]])));
+}
+
 export const useCollab = create<CollabState>(() => ({ status: 'off', link: null, me: loadMe(), peers: {}, following: null }));
 const C = () => useCollab.getState();
 const setC = (p: Partial<CollabState> | ((s: CollabState) => Partial<CollabState>)) => useCollab.setState(p);
@@ -85,6 +108,10 @@ let sync = new SyncState();
 let lastSynced: CircuitDoc | null = null;
 /** Guests replace their document with the room's on their first connect. */
 let awaitingRoom = false;
+/** Secret that lets this client edit the room (only the person who started it has one). */
+let editToken: string | undefined;
+/** What a guest had open before joining, put back when they leave. */
+let ownDoc: Pick<AppState, 'doc' | 'past' | 'future' | 'filePath' | 'dirty' | 'view'> | null = null;
 let connectedOnce = false;
 let failures = 0;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -124,6 +151,7 @@ export function parseLink(text: string): { room: string; key: string } | null {
 export async function startSession(): Promise<string> {
   const r = randomId(12);
   const k = newRoomKey();
+  rememberToken(r, randomId(24));
   await connect(r, k, false);
   return linkFor(r, k);
 }
@@ -145,8 +173,9 @@ export async function leaveSession() {
   flushLocal();
   if (saveTimer) await saveNow();
   await outbox;
+  const viewer = S().viewOnly;
   shutdown();
-  toast('Left the live session. The circuit stays open here.', 'info');
+  toast(viewer ? 'Left the live session. Your own circuit is back.' : 'Left the live session. The circuit stays open here.', 'info');
 }
 
 export function setMyName(name: string) {
@@ -192,8 +221,13 @@ async function connect(r: string, k: string, guest: boolean) {
     return;
   }
   room = r;
+  editToken = ownedTokens()[r];
   sync = new SyncState();
   awaitingRoom = guest;
+  if (guest) {
+    const s = S();
+    ownDoc = { doc: s.doc, past: s.past, future: s.future, filePath: s.filePath, dirty: s.dirty, view: s.view };
+  }
   connectedOnce = false;
   failures = 0;
   if (!guest) {
@@ -208,7 +242,7 @@ async function connect(r: string, k: string, guest: boolean) {
 }
 
 function openSocket() {
-  const sock = new WebSocket(`${COLLAB_URL}/room/${room}`);
+  const sock = new WebSocket(`${COLLAB_URL}/room/${room}${editToken ? `?w=${editToken}` : ''}`);
   ws = sock;
   sock.onmessage = (e) => {
     if (sock !== ws || typeof e.data !== 'string') return;
@@ -242,6 +276,11 @@ function shutdown() {
   key = null;
   lastSynced = null;
   sync = new SyncState();
+  // a viewer's copy of the shared circuit goes away with the session
+  if (ownDoc && S().viewOnly) quietly(() => setApp({ ...ownDoc!, selection: [], scope: undefined, highlight: null, wirePart: null }));
+  ownDoc = null;
+  awaitingRoom = false;
+  setApp({ viewOnly: false });
   pauseAutosave(false);
   setC({ status: 'off', link: null, peers: {}, following: null });
   if (!isDesktop() && parseLink(location.hash)) history.replaceState(null, '', location.pathname + location.search);
@@ -249,7 +288,7 @@ function shutdown() {
 
 function send(t: 'b' | 'p' | 'save', data: unknown) {
   const k = key;
-  if (!k) return;
+  if (!k || (t !== 'p' && S().viewOnly)) return;
   outbox = outbox
     .then(async () => {
       const d = await seal(k, data);
@@ -259,8 +298,9 @@ function send(t: 'b' | 'p' | 'save', data: unknown) {
 }
 
 type ServerMsg =
-  | { t: 'init'; you: string; peers: string[]; snapshot: string | null }
-  | { t: 'join' | 'leave'; id: string }
+  | { t: 'init'; you: string; peers: string[]; editors?: string[]; edit?: boolean; snapshot: string | null }
+  | { t: 'join'; id: string; edit?: boolean }
+  | { t: 'leave'; id: string }
   | { t: 'b' | 'p'; from: string; d: string };
 
 async function handle(msg: ServerMsg) {
@@ -270,13 +310,15 @@ async function handle(msg: ServerMsg) {
     case 'init': {
       myId = msg.you;
       const peers: Record<string, Peer> = {};
-      for (const id of msg.peers) peers[id] = { id, name: '…', color: '#868e96', selection: [] };
+      for (const id of msg.peers) peers[id] = { id, name: '…', color: '#868e96', selection: [], edit: msg.editors?.includes(id) };
       const snapshot = msg.snapshot ? await open<Entry[]>(k, msg.snapshot).catch(() => null) : null;
       if (msg.snapshot && !snapshot) {
         shutdown();
         toast('Could not open this session: the link key does not match', 'error');
         return;
       }
+      // set before the shared circuit arrives, so none of it lands in this viewer's version history
+      setApp({ viewOnly: msg.edit !== true });
       if (awaitingRoom) {
         awaitingRoom = false;
         sync.clear();
@@ -300,11 +342,13 @@ async function handle(msg: ServerMsg) {
       break;
     }
     case 'join': {
-      setC((s) => ({ peers: { ...s.peers, [msg.id]: { id: msg.id, name: '…', color: '#868e96', selection: [] } } }));
+      setC((s) => ({ peers: { ...s.peers, [msg.id]: { id: msg.id, name: '…', color: '#868e96', selection: [], edit: msg.edit } } }));
       sendPresence();
-      // the longest-connected peer (lowest id is as good as any stable choice) catches the newcomer up
-      const others = Object.keys(C().peers).filter((id) => id !== msg.id);
-      if ([myId, ...others].sort()[0] === myId) send('b', sync.snapshot(S().doc));
+      // one editor (lowest id is as good as any stable choice) catches the newcomer up; viewers can't
+      const editors = Object.values(C().peers)
+        .filter((p) => p.edit && p.id !== msg.id)
+        .map((p) => p.id);
+      if (!S().viewOnly && [myId, ...editors].sort()[0] === myId) send('b', sync.snapshot(S().doc));
       break;
     }
     case 'leave':
@@ -330,6 +374,7 @@ async function handle(msg: ServerMsg) {
         selection: Array.isArray(p.selection) ? p.selection : [],
         view: p.view,
         laser: p.laser === 1 || p.laser === 2 ? p.laser : 0,
+        edit: C().peers[msg.from]?.edit,
       };
       setC((s) => ({ peers: { ...s.peers, [msg.from]: peer } }));
       if (C().following === msg.from && peer.view) followView(peer.view);
@@ -382,9 +427,23 @@ async function saveNow() {
   await outbox;
 }
 
+let lastViewOnlyToast = 0;
+
+/** Undoes a change a viewer made by some route the store's own guards don't cover (opening a file, say). */
+function revertViewerEdit() {
+  if (!lastSynced) return;
+  const doc = lastSynced;
+  quietly(() => setApp({ doc, past: [], future: [], filePath: null, dirty: false }));
+  if (Date.now() - lastViewOnlyToast > 4000) {
+    lastViewOnlyToast = Date.now();
+    toast('This live session is view-only. Leave it to work on your own circuit.', 'info');
+  }
+}
+
 useStore.subscribe((s, prev) => {
   if (!live() || applying) return;
-  if (s.doc !== prev.doc && !flushTimer) flushTimer = setTimeout(flushLocal, 50);
+  if (s.doc !== prev.doc && s.viewOnly && !awaitingRoom) revertViewerEdit();
+  else if (s.doc !== prev.doc && !flushTimer) flushTimer = setTimeout(flushLocal, 50);
   if (s.view !== prev.view && !followApplying && C().following) setC({ following: null });
   if (s.cursor !== prev.cursor || s.selection !== prev.selection || s.view !== prev.view || s.canvasSize !== prev.canvasSize || s.tool !== prev.tool) schedulePresence();
 });

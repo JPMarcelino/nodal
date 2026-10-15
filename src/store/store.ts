@@ -118,6 +118,8 @@ export interface AppState {
   wireBrush: { color?: string; width?: number; radius?: number; dash?: 'solid' | 'dashed' | 'dotted' } | null;
   /** When set, the next drag on the canvas defines an export rectangle. */
   exportArea: ExportAreaJob | null;
+  /** Viewing someone else's live session: the circuit can't be changed. */
+  viewOnly: boolean;
 }
 
 const LS = {
@@ -200,6 +202,7 @@ export const useStore = create<AppState>(() => ({
   canvasSize: { w: 800, h: 600 },
   wireBrush: null,
   exportArea: null,
+  viewOnly: false,
 }));
 
 export const S = () => useStore.getState();
@@ -214,6 +217,10 @@ let gestureBase: CircuitDoc | null = null;
 
 export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: string[]) {
   const s = S();
+  if (s.viewOnly) {
+    if (selection) set({ selection });
+    return;
+  }
   // the recipe's return value is ignored on purpose: Immer would otherwise use it as the new
   // document (e.g. `(d) => (d.settings.hops = 'arc')` returns 'arc' when nothing changed)
   const changed = produce(s.doc, (d) => {
@@ -250,7 +257,7 @@ export function rebaseGesture() {
 
 /** Re-applies a recipe against the gesture's starting document. */
 export function gestureUpdate(recipe: (d: Draft<CircuitDoc>, base: CircuitDoc) => void) {
-  if (!gestureBase) return;
+  if (!gestureBase || S().viewOnly) return;
   const base = gestureBase;
   set({
     doc: produce(base, (d) => {
@@ -265,7 +272,7 @@ export function endGesture(commit = true) {
   gestureUndo = null;
   if (!base) return;
   const s = S();
-  if (!commit) {
+  if (!commit || s.viewOnly) {
     set({ doc: base });
     return;
   }
@@ -279,14 +286,14 @@ export const gestureBaseDoc = () => gestureBase;
 
 export function undo() {
   const s = S();
-  if (!s.past.length) return;
+  if (!s.past.length || s.viewOnly) return;
   const prev = s.past[s.past.length - 1];
   set({ doc: prev, past: s.past.slice(0, -1), future: [s.doc, ...s.future], dirty: true, selection: s.selection.filter((id) => prev.items[id]), wirePart: null });
 }
 
 export function redo() {
   const s = S();
-  if (!s.future.length) return;
+  if (!s.future.length || s.viewOnly) return;
   const next = s.future[0];
   set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]), wirePart: null });
 }
