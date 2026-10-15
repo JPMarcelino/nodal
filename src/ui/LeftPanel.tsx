@@ -1,6 +1,6 @@
 import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, History, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { drawOrder } from '../model/doc';
+import { drawOrderCached } from '../model/doc';
 import { computeNets } from '../model/netlist';
 import { reorderItem } from '../model/ops';
 import { getSymbol, instanceSymbol, librarySymbols, variantDefs } from '../model/registry';
@@ -324,7 +324,7 @@ function Layers() {
     for (const n of computeNets(doc)) for (const w of n.wires) m.set(w, n.name);
     return m;
   }, [doc]);
-  const order = useMemo(() => drawOrder(doc), [doc]);
+  const order = useMemo(() => drawOrderCached(doc), [doc]);
   const filtering = filter !== 'all' || vis !== 'any' || lock !== 'any';
   // front-most first, like most layer panels
   const items = Object.values(doc.items)

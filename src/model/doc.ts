@@ -218,6 +218,16 @@ export function drawOrder(doc: CircuitDoc): Map<string, number> {
   return new Map(all.map((e, rank) => [e.id, rank]));
 }
 
+const orderCache = new WeakMap<CircuitDoc, Map<string, number>>();
+
+export function drawOrderCached(doc: CircuitDoc): Map<string, number> {
+  const hit = orderCache.get(doc);
+  if (hit) return hit;
+  const order = drawOrder(doc);
+  orderCache.set(doc, order);
+  return order;
+}
+
 /** Which of a part's labels are drawn, after the document-wide hide switches. */
 export function labelsShown(settings: Pick<DocSettings, 'hideRefs' | 'hideValues'>, c: Pick<ComponentItem, 'showRef' | 'showValue'>, def: Pick<SymbolDef, 'valueIsLabel'>) {
   return { ref: c.showRef && !settings.hideRefs, value: c.showValue && (!settings.hideValues || !!def.valueIsLabel) };

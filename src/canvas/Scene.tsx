@@ -1,11 +1,11 @@
 import { memo, useMemo, useRef } from 'react';
 import { componentBounds, measureText, segmentIntersectsRect, sideVector, toWorld } from '../model/geometry';
-import { drawOrder, labelsShown } from '../model/doc';
-import { touchingPins } from '../model/netlist';
+import { drawOrderCached, labelsShown } from '../model/doc';
+import { refreshTouching, touchingCells, touchingFromCells } from '../model/netlist';
 import { isDnp } from '../model/partFields';
 import { instanceSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
-import { buildWirePath, wireLabelSpot, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
+import { buildWirePath, wireLabelSpot, endpointInfo, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wireCrossingsChanged, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
 import { SheetFrame } from './SheetFrame';
 import { RichText } from './RichText';
 import { hasMath } from '../model/latex';
@@ -58,6 +58,8 @@ export interface SceneData {
   junctionDegree: Map<string, number>;
   /** Pins ("comp:port") resting on another part's pin, which connects them. */
   touching: Set<string>;
+  /** Pin positions by cell, backing incremental touching updates. */
+  touchCells: Map<string, string[]>;
 }
 
 export function useSceneData(doc: CircuitDoc): SceneData {
@@ -75,46 +77,51 @@ export function updateSceneData(prevDoc: CircuitDoc, prev: SceneData, doc: Circu
   const before = prevDoc.items;
   const items = doc.items;
   let wiresSame = true;
-  let compsSame = true;
   let polysSame = true;
   const polys = new Map<string, Point[]>();
+  const changed = new Set<string>();
+  const moved = new Set<string>();
   for (const id of Object.keys(items)) {
     const it = items[id];
     const was = before[id];
     if (was !== it) {
-      if (it.type === 'wire' || was?.type === 'wire') wiresSame = false;
-      if (it.type === 'component' || was?.type === 'component') compsSame = false;
+      if (it.type === 'wire' || was?.type === 'wire') {
+        wiresSame = false;
+        changed.add(id);
+      }
+      if (it.type === 'component' || was?.type === 'component') moved.add(id);
     }
     if (it.type !== 'wire' || it.hidden) continue;
     let pts: Point[] | undefined;
     if (was === it) {
       let stable = true;
       for (const ep of [it.a, it.b]) {
-        if (ep.kind === 'port' && before[ep.comp] !== items[ep.comp]) {
-          stable = false;
-          break;
-        }
-        if (ep.kind === 'junction' && before[ep.id] !== items[ep.id]) {
+        if (ep.kind !== 'port' && ep.kind !== 'junction') continue;
+        if (before[ep.kind === 'port' ? ep.comp : ep.id] === items[ep.kind === 'port' ? ep.comp : ep.id]) continue;
+        const p0 = endpointInfo(prevDoc, ep);
+        const p1 = endpointInfo(doc, ep);
+        if (!p0 || !p1 || p0.pt.x !== p1.pt.x || p0.pt.y !== p1.pt.y || p0.dir.x !== p1.dir.x || p0.dir.y !== p1.dir.y) {
           stable = false;
           break;
         }
       }
       if (stable) pts = prev.polys.get(id);
     }
-    if (pts) {
-      if (prev.polys.get(id) !== pts) polysSame = false;
-    } else {
+    if (!pts) {
       pts = wirePolyline(doc, it);
       polysSame = false;
+      changed.add(id);
     }
     polys.set(id, pts);
   }
-  if (wiresSame || compsSame) {
+  if (!wiresSame || moved.size > 0 || Object.keys(items).length !== Object.keys(before).length) {
     for (const id of Object.keys(before)) {
       if (items[id] !== undefined) continue;
       const gone = before[id];
-      if (gone.type === 'wire') wiresSame = false;
-      else if (gone.type === 'component') compsSame = false;
+      if (gone.type === 'wire') {
+        wiresSame = false;
+        changed.add(id);
+      } else if (gone.type === 'component') moved.add(id);
     }
   }
   if (polys.size !== prev.polys.size) polysSame = false;
@@ -132,11 +139,13 @@ export function updateSceneData(prevDoc: CircuitDoc, prev: SceneData, doc: Circu
     }
   }
   const layers = wiresSame ? prev.layers : hopLayerMap(Object.values(items));
-  const crossings = polysSame ? prev.crossings : wireCrossings(polys);
+  const crossings = polysSame
+    ? prev.crossings
+    : [...prev.crossings.filter((c) => !changed.has(c.a.wire) && !changed.has(c.b.wire)), ...wireCrossingsChanged(polys, changed)];
   const hops = polysSame ? prev.hops : doc.settings.hops === 'none' ? new Map<string, Hop[]>() : hopsFromCrossings(crossings, doc.settings.hopSize, layers);
-  const touching = compsSame ? prev.touching : new Set(touchingPins(doc).flat());
-  if (wiresSame && compsSame && polysSame) return prev;
-  return { polys, hops, crossings, layers, portDegree, junctionDegree, touching };
+  const touch = refreshTouching(prevDoc, prev.touchCells, prev.touching, doc, moved);
+  if (wiresSame && polysSame && touch.same) return prev;
+  return { polys, hops, crossings, layers, portDegree, junctionDegree, touching: touch.touching, touchCells: touch.cells };
 }
 
 export function computeSceneData(doc: CircuitDoc): SceneData {
@@ -155,8 +164,9 @@ export function computeSceneData(doc: CircuitDoc): SceneData {
   const crossings = wireCrossings(polys);
   const layers = hopLayerMap(Object.values(doc.items));
   const hops = doc.settings.hops === 'none' ? new Map<string, Hop[]>() : hopsFromCrossings(crossings, doc.settings.hopSize, layers);
-  const touching = new Set(touchingPins(doc).flat());
-  return { polys, hops, crossings, layers, portDegree, junctionDegree, touching };
+  const touchCells = touchingCells(doc);
+  const touching = touchingFromCells(touchCells);
+  return { polys, hops, crossings, layers, portDegree, junctionDegree, touching, touchCells };
 }
 
 /* ------------------------------------------------------------------ */
@@ -602,7 +612,7 @@ export function Scene({ doc, data, palette, highlight, frames = false }: { doc: 
   const below = shapes.filter((s) => s.layer === 'below');
   const above = shapes.filter((s) => s.layer === 'above');
   // front-to-back order from the layers panel (z, else creation order)
-  const order = drawOrder(doc);
+  const order = drawOrderCached(doc);
   const byOrder = (a: { id: string }, b: { id: string }) => order.get(a.id)! - order.get(b.id)!;
   const wires = items.filter((i): i is WireItem => i.type === 'wire').sort(byOrder);
   const circuit = items.filter((i): i is WireItem | ComponentItem => i.type === 'wire' || i.type === 'component').sort(byOrder);

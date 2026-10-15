@@ -108,6 +108,55 @@ export interface Crossing {
 
 /** Every point where two different wires cross (touching at an end or corner is a connection, not a crossing). */
 export function wireCrossings(polys: Map<string, Point[]>): Crossing[] {
+  const segs = wireSegs(polys);
+  segs.sort((s, t) => s.minX - t.minX);
+  const out: Crossing[] = [];
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    for (let j = i + 1; j < segs.length && segs[j].minX <= s.maxX; j++) {
+      const t = segs[j];
+      if (t.minY > s.maxY || t.maxY < s.minY) continue;
+      const c = pairCrossing(s, t);
+      if (c) out.push(c);
+    }
+  }
+  return out;
+}
+
+/**
+ * Crossings with at least one side in `changed`: every pair the full sweep
+ * would report for those wires, without re-testing the unchanged remainder.
+ */
+export function wireCrossingsChanged(polys: Map<string, Point[]>, changed: Set<string>): Crossing[] {
+  const targets = [...changed].filter((id) => polys.has(id)).sort();
+  if (!targets.length) return [];
+  const byWire = new Map<string, Seg[]>();
+  for (const s of wireSegs(polys)) {
+    const list = byWire.get(s.wire);
+    if (list) list.push(s);
+    else byWire.set(s.wire, [s]);
+  }
+  const ids = [...polys.keys()].sort();
+  const out: Crossing[] = [];
+  for (const w of targets) {
+    const a = byWire.get(w) ?? [];
+    for (const v of ids) {
+      if (v === w) continue;
+      if (changed.has(v) && v < w) continue;
+      const b = byWire.get(v) ?? [];
+      for (const s of a) {
+        for (const t of b) {
+          if (s.maxX < t.minX || t.maxX < s.minX || s.maxY < t.minY || t.maxY < s.minY) continue;
+          const c = pairCrossing(s, t);
+          if (c) out.push(c);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function wireSegs(polys: Map<string, Point[]>): Seg[] {
   const segs: Seg[] = [];
   for (const [wire, pts] of polys) {
     for (let i = 0; i < pts.length - 1; i++) {
@@ -126,30 +175,24 @@ export function wireCrossings(polys: Map<string, Point[]>): Crossing[] {
       });
     }
   }
-  segs.sort((s, t) => s.minX - t.minX);
-  const out: Crossing[] = [];
+  return segs;
+}
+
+function pairCrossing(s: Seg, t: Seg): Crossing | null {
+  if (s.wire === t.wire) return null;
+  const hit = segmentIntersection(s.a, s.b, t.a, t.b);
+  if (!hit) return null;
   const margin = 0.5;
-  for (let i = 0; i < segs.length; i++) {
-    const s = segs[i];
-    for (let j = i + 1; j < segs.length && segs[j].minX <= s.maxX; j++) {
-      const t = segs[j];
-      if (s.wire === t.wire) continue;
-      if (t.minY > s.maxY || t.maxY < s.minY) continue;
-      const hit = segmentIntersection(s.a, s.b, t.a, t.b);
-      if (!hit) continue;
-      const ls = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
-      const lt = Math.hypot(t.b.x - t.a.x, t.b.y - t.a.y);
-      const ds = hit.t * ls;
-      const dt = hit.u * lt;
-      if (ds < margin || ls - ds < margin || dt < margin || lt - dt < margin) continue;
-      out.push({
-        pt: hit.pt,
-        a: { wire: s.wire, seg: s.idx, d: ds, len: ls, horiz: s.horiz },
-        b: { wire: t.wire, seg: t.idx, d: dt, len: lt, horiz: t.horiz },
-      });
-    }
-  }
-  return out;
+  const ls = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
+  const lt = Math.hypot(t.b.x - t.a.x, t.b.y - t.a.y);
+  const ds = hit.t * ls;
+  const dt = hit.u * lt;
+  if (ds < margin || ls - ds < margin || dt < margin || lt - dt < margin) return null;
+  return {
+    pt: hit.pt,
+    a: { wire: s.wire, seg: s.idx, d: ds, len: ls, horiz: s.horiz },
+    b: { wire: t.wire, seg: t.idx, d: dt, len: lt, horiz: t.horiz },
+  };
 }
 
 /**
