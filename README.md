@@ -45,7 +45,7 @@ Your symbols are kept in *My symbols*. Every circuit file also stores a copy of 
 
 ### Sharing & collaboration
 **Live collaboration.** Click **Share** in the top bar, then **Start live session**. A link is copied for you; anyone who opens it watches the circuit live as you edit it:
-- **The link is view-only.** Only you, in the browser that started the session, can change the circuit; the relay rejects edits from anyone else. Guests don't keep the circuit: when they leave, their own circuit comes back, and nothing from the session goes into their version history.
+- **The link is view-only.** Only you, in the browser that started the session, can change the circuit; the relay rejects edits from anyone else. Guests don't keep the circuit: when they leave, their own circuit comes back, and nothing from the session goes into their version history. Guests can choose **Leave and keep a copy** to keep the shared circuit as their own new circuit.
 - Everyone's **cursor and name** are shown live, along with what they have selected. Pick your own name and colour in the Share dialog.
 - The avatars in the top bar show who is here. **Click someone's avatar to follow their view**; panning or zooming yourself stops following.
 - The session is **end-to-end encrypted**. The key is in the part of the link after `#`, which never reaches the server, so only people with the link can read the circuit. The room keeps an encrypted copy, so the link still works after everyone has left and you can pick up editing from the same browser (rooms nobody touches for 90 days are deleted).

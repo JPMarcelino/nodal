@@ -1,4 +1,4 @@
-import { normalizeDoc } from '../model/doc';
+import { normalizeDoc, uid } from '../model/doc';
 import { prepareMath } from '../model/latex';
 import { toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
 import type { CircuitDoc, Rect } from '../model/types';
@@ -7,6 +7,7 @@ import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, printDoc, selectionDoc, type SvgOptions } from './export';
 import { openTextFile, sanitizeName, saveFile } from './files';
 import { ask } from '../ui/Ask';
+import { saveVersion } from './versionStore';
 
 export const NODAL_FILTER = [{ name: 'Nodal circuit', extensions: ['nodal', 'json'] }];
 
@@ -62,6 +63,36 @@ function loadCircuit(name: string, doc: CircuitDoc, path: string | null) {
   replaceDoc(doc, path);
   setTimeout(() => fitView(), 0);
   toast(`Opened ${name}`, 'success');
+}
+
+/**
+ * Opens a live session's shared circuit as the guest's own new, unsaved
+ * circuit. The session already put the guest's own circuit back, so the copy
+ * replaces that (asking first with unsaved changes). Resolves true when the
+ * copy was opened.
+ */
+export async function openSessionCopy(doc: CircuitDoc): Promise<boolean> {
+  const copy = { ...doc, id: uid('d'), name: `${doc.name} (copy)` };
+  if (!(await confirmDiscard('Keeping the shared circuit'))) {
+    // an empty shared circuit, or a history failure, saves nothing: only then say so
+    let saved = false;
+    try {
+      saved = (await saveVersion(copy, '', true)) !== null;
+    } catch {
+      saved = false;
+    }
+    toast(
+      saved
+        ? 'Kept your circuit. The shared copy is under History → Other circuits on this device.'
+        : 'Kept your circuit. The shared circuit was not saved.',
+      'info',
+    );
+    return false;
+  }
+  replaceDoc(copy, null);
+  set({ dirty: true });
+  setTimeout(() => fitView(), 0);
+  return true;
 }
 
 /** Saves the circuit to a file; resolves true once it is saved. */
