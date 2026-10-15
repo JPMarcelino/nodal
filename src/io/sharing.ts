@@ -110,15 +110,23 @@ function insertFragmentAt(frag: Fragment, at?: Point, groupName?: string): strin
 export async function exportLibraryFile() {
   const lib = buildLibraryFile();
   if (!lib.symbols || !Object.keys(lib.symbols).length) return toast('Your library is empty — nothing to share yet');
-  const res = await saveFile(libraryToText(lib), `${sanitizeName(lib.name)}.nodal-lib.json`, [{ name: 'Nodal symbol library', extensions: ['json'] }]);
-  if (res !== false) toast('Symbol library exported', 'success');
+  try {
+    const res = await saveFile(libraryToText(lib), `${sanitizeName(lib.name)}.nodal-lib.json`, [{ name: 'Nodal symbol library', extensions: ['json'] }]);
+    if (res !== false) toast('Symbol library exported', 'success');
+  } catch (e) {
+    toast(`Library export failed: ${(e as Error).message}`, 'error');
+  }
 }
 
 export async function exportTemplateFile(ids: string[]) {
   const tpl = buildTemplateFile(ids);
   if (!tpl) return toast('Select the items to share as a template first');
-  const res = await saveFile(templateToText(tpl), `${sanitizeName(tpl.name)}.nodal-template.json`, [{ name: 'Nodal template', extensions: ['json'] }]);
-  if (res !== false) toast('Template exported', 'success');
+  try {
+    const res = await saveFile(templateToText(tpl), `${sanitizeName(tpl.name)}.nodal-template.json`, [{ name: 'Nodal template', extensions: ['json'] }]);
+    if (res !== false) toast('Template exported', 'success');
+  } catch (e) {
+    toast(`Template export failed: ${(e as Error).message}`, 'error');
+  }
 }
 
 export async function importLibraryFile() {
