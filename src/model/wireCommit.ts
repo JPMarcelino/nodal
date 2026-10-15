@@ -102,7 +102,7 @@ export function resolveWireEndpoint(doc: CircuitDoc, t: WireTarget, self?: strin
     case 'wire': {
       // re-locate the wire under the point (ids may have changed after a previous split)
       const polys = new Map<string, Point[]>();
-      for (const it of Object.values(doc.items)) if (it.type === 'wire' && it.id !== self) polys.set(it.id, wirePolyline(doc, it));
+      for (const it of Object.values(doc.items)) if (it.type === 'wire' && it.id !== self && !it.hidden && !it.locked) polys.set(it.id, wirePolyline(doc, it));
       const hit = hitWire(polys, t.pt, 0.5);
       if (!hit) return { kind: 'free', ...t.pt };
       const pts = polys.get(hit.wire)!;

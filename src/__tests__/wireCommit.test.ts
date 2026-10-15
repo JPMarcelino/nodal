@@ -143,6 +143,27 @@ describe('resolveWireEndpoint', () => {
     }
   });
 
+  it('splits the visible wire when a hidden or locked wire also overlaps the point', () => {
+    for (const flag of ['hidden', 'locked'] as const) {
+      const doc = createDoc();
+      const w = freeWire(doc, 0, 0, 100, 0);
+      // decoy straight through the drop point (d=0); the point sits 0.4 off the visible wire
+      const decoy = freeWire(doc, 40, -50, 40, 50);
+      decoy[flag] = true;
+      const ep = resolveWireEndpoint(doc, { kind: 'wire', wire: 'other', seg: 0, pt: { x: 40, y: 0.4 } });
+      expect(ep.kind).toBe('junction');
+      const jid = (ep as { id: string }).id;
+      // the decoy is untouched: still one wire with free ends, joined to nothing
+      expect(decoy.a).toEqual({ kind: 'free', x: 40, y: -50 });
+      expect(decoy.b).toEqual({ kind: 'free', x: 40, y: 50 });
+      expect(Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire')).toHaveLength(3);
+      const halves = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire' && i.id !== decoy.id);
+      expect(halves).toHaveLength(2);
+      for (const h of halves) expect([h.a, h.b].some((e) => e.kind === 'junction' && e.id === jid)).toBe(true);
+      void w;
+    }
+  });
+
   it('joins a loose wire end through a shared junction, reusing it on repeat', () => {
     const doc = createDoc();
     const w = freeWire(doc, 0, 0, 100, 0);
