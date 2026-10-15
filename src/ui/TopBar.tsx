@@ -34,6 +34,7 @@ import { S, mutate, redo, set, setPrefs, undo, useStore } from '../store/store';
 import { CollabBar } from './CollabBar';
 import { Logo } from './Logo';
 import { toggleTimeline } from './Timeline';
+import { WireAngleButton } from './WireAngleButton';
 
 const MENUS: { label: string; items: (string | '-')[] }[] = [
   {
@@ -261,6 +262,7 @@ export function ToolRail() {
             {t.icon}
             <span className="tool-key">{prettyKey(keysFor(t.cmd)[0] ?? '')}</span>
           </button>
+          {t.tool === 'wire' && <WireAngleButton />}
         </span>
       ))}
       <span className="rail-sep" />

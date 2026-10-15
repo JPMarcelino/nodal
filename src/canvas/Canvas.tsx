@@ -17,10 +17,9 @@ import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/a
 import { canvasActions } from '../store/canvasActions';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
-import { WireDock } from '../ui/WireDock';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
-import { constrain45, packPoly, polyHit } from '../model/polygon';
+import { constrain45, deletePolyCorner, dragPolyPart, packPoly, polyHit, polyPoints, setPolyPoints } from '../model/polygon';
 import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
@@ -68,6 +67,8 @@ type Gesture =
   | { kind: 'endpoint'; wire: string; end: 'a' | 'b'; cur: Target; moved: boolean }
   | { kind: 'node'; wire: string; idx: number; base: Point[]; cur: Point; free: boolean; moved: boolean }
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
+  /** Edit points on a polygon: dragging corner `idx`, or with `edge` the edge from corner `idx` to the next one. */
+  | { kind: 'polyPart'; id: string; base: Point[]; idx: number; edge: boolean; start: Point; moved: boolean }
   /** Polygon being clicked out corner by corner; it closes when a click lands back on the first corner. */
   | { kind: 'polygon'; pts: Point[]; cur: Point }
   | { kind: 'exportArea'; start: Point; cur: Point }
@@ -519,9 +520,65 @@ export function Canvas() {
     return best;
   };
 
+  /**
+   * Polygon part under the pointer in the edit points tool: a corner, an edge's
+   * midpoint knob (dragging it adds a corner) or anywhere along an edge.
+   * Selected polygons win over the rest.
+   */
+  const polyPartAt = (p: Point): { id: string; idx: number; part: 'corner' | 'mid' | 'edge'; pts: Point[] } | null => {
+    const d = S().doc;
+    const tol = (7 / S().view.zoom) * hitSlop();
+    const sel = new Set(S().selection);
+    const polys = Object.values(d.items).filter((i): i is ShapeItem => i.type === 'shape' && i.kind === 'polygon' && !i.hidden && !i.locked);
+    polys.sort((a, b) => Number(sel.has(b.id)) - Number(sel.has(a.id)));
+    for (const part of ['corner', 'mid', 'edge'] as const) {
+      for (const s of polys) {
+        const pts = polyPoints(s);
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i];
+          const b = pts[(i + 1) % pts.length];
+          const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          const hit = part === 'corner' ? dist(a, p) < tol : part === 'mid' ? dist(mid, p) < tol * 0.8 : projectOnSegment(p, a, b).d < tol * 0.7 + s.strokeWidth / 2;
+          if (hit) return { id: s.id, idx: i, part, pts };
+        }
+      }
+    }
+    return null;
+  };
+
   const onNodeDown = (w: Point, e: React.PointerEvent, isDouble: boolean) => {
     const v = S().view;
-    if (singleShape && !singleShape.locked) {
+    const pp = polyPartAt(w);
+    if (pp) {
+      if (!selSet.has(pp.id)) select([pp.id]);
+      if (pp.part === 'corner') {
+        set({ wirePart: { wire: pp.id, kind: 'node', index: pp.idx } });
+        if (isDouble) {
+          // double-click a corner removes it (a polygon keeps three)
+          mutate((d) => void deletePolyCorner(d.items[pp.id] as ShapeItem, pp.idx));
+          set({ wirePart: null });
+          return;
+        }
+        beginGesture();
+        setGesture({ kind: 'polyPart', id: pp.id, base: pp.pts, idx: pp.idx, edge: false, start: w, moved: false });
+        return;
+      }
+      if (pp.part === 'mid' || isDouble || e.altKey) {
+        // a new corner on the edge, dragged straight away
+        const at = sp(projectOnSegment(w, pp.pts[pp.idx], pp.pts[(pp.idx + 1) % pp.pts.length]).pt);
+        const base = [...pp.pts.slice(0, pp.idx + 1), at, ...pp.pts.slice(pp.idx + 1)];
+        beginGesture();
+        gestureUpdate((d) => setPolyPoints(d.items[pp.id] as ShapeItem, base));
+        set({ wirePart: { wire: pp.id, kind: 'node', index: pp.idx + 1 } });
+        setGesture({ kind: 'polyPart', id: pp.id, base, idx: pp.idx + 1, edge: false, start: at, moved: true });
+        return;
+      }
+      set({ wirePart: null });
+      beginGesture();
+      setGesture({ kind: 'polyPart', id: pp.id, base: pp.pts, idx: pp.idx, edge: true, start: w, moved: false });
+      return;
+    }
+    if (singleShape && !singleShape.locked && singleShape.kind !== 'polygon') {
       const hh = shapeHandles(singleShape).find((h) => dist(h.p, w) < 7 / v.zoom);
       if (hh) {
         beginGesture();
@@ -794,7 +851,7 @@ export function Canvas() {
         }
       }
       if (g && combo === 'Escape') {
-        if (g.kind === 'move' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'scale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
+        if (g.kind === 'move' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'scale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
         setGesture(null);
         // a cancelled copy takes its staged items with it
         if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => S().doc.items[id]) });
@@ -1210,6 +1267,24 @@ export function Canvas() {
       case 'polygon':
         setGesture({ ...g, cur: polygonPoint(g, w, e.shiftKey) });
         break;
+      case 'polyPart': {
+        // corners land on the grid (Alt: anywhere); edges move by whole grid steps
+        let d: Point;
+        if (g.edge) {
+          const step = snapOn && !e.altKey ? grid : 1;
+          d = { x: snap(w.x - g.start.x, step), y: snap(w.y - g.start.y, step) };
+          if (e.shiftKey) Math.abs(d.x) > Math.abs(d.y) ? (d.y = 0) : (d.x = 0);
+        } else {
+          const prev = g.base[(g.idx - 1 + g.base.length) % g.base.length];
+          let p = e.altKey ? { x: Math.round(w.x), y: Math.round(w.y) } : sp(w);
+          if (e.shiftKey) p = constrain45(prev, p);
+          d = { x: p.x - g.base[g.idx].x, y: p.y - g.base[g.idx].y };
+        }
+        if (!g.moved && !d.x && !d.y) return;
+        gestureUpdate((doc) => setPolyPoints(doc.items[g.id] as ShapeItem, dragPolyPart(g.base, g.idx, g.edge, d)));
+        if (!g.moved) setGesture({ ...g, moved: true });
+        break;
+      }
       case 'exportArea':
         setGesture({ ...g, cur: sp(w) });
         break;
@@ -1349,6 +1424,10 @@ export function Canvas() {
         endGesture(true);
         if (g.kind === 'segment' && g.moved) mutate((d) => cleanup(d as CircuitDoc));
         if (g.kind === 'segment' && !g.moved && g.pick) select([g.pick]);
+        setGesture(null);
+        break;
+      case 'polyPart':
+        endGesture(g.moved);
         setGesture(null);
         break;
       case 'node':
@@ -1512,7 +1591,7 @@ export function Canvas() {
         : g?.kind === 'move' || g?.kind === 'shapeTitle' || (tool === 'select' && !placing && !g && singleShape && hasMovableTitle(singleShape) && pointInRect(cursor, shapeTitle(singleShape).box, 3))
           ? 'move'
           : tool === 'node' && !placing
-            ? g?.kind === 'node' || g?.kind === 'endpoint' || nodeAt(cursor)
+            ? g?.kind === 'node' || g?.kind === 'endpoint' || g?.kind === 'polyPart' || nodeAt(cursor) || (!g && polyPartAt(cursor))
               ? 'move'
               : hover.item
                 ? 'pointer'
@@ -1664,9 +1743,42 @@ export function Canvas() {
             ))}
           {singleShape &&
             !singleShape.locked &&
+            !(tool === 'node' && singleShape.kind === 'polygon') &&
             shapeHandles(singleShape).map((h) => (
               <rect key={h.h} x={h.p.x - 4 / z} y={h.p.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className="handle" strokeWidth={1.5 / z} />
             ))}
+          {tool === 'node' &&
+            (() => {
+              const hot = !g ? polyPartAt(cursor) : null;
+              return [...new Set([...selection, ...(hover.item && !g ? [hover.item] : [])])].map((id) => {
+                const it = doc.items[id];
+                if (it?.type !== 'shape' || it.kind !== 'polygon' || it.locked) return null;
+                const pts = polyPoints(it);
+                return (
+                  <g key={id} className="node-handles">
+                    {(hot?.id === id && hot.part === 'edge') || (g?.kind === 'polyPart' && g.id === id && g.edge)
+                      ? (() => {
+                          const i = hot?.id === id ? hot.idx : (g as Extract<Gesture, { kind: 'polyPart' }>).idx;
+                          const a = pts[i];
+                          const b = pts[(i + 1) % pts.length];
+                          return a && b ? <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="wire-part-seg" strokeWidth={7} strokeLinecap="round" /> : null;
+                        })()
+                      : null}
+                    {pts.map((a, i) => {
+                      const b = pts[(i + 1) % pts.length];
+                      const on = hot?.id === id && hot.part === 'mid' && hot.idx === i;
+                      return <circle key={`m${i}`} cx={(a.x + b.x) / 2} cy={(a.y + b.y) / 2} r={(on ? 4 : 2.75) / z} className={on ? 'handle poly-mid active' : 'handle poly-mid'} strokeWidth={1.2 / z} />;
+                    })}
+                    {pts.map((p, i) => {
+                      const active = (hot?.id === id && hot.part === 'corner' && hot.idx === i) || (g?.kind === 'polyPart' && g.id === id && !g.edge && g.idx === i);
+                      const selected = wirePart?.wire === id && wirePart.kind === 'node' && wirePart.index === i;
+                      const r = (active ? 5 : 3.75) / z;
+                      return <rect key={i} x={p.x - r} y={p.y - r} width={2 * r} height={2 * r} rx={1 / z} className={active ? 'handle node active' : selected ? 'handle node selected' : 'handle node'} strokeWidth={1.5 / z} />;
+                    })}
+                  </g>
+                );
+              });
+            })()}
           {tool === 'node' &&
             (() => {
               const hot = !g ? nodeAt(cursor) : null;
@@ -1786,7 +1898,6 @@ export function Canvas() {
         </div>
       )}
       {editingText && <TextEditor id={editingText} onDone={() => setEditingText(null)} />}
-      {(tool === 'wire' || g?.kind === 'wire') && !presenting && !placing && <WireDock drawing={g?.kind === 'wire'} />}
       {prefs.showMinimap && <Minimap data={data} />}
       {hotMenu && !g && (
         <HotSpotMenu

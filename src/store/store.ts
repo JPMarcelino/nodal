@@ -29,8 +29,9 @@ export interface Placing {
   repeat: boolean;
 }
 
-/** A single vertex ("node") or one segment of a wire, selected for deletion. */
+/** A node or segment of a wire, or a polygon corner (edit points tool), selected for deletion. */
 export interface WirePartSel {
+  /** Wire or polygon id. */
   wire: string;
   kind: 'node' | 'segment';
   index: number;

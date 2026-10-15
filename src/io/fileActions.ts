@@ -4,7 +4,7 @@ import { toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
 import type { CircuitDoc, Rect } from '../model/types';
 import { S, newDoc, replaceDoc, set, toast } from '../store/store';
 import { fitView } from '../store/actions';
-import { exportDxf, exportPng, exportSvg, printDoc, type SvgOptions } from './export';
+import { exportDxf, exportPng, exportSvg, printDoc, selectionDoc, type SvgOptions } from './export';
 import { openTextFile, sanitizeName, saveFile } from './files';
 import { ask } from '../ui/Ask';
 
@@ -82,10 +82,14 @@ export async function fileSave(saveAs = false): Promise<boolean> {
 
 export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'kicad' | 'bom' | 'json';
 
+/** Exports the circuit, or with `opts.ids` only those items (and the wires between them), in any format. Images are transparent unless asked otherwise. */
 export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { scale?: number } = {}) {
-  const { doc } = S();
-  const base = sanitizeName(doc.name);
-  const svgOpts: SvgOptions = { theme: 'light', background: true, padding: 20, ...opts };
+  const full = S().doc;
+  const part = !!opts.ids?.length;
+  // images crop to the ids themselves; data formats get the reduced circuit
+  const doc = part && kind !== 'svg' && kind !== 'png' ? selectionDoc(full, opts.ids!) : full;
+  const base = sanitizeName(full.name) + (part ? '-selection' : '');
+  const svgOpts: SvgOptions = { theme: 'light', background: false, padding: 20, ...opts };
   try {
     await prepareMath(doc);
     let res: string | null | false = null;
@@ -112,7 +116,7 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
         res = await saveFile(JSON.stringify(doc, null, 2), `${base}.json`, [{ name: 'JSON', extensions: ['json'] }]);
         break;
     }
-    if (res !== false) toast(`Exported ${kind.toUpperCase()}`, 'success');
+    if (res !== false) toast(`Exported ${part ? 'selection as ' : ''}${kind === 'bom' ? 'BOM' : kind.toUpperCase()}`, 'success');
   } catch (e) {
     toast(`Export failed: ${(e as Error).message}`, 'error');
   }
@@ -126,7 +130,7 @@ export async function filePrint() {
 /** Exports an arbitrary world-space window; wires are cut at the boundary. */
 export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partial<SvgOptions> & { scale?: number }) {
   const base = `${sanitizeName(S().doc.name)}-area`;
-  const svgOpts: SvgOptions = { theme: 'light', background: true, padding: 8, ...opts, clip: rect };
+  const svgOpts: SvgOptions = { theme: 'light', background: false, padding: 8, ...opts, clip: rect };
   try {
     await prepareMath(S().doc);
     const res =
@@ -146,7 +150,7 @@ export function startAreaExport(kind: 'png' | 'svg', opts: Partial<SvgOptions> &
     exportArea: {
       kind,
       theme: opts.theme ?? 'light',
-      background: opts.background ?? true,
+      background: opts.background ?? false,
       scale: opts.scale ?? 3,
     },
   });
@@ -161,7 +165,7 @@ export function runAreaExport(rect: Rect) {
 }
 
 /** Exports only the currently selected items. */
-export function exportSelection(kind: 'png' | 'svg' = 'png') {
+export function exportSelection(kind: ExportKind = 'png') {
   const sel = S().selection;
   if (!sel.length) return toast('Select items to export first');
   void doExport(kind, { ids: sel });
