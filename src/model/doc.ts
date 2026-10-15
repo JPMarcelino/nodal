@@ -129,6 +129,7 @@ export const SHAPE_DEFAULTS: Record<ShapeKind, Partial<ShapeItem>> = {
   rect: { stroke: '#7aa2f7', strokeWidth: 2, fill: '#7aa2f7', fillOpacity: 0, dash: 'dashed', radius: 6, layer: 'below' },
   zone: { stroke: '#7aa2f7', strokeWidth: 1, fill: '#7aa2f7', fillOpacity: 0.12, dash: 'solid', radius: 8, layer: 'below' },
   ellipse: { stroke: '#000000', strokeWidth: 2, fill: '#000000', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
+  polygon: { stroke: '#000000', strokeWidth: 2, fill: '#000000', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
   line: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'none', layer: 'above' },
   arrow: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'open', layer: 'above' },
   image: { stroke: '#000000', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },

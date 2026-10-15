@@ -1,7 +1,7 @@
 import { uid } from './doc';
 import { eq, simplify } from './geometry';
 import { cleanup, splitWire } from './ops';
-import type { CircuitDoc, Endpoint, Point, WireItem, WireStyle } from './types';
+import type { CircuitDoc, Endpoint, Point, WireAngle, WireItem, WireStyle } from './types';
 import { routeLeg, routeObstacles } from './route';
 import { adjustWireForMove, hitWire, wirePolyline } from './wires';
 
@@ -67,6 +67,27 @@ export function buildWirePreview(start: Point, via: Point[], hFirst: boolean, en
 }
 
 /**
+ * Last leg of an angled wire from `from` to `to`. At 45° it is one straight
+ * (horizontal / vertical) run and one diagonal; `straightFirst` picks which
+ * leaves `from` first. With both ends on the grid the bend lands on it too.
+ */
+export function angledLeg(from: Point, to: Point, angle: Exclude<WireAngle, 'ortho'>, straightFirst: boolean): Point[] {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const d = Math.min(Math.abs(dx), Math.abs(dy));
+  if (angle === 'any' || d < ORTHO_EPS || Math.abs(Math.abs(dx) - Math.abs(dy)) < ORTHO_EPS) return [to];
+  const diag = { x: Math.sign(dx) * d, y: Math.sign(dy) * d };
+  const bend = straightFirst ? { x: to.x - diag.x, y: to.y - diag.y } : { x: from.x + diag.x, y: from.y + diag.y };
+  return [bend, to];
+}
+
+/** Preview polyline of an angled (45° / any angle) wire gesture: start, clicked vertices, then the live leg. */
+export function buildAngledPreview(start: Point, via: Point[], end: Point, angle: Exclude<WireAngle, 'ortho'>, straightFirst: boolean): Point[] {
+  const last = via.length ? via[via.length - 1] : start;
+  return simplify([start, ...via, ...angledLeg(last, end, angle, straightFirst)]);
+}
+
+/**
  * Leg router for a wire gesture between two targets: avoids instance bodies,
  * unrelated terminals and existing wires, leaving / entering pins along
  * their lead. Build it from the document as it was when the gesture started.
@@ -127,6 +148,10 @@ export interface CommitWireOptions {
   style?: Partial<WireStyle>;
   /** Route the last leg around instances (pass the grid to route on). */
   routeGrid?: number;
+  /** Angle of the last leg (default orthogonal); `hFirst` then means "straight run first". */
+  angle?: WireAngle;
+  /** Keep diagonal segments (clicked vertices may already have some): the wire is saved straight-routed. */
+  straight?: boolean;
 }
 
 /**
@@ -135,14 +160,19 @@ export interface CommitWireOptions {
  * both ends without a loop). Mirrors the Canvas commitWire behaviour.
  */
 export function commitWire(doc: CircuitDoc, start: WireTarget, end: WireTarget, opts: CommitWireOptions = {}): string | null {
-  const route = opts.routeGrid ? wireRouter(doc, start, end, opts.routeGrid) : undefined;
-  const pts = buildWirePreview(start.pt, opts.via ?? [], opts.hFirst ?? true, end.pt, route);
+  const angle = opts.angle ?? 'ortho';
+  const route = opts.routeGrid && angle === 'ortho' ? wireRouter(doc, start, end, opts.routeGrid) : undefined;
+  const pts =
+    angle === 'ortho'
+      ? buildWirePreview(start.pt, opts.via ?? [], opts.hFirst ?? true, end.pt, route)
+      : buildAngledPreview(start.pt, opts.via ?? [], end.pt, angle, opts.hFirst ?? true);
   if (pts.length < 2 || (pts.length === 2 && eq(pts[0], pts[1]))) return null;
   // same start and end is only fine when the wire goes somewhere and comes back (a loop)
   if (sameWireTarget(start, end) && pts.length < 4) return null;
   const a = resolveWireEndpoint(doc, start);
   const b = resolveWireEndpoint(doc, end);
   const w: WireItem = { id: uid('w'), type: 'wire', a, b, pts: pts.slice(1, -1), group: opts.group };
+  if (angle !== 'ortho' || opts.straight) w.routing = 'straight';
   if (opts.style) w.style = { ...opts.style };
   doc.items[w.id] = w;
   cleanup(doc);

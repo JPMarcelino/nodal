@@ -481,6 +481,58 @@ kbd {
   width: 290px;
 }
 
+.left-panel,
+.right-panel {
+  position: relative;
+  min-width: 0;
+  container: side-panel / inline-size;
+}
+
+/* drag handle on a side panel's inner edge */
+.panel-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  z-index: 15;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.panel-resizer.left {
+  right: -4px;
+}
+
+.panel-resizer.right {
+  left: -4px;
+}
+
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.panel-resizer:hover::after,
+.is-resizing-panel .panel-resizer::after {
+  opacity: 1;
+}
+
+body.is-resizing-panel {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.is-resizing-panel .stage {
+  pointer-events: none;
+}
+
 .tabs {
   display: flex;
   gap: 2px;
@@ -502,6 +554,14 @@ kbd {
 .tabs button.active {
   color: var(--text);
   border-bottom-color: var(--accent);
+}
+
+/* narrow side panels: tighter tabs so they all stay in view */
+@container side-panel (max-width: 270px) {
+  .tabs button {
+    padding-left: 7px;
+    padding-right: 7px;
+  }
 }
 
 .tabs.inline {
@@ -1002,6 +1062,11 @@ select.input {
   width: 100%;
 }
 
+.row-gap.wrap {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
 .segmented {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1079,6 +1144,9 @@ select.input {
 
 .slider {
   flex: 1;
+  /* range inputs have a wide built-in minimum; let narrow panels shrink them */
+  min-width: 0;
+  width: 100%;
   accent-color: var(--accent);
 }
 
@@ -1457,6 +1525,19 @@ select.input {
 
 .shape-preview.zone {
   fill: var(--accent-soft);
+}
+
+.polygon-vertex {
+  fill: var(--accent);
+}
+
+.polygon-close {
+  fill: var(--canvas);
+  stroke: var(--accent);
+}
+
+.polygon-close.on {
+  fill: var(--accent);
 }
 
 .scope-box {
@@ -3572,6 +3653,30 @@ select.input {
   transform: scale(0.92);
 }
 
+/* under the tool rail, clear of toasts and the minimap */
+.explain-dock-wrap.wire-dock-wrap {
+  top: 64px;
+  bottom: auto;
+  flex-direction: column-reverse;
+}
+
+.wire-dock-wrap .explain-dock {
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.wire-dock .xd-btn {
+  height: 30px;
+  width: auto;
+  gap: 5px;
+  padding: 0 10px 0 8px;
+}
+
+.wd-label {
+  font-size: 0.86em;
+  font-weight: 600;
+}
+
 .xd-btn.active {
   background: var(--accent);
   color: #fff;
@@ -3935,6 +4040,33 @@ body.is-presenting .scope-banner {
 .presenter-tools button.active {
   background: var(--accent);
   color: #fff;
+}
+
+.presenter-sep {
+  width: 1px;
+  margin: 6px 2px;
+  background: var(--border);
+}
+
+.presenter-tools button.presenter-swatch {
+  width: 22px;
+}
+
+.presenter-swatch i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  transition: transform 0.12s;
+}
+
+.presenter-tools button.presenter-swatch.on {
+  background: var(--panel-3);
+}
+
+.presenter-swatch.on i {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--text-dim);
 }
 
 .presenter-caption {

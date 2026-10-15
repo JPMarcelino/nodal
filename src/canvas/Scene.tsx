@@ -13,6 +13,7 @@ import { layoutRich, measureRich } from '../model/richText';
 import { SymbolBody } from './SymbolGraphic';
 import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
 import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
+import { polyPoints } from '../model/polygon';
 
 export interface Palette {
   sym: string;
@@ -515,6 +516,12 @@ export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: Sh
           {s.text && (
             <RichText text={s.text} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={600} />
           )}
+        </g>
+      );
+    case 'polygon':
+      return (
+        <g className="shape" data-id={s.id}>
+          <polygon points={polyPoints(s).map((p) => `${p.x},${p.y}`).join(' ')} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinejoin="round" />
         </g>
       );
     case 'image':

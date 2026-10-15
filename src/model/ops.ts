@@ -2,6 +2,7 @@ import { current, isDraft } from 'immer';
 import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, nextRef, refersTo, uid } from './doc';
 import { eq, projectOnSegment, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
+import { packPoly, polyPoints } from './polygon';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, WireItem } from './types';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
@@ -452,6 +453,8 @@ function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
       } else if (b.kind === 'ink') {
         // map every point, so rotating or flipping a drawing turns the drawing, not just its box
         Object.assign(it, packInk(inkPoints(b).map((q) => ({ ...map(q), p: q.p }))));
+      } else if (b.kind === 'polygon') {
+        Object.assign(it, packPoly(polyPoints(b).map(map)));
       } else {
         it.x = Math.min(p1.x, p2.x);
         it.y = Math.min(p1.y, p2.y);

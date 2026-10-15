@@ -13,6 +13,7 @@ import { CheckPanel, useErcIssues } from './CheckPanel';
 import { confirmDelete } from './Ask';
 import { HistoryPanel } from './HistoryPanel';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
+import { PanelResizer, usePanelWidth } from './PanelResizer';
 
 function Tile({ def }: { def: SymbolDef }) {
   const fav = useStore((s) => s.favorites.includes(def.id));
@@ -519,8 +520,10 @@ function CheckBadge() {
 
 export function LeftPanel() {
   const tab = useStore((s) => s.leftTab);
+  const width = usePanelWidth('left', useStore((s) => s.prefs.leftWidth));
   return (
-    <aside className="panel left-panel">
+    <aside className="panel left-panel" style={{ width }}>
+      <PanelResizer side="left" />
       <div className="tabs">
         <button className={tab === 'library' ? 'active' : ''} onClick={() => set({ leftTab: 'library' })}>
           Library

@@ -1,6 +1,7 @@
 import {
   CircleDot,
   Unplug,
+  Pentagon,
   PenTool,
   ArrowUpRight,
   Circle,
@@ -234,6 +235,7 @@ const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string; alt?: 
   { tool: 'rect', icon: <Square size={17} />, label: 'Rectangle', cmd: 'tool.rect' },
   { tool: 'zone', icon: <RectangleHorizontal size={17} fill="currentColor" fillOpacity={0.35} />, label: 'Filled zone', cmd: 'tool.zone' },
   { tool: 'ellipse', icon: <Circle size={17} />, label: 'Ellipse', cmd: 'tool.ellipse' },
+  { tool: 'polygon', icon: <Pentagon size={17} />, label: 'Polygon', cmd: 'tool.polygon' },
   { tool: 'line', icon: <Minus size={17} style={{ transform: 'rotate(-45deg)' }} />, label: 'Line', cmd: 'tool.line' },
   { tool: 'arrow', icon: <ArrowUpRight size={17} />, label: 'Arrow', cmd: 'tool.arrow' },
   { tool: 'text', icon: <Type size={17} />, label: 'Text', cmd: 'tool.text' },

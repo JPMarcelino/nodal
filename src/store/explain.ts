@@ -20,6 +20,8 @@ export interface ExplainState {
   size: number;
   /** Pen strokes fade away a few seconds after they're drawn instead of being kept. */
   vanish: boolean;
+  /** Same, while presenting (on by default there: a talk is drawn over, not into, the circuit). */
+  presentVanish: boolean;
   traces: Trace[];
   /** Callout whose note is being typed. */
   editing: string | null;
@@ -49,6 +51,7 @@ export const useExplain = create<ExplainState>(() => ({
   highlightColor: HIGHLIGHTER_COLOR,
   size: 3,
   vanish: false,
+  presentVanish: true,
   traces: [],
   editing: null,
   presenting: null,

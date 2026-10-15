@@ -305,10 +305,11 @@ export function SymbolDrawPane({
 
   /* -------------------------- editing --------------------------- */
 
-  const finishPoly = () => {
+  /** `closed`: ended on the first point, so it is a closed outline even without a fill. */
+  const finishPoly = (closed = false) => {
     if (poly && poly.length >= 4) {
       const pts = poly;
-      apply((s) => void s.prims.push(withStyle(fill === 'none' ? { t: 'line', pts } : { t: 'poly', pts, fill }, style)));
+      apply((s) => void s.prims.push(withStyle(fill === 'none' && !closed ? { t: 'line', pts } : { t: 'poly', pts, fill }, style)));
       setSel([prims.length]);
     }
     setPoly(null);
@@ -524,6 +525,11 @@ export function SymbolDrawPane({
     }
     if (tool === 'poly') {
       if (poly && e.detail >= 2) return finishPoly();
+      // clicking the first point again closes the polygon (too few points: ignored)
+      if (poly && Math.hypot(p.x - poly[0], p.y - poly[1]) <= 6 / view.zoom) {
+        if (poly.length >= 6) finishPoly(true);
+        return;
+      }
       setPoly([...(poly ?? []), p.x, p.y]);
       return;
     }
@@ -623,7 +629,10 @@ export function SymbolDrawPane({
   /* --------------------------- render --------------------------- */
 
   const z = view.zoom;
-  const rawDraft: Prim | null = poly ? { t: 'line', pts: [...poly, cursor.x, cursor.y] } : g?.kind === 'draw' ? dragShape(tool, g.start, g.cur, fill) : null;
+  // hovering the first point of a polygon: the preview closes onto it
+  const polyClose = poly && poly.length >= 6 && Math.hypot(cursor.x - poly[0], cursor.y - poly[1]) <= 6 / z ? { x: poly[0], y: poly[1] } : null;
+  const draftEnd = polyClose ?? cursor;
+  const rawDraft: Prim | null = poly ? { t: 'line', pts: [...poly, draftEnd.x, draftEnd.y] } : g?.kind === 'draw' ? dragShape(tool, g.start, g.cur, fill) : null;
   const draft = rawDraft && withStyle(rawDraft, style);
   const hoverHandle = tool === 'select' && !g ? hitHandle(cursor) ?? hitSize(cursor) : undefined;
   const cursorStyle =
@@ -644,7 +653,7 @@ export function SymbolDrawPane({
     tool === 'pin'
       ? 'Click on the dashed outline to add a pin; click an existing pin to remove it.'
       : tool === 'poly'
-        ? 'Click to add points · Enter or double-click to finish · Backspace removes the last point · Esc cancels.'
+        ? 'Click to add points · click the first point to close · Enter or double-click to finish · Backspace removes the last point · Esc cancels.'
         : tool === 'select'
           ? 'Click / Shift+click / drag a box to select · drag to move · handles resize · drag the outline’s corner to resize the symbol.'
           : tool === 'text'
@@ -834,6 +843,7 @@ export function SymbolDrawPane({
             )}
             {tool !== 'select' && <circle cx={cursor.x} cy={cursor.y} r={2 / z + 0.8} className="se-cursor" />}
             {poly && poly.length >= 2 && <circle cx={poly[poly.length - 2]} cy={poly[poly.length - 1]} r={3 / z + 1} className="se-cursor" />}
+            {polyClose && <circle cx={polyClose.x} cy={polyClose.y} r={4 / z} strokeWidth={1.4 / z} className="se-handle" />}
           </g>
         </svg>
         <div className="se-coords">
