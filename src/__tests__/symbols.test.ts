@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { instanceSymbol } from '../model/registry';
 import { BUILTIN, BUILTIN_SYMBOLS } from '../model/symbols';
 
 describe('built-in symbol library', () => {
@@ -42,4 +43,28 @@ describe('built-in symbol library', () => {
       expect(problems).toEqual([]);
     });
   }
+});
+
+describe('switch open/closed state', () => {
+  const doc = { symbols: {} };
+
+  it('draws a closed switch with its closed drawing', () => {
+    const def = BUILTIN['switch-spst'];
+    expect(def.closedPrims).toBeTruthy();
+    expect(instanceSymbol(doc, { symbol: 'switch-spst' }).prims).toBe(def.prims);
+    const closed = instanceSymbol(doc, { symbol: 'switch-spst', closed: true });
+    expect(closed.prims).toBe(def.closedPrims);
+    expect(closed.ports).toBe(def.ports);
+    expect(instanceSymbol(doc, { symbol: 'switch-spst', closed: true })).toBe(closed);
+  });
+
+  it('scales the closed drawing', () => {
+    const closed = instanceSymbol(doc, { symbol: 'switch-spst', closed: true, scale: 2 });
+    expect(closed.w).toBe(160);
+    expect(closed.prims).toHaveLength(BUILTIN['switch-spst'].closedPrims!.length);
+  });
+
+  it('ignores the state on parts without a closed drawing', () => {
+    expect(instanceSymbol(doc, { symbol: 'relay-coil', closed: true })).toBe(BUILTIN['relay-coil']);
+  });
 });

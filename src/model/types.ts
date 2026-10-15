@@ -85,6 +85,8 @@ export interface SymbolDef {
   variantName?: string;
   /** Alternative drawings of this symbol, offered as a type picker wherever it is placed. */
   variants?: VariantRef[];
+  /** Drawing of the closed (actuated) state, for switches; parts opt in with `closed`. */
+  closedPrims?: Prim[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -123,6 +125,8 @@ export interface ComponentItem extends ItemBase {
   y: number;
   rot: 0 | 90 | 180 | 270;
   flipX?: boolean;
+  /** Draws a switch closed (its symbol's `closedPrims`). */
+  closed?: boolean;
   ref: string;
   value: string;
   props: Record<string, string>;
