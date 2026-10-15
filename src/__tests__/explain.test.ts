@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { calloutAnchor, calloutLayout, makeAnchor, nextStep } from '../model/callout';
-import { createDoc, itemBounds, makeShape } from '../model/doc';
+import { createDoc, itemBounds, makeComponent, makeShape } from '../model/doc';
 import { inkHit, inkOutline, inkPoints, packInk, recognizeInk, type InkPoint } from '../model/ink';
+import { extractFragment, insertFragment } from '../model/ops';
 import type { Net } from '../model/netlist';
 import { netFlow, splitAt } from '../model/trace';
-import type { ShapeItem } from '../model/types';
+import type { ComponentItem, ShapeItem } from '../model/types';
 
 const P = (x: number, y: number): InkPoint => ({ x, y, p: 0.5 });
 
@@ -74,6 +75,41 @@ describe('callouts', () => {
     expect(calloutAnchor(doc, c)).toEqual({ x: 200, y: 200 });
     (doc.items.j1 as { x: number }).x = 260;
     expect(calloutAnchor(doc, c)).toEqual({ x: 260, y: 200 });
+  });
+
+  it('remaps a callout anchor to the copied part when pasted together', () => {
+    const doc = createDoc();
+    const r = makeComponent(doc, 'resistor', 100, 100);
+    doc.items[r.id] = r;
+    const c = makeShape(doc, 'callout', 0, 0, 24, 24);
+    c.anchor = makeAnchor(doc, r, { x: 100, y: 100 });
+    doc.items[c.id] = c;
+    const frag = extractFragment(doc, new Set([r.id, c.id]));
+    const ids = insertFragment(doc, frag, 50, 60);
+    expect(ids).toHaveLength(2);
+    const pasted = ids.map((id) => doc.items[id]);
+    const pc = pasted.find((i) => i.type === 'shape') as ShapeItem;
+    const pr = pasted.find((i) => i.type === 'component') as ComponentItem;
+    expect(pc.anchor?.id).toBe(pr.id);
+    expect(pc.anchor).toMatchObject({ x: 150, y: 160 });
+    expect({ x: pc.x, y: pc.y }).toEqual({ x: 50, y: 60 });
+    pr.x += 10;
+    expect(calloutAnchor(doc, pc)).toEqual({ x: 160, y: 160 });
+    expect(calloutAnchor(doc, doc.items[c.id] as ShapeItem)).toEqual({ x: 100, y: 100 });
+  });
+
+  it('offsets a callout anchor fallback when pasted without its target', () => {
+    const src = createDoc();
+    const r = makeComponent(src, 'resistor', 100, 100);
+    src.items[r.id] = r;
+    const c = makeShape(src, 'callout', 0, 0, 24, 24);
+    c.anchor = makeAnchor(src, r, { x: 100, y: 100 });
+    src.items[c.id] = c;
+    const frag = extractFragment(src, new Set([c.id]));
+    const dst = createDoc();
+    const ids = insertFragment(dst, frag, 50, 60);
+    const pc = dst.items[ids[0]] as ShapeItem;
+    expect(calloutAnchor(dst, pc)).toEqual({ x: 150, y: 160 });
   });
 });
 
