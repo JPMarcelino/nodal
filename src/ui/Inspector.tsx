@@ -27,7 +27,7 @@ import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { computeNets, netOfWire } from '../model/netlist';
 import { measureRich } from '../model/richText';
 import { DNP, PART_FIELDS, customFieldKeys, hasPartFields, isDnp } from '../model/partFields';
-import { getSymbol } from '../model/registry';
+import { getSymbol, stateSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, LabelSide, Dash, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { docBounds } from '../model/doc';
@@ -428,7 +428,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
     <>
       <div className="comp-header">
         <div className="comp-preview">
-          <SymbolPreview def={def} size={64} ports />
+          <SymbolPreview def={stateSymbol(def, c)} size={64} ports />
         </div>
         <div>
           <div className="comp-title">{def.valueIsLabel ? c.value : c.ref}</div>
@@ -453,6 +453,11 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
             <TextInput value={c.props[f.key] ?? ''} placeholder={f.default} onChange={(v) => upd((x) => (x.props[f.key] = v))} />
           </Field>
         ))}
+        {def.closedPrims && (
+          <Field label="Closed" hint="Draw the switch closed instead of open">
+            <Toggle checked={!!c.closed} onChange={(v) => upd((x) => (v ? (x.closed = true) : delete x.closed))} />
+          </Field>
+        )}
         {def.valueIsLabel && (
           <Field label="Show name" hint="Hide the name on the canvas; the label still joins the net">
             <Toggle checked={c.showValue} onChange={(v) => upd((x) => (x.showValue = v))} />

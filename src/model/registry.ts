@@ -16,9 +16,19 @@ export function getSymbol(doc: Pick<CircuitDoc, 'symbols'>, id: string): SymbolD
   return doc.symbols[id] ?? userLibrary[id] ?? BUILTIN[id] ?? MISSING_SYMBOL;
 }
 
-/** The drawing a placed part uses: its symbol at the part's size. */
-export function instanceSymbol(doc: Pick<CircuitDoc, 'symbols'>, c: Pick<ComponentItem, 'symbol' | 'scale'>): SymbolDef {
-  return scaleSymbol(getSymbol(doc, c.symbol), c.scale ?? 1);
+const closedDefs = new WeakMap<SymbolDef, SymbolDef>();
+
+/** The symbol in a part's switch state: its closed drawing when the part is closed and has one. */
+export function stateSymbol(def: SymbolDef, c: Pick<ComponentItem, 'closed'>): SymbolDef {
+  if (!c.closed || !def.closedPrims) return def;
+  let out = closedDefs.get(def);
+  if (!out) closedDefs.set(def, (out = { ...def, prims: def.closedPrims }));
+  return out;
+}
+
+/** The drawing a placed part uses: its symbol in its switch state, at the part's size. */
+export function instanceSymbol(doc: Pick<CircuitDoc, 'symbols'>, c: Pick<ComponentItem, 'symbol' | 'scale' | 'closed'>): SymbolDef {
+  return scaleSymbol(stateSymbol(getSymbol(doc, c.symbol), c), c.scale ?? 1);
 }
 
 /** A symbol that is an alternative drawing ("type") of another symbol. */

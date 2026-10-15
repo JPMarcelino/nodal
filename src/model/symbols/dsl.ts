@@ -147,6 +147,8 @@ export interface SymbolSpec {
   variantName?: string;
   /** Alternative drawings offered for this symbol. */
   variants?: VariantRef[];
+  /** Drawing of the closed state (switches), offered as an open/closed toggle. */
+  closed?: string;
 }
 
 /** Field shorthand: "Power rating=0.25W, Tolerance=±5%". */
@@ -191,6 +193,7 @@ export function sym(id: string, name: string, category: string, s: SymbolSpec): 
     variantOf: s.variantOf,
     variantName: s.variantName,
     variants: s.variants,
+    closedPrims: s.closed ? parseDraw(s.closed) : undefined,
   };
 }
 
