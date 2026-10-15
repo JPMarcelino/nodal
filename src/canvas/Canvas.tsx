@@ -670,7 +670,6 @@ export function Canvas() {
       id = s.id;
     });
     set({ selection: [id] });
-    A.setTool('select');
   };
 
   // switching tools drops a half-drawn polygon
@@ -982,7 +981,7 @@ export function Canvas() {
         d.items[s.id] = s;
         id = s.id;
       });
-      set({ selection: [id], tool: 'select' });
+      set({ selection: [id] });
       setEditingText(id);
       return;
     }
@@ -1495,7 +1494,6 @@ export function Canvas() {
           set({ selection: [id] });
         }
         setGesture(null);
-        if (!e.shiftKey) A.setTool('select');
         break;
       }
       case 'exportArea': {
