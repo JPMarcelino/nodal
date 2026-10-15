@@ -1,6 +1,6 @@
 import { current, isDraft } from 'immer';
 import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, nextRef, refersTo, uid } from './doc';
-import { eq, projectOnSegment, rotate, simplify, snap } from './geometry';
+import { eq, projectOnSegment, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, WireItem } from './types';
@@ -551,7 +551,14 @@ export function translateDetached(base: CircuitDoc, doc: CircuitDoc, ids: Set<st
 
 /** Rotation pivot: centre of the selection snapped to the grid. */
 export function selectionPivot(doc: CircuitDoc, ids: Iterable<string>): Point {
-  const b = docBounds(doc, ids);
+  const rects: Rect[] = [];
+  for (const id of ids) {
+    const it = doc.items[id];
+    if (!it) continue;
+    const r = itemBounds(doc, it);
+    if (r) rects.push(r);
+  }
+  const b = unionRects(rects);
   if (!b) return { x: 0, y: 0 };
   const g = doc.settings.grid;
   return { x: snap(b.x + b.w / 2, g), y: snap(b.y + b.h / 2, g) };
@@ -736,7 +743,8 @@ export function alignItems(doc: CircuitDoc, ids: string[], mode: AlignMode) {
   const movable = ids.filter((id) => doc.items[id] && doc.items[id].type !== 'wire');
   if (movable.length < 2) return;
   const boxes = movable.map((id) => ({ id, r: itemBounds(doc, doc.items[id])! }));
-  const all = docBounds(doc, movable)!;
+  const all = unionRects(boxes.map((b) => b.r).filter((r): r is Rect => !!r));
+  if (!all) return;
   const base = clone(doc);
   for (const { id, r } of boxes) {
     let dx = 0,
