@@ -43,7 +43,7 @@ afterAll(async () => {
 });
 
 describe.skipIf(!RUN)('live session (needs a relay)', () => {
-  it('syncs the host’s edits and cursors to a view-only guest, and keeps the room', async () => {
+  it('syncs the host’s edits and cursors to view-only guests; the host leaving ends the room', async () => {
     const a = await person();
     people.push(a);
     const link = await a.session.startSession();
@@ -81,15 +81,22 @@ describe.skipIf(!RUN)('live session (needs a relay)', () => {
 
     await b.session.leaveSession();
     await until('A sees B leave', () => Object.keys(a.session.useCollab.getState().peers).length === 0);
-    const final = a.store.S().doc.items;
-    await a.session.leaveSession();
 
-    // the room keeps the circuit after everyone has left
+    // a newcomer still gets the stored circuit while the host is away ...
+    const final = a.store.S().doc.items;
     mem.delete('nodal.collab.owned');
     const c = await person();
     people.push(c);
     await c.session.joinSession(link);
     await until('C live', () => c.session.useCollab.getState().status === 'live');
-    expect(c.store.S().doc.items).toEqual(final);
+    await until('C converged', () => JSON.stringify(c.store.S().doc.items) === JSON.stringify(final));
+
+    // ... until the host leaves, which ends the room for everyone
+    await a.session.leaveSession();
+    await until('C is out', () => c.session.useCollab.getState().status === 'off');
+    const d = await person();
+    people.push(d);
+    await d.session.joinSession(link);
+    await until('D told it ended', () => d.store.S().toasts.some((t) => t.text.includes('has ended')));
   }, 30000);
 });

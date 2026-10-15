@@ -48,7 +48,8 @@ Your symbols are kept in *My symbols*. Every circuit file also stores a copy of 
 - **The link is view-only.** Only you, in the browser that started the session, can change the circuit; the relay rejects edits from anyone else. Guests don't keep the circuit: when they leave, their own circuit comes back, and nothing from the session goes into their version history. Guests can choose **Leave and keep a copy** to keep the shared circuit as their own new circuit.
 - Everyone's **cursor and name** are shown live, along with what they have selected. Pick your own name and colour in the Share dialog.
 - The avatars in the top bar show who is here. **Click someone's avatar to follow their view**; panning or zooming yourself stops following.
-- The session is **end-to-end encrypted**. The key is in the part of the link after `#`, which never reaches the server, so only people with the link can read the circuit. The room keeps an encrypted copy, so the link still works after everyone has left and you can pick up editing from the same browser (rooms nobody touches for 90 days are deleted).
+- The session is **end-to-end encrypted**. The key is in the part of the link after `#`, which never reaches the server, so only people with the link can read the circuit. The room keeps an encrypted copy, so if you drop out or close the tab the link keeps working and you can pick up editing from the same browser.
+- **Leaving ends the session.** When you click **End session** (you're asked to confirm), everyone watching is disconnected, the link stops working and the stored copy is deleted. A room you don't end is deleted 24 hours after its last edit.
 - In the desktop app, paste a session link into *Share → Join*.
 
 The relay is a small Cloudflare Worker in [`collab-server/`](collab-server).

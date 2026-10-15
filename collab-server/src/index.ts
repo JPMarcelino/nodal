@@ -14,8 +14,10 @@ import { DurableObject } from 'cloudflare:workers';
  *   { t: 'b', d }     scene update, relayed to everyone else (editors only)
  *   { t: 'p', d }     presence (cursor, selection, viewport), relayed
  *   { t: 'save', d }  replace the stored room state (editors only)
+ *   { t: 'end' }      the host closes the room for good (editors only)
  * Server → client:
  *   { t: 'init', you, peers, editors, edit, snapshot }   on connect
+ *   { t: 'ended' }    the room was closed; sent instead of init to latecomers
  *   { t: 'join', id, edit } | { t: 'leave', id }
  *   { t: 'b' | 'p', from, d }
  */
@@ -29,8 +31,8 @@ const MAX_MESSAGE = 4 * 1024 * 1024;
 // storage.put takes at most 128 keys at once: 12 MB in 100 kB chunks stays under that
 const MAX_SNAPSHOT = 12 * 1024 * 1024;
 const CHUNK = 100_000;
-/** Rooms nobody has saved to for this long are deleted. */
-const EXPIRE_MS = 90 * 24 * 3600 * 1000;
+/** Rooms nobody has saved to for this long are deleted (and an ended room's marker is forgotten). */
+const EXPIRE_MS = 24 * 3600 * 1000;
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -48,6 +50,12 @@ export class Room extends DurableObject<Env> {
     if (sockets.length >= MAX_PEERS) return new Response('This session is full\n', { status: 429 });
     const edit = await this.canEdit(new URL(req.url).searchParams.get('w'));
     const { 0: client, 1: server } = new WebSocketPair();
+    if (await this.ctx.storage.get<boolean>('ended')) {
+      server.accept();
+      server.send(JSON.stringify({ t: 'ended' }));
+      server.close(1000, 'ended');
+      return new Response(null, { status: 101, webSocket: client });
+    }
     const id = crypto.randomUUID().slice(0, 8);
     // hibernatable: the object can sleep between messages without dropping connections
     this.ctx.acceptWebSocket(server);
@@ -76,6 +84,7 @@ export class Room extends DurableObject<Env> {
     } catch {
       return;
     }
+    if (m.t === 'end' && attachment(ws).edit) return this.end();
     if (typeof m.d !== 'string') return;
     if (m.t === 'p') this.broadcast(JSON.stringify({ t: m.t, from: peerId(ws), d: m.d }), ws);
     else if (!attachment(ws).edit) return;
@@ -92,8 +101,25 @@ export class Room extends DurableObject<Env> {
   }
 
   async alarm() {
-    if (this.ctx.getWebSockets().length) await this.ctx.storage.setAlarm(Date.now() + EXPIRE_MS);
+    const ended = await this.ctx.storage.get<boolean>('ended');
+    if (!ended && this.ctx.getWebSockets().length) await this.ctx.storage.setAlarm(Date.now() + EXPIRE_MS);
     else await this.ctx.storage.deleteAll();
+  }
+
+  /** Deletes the circuit and tells everyone; the link answers "ended" until the marker expires. */
+  private async end() {
+    await this.ctx.storage.deleteAll();
+    await this.ctx.storage.put('ended', true);
+    await this.ctx.storage.setAlarm(Date.now() + EXPIRE_MS);
+    const msg = JSON.stringify({ t: 'ended' });
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(msg);
+        ws.close(1000, 'ended');
+      } catch {
+        /* already closing */
+      }
+    }
   }
 
   private left(ws: WebSocket) {
