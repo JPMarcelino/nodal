@@ -32,6 +32,91 @@ export function touchingPins(doc: CircuitDoc): string[][] {
   return [...at.values()].filter((g) => new Set(g.map((k) => k.split(':')[0])).size > 1);
 }
 
+function componentPinCells(doc: CircuitDoc, c: ComponentItem): Array<[string, string]> {
+  const def = instanceSymbol(doc, c);
+  return def.ports.map((p) => {
+    const w = toWorld(c, def, p.x, p.y);
+    return [`${Math.round(w.x * 2)},${Math.round(w.y * 2)}`, `${c.id}:${p.id}`] as [string, string];
+  });
+}
+
+export function touchingCells(doc: CircuitDoc): Map<string, string[]> {
+  const cells = new Map<string, string[]>();
+  for (const c of Object.values(doc.items)) {
+    if (c.type !== 'component') continue;
+    for (const [cell, key] of componentPinCells(doc, c)) {
+      const list = cells.get(cell);
+      if (list) list.push(key);
+      else cells.set(cell, [key]);
+    }
+  }
+  return cells;
+}
+
+export function touchingFromCells(cells: Map<string, string[]>): Set<string> {
+  const out = new Set<string>();
+  for (const keys of cells.values()) {
+    if (new Set(keys.map((k) => k.split(':')[0])).size > 1) for (const k of keys) out.add(k);
+  }
+  return out;
+}
+
+export function refreshTouching(
+  prevDoc: CircuitDoc,
+  prevCells: Map<string, string[]>,
+  prevTouching: Set<string>,
+  doc: CircuitDoc,
+  moved: Set<string>,
+): { cells: Map<string, string[]>; touching: Set<string>; same: boolean } {
+  const pins = (d: CircuitDoc, id: string) => {
+    const c = d.items[id];
+    return c && c.type === 'component' ? componentPinCells(d, c).map(([cell, key]) => `${cell} ${key}`).join('\n') : null;
+  };
+  let same = true;
+  for (const id of moved) {
+    if (pins(prevDoc, id) !== pins(doc, id)) {
+      same = false;
+      break;
+    }
+  }
+  if (same) return { cells: prevCells, touching: prevTouching, same: true };
+  const cells = new Map(prevCells);
+  const before = new Map<string, string[] | undefined>();
+  const snap = (cell: string) => {
+    if (!before.has(cell)) before.set(cell, cells.get(cell));
+  };
+  for (const id of moved) {
+    const c = prevDoc.items[id];
+    if (!c || c.type !== 'component') continue;
+    for (const [cell, key] of componentPinCells(prevDoc, c)) {
+      snap(cell);
+      const list = cells.get(cell);
+      if (!list || !list.includes(key)) continue;
+      const next = list.filter((k) => k !== key);
+      if (next.length) cells.set(cell, next);
+      else cells.delete(cell);
+    }
+  }
+  for (const id of moved) {
+    const c = doc.items[id];
+    if (!c || c.type !== 'component') continue;
+    for (const [cell, key] of componentPinCells(doc, c)) {
+      snap(cell);
+      const list = cells.get(cell);
+      if (list) {
+        if (!list.includes(key)) cells.set(cell, [...list, key]);
+      } else cells.set(cell, [key]);
+    }
+  }
+  const touching = new Set(prevTouching);
+  for (const [cell, old] of before) {
+    for (const key of old ?? []) touching.delete(key);
+    const list = cells.get(cell) ?? [];
+    if (new Set(list.map((k) => k.split(':')[0])).size > 1) for (const key of list) touching.add(key);
+  }
+  return { cells, touching, same: false };
+}
+
 const key = (ep: Endpoint, wireId: string, end: string) =>
   ep.kind === 'port' ? `p:${ep.comp}:${ep.port}` : ep.kind === 'junction' ? `j:${ep.id}` : `f:${wireId}:${end}`;
 

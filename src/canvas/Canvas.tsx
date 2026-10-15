@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
-import { drawOrder, itemBounds, labelsShown, makeShape } from '../model/doc';
+import { drawOrderCached, itemBounds, labelsShown, makeShape } from '../model/doc';
 import { componentBounds, dist, eq, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
 import { getSymbol, instanceSymbol } from '../model/registry';
@@ -76,6 +76,8 @@ type Gesture =
 
 const ORTHO_EPS = 0.01;
 
+const NO_HOTSPOTS: HotSpot[] = [];
+
 /** Live hooks for the global keyboard handler. */
 export const canvasKeys: { handle: ((combo: string) => boolean) | null } = { handle: null };
 
@@ -147,7 +149,6 @@ export function Canvas() {
   const layerHover = useStore((s) => s.layerHover);
   const data = useSceneData(doc);
   const wireAvoid = useStore((s) => s.prefs.wireAvoid);
-  const routeObs = useMemo(() => (wireAvoid ? routeObstacles(doc) : null), [doc, wireAvoid]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const gRef = useRef<Gesture | null>(null);
   const [gesture, setGestureState] = useState<Gesture | null>(null);
@@ -171,6 +172,8 @@ export function Canvas() {
     gRef.current = g;
     setGestureState(g);
   }, []);
+  const gestureKind = gesture?.kind ?? null;
+  const routeObs = useMemo(() => (wireAvoid && gestureKind === 'wire' ? routeObstacles(doc) : null), [doc, wireAvoid, gestureKind]);
 
   useTouchInput(wrapRef);
   useEffect(() => {
@@ -207,7 +210,7 @@ export function Canvas() {
   };
   useEffect(() => () => closeHotMenu(), []);
 
-  const hotSpots = useMemo(() => computeHotSpots(doc, data.polys, data.crossings), [doc, data]);
+  const hotSpots = useMemo(() => (gestureKind ? NO_HOTSPOTS : computeHotSpots(doc, data.polys, data.crossings)), [doc, data, gestureKind]);
 
   /** Nearest hot spot under the pointer (crossings get a little extra reach for their hop arcs). */
   const hotSpotAt = (w: Point): HotSpot | null => {
@@ -388,7 +391,7 @@ export function Canvas() {
       for (const s of shapes) if (s.layer === 'above' && shapeHit(s)) out.push(s.id);
       for (const it of items) if (it.type === 'junction' && dist(it, p) < t + 2) out.push(it.id);
       // parts and wires in their shared stacking order, front first (as drawn)
-      const rank = drawOrder(d);
+      const rank = drawOrderCached(d);
       const circuit: string[] = [];
       for (const c of items) if (c.type === 'component' && pointInRect(p, itemBounds(d, c)!, 1)) circuit.push(c.id);
       for (const [id, pts] of data.polys) {
