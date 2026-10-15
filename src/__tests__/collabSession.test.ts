@@ -319,6 +319,78 @@ describe('session orchestration (fake relay)', () => {
     expect(b.store.S().doc.name).toBe('Mine, edited');
   }, 30000);
 
+  it('viewers can leave with a copy of the shared circuit; keepCopy is a no-op for the owner', async () => {
+    const a = await person();
+    people.push(a);
+    a.store.mutate((d) => void (d.name = 'Shared'));
+    const link = await a.session.startSession();
+    await until('A live', () => a.session.useCollab.getState().status === 'live');
+
+    const b = await guest();
+    people.push(b);
+    b.store.replaceDoc({ ...createDoc('Mine'), id: 'mine' });
+    await b.session.joinSession(link);
+    await until('B live', () => b.session.useCollab.getState().status === 'live');
+    await until('B has the shared circuit', () => b.store.S().doc.name === 'Shared');
+    expect(b.store.S().viewOnly).toBe(true);
+
+    await b.session.leaveSession({ keepCopy: true });
+    people.splice(people.indexOf(b), 1);
+    const kept = b.store.S();
+    expect(kept.doc.name).toBe('Shared (copy)');
+    expect(kept.doc.id).not.toBe('mine');
+    expect(kept.doc.id.startsWith('room:')).toBe(false);
+    expect(kept.doc.items).toEqual(a.store.S().doc.items);
+    expect(kept.viewOnly).toBe(false);
+    expect(kept.dirty).toBe(true);
+    expect(kept.filePath).toBeNull();
+    b.store.mutate((d) => void (d.name = 'Shared (copy), edited'));
+    expect(b.store.S().doc.name).toBe('Shared (copy), edited');
+
+    // A still has the shared circuit, unchanged
+    expect(a.store.S().doc.name).toBe('Shared');
+
+    // the owner already keeps the circuit: keepCopy behaves exactly like a plain leave
+    const before = a.store.S().doc;
+    await a.session.leaveSession({ keepCopy: true });
+    people.splice(people.indexOf(a), 1);
+    expect(a.store.S().doc).toBe(before);
+    expect(a.session.useCollab.getState().status).toBe('off');
+  }, 30000);
+
+  it('answering "Keep editing" leaves the own circuit open and stashes the shared copy in history', async () => {
+    const a = await person();
+    people.push(a);
+    a.store.mutate((d) => void (d.name = 'Shared'));
+    const link = await a.session.startSession();
+    await until('A live', () => a.session.useCollab.getState().status === 'live');
+
+    const b = await guest();
+    people.push(b);
+    b.store.replaceDoc({ ...createDoc('Mine'), id: 'mine' });
+    // B's own circuit has unsaved changes, so keeping the copy asks first
+    b.store.mutate((d) => {
+      const s = makeShape(d as CircuitDoc, 'rect', 0, 0, 20, 20);
+      s.id = 'm1';
+      d.items[s.id] = s;
+    });
+    await b.session.joinSession(link);
+    await until('B live', () => b.session.useCollab.getState().status === 'live');
+    await until('B has the shared circuit', () => b.store.S().doc.name === 'Shared');
+
+    const askMod = await import('../ui/Ask');
+    const leaving = b.session.leaveSession({ keepCopy: true });
+    await until('ask shown', () => !!askMod.useAsk.getState().q);
+    askMod.useAsk.getState().q!.resolve('cancel');
+    askMod.useAsk.setState({ q: null });
+    await leaving;
+    people.splice(people.indexOf(b), 1);
+    expect(b.store.S().doc.id).toBe('mine');
+    expect(b.store.S().doc.items['m1']).toBeTruthy();
+    expect(b.store.S().viewOnly).toBe(false);
+    expect(b.store.S().toasts.some((t) => t.text.includes('History'))).toBe(true);
+  }, 30000);
+
   it('the host can edit again after a reload; a token-less newcomer still only watches', async () => {
     const a = await person();
     people.push(a);
