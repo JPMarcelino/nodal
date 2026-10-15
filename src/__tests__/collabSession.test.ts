@@ -3,6 +3,21 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createDoc, makeShape } from '../model/doc';
 import type { CircuitDoc } from '../model/types';
 
+// Version history needs IndexedDB, which the node test env lacks, so the
+// "Keep editing" test records saveVersion calls through a mock instead.
+const { savedCopies } = vi.hoisted(() => ({ savedCopies: [] as CircuitDoc[] }));
+
+vi.mock('../io/versionStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../io/versionStore')>();
+  return {
+    ...actual,
+    saveVersion: async (doc: CircuitDoc, label = '', auto = false) => {
+      savedCopies.push(doc);
+      return { id: 'v-test', docId: doc.id, t: Date.now(), label, auto, doc };
+    },
+  };
+});
+
 /*
  * Relay-free tests for live-session orchestration (src/collab/session.ts) and
  * store.applyExternal. The skipped E2E test (collabLive.test.ts) is the only
@@ -359,6 +374,7 @@ describe('session orchestration (fake relay)', () => {
   }, 30000);
 
   it('answering "Keep editing" leaves the own circuit open and stashes the shared copy in history', async () => {
+    savedCopies.length = 0;
     const a = await person();
     people.push(a);
     a.store.mutate((d) => void (d.name = 'Shared'));
@@ -388,6 +404,12 @@ describe('session orchestration (fake relay)', () => {
     expect(b.store.S().doc.id).toBe('mine');
     expect(b.store.S().doc.items['m1']).toBeTruthy();
     expect(b.store.S().viewOnly).toBe(false);
+    // the shared circuit was actually handed to version history under its copy id
+    expect(savedCopies).toHaveLength(1);
+    expect(savedCopies[0].name).toBe('Shared (copy)');
+    expect(savedCopies[0].id).not.toBe('mine');
+    expect(savedCopies[0].id.startsWith('room:')).toBe(false);
+    expect(savedCopies[0].items).toEqual(a.store.S().doc.items);
     expect(b.store.S().toasts.some((t) => t.text.includes('History'))).toBe(true);
   }, 30000);
 

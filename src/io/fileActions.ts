@@ -74,12 +74,19 @@ function loadCircuit(name: string, doc: CircuitDoc, path: string | null) {
 export async function openSessionCopy(doc: CircuitDoc): Promise<boolean> {
   const copy = { ...doc, id: uid('d'), name: `${doc.name} (copy)` };
   if (!(await confirmDiscard('Keeping the shared circuit'))) {
+    // an empty shared circuit, or a history failure, saves nothing: only then say so
+    let saved = false;
     try {
-      await saveVersion(copy, '', true);
+      saved = (await saveVersion(copy, '', true)) !== null;
     } catch {
-      /* version history is best-effort here */
+      saved = false;
     }
-    toast('Kept your circuit. The shared copy is under History → Other circuits on this device.', 'info');
+    toast(
+      saved
+        ? 'Kept your circuit. The shared copy is under History → Other circuits on this device.'
+        : 'Kept your circuit. The shared circuit was not saved.',
+      'info',
+    );
     return false;
   }
   replaceDoc(copy, null);
