@@ -20,7 +20,7 @@ interface AskState {
   resolve: (v: unknown) => void;
 }
 
-const useAsk = create<{ q: AskState | null }>(() => ({ q: null }));
+export const useAsk = create<{ q: AskState | null }>(() => ({ q: null }));
 
 /** Asks a question; resolves with the chosen button's value (or `dismiss` on Esc). */
 export function ask<T>(title: string, message: string | undefined, buttons: AskButton<T>[], dismiss: T): Promise<T> {
