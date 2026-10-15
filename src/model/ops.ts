@@ -677,6 +677,8 @@ export function groupItems(doc: CircuitDoc, ids: string[], scope?: string, name?
   const gid = uid('g');
   const count = Object.keys(doc.groups).length + 1;
   doc.groups[gid] = { id: gid, name: name ?? `Group ${count}`, group: scope };
+  const tops = new Set<string>();
+  const direct: Item[] = [];
   for (const id of ids) {
     const it = doc.items[id];
     if (!it) continue;
@@ -688,9 +690,11 @@ export function groupItems(doc: CircuitDoc, ids: string[], scope?: string, name?
       const idx = chain.indexOf(scope);
       top = idx > 0 ? chain[idx - 1] : undefined;
     }
-    if (top && top !== gid) doc.groups[top].group = gid;
-    else it.group = gid;
+    if (top && top !== gid) tops.add(top);
+    else direct.push(it);
   }
+  for (const top of tops) doc.groups[top].group = gid;
+  for (const it of direct) it.group = gid;
   return gid;
 }
 
