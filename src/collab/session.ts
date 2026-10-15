@@ -16,7 +16,8 @@ import { SyncState, changedKeys, docFromEntries, writeEntries, type Entry } from
  * Share links are view-only. Whoever starts a session keeps a secret edit
  * token for the room (in localStorage, never in the link) and the relay only
  * accepts changes from connections that present it. Viewers get their own
- * circuit back when they leave, and keep no copy of the shared one.
+ * circuit back when they leave, or keep a copy of the shared one with
+ * "Leave and keep a copy".
  */
 
 export const COLLAB_URL: string = import.meta.env.VITE_COLLAB_URL ?? 'wss://nodal-collab.nodal-collab.workers.dev';
@@ -168,13 +169,20 @@ export async function joinSession(link: string): Promise<boolean> {
   return true;
 }
 
-export async function leaveSession() {
+export async function leaveSession(opts?: { keepCopy?: boolean }) {
   if (!live()) return;
   flushLocal();
   if (saveTimer) await saveNow();
   await outbox;
   const viewer = S().viewOnly;
+  const shared = S().doc;
   shutdown();
+  if (opts?.keepCopy && viewer) {
+    // a dynamic import: fileActions pulls in the export stack, which session.ts must not depend on
+    const { openSessionCopy } = await import('../io/fileActions');
+    if (await openSessionCopy(shared)) toast('Left the live session. A copy of the circuit is open.', 'info');
+    return;
+  }
   toast(viewer ? 'Left the live session. Your own circuit is back.' : 'Left the live session. The circuit stays open here.', 'info');
 }
 

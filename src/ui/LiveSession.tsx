@@ -1,4 +1,4 @@
-import { Copy, LogIn, LogOut, Radio } from 'lucide-react';
+import { Copy, CopyPlus, LogIn, LogOut, Radio } from 'lucide-react';
 import { useState } from 'react';
 import { PEER_COLORS, joinSession, leaveSession, parseLink, setMyColor, setMyName, startSession, useCollab } from '../collab/session';
 import { toast, useStore } from '../store/store';
@@ -44,7 +44,7 @@ export function LiveSession() {
             {status === 'off'
               ? 'Share a view-only link: others watch this circuit live as you edit it, with everyone’s cursor shown. They can’t change it, and it closes for them when they leave. The circuit is end-to-end encrypted: the key is in the link, so only people you send it to can open it.'
               : viewOnly
-                ? 'You are viewing someone else’s circuit. You can’t change it, and when you leave your own circuit comes back.'
+                ? 'You are viewing someone else’s circuit. You can’t change it. Leaving brings back your own circuit, or choose “Leave and keep a copy” to keep the shared one as your own new circuit.'
                 : count
                   ? `${count} other ${count === 1 ? 'person' : 'people'} here. Click an avatar in the top bar to follow their view.`
                   : 'Nobody else is here yet. Send them the link.'}
@@ -97,6 +97,11 @@ export function LiveSession() {
             <button className="secondary-btn danger" onClick={() => void leaveSession()}>
               <LogOut size={14} /> Leave
             </button>
+            {viewOnly && (
+              <button className="secondary-btn" onClick={() => void leaveSession({ keepCopy: true })}>
+                <CopyPlus size={14} /> Leave and keep a copy
+              </button>
+            )}
           </div>
         </div>
       )}
