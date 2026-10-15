@@ -657,6 +657,11 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
     } else if (it.type === 'junction' || it.type === 'shape') {
       it.x += dx;
       it.y += dy;
+      if (it.type === 'shape' && it.anchor) {
+        if (it.anchor.id && idMap.has(it.anchor.id)) it.anchor.id = idMap.get(it.anchor.id)!;
+        it.anchor.x += dx;
+        it.anchor.y += dy;
+      }
     } else if (it.type === 'wire') {
       it.a = remapEp(it.a);
       it.b = remapEp(it.b);
