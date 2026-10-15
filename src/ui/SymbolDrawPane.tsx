@@ -519,7 +519,6 @@ export function SymbolDrawPane({
       // drop a text and select it; its content is edited in the properties bar
       apply((s) => void s.prims.push(withStyle({ t: 'text', x: p.x, y: p.y, size: 10, anchor: 'middle', text: 'Text' }, style)));
       setSel([prims.length]);
-      setTool('select');
       setTimeout(() => document.querySelector<HTMLInputElement>('[data-se-text]')?.select(), 30);
       return;
     }

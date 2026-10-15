@@ -21,7 +21,7 @@ export function StatusBar() {
         : tool === 'node'
           ? 'Drag a wire bend or polygon corner · drag a polygon edge to move it, its middle dot to add a corner · double-click or Del removes a node · Alt-drag freely'
           : tool === 'zone' || tool === 'rect' || tool === 'ellipse'
-          ? 'Drag to draw · hold Shift to keep the tool'
+          ? 'Drag to draw · Esc returns to select'
           : tool === 'polygon'
             ? 'Click the corners · click the first corner again (or double-click / Enter) to close · Shift 45° · Backspace undo corner'
           : tool === 'text'
