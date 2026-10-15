@@ -91,6 +91,7 @@ export async function saveFile(
       return null;
     } catch (e) {
       if ((e as Error).name === 'AbortError') return false;
+      throw e;
     }
   }
   const url = URL.createObjectURL(blob);
