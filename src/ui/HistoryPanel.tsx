@@ -102,8 +102,12 @@ function Preview({ v }: { v: Version }) {
   const { parts, wires } = countParts(v.doc);
 
   const saveAsFile = async () => {
-    const res = await saveFile(JSON.stringify({ ...v.doc, id: undefined }, null, 1), `${sanitizeName(`${v.doc.name} (${v.label || defaultLabel(v.t)})`)}.nodal`, NODAL_FILTER);
-    if (res !== false && res !== null) toast('Saved a copy of this version', 'success');
+    try {
+      const res = await saveFile(JSON.stringify({ ...v.doc, id: undefined }, null, 1), `${sanitizeName(`${v.doc.name} (${v.label || defaultLabel(v.t)})`)}.nodal`, NODAL_FILTER);
+      if (res !== false && res !== null) toast('Saved a copy of this version', 'success');
+    } catch (e) {
+      toast(`Save failed: ${(e as Error).message}`, 'error');
+    }
   };
 
   return (
