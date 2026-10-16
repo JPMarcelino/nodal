@@ -1,5 +1,6 @@
 import { produce } from 'immer';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { gateMessage, isWellFormedToken, resolveOwnership } from '../../collab-server/src/policy';
 import { createDoc, makeShape } from '../model/doc';
 import type { CircuitDoc } from '../model/types';
 
@@ -24,11 +25,19 @@ vi.mock('../io/versionStore', async (importOriginal) => {
  * thing exercising this code, so none of it runs in CI. Here each simulated
  * person gets fresh store/session modules (like the E2E test), but the
  * WebSocket is faked and a scripted in-memory relay forwards messages between
- * peers and keeps the room snapshot, mirroring collab-server/src/index.ts:
- * `b`/`p` are broadcast to the others, `save` replaces the stored snapshot,
- * newcomers get `init` and everyone else gets `join`/`leave`. The first edit
- * token (`?w=`) a room sees owns it; `b`/`save` from anyone else are dropped.
- * The owner's `end` deletes the room and answers everyone with `ended`.
+ * peers and keeps the room snapshot.
+ *
+ * MIRROR WARNING: this fake stands in for collab-server/src/index.ts (`b`/`p`
+ * are broadcast to the others, `save` replaces the stored snapshot,
+ * newcomers get `init` and everyone else gets `join`/`leave`). The
+ * security-critical rules — the first-token ownership claim
+ * (isWellFormedToken/resolveOwnership) and per-message edit-gating
+ * (gateMessage) — MUST come from collab-server/src/policy.ts, the same module
+ * the real room uses. Do not hand-roll gating here: a behaviour drift between
+ * this fake and the server does not fail CI unless the shared module is used,
+ * and src/__tests__/relayPolicy.test.ts pins the rules themselves. The fake
+ * stores the raw token where the server stores its sha256; equality behaves
+ * the same, so resolveOwnership applies to both.
  */
 
 const mem = new Map<string, string>();
@@ -114,6 +123,8 @@ class FakeSocket {
       r = { sockets: new Set(), ids: new Map(), snapshot: null };
       rooms.set(this.room, r);
     }
+    // Same order as Room.fetch: the ended tombstone is answered before any
+    // ownership claim, so a closed room is never re-claimed.
     if (r.ended) {
       this.readyState = FakeSocket.CLOSED;
       setTimeout(() => {
@@ -122,9 +133,10 @@ class FakeSocket {
       }, 0);
       return;
     }
-    const token = String(url).match(/[?&]w=([^&]+)/)?.[1];
-    if (token && !r.owner) r.owner = token;
-    this.edit = !!token && token === r.owner;
+    const token = String(url).match(/[?&]w=([^&]+)/)?.[1] ?? null;
+    const verdict = resolveOwnership(r.owner ?? null, isWellFormedToken(token) ? token : null);
+    if (verdict.claim) r.owner = verdict.claim;
+    this.edit = verdict.edit;
     this.id = `p${nextPeer++}`;
     r.sockets.add(this);
     r.ids.set(this, this.id);
@@ -149,7 +161,15 @@ class FakeSocket {
     } catch {
       return;
     }
-    if (msg.t === 'end' && this.edit) {
+    // Same enforcement as Room.webSocketMessage: the verdict comes from the
+    // shared policy module, so a gating regression fails CI (see
+    // src/__tests__/relayPolicy.test.ts). Keep this dispatch in sync with it.
+    const decision = gateMessage(msg.t, msg.d, this.edit);
+    if (decision === 'drop') {
+      if (!this.edit && (msg.t === 'b' || msg.t === 'save' || msg.t === 'end')) droppedEdits++;
+      return;
+    }
+    if (decision === 'end') {
       r.snapshot = null;
       r.ended = true;
       for (const s of [...r.sockets]) {
@@ -162,19 +182,13 @@ class FakeSocket {
       }
       return;
     }
-    if ((msg.t === 'b' || msg.t === 'save' || msg.t === 'end') && !this.edit) {
-      droppedEdits++;
+    if (decision === 'save') {
+      r.snapshot = msg.d as string;
       return;
     }
-    if (msg.t === 'save' && typeof msg.d === 'string') {
-      r.snapshot = msg.d;
-      return;
-    }
-    if ((msg.t === 'b' || msg.t === 'p') && typeof msg.d === 'string') {
-      const out = JSON.stringify({ t: msg.t, from: r.ids.get(this), d: msg.d });
-      for (const s of [...r.sockets]) {
-        if (s !== this) setTimeout(() => s.onmessage?.({ data: out }), 0);
-      }
+    const out = JSON.stringify({ t: msg.t, from: r.ids.get(this), d: msg.d });
+    for (const s of [...r.sockets]) {
+      if (s !== this) setTimeout(() => s.onmessage?.({ data: out }), 0);
     }
   }
   close() {
