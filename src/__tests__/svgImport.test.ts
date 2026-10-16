@@ -94,3 +94,93 @@ describe('insertSvgDrawing', () => {
     expect(items.every((i) => i.group === g)).toBe(true);
   });
 });
+
+describe('SVG import options and symbol recognition', () => {
+  /** A drawing of `symbol` as a placed part would draw it, plus extra strokes. */
+  async function drawn(placed: { symbol: string; x: number; y: number; rot: 0 | 90 | 180 | 270; flipX?: boolean; scale?: number }[], extra: [number, number][][] = []) {
+    const { createDoc } = await import('../model/doc');
+    const { instanceSymbol } = await import('../model/registry');
+    const { toWorld } = await import('../model/geometry');
+    const { primPolys } = await import('../model/svgSymbols');
+    const doc = createDoc();
+    const line = (pts: { x: number; y: number }[]) => ({ pts, closed: false, width: 2, color: '#000000', dashed: false });
+    const lines = placed.flatMap((p) => {
+      const c = { flipX: false, ...p };
+      const def = instanceSymbol(doc, c);
+      return def.prims.flatMap(primPolys).map((poly) => line(poly.map((q) => toWorld(c, def, q.x, q.y))));
+    });
+    for (const e of extra) lines.push(line(e.map(([x, y]) => ({ x, y }))));
+    return { doc, drawing: { lines, boxes: [], dots: [], texts: [{ x: placed[0].x + 30, y: placed[0].y - 20, size: 10, anchor: 'start' as const, text: 'R7', color: '#000000' }] } };
+  }
+
+  it('finds a rotated resistor and a scaled capacitor, and nothing in a bare wire', async () => {
+    const { recognizeSymbols } = await import('../model/svgSymbols');
+    const { doc, drawing } = await drawn(
+      [
+        { symbol: 'resistor', x: 100, y: 40, rot: 90 },
+        { symbol: 'capacitor', x: 300, y: 0, rot: 0, scale: 2 },
+      ],
+      [[[0, 200], [160, 200]]],
+    );
+    const { parts, rest } = recognizeSymbols(doc, drawing);
+    const r = parts.find((p) => p.symbol === 'resistor');
+    const c = parts.find((p) => p.symbol === 'capacitor');
+    expect(parts).toHaveLength(2);
+    expect(r && [r.x, r.y, r.rot % 180]).toEqual([100, 40, 90]);
+    expect(r?.ref).toBe('R7');
+    expect(c && [c.x, c.y, c.scale]).toEqual([300, 0, 2]);
+    // only the wire and nothing else is left
+    expect(rest.lines).toHaveLength(1);
+    expect(rest.texts).toHaveLength(0);
+  });
+
+  it('needs every piece of the symbol', async () => {
+    const { recognizeSymbols } = await import('../model/svgSymbols');
+    const { doc, drawing } = await drawn([{ symbol: 'capacitor', x: 0, y: 0, rot: 0 }]);
+    drawing.lines.splice(1, 1); // drop a plate
+    expect(recognizeSymbols(doc, drawing).parts.some((p) => p.symbol === 'capacitor')).toBe(false);
+  });
+
+  it('places recognised parts and wires them up at their pins', async () => {
+    const { insertSvgDrawing, DEFAULT_SVG_IMPORT } = await import('../model/svgDrawing');
+    // a horizontal resistor with pins at (-40, 0) / (40, 0) and a wire leaving its right pin
+    const { doc, drawing } = await drawn([{ symbol: 'resistor', x: 0, y: 0, rot: 0 }], [[[40, 0], [100, 0], [100, 50]]]);
+    const ids = insertSvgDrawing(doc, drawing, { x: 0, y: 0 }, undefined, 'x', { ...DEFAULT_SVG_IMPORT, symbols: true });
+    const items = ids.map((id) => doc.items[id]);
+    const part = items.find((i) => i.type === 'component');
+    const wire = items.find((i) => i.type === 'wire');
+    expect(part?.type === 'component' && [part.symbol, part.ref]).toEqual(['resistor', 'R7']);
+    expect(wire?.type === 'wire' && wire.a).toEqual({ kind: 'port', comp: part!.id, port: '2' });
+    expect(items.filter((i) => i.type === 'junction')).toHaveLength(0);
+  });
+
+  it('makes lines and polygons instead of wires and boxes when asked', async () => {
+    const { createDoc } = await import('../model/doc');
+    const { insertSvgDrawing } = await import('../model/svgDrawing');
+    const doc = createDoc();
+    const ids = insertSvgDrawing(
+      doc,
+      {
+        lines: [
+          { pts: [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 30 }], closed: false, width: 2, color: '#000000', dashed: false },
+          { pts: [{ x: 0, y: 40 }, { x: 20, y: 40 }, { x: 10, y: 60 }], closed: true, width: 1, color: '#ff0000', dashed: false, fill: '#00ff00', fillOpacity: 0.5, stroked: true },
+        ],
+        boxes: [{ kind: 'rect', x: 0, y: 70, w: 20, h: 10, rx: 0, stroke: '#000000', strokeWidth: 1, fill: 'none', fillOpacity: 0, dashed: false }],
+        dots: [{ x: 50, y: 30, r: 2 }],
+        texts: [],
+      },
+      { x: 0, y: 0 },
+      undefined,
+      'y',
+      { strokes: 'lines', closed: 'polygons', boxes: 'outlines', symbols: false },
+    );
+    const shapes = ids.map((id) => doc.items[id]).flatMap((i) => (i.type === 'shape' ? [i] : []));
+    expect(ids.every((id) => doc.items[id].type === 'shape')).toBe(true);
+    expect(shapes.filter((s) => s.kind === 'line').map((s) => [s.x, s.y, s.w, s.h])).toEqual([[0, 0, 50, 0], [50, 0, 0, 30]]);
+    const polys = shapes.filter((s) => s.kind === 'polygon');
+    expect(polys).toHaveLength(2);
+    expect(polys[0]).toMatchObject({ fill: '#00ff00', fillOpacity: 0.5, stroke: '#ff0000' });
+    expect(polys[1].poly).toHaveLength(8);
+    expect(shapes.filter((s) => s.kind === 'ellipse')).toHaveLength(1);
+  });
+});

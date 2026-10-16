@@ -15,6 +15,7 @@ import { Presenter } from './ui/Presenter';
 import { Timeline } from './ui/Timeline';
 import { useExplain } from './store/explain';
 import { AskHost } from './ui/Ask';
+import { SvgImportHost } from './ui/SvgImportDialog';
 
 function isTyping(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
@@ -117,6 +118,7 @@ export function App() {
       <Presenter />
       <Toasts />
       <AskHost />
+      <SvgImportHost />
     </div>
   );
 }
