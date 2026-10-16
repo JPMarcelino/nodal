@@ -276,3 +276,37 @@ describe('reconnectWireEnd (endpoint detach-vs-reconnect)', () => {
     ).toBe(true);
   });
 });
+
+describe('closing a shape onto a wire end', () => {
+  it('ends on the free end it was aimed at even after starting on the same wire split it', () => {
+    // a wire from (300, 200) bending at the old solder point (200, 200) into a 45° stub up to (160, 160)
+    const doc = createDoc();
+    const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: 300, y: 200 }, b: { kind: 'free', x: 160, y: 160 }, pts: [{ x: 200, y: 200 }], routing: 'straight' };
+    doc.items[w.id] = w;
+    // start on the bend (splitting the wire there), loop round and finish on the stub's free end
+    commitWire(doc, { kind: 'wire', wire: w.id, seg: 0, pt: { x: 200, y: 200 } }, { kind: 'wireEnd', wire: w.id, end: 'b', pt: { x: 160, y: 160 } }, {
+      angle: '45',
+      straight: true,
+      via: [{ x: 160, y: 240 }, { x: 60, y: 240 }, { x: 60, y: 160 }],
+    });
+    const polys = Object.values(doc.items)
+      .filter((i): i is WireItem => i.type === 'wire')
+      .map((x) => wirePolyline(doc, x));
+    const has = (p: { x: number; y: number }[], a: [number, number], b: [number, number]) =>
+      p.some((q, i) => i > 0 && [[q, p[i - 1]], [p[i - 1], q]].some(([u, v]) => u.x === a[0] && u.y === a[1] && v.x === b[0] && v.y === b[1]));
+    // the new run reaches (160, 160) from (60, 160): nothing jumps from the last corner to the solder point
+    expect(polys.some((p) => has(p, [60, 160], [160, 160]))).toBe(true);
+    expect(polys.some((p) => has(p, [60, 160], [200, 200]))).toBe(false);
+    // the stub is drawn once
+    expect(polys.filter((p) => has(p, [200, 200], [160, 160]))).toHaveLength(1);
+  });
+
+  it('keeps a 45° stub diagonal when it joins a right-angle wire', () => {
+    const doc = createDoc();
+    const w = freeWire(doc, 300, 200, 200, 200);
+    commitWire(doc, { kind: 'wireEnd', wire: w.id, end: 'b', pt: { x: 200, y: 200 } }, grid(160, 160), { angle: '45' });
+    const wires = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire');
+    expect(wires).toHaveLength(1);
+    expect(wirePolyline(doc, wires[0])).toEqual([{ x: 300, y: 200 }, { x: 200, y: 200 }, { x: 160, y: 160 }]);
+  });
+});
