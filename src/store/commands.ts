@@ -47,7 +47,7 @@ export const COMMANDS: Command[] = [
   { id: 'file.exportKicad', label: 'Export KiCad netlist (PCB layout)', category: 'File', keys: [], run: () => doExport('kicad') },
   { id: 'file.exportBom', label: 'Export bill of materials (CSV)', category: 'File', keys: [], run: () => doExport('bom') },
   { id: 'file.copySvg', label: 'Copy selection as SVG', category: 'File', keys: ['Mod+Alt+C'], run: copyAsSvg },
-  { id: 'file.copyPng', label: 'Copy selection as image (PNG)', category: 'File', keys: ['Mod+Shift+Alt+P'], run: copyAsPng },
+  { id: 'file.copyPng', label: 'Copy selection as image (PNG)', category: 'File', keys: ['Mod+Alt+Shift+P'], run: copyAsPng },
   { id: 'file.exportSelection', label: 'Export selection as PNG', category: 'File', keys: ['Mod+Alt+E'], run: () => exportSelection('png') },
   { id: 'file.exportSelectionSvg', label: 'Export selection as SVG', category: 'File', keys: [], run: () => exportSelection('svg') },
   { id: 'file.exportArea', label: 'Export canvas area…', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
