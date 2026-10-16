@@ -927,8 +927,10 @@ export function Canvas() {
     const g = gRef.current;
     if (g?.kind === 'wire') {
       const t = findTarget(w);
-      if (isDouble || t.kind !== 'grid') {
-        commitWire(g, t);
+      // clicking back on a loose start closes the loop (the wire isn't in the doc yet, so it is no target)
+      const closes = t.kind === 'grid' && g.start.kind === 'grid' && g.pts.length >= 2 && eq(t.pt, g.start.pt);
+      if (isDouble || t.kind !== 'grid' || closes) {
+        commitWire(g, closes ? g.start : t);
         setGesture(null);
         return;
       }
