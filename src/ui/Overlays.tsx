@@ -11,9 +11,12 @@ export function StatusBar() {
   const grid = useStore((s) => s.doc.settings.grid);
   const zoom = useStore((s) => s.view.zoom);
   const scope = useStore((s) => s.scope);
+  const drawBus = useStore((s) => s.prefs.drawBus);
   const filePath = useStore((s) => s.filePath);
   const hint = placing
     ? 'Placing — click to drop, R rotate, X/Y flip, Esc cancel'
+    : tool === 'wire' && drawBus
+      ? 'Bus — draw like a wire, then name it like D[0..7] · wires drawn from it are named D0, D1… in turn · the Bus button on the toolbar switches back'
     : tool === 'wire'
       ? 'Wire — click or drag from a pin, wire or the grid · click to bend, double-click to finish · Space flips the bend · Tab: 90° / 45° / any angle'
       : tool === 'select'

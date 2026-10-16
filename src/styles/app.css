@@ -1608,6 +1608,28 @@ select.input {
   color: var(--accent);
 }
 
+.bus-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 8px;
+}
+
+.bus-member {
+  font-family: 'JetBrains Mono', 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+  font-size: 0.78em;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+}
+
+.bus-member.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .stats {
   display: flex;
   flex-wrap: wrap;

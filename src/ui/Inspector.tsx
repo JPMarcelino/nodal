@@ -26,6 +26,7 @@ import {
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { defaultHeadSize, frozenLabelOffsets, labelLook } from '../canvas/Scene';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
+import { DEFAULT_BUS_STYLE, busNets, busOfWire, describeMembers, wireStyleFor } from '../model/bus';
 import { computeNets, netOfWire } from '../model/netlist';
 import { measureRich } from '../model/richText';
 import { DNP, PART_FIELDS, customFieldKeys, hasPartFields, isDnp } from '../model/partFields';
@@ -328,6 +329,17 @@ function DocumentPanel() {
         >
           Reset all wires to default style
         </button>
+      </Section>
+      <Section title="Default bus style" defaultOpen={false} summary={`${wireStyleFor(settings, { bus: true }).width}px${settings.hideBusMarks ? '' : ' · counts'}`}>
+        <WireStyleEditor style={wireStyleFor(settings, { bus: true })} onChange={(p) => upd((s) => (s.bus = { ...s.bus, ...p }))} />
+        <Field label="Signal counts" hint="A slash across each bus with how many signals it carries">
+          <Toggle checked={!settings.hideBusMarks} onChange={(v) => upd((s) => (v ? delete s.hideBusMarks : (s.hideBusMarks = true)))} />
+        </Field>
+        {settings.bus && (
+          <button className="secondary-btn full" onClick={() => upd((s) => delete s.bus)}>
+            Back to the standard bus look ({DEFAULT_BUS_STYLE.width}px)
+          </button>
+        )}
       </Section>
       <SheetSection />
       <Section title="Canvas">
@@ -706,18 +718,32 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
   const doc = useStore((s) => s.doc);
   const brush = useStore((s) => s.wireBrush);
   const first = wires[0];
-  const style = { ...doc.settings.wire, ...first.style };
+  const style = wireStyleFor(doc.settings, first);
   const ids = wires.map((w) => w.id);
   const upd = (p: Partial<WireStyle>) => mutate((d) => ids.forEach((id) => ((d.items[id] as WireItem).style = { ...(d.items[id] as WireItem).style, ...p })));
-  const net = useMemo(() => netOfWire(computeNets(doc), first.id), [doc, first.id]);
+  const net = useMemo(() => (first.bus ? undefined : netOfWire(computeNets(doc), first.id)), [doc, first.id, first.bus]);
+  const bus = useMemo(() => busOfWire(busNets(doc), first.id), [doc, first.id]);
   const updLabel = (fn: (w: WireItem) => void) => mutate((d) => fn(d.items[first.id] as WireItem));
+  const allBus = wires.every((w) => w.bus);
+  const noun = allBus ? (wires.length > 1 ? 'buses' : 'Bus') : wires.length > 1 ? 'wires' : 'Wire';
   return (
     <>
       <div className="panel-title">
-        {wires.length > 1 ? `${wires.length} wires` : 'Wire'}
+        {wires.length > 1 ? `${wires.length} ${noun}` : noun}
         {net && <span className="net-chip">net {net.name}</span>}
+        {first.bus && bus?.name && <span className="net-chip">bus {bus.name}</span>}
       </div>
       <Section title="Style">
+        <Field label="Kind" hint="A bus carries a bundle of signals and joins nothing itself; wires tapped onto it join the signal they are named after">
+          <Segmented
+            value={allBus ? 'bus' : 'wire'}
+            options={[
+              { value: 'wire', label: 'Wire' },
+              { value: 'bus', label: 'Bus' },
+            ]}
+            onChange={(v) => mutate((d) => ids.forEach((id) => (v === 'bus' ? ((d.items[id] as WireItem).bus = true) : delete (d.items[id] as WireItem).bus)))}
+          />
+        </Field>
         <WireStyleEditor style={style} onChange={upd} />
         <Field label="Routing">
           <Segmented
@@ -765,22 +791,63 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
             {brush ? 'Stop using for new wires' : 'Use for new wires'}
           </button>
         </div>
-        <button
-          className="secondary-btn full"
-          onClick={() => {
-            if (!net) return;
-            mutate((d) => net.wires.forEach((id) => d.items[id] && ((d.items[id] as WireItem).style = { ...first.style })));
-            toast(`Applied to all ${net.wires.length} wires of net ${net.name}`);
-          }}
-        >
-          Apply style to whole net
-        </button>
+        {first.bus && bus ? (
+          <button
+            className="secondary-btn full"
+            onClick={() => {
+              mutate((d) => bus.wires.forEach((id) => d.items[id] && ((d.items[id] as WireItem).style = { ...first.style })));
+              toast(`Applied to the whole bus${bus.name ? ` ${bus.name}` : ''}`);
+            }}
+          >
+            Apply style to whole bus
+          </button>
+        ) : (
+          <button
+            className="secondary-btn full"
+            onClick={() => {
+              if (!net) return;
+              mutate((d) => net.wires.forEach((id) => d.items[id] && ((d.items[id] as WireItem).style = { ...first.style })));
+              toast(`Applied to all ${net.wires.length} wires of net ${net.name}`);
+            }}
+          >
+            Apply style to whole net
+          </button>
+        )}
       </Section>
       {wires.length === 1 && (
-        <Section title="Label">
-          <Field label="Text" hint="Supports maths, e.g. $V_{CC}$">
-            <TextInput value={first.label ?? ''} focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => mutate((d) => void ((d.items[first.id] as WireItem).label = v || undefined))} />
-          </Field>
+        <Section title={first.bus ? 'Name' : 'Label'}>
+          {first.bus ? (
+            <Field label="Bus name" hint="A range gives one signal per number: D[0..7] is D0…D7, A[15:0] counts down. List others with commas: {CLK, RST, D[0..3]}">
+              <TextInput
+                value={bus?.name ?? first.label ?? ''}
+                focusKey="value"
+                placeholder="e.g. D[0..7]"
+                onChange={(v) =>
+                  mutate((d) => {
+                    // the name lives on one piece of the bus: the one already named, else this one
+                    const named = bus?.wires.find((id) => (d.items[id] as WireItem | undefined)?.label?.trim()) ?? first.id;
+                    (d.items[named] as WireItem).label = v || undefined;
+                  })
+                }
+              />
+            </Field>
+          ) : (
+            <Field label="Text" hint="Supports maths, e.g. $V_{CC}$">
+              <TextInput value={first.label ?? ''} focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => mutate((d) => void ((d.items[first.id] as WireItem).label = v || undefined))} />
+            </Field>
+          )}
+          {!first.bus && bus && bus.members.length > 0 && (
+            <Field label="Bus signal" hint={`This wire taps bus ${bus.name}; it joins every other wire or label with the same name`}>
+              <select className="input" value={bus.members.includes(first.label ?? '') ? first.label : ''} onChange={(e) => updLabel((x) => (x.label = e.target.value || undefined))}>
+                <option value="">—</option>
+                {bus.members.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           {first.label && (
             <>
               <Field label="Show on canvas" hint="A hidden label still names the net in Find and in the lists">
@@ -817,6 +884,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           )}
         </Section>
       )}
+      {first.bus && wires.length === 1 && bus && <BusSection bus={bus} />}
       {net && (
         <Section title="Net">
           <div className="pin-list">
@@ -840,6 +908,46 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
         </Section>
       )}
     </>
+  );
+}
+
+/** Signals of a bus and which of them are tapped. */
+function BusSection({ bus }: { bus: ReturnType<typeof busNets>[number] }) {
+  const doc = useStore((s) => s.doc);
+  const tapped = new Map<string, number>();
+  for (const t of bus.taps) {
+    const name = ((doc.items[t.wire] as WireItem | undefined)?.label ?? '').trim();
+    tapped.set(name, (tapped.get(name) ?? 0) + 1);
+  }
+  const strays = [...tapped.keys()].filter((n) => !bus.members.includes(n));
+  return (
+    <Section title="Bus" summary={`${bus.members.length} signals · ${bus.taps.length} taps`}>
+      <div className="section-note">{bus.name ? describeMembers(bus.members) : 'Name the bus (e.g. D[0..7]) to give it signals.'}</div>
+      {bus.members.length > 0 && (
+        <div className="bus-members">
+          {bus.members.map((m) => (
+            <span key={m} className={tapped.has(m) ? 'bus-member on' : 'bus-member'} title={tapped.has(m) ? `${m}: tapped ${tapped.get(m)}×` : `${m}: not tapped yet`}>
+              {m}
+            </span>
+          ))}
+        </div>
+      )}
+      {strays.length > 0 && (
+        <div className="empty-note small">
+          {strays.map((n) => (n ? `“${n}”` : 'unnamed')).join(', ')} {strays.length > 1 ? 'taps are' : 'tap is'} not a signal of this bus.
+        </div>
+      )}
+      {bus.pins.length > 0 && <div className="empty-note small">A part pin is wired straight onto the bus; tap it with a named wire instead.</div>}
+      <div className="section-note">Draw a wire from the bus: it is named after the next untapped signal.</div>
+      <div className="btn-row">
+        <button className="secondary-btn" onClick={() => set({ selection: [...bus.wires, ...bus.taps.map((t) => t.wire)] })}>
+          Select bus and taps
+        </button>
+        <button className="secondary-btn" onClick={() => set({ highlight: S().highlight ? null : new Set([...bus.wires, ...bus.taps.map((t) => t.wire)]) })}>
+          Highlight
+        </button>
+      </div>
+    </Section>
   );
 }
 
@@ -1048,7 +1156,7 @@ function MultiPanel({ ids }: { ids: string[] }) {
       {wires.length > 0 && (
         <Section title="Wire corners">
           <WireStyleEditor
-            style={{ ...doc.settings.wire, ...wires[0].style }}
+            style={wireStyleFor(doc.settings, wires[0])}
             corners
             onChange={(p) => mutate((d) => wires.forEach((w) => ((d.items[w.id] as WireItem).style = { ...(d.items[w.id] as WireItem).style, ...p })))}
           />
