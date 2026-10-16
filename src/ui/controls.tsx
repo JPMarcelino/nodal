@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { keysFor, prettyKey } from '../store/commands';
 
@@ -256,14 +257,77 @@ export function shortcutHint(id: string) {
   return k ? ` (${prettyKey(k)})` : '';
 }
 
-export function Section({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
+/* Open / closed state of inspector sections and "more options" folds, remembered across sessions. */
+const FOLD_KEY = 'nodal.folds';
+let folds: Record<string, boolean> = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(FOLD_KEY) ?? '{}') ?? {};
+  } catch {
+    return {};
+  }
+})();
+const foldListeners = new Set<() => void>();
+export function setFolds(patch: Record<string, boolean>) {
+  folds = { ...folds, ...patch };
+  try {
+    localStorage.setItem(FOLD_KEY, JSON.stringify(folds));
+  } catch {
+    /* storage full or blocked: keep it for this session */
+  }
+  foldListeners.forEach((f) => f());
+}
+function useFold(id: string, defaultOpen: boolean): [boolean, (open: boolean) => void] {
+  const open = useSyncExternalStore(
+    (f) => (foldListeners.add(f), () => void foldListeners.delete(f)),
+    () => folds[id] ?? defaultOpen,
+  );
+  return [open, (v) => setFolds({ [id]: v })];
+}
+
+export function Section({
+  title,
+  children,
+  actions,
+  id = title.replace(/\s*\(.*\)$/, ''),
+  defaultOpen = true,
+  summary,
+}: {
+  title: string;
+  children: ReactNode;
+  actions?: ReactNode;
+  /** Key the open state is remembered under (default: the title without a "(count)"). */
+  id?: string;
+  defaultOpen?: boolean;
+  /** Short state shown in the header while folded, e.g. "A4 · landscape". */
+  summary?: ReactNode;
+}) {
+  const [open, setOpen] = useFold(`s:${id}`, defaultOpen);
   return (
-    <section className="section">
+    <section className={open ? 'section' : 'section folded'} data-section={id} data-title={title}>
       <header className="section-head">
-        <span>{title}</span>
-        {actions}
+        <button type="button" className="section-toggle" aria-expanded={open} onClick={() => setOpen(!open)} title={open ? 'Fold this section' : 'Show this section'}>
+          <ChevronRight size={13} className="section-chevron" />
+          <span className="section-title">{title}</span>
+          {!open && summary && <span className="section-summary">{summary}</span>}
+        </button>
+        {open && actions}
       </header>
-      <div className="section-body">{children}</div>
+      {open && <div className="section-body">{children}</div>}
     </section>
+  );
+}
+
+/** Less-used options of a section, folded away behind a "More options" row. */
+export function More({ id, children, label = 'More options', count }: { id: string; children: ReactNode; label?: string; count?: number }) {
+  const [open, setOpen] = useFold(`m:${id}`, false);
+  return (
+    <>
+      <button type="button" className={open ? 'more-toggle open' : 'more-toggle'} aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ChevronRight size={12} className="section-chevron" />
+        {open ? 'Fewer options' : label}
+        {!open && !!count && <span className="more-count" title={`${count} changed from the default`}>{count}</span>}
+      </button>
+      {open && <div className="more-body">{children}</div>}
+    </>
   );
 }

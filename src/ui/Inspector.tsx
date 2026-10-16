@@ -1,5 +1,7 @@
 import {
   AlignCenterHorizontal,
+  ChevronsDownUp,
+  ChevronsUpDown,
   AlignCenterVertical,
   AlignEndHorizontal,
   AlignEndVertical,
@@ -21,7 +23,7 @@ import {
   Plus,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { defaultHeadSize, frozenLabelOffsets, labelLook } from '../canvas/Scene';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { computeNets, netOfWire } from '../model/netlist';
@@ -34,7 +36,7 @@ import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { docBounds } from '../model/doc';
 import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
-import { ColorInput, Field, NumberInput, Section, Segmented, Slider, TextInput, Toggle } from './controls';
+import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
 import { ExplainShapePanel, FramePanel } from './ExplainInspector';
 import { Row, StyleSection } from './StyleSection';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
@@ -191,7 +193,7 @@ function SheetSection() {
     d.settings.sheet = { ...sheetOf(d), ...centredSheet(d.settings, docBounds(d)) };
   };
   return (
-    <Section title="Drawing frame">
+    <Section title="Drawing frame" defaultOpen={false} summary={on ? `${sheet.size} · ${sheet.orientation}` : 'off'}>
       <Field label="Frame & title block" hint="Sheet border with zone markers and a title block, used for printing and export">
         <Toggle
           checked={on}
@@ -296,7 +298,7 @@ function DocumentPanel() {
           </span>
         </div>
       </Section>
-      <Section title="Default wire style">
+      <Section title="Default wire style" defaultOpen={false} summary={`${settings.wire.width}px · ${settings.hops === 'arc' ? 'hops' : settings.hops === 'gap' ? 'gaps' : 'plain'}`}>
         <WireStyleEditor style={settings.wire} onChange={(p) => upd((s) => Object.assign(s.wire, p))} />
         <Field label="Crossings">
           <Segmented
@@ -375,8 +377,9 @@ function PartDetails({ c }: { c: ComponentItem }) {
     upd((x) => (x.props[k] = ''));
   };
   const datasheet = c.props.datasheet?.trim();
+  const filled = PART_FIELDS.filter((f) => c.props[f.key]?.trim()).length + custom.filter((k) => c.props[k]?.trim()).length;
   return (
-    <Section title="Part details">
+    <Section title="Part details" defaultOpen={false} summary={[filled ? `${filled} filled` : 'empty', isDnp(c) && 'DNP'].filter(Boolean).join(' · ')}>
       {PART_FIELDS.map((f) => (
         <Field key={f.key} label={f.label}>
           <TextInput value={c.props[f.key] ?? ''} placeholder={f.placeholder} onChange={(v) => setProp(f.key, v)} />
@@ -458,136 +461,156 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
       else x[axis === 'x' ? 'valueDx' : 'valueDy'] = v;
     });
   const rot = st.rotate ?? 0;
+  const advanced = [st.font, st.opacity, st.align, st.rotate, st.backdrop, st.prefix, st.suffix, off.x || undefined, off.y || undefined].filter((v) => v !== undefined).length;
+  const spotName = SPOTS.find((o) => o.value === (c.labelSpot ?? ''))!.label;
+  const shownNames = def.valueIsLabel ? (c.showValue ? 'shown' : 'hidden') : [c.showRef && 'ref', c.showValue && 'value'].filter(Boolean).join(' + ') || 'hidden';
   return (
     <Section
       title="Labels"
+      summary={def.valueIsLabel ? shownNames : `${shownNames} · ${spotName.toLowerCase()}`}
       actions={
-        (c.refStyle || c.valueStyle) && (
-          <button className="link-btn" title="Clear the text styling of both labels" onClick={() => upd((x) => void (delete x.refStyle, delete x.valueStyle))}>
-            Reset style
+        (c.refStyle || c.valueStyle || moved || c.labelSpot) && (
+          <button
+            className="link-btn"
+            title="Put both labels back in their default spots with the default look"
+            onClick={() =>
+              upd((x) => {
+                for (const k of ['refStyle', 'valueStyle', 'labelSpot', 'labelDx', 'labelDy', 'valueDx', 'valueDy'] as const) delete x[k];
+              })
+            }
+          >
+            <RotateCcw size={11} /> Reset
           </button>
         )
       }
     >
-      {!def.valueIsLabel && (
-        <Field label="Placement" hint="Where the reference and value sit around the part; dragging a label fine-tunes it">
-          <select
-            className="input"
-            value={c.labelSpot ?? ''}
-            onChange={(e) =>
-              upd((x) => {
-                const v = e.target.value as LabelSpotName | '';
-                if (v) x.labelSpot = v;
-                else delete x.labelSpot;
-                delete x.labelDx;
-                delete x.labelDy;
-                delete x.valueDx;
-                delete x.valueDy;
-              })
-            }
-          >
-            {SPOTS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
+      {def.valueIsLabel ? (
+        <Field label="Show name" hint="Hide the name on the canvas; the label still joins the net">
+          <Toggle checked={c.showValue} onChange={(v) => upd((x) => (x.showValue = v))} />
+        </Field>
+      ) : (
+        <>
+          <Field label="Show">
+            <span className="row-gap wrap">
+              <Toggle checked={c.showRef} onChange={(v) => upd((x) => (x.showRef = v))} label="Ref" />
+              <Toggle checked={c.showValue} onChange={(v) => upd((x) => (x.showValue = v))} label="Value" />
+            </span>
+          </Field>
+          <Field label="Placement" hint="Where the reference and value sit around the part; dragging a label fine-tunes it">
+            <select
+              className="input"
+              value={c.labelSpot ?? ''}
+              onChange={(e) =>
+                upd((x) => {
+                  const v = e.target.value as LabelSpotName | '';
+                  if (v) x.labelSpot = v;
+                  else delete x.labelSpot;
+                  delete x.labelDx;
+                  delete x.labelDy;
+                  delete x.valueDx;
+                  delete x.valueDy;
+                })
+              }
+            >
+              {SPOTS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="label-tabs" role="tablist" aria-label="Label to style">
+            {(['ref', 'value'] as const).map((w) => (
+              <button key={w} type="button" role="tab" aria-selected={tab === w} className={tab === w ? 'active' : ''} onClick={() => setTab(w)}>
+                <span className="label-tab-name">{w === 'ref' ? 'Reference' : 'Value'}</span>
+                <span className="label-tab-text">{(w === 'ref' ? c.ref : c.value) || '—'}</span>
+              </button>
             ))}
-          </select>
-        </Field>
+          </div>
+        </>
       )}
-      {!def.valueIsLabel && (
-        <Field label="Edit">
-          <Segmented
-            value={tab}
-            options={[
-              { value: 'ref', label: 'Reference' },
-              { value: 'value', label: 'Value' },
-            ]}
-            onChange={setTab}
-          />
-        </Field>
-      )}
-      <Field label="Text size">
-        <NumberInput value={look.size} min={4} max={96} step={0.5} suffix="pt" onChange={(size) => setStyle({ size })} />
+      <Field label="Size, colour">
+        <span className="row-gap">
+          <NumberInput value={look.size} min={4} max={96} step={0.5} suffix="pt" onChange={(size) => setStyle({ size })} />
+          <ColorInput value={st.color ?? ''} allowNone onChange={(color) => setStyle({ color: color || undefined })} />
+        </span>
       </Field>
       <Field label="Emphasis">
-        <span className="row-gap wrap">
-          <Toggle checked={look.weight >= 600} onChange={(bold) => setStyle({ bold })} label="Bold" />
-          <Toggle checked={!!st.italic} onChange={(v) => setStyle({ italic: v || undefined })} label="Italic" />
-          <Toggle checked={!!st.underline} onChange={(v) => setStyle({ underline: v || undefined })} label="Underline" />
-          <Toggle checked={!!st.allCaps} onChange={(v) => setStyle({ allCaps: v || undefined })} label="Caps" />
+        <span className="type-buttons">
+          {(
+            [
+              ['bold', 'B', 'Bold', look.weight >= 600],
+              ['italic', 'I', 'Italic', !!st.italic],
+              ['underline', 'U', 'Underline', !!st.underline],
+              ['allCaps', 'AA', 'All caps', !!st.allCaps],
+            ] as const
+          ).map(([k, glyph, name, on]) => (
+            <button
+              key={k}
+              type="button"
+              className={`type-btn ${k}${on ? ' active' : ''}`}
+              title={name}
+              aria-pressed={on}
+              onClick={() => setStyle({ [k]: k === 'bold' ? !on : !on || undefined })}
+            >
+              {glyph}
+            </button>
+          ))}
         </span>
       </Field>
-      <Field label="Font">
-        <Segmented
-          value={st.font ?? ''}
-          options={[
-            { value: '', label: 'Sans' },
-            { value: 'serif', label: 'Serif' },
-            { value: 'mono', label: 'Mono' },
-          ]}
-          onChange={(v) => setStyle({ font: v || undefined })}
-        />
-      </Field>
-      <Field label="Colour">
-        <ColorInput value={st.color ?? ''} allowNone onChange={(color) => setStyle({ color: color || undefined })} />
-      </Field>
-      <Field label="Opacity">
-        <Slider value={st.opacity ?? 1} min={0.1} max={1} onChange={(v) => setStyle({ opacity: v >= 1 ? undefined : v })} />
-      </Field>
-      <Field label="Align">
-        <Segmented
-          value={st.align ?? ''}
-          options={[
-            { value: '', label: 'Auto' },
-            { value: 'start', label: 'Left' },
-            { value: 'middle', label: 'Centre' },
-            { value: 'end', label: 'Right' },
-          ]}
-          onChange={(v) => setStyle({ align: v || undefined })}
-        />
-      </Field>
-      <Field label="Rotation">
-        <span className="row-gap wrap">
+      <More id="labels" count={advanced}>
+        <Field label="Font">
           <Segmented
-            value={rot}
-            options={[0, 90, -90, 45].map((r) => ({ value: r, label: `${r}°` }))}
-            onChange={(r) => setStyle({ rotate: r || undefined })}
+            value={st.font ?? ''}
+            options={[
+              { value: '', label: 'Sans' },
+              { value: 'serif', label: 'Serif' },
+              { value: 'mono', label: 'Mono' },
+            ]}
+            onChange={(v) => setStyle({ font: v || undefined })}
           />
-          <NumberInput value={rot} min={-360} max={360} step={15} suffix="°" onChange={(r) => setStyle({ rotate: r || undefined })} />
-        </span>
-      </Field>
-      <Field label="Backdrop" hint="Paint the canvas colour behind the text so it stays legible over wires">
-        <Toggle checked={!!st.backdrop} onChange={(v) => setStyle({ backdrop: v || undefined })} />
-      </Field>
-      <Field label="Prefix" hint="Drawn before the text only, e.g. “R = ”">
-        <TextInput value={st.prefix ?? ''} placeholder="none" onChange={(prefix) => setStyle({ prefix })} />
-      </Field>
-      <Field label="Suffix" hint="Drawn after the text only, e.g. “ ±5%”">
-        <TextInput value={st.suffix ?? ''} placeholder="none" onChange={(suffix) => setStyle({ suffix })} />
-      </Field>
-      <Field label="Offset" hint="Shift of this label from its spot; arrow keys step, Shift steps ×10">
-        <span className="row-gap">
-          <NumberInput value={off.x} step={1} suffix="x" onChange={(v) => setOffset('x', v)} />
-          <NumberInput value={off.y} step={1} suffix="y" onChange={(v) => setOffset('y', v)} />
-        </span>
-      </Field>
-      {moved && (
-        <button
-          className="secondary-btn full"
-          title="Put the reference and value labels back in their default spots"
-          onClick={() =>
-            upd((x) => {
-              delete x.labelDx;
-              delete x.labelDy;
-              delete x.valueDx;
-              delete x.valueDy;
-            })
-          }
-        >
-          Reset label positions
-        </button>
-      )}
-      <div className="inspector-tip">Double-click a label on the canvas to edit its text.</div>
+        </Field>
+        <Field label="Align">
+          <Segmented
+            value={st.align ?? ''}
+            options={[
+              { value: '', label: 'Auto' },
+              { value: 'start', label: 'Left' },
+              { value: 'middle', label: 'Centre' },
+              { value: 'end', label: 'Right' },
+            ]}
+            onChange={(v) => setStyle({ align: v || undefined })}
+          />
+        </Field>
+        <Field label="Rotation">
+          <span className="row-gap">
+            <Segmented value={rot} options={[0, 90, -90].map((r) => ({ value: r, label: `${r}°` }))} onChange={(r) => setStyle({ rotate: r || undefined })} />
+            <NumberInput value={rot} min={-360} max={360} step={15} suffix="°" onChange={(r) => setStyle({ rotate: r || undefined })} />
+          </span>
+        </Field>
+        <Field label="Opacity">
+          <span className="row-gap">
+            <Slider value={st.opacity ?? 1} min={0.1} max={1} onChange={(v) => setStyle({ opacity: v >= 1 ? undefined : v })} />
+            <span className="mono small">{Math.round((st.opacity ?? 1) * 100)}%</span>
+          </span>
+        </Field>
+        <Field label="Backdrop" hint="Paint the canvas colour behind the text so it stays legible over wires">
+          <Toggle checked={!!st.backdrop} onChange={(v) => setStyle({ backdrop: v || undefined })} />
+        </Field>
+        <Field label="Before / after" hint="Extra text drawn around the label only, e.g. “R = ” or “ ±5%”">
+          <span className="row-gap">
+            <TextInput value={st.prefix ?? ''} placeholder="prefix" onChange={(prefix) => setStyle({ prefix })} />
+            <TextInput value={st.suffix ?? ''} placeholder="suffix" onChange={(suffix) => setStyle({ suffix })} />
+          </span>
+        </Field>
+        <Field label="Nudge" hint="Shift of this label from its spot; arrow keys step, Shift steps ×10. Or drag the label on the canvas">
+          <span className="row-gap">
+            <NumberInput value={off.x} step={1} suffix="x" onChange={(v) => setOffset('x', v)} />
+            <NumberInput value={off.y} step={1} suffix="y" onChange={(v) => setOffset('y', v)} />
+          </span>
+        </Field>
+      </More>
+      <div className="section-note">Double-click a label on the canvas to edit its text; drag it to move it.</div>
     </Section>
   );
 }
@@ -612,7 +635,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
         </div>
       </div>
       <ArrangeBar count={1} />
-      <Section title="Properties">
+      <Section title="Properties" summary={[!def.valueIsLabel && c.ref, c.value].filter(Boolean).join(' · ')}>
         {!def.valueIsLabel && (
           <Field label="Reference">
             <TextInput value={c.ref} onChange={(v) => upd((x) => (x.ref = v))} />
@@ -631,23 +654,9 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
             <Toggle checked={!!c.closed} onChange={(v) => upd((x) => (v ? (x.closed = true) : delete x.closed))} />
           </Field>
         )}
-        {def.valueIsLabel && (
-          <Field label="Show name" hint="Hide the name on the canvas; the label still joins the net">
-            <Toggle checked={c.showValue} onChange={(v) => upd((x) => (x.showValue = v))} />
-          </Field>
-        )}
-        {!def.valueIsLabel && (
-          <Field label="Show labels">
-            <span className="row-gap wrap">
-              <Toggle checked={c.showRef} onChange={(v) => upd((x) => (x.showRef = v))} label="Ref" />
-              <Toggle checked={c.showValue} onChange={(v) => upd((x) => (x.showValue = v))} label="Value" />
-            </span>
-          </Field>
-        )}
       </Section>
       <LabelSection c={c} def={def} />
-      {hasPartFields(def) && <PartDetails c={c} />}
-      <Section title="Appearance">
+      <Section title="Transform" summary={`${c.rot}°${c.flipX ? ' · mirrored' : ''}${c.scale && c.scale !== 1 ? ` · ×${c.scale}` : ''}`}>
         <Field label="Rotation">
           <Segmented
             value={c.rot}
@@ -667,8 +676,13 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
         </Field>
       </Section>
       <StyleSection ids={[c.id]} />
+      {hasPartFields(def) && <PartDetails c={c} />}
       {def.ports.length > 0 && (
-        <Section title={`Pins (${def.ports.length})`}>
+        <Section
+          title={`Pins (${def.ports.length})`}
+          defaultOpen={false}
+          summary={`${def.ports.filter((p) => nets.some((n) => (n.pins.length > 1 || n.wires.length > 0) && n.pins.some((pin) => pin.comp === c.id && pin.port === p.id))).length} connected`}
+        >
           <div className="pin-list">
             {def.ports.map((p) => {
               const net = nets.find((n) => n.pins.some((pin) => pin.comp === c.id && pin.port === p.id));
@@ -923,7 +937,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
           </Field>
         </Section>
       )}
-      <Section title="Layer">
+      <Section title="Layer" summary={first.layer === 'below' ? 'behind' : 'on top'}>
         <Field label="Draw">
           <Segmented
             value={first.layer}
@@ -1044,11 +1058,85 @@ function MultiPanel({ ids }: { ids: string[] }) {
   );
 }
 
+interface NavEntry {
+  id: string;
+  title: string;
+  open: boolean;
+}
+
+/** Chips that jump to (and unfold) each section of the panel, highlighting the one in view. */
+function SectionNav({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement> }) {
+  const [list, setList] = useState<NavEntry[]>([]);
+  const [active, setActive] = useState('');
+  // after a jump, keep the chosen chip lit while the smooth scroll settles
+  const pinned = useRef(0);
+  useLayoutEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const sections = () => [...root.querySelectorAll<HTMLElement>('.section[data-section]')];
+    const spy = () => {
+      if (performance.now() < pinned.current) return;
+      const all = sections();
+      const atEnd = root.scrollTop + root.clientHeight >= root.scrollHeight - 4;
+      const top = root.getBoundingClientRect().top + 12;
+      let cur = all[0];
+      for (const el of all) if (el.getBoundingClientRect().top <= top) cur = el;
+      if (atEnd && root.scrollTop > 0) cur = all[all.length - 1];
+      setActive(cur?.dataset.section ?? '');
+    };
+    const read = () => {
+      const next = sections().map((el) => ({ id: el.dataset.section!, title: el.dataset.title!, open: !el.classList.contains('folded') }));
+      setList((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      spy();
+    };
+    read();
+    const mo = new MutationObserver(read);
+    mo.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-title'] });
+    root.addEventListener('scroll', spy, { passive: true });
+    return () => {
+      mo.disconnect();
+      root.removeEventListener('scroll', spy);
+    };
+  }, [scrollRef]);
+  if (list.length < 3) return null;
+  const anyOpen = list.some((e) => e.open);
+  const go = (id: string) => {
+    setActive(id);
+    pinned.current = performance.now() + 800;
+    setFolds({ [`s:${id}`]: true });
+    requestAnimationFrame(() => {
+      const root = scrollRef.current;
+      const el = root?.querySelector<HTMLElement>(`.section[data-section="${CSS.escape(id)}"]`);
+      if (root && el) root.scrollTo({ top: el.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - 2, behavior: 'smooth' });
+    });
+  };
+  return (
+    <nav className="section-nav" aria-label="Panel sections">
+      <div className="section-chips">
+        {list.map((e) => (
+          <button key={e.id} type="button" className={`section-chip${e.id === active ? ' active' : ''}${e.open ? '' : ' folded'}`} title={e.open ? `Go to ${e.title}` : `Show ${e.title}`} onClick={() => go(e.id)}>
+            {e.title}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="icon-btn"
+        title={anyOpen ? 'Fold all sections' : 'Unfold all sections'}
+        onClick={() => setFolds(Object.fromEntries(list.map((e) => [`s:${e.id}`, !anyOpen])))}
+      >
+        {anyOpen ? <ChevronsDownUp size={14} /> : <ChevronsUpDown size={14} />}
+      </button>
+    </nav>
+  );
+}
+
 export function Inspector() {
   const selection = useStore((s) => s.selection);
   const doc = useStore((s) => s.doc);
   const items = selection.map((id) => doc.items[id]).filter(Boolean);
   const width = usePanelWidth('right', useStore((s) => s.prefs.rightWidth));
+  const scrollRef = useRef<HTMLDivElement>(null);
   let body: JSX.Element;
   if (!items.length) body = <DocumentPanel />;
   else if (items.length === 1 && items[0].type === 'component') body = <ComponentPanel c={items[0]} />;
@@ -1065,7 +1153,10 @@ export function Inspector() {
       <div className="tabs">
         <button className="active">{items.length ? 'Properties' : 'Document'}</button>
       </div>
-      <div className="inspector-scroll">{body}</div>
+      <SectionNav scrollRef={scrollRef} />
+      <div className="inspector-scroll" ref={scrollRef}>
+        {body}
+      </div>
     </aside>
   );
 }
