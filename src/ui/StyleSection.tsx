@@ -83,6 +83,7 @@ export function StyleSection({ ids, title = 'Style' }: { ids: string[]; title?: 
   return (
     <Section
       title={title}
+      id="Style"
       actions={
         <span className="row-gap">
           <button className="icon-btn" title="Copy style (Ctrl+Shift+Alt+C)" onClick={copyStyle}>

@@ -1076,12 +1076,17 @@ body.is-resizing-panel .stage {
 .inspector-scroll {
   overflow-y: auto;
   flex: 1;
-  padding: 4px 14px 24px;
+  padding: 0 12px 24px;
+  scroll-padding-top: 4px;
 }
 
 .section {
-  padding: 12px 0;
+  padding: 4px 0 10px;
   border-bottom: 1px solid var(--border);
+}
+
+.section.folded {
+  padding-bottom: 4px;
 }
 
 .section:last-child {
@@ -1092,26 +1097,278 @@ body.is-resizing-panel .stage {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
   font-size: 0.78em;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
-  margin-bottom: 10px;
+}
+
+.section-head > :not(.section-toggle) {
+  flex: none;
+  width: auto;
+}
+
+.section-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  margin-left: -4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-align: left;
+  transition: color 0.12s, background 0.12s;
+}
+
+.section-toggle:hover {
+  color: var(--text-dim);
+  background: var(--panel-2);
+}
+
+.section-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.section-chevron {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.section-toggle[aria-expanded='true'] .section-chevron,
+.more-toggle.open .section-chevron {
+  transform: rotate(90deg);
+}
+
+.section-title {
+  flex: none;
+}
+
+.section-summary {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  font-size: 1.12em;
+  color: var(--text-faint);
 }
 
 .section-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  padding-top: 2px;
+  animation: section-in 0.14s ease-out;
+}
+
+@keyframes section-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.more-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  margin-left: -4px;
+  padding: 0 6px 0 4px;
+  border-radius: 6px;
+  font-size: 0.88em;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.more-toggle:hover {
+  color: var(--accent);
+  background: var(--panel-2);
+}
+
+.more-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.85em;
+  line-height: 16px;
+  text-align: center;
+}
+
+.more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  animation: section-in 0.14s ease-out;
+}
+
+.section-note {
+  font-size: 0.82em;
+  color: var(--text-faint);
+  line-height: 1.35;
+}
+
+/* jump bar above the inspector */
+.section-nav {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.section-chip {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  font-size: 0.8em;
+  font-weight: 500;
+  color: var(--text-dim);
+  white-space: nowrap;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.section-chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.section-chip.folded {
+  color: var(--text-faint);
+  border-style: dashed;
+}
+
+.section-chip.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.section-nav .icon-btn {
+  height: 22px;
+  min-width: 24px;
+  padding: 0 4px;
+}
+
+/* reference / value picker of the Labels section */
+.label-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.label-tabs button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--text-faint);
+}
+
+.label-tabs button.active {
+  background: var(--panel-3);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.label-tab-name {
+  font-size: 0.72em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.label-tab-text {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.type-buttons {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.type-btn {
+  width: 30px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.type-btn:hover {
+  color: var(--text);
+}
+
+.type-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.type-btn.bold {
+  font-weight: 800;
+}
+
+.type-btn.italic {
+  font-style: italic;
+  font-family: Georgia, serif;
+}
+
+.type-btn.underline {
+  text-decoration: underline;
+}
+
+.type-btn.allCaps {
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
 }
 
 .field {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-columns: 88px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  min-height: 30px;
+  gap: 8px;
+  min-height: 28px;
 }
 
 .field.wide {
