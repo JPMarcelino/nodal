@@ -89,7 +89,8 @@ describe('pins of placed parts stay on the grid', () => {
       const plainPath = plain.prims[0];
       const atPath = at.prims[0];
       if (plainPath.t !== 'path' || atPath.t !== 'path') throw new Error('expected path prims');
-      expect(atPath.d.replace(/[^A-Za-z]/g, '')).toBe(plainPath.d.replace(/[^A-Za-z]/g, ''));
+      // alignment is a pure translation: every absolute coordinate moves by the pin offset
+      expect(atPath.d).toBe(shiftPath(plainPath.d, dx, dy));
     }
   });
 
