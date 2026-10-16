@@ -1,9 +1,9 @@
 import { measureText } from './geometry';
-import { exPx, hasMath, splitMath, texToSvg, type MathSvg } from './latex';
+import { exPx, hasMath, mathLines, splitMath, texToSvg, unescapeDollars, type MathSvg } from './latex';
 
 export type LaidRun =
   | { math: false; text: string; x: number; w: number }
-  | { math: true; svg: MathSvg | null; tex: string; x: number; w: number; h: number; depth: number };
+  | { math: true; svg: MathSvg | null; tex: string; x: number; w: number; h: number; depth: number; error?: string };
 
 export interface LaidLine {
   runs: LaidRun[];
@@ -16,7 +16,7 @@ export interface LaidLine {
 /** Lays out text with `$…$` maths into positioned runs (x relative to the line start). */
 export function layoutRich(text: string, fontSize: number, weight = 400): LaidLine[] {
   const ex = exPx(fontSize);
-  return text.split('\n').map((line) => {
+  return mathLines(text).map((line) => {
     const runs: LaidRun[] = [];
     let x = 0;
     let ascent = fontSize * 0.8;
@@ -30,11 +30,11 @@ export function layoutRich(text: string, fontSize: number, weight = 400): LaidLi
         continue;
       }
       const svg = texToSvg(r.tex, r.display);
-      if (!svg) {
-        // not typeset yet: reserve the space the source would take
-        const src = r.display ? `$$${r.tex}$$` : `$${r.tex}$`;
+      if (!svg || svg.error) {
+        // not typeset yet (reserve the space the source takes), or broken: show the source
+        const src = (r.display ? `$$${r.tex}$$` : `$${r.tex}$`).replace(/\n/g, ' ');
         const w = measureText(src, fontSize, weight).w;
-        runs.push({ math: true, svg: null, tex: src, x, w, h: fontSize, depth: 0 });
+        runs.push({ math: true, svg: null, tex: src, x, w, h: fontSize, depth: 0, error: svg?.message ?? (svg ? 'Invalid formula' : undefined) });
         x += w;
         continue;
       }
@@ -52,7 +52,7 @@ export function layoutRich(text: string, fontSize: number, weight = 400): LaidLi
 
 /** Size of text that may contain maths (falls back to plain measuring when it has none). */
 export function measureRich(text: string, fontSize: number, weight = 400): { w: number; h: number } {
-  if (!hasMath(text)) return measureText(text, fontSize, weight);
+  if (!hasMath(text)) return measureText(unescapeDollars(text), fontSize, weight);
   const lines = layoutRich(text, fontSize, weight);
   const lineH = fontSize * 1.3;
   const h = lines.reduce((s, l) => s + Math.max(lineH, l.ascent + l.descent + fontSize * 0.25), 0);

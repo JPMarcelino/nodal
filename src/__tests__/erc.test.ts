@@ -2,7 +2,7 @@ import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, normalizeDoc, uid } from '../model/doc';
 import { runErc, splitIgnored, type ErcIssue } from '../model/erc';
-import { loadMath, splitMath, stripMath, texToSvg } from '../model/latex';
+import { hasMath, loadMath, mathLines, splitMath, stripMath, texToSvg } from '../model/latex';
 import { computeNets } from '../model/netlist';
 import { measureRich } from '../model/richText';
 import type { CircuitDoc, ComponentItem, WireItem } from '../model/types';
@@ -133,6 +133,27 @@ describe('latex', () => {
     ]);
     expect(splitMath('costs \\$5')).toEqual([{ math: false, text: 'costs $5' }]);
     expect(stripMath('$$\\frac{1}{2}$$')).toBe('\\frac{1}{2}');
+  });
+
+  it('leaves prices and loose dollar signs as text', () => {
+    expect(hasMath('Costs $5 and $10 total')).toBe(false);
+    expect(hasMath('from $ 5 to $ 9')).toBe(false);
+    expect(hasMath('$x$')).toBe(true);
+    expect(hasMath('a $x$, then $y$2')).toBe(true);
+    expect(splitMath('$a$5 and $b$')).toEqual([{ math: false, text: '$a$5 and ' }, { math: true, tex: 'b', display: false }]);
+  });
+
+  it('keeps a display formula that spans lines on one line', () => {
+    expect(mathLines('one\n$$a\\\\\nb$$ two\nthree')).toEqual(['one', '$$a\\\\\nb$$ two', 'three']);
+    expect(mathLines('$a$\n$b$')).toEqual(['$a$', '$b$']);
+  });
+
+  it('reports broken formulas and knows the common siunitx commands', async () => {
+    await loadMath();
+    const bad = texToSvg('\\frac{1')!;
+    expect(bad.error).toBe(true);
+    expect(bad.message).toBeTruthy();
+    expect(texToSvg('\\SI{10}{\\kilo\\ohm} + \\si{\\micro\\farad}')!.error).toBe(false);
   });
 
   it('typesets formulas to SVG paths', async () => {

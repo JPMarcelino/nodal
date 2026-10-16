@@ -1145,7 +1145,7 @@ export function Canvas() {
       A.enterGroup(id);
       return;
     }
-    if (it.type === 'shape' && (it.kind === 'text' || it.kind === 'rect' || it.kind === 'zone' || it.kind === 'ellipse') && !it.locked) {
+    if (it.type === 'shape' && (it.kind === 'text' || it.kind === 'rect' || it.kind === 'zone' || it.kind === 'ellipse' || it.kind === 'polygon') && !it.locked) {
       setEditingText(id);
       return;
     }
@@ -2076,7 +2076,7 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
   if (!it) return null;
   const isText = it.kind === 'text';
   const size = it.fontSize ?? (isText ? 16 : 13);
-  const weight = isText ? (it.bold ? 700 : 400) : it.kind === 'ellipse' || it.bold !== false ? 600 : 400;
+  const weight = isText ? (it.bold ? 700 : 400) : it.bold !== false ? 600 : 400;
   const m = measureRich(value, size, weight);
   const width = Math.max(80, m.w * view.zoom + 20);
   let at = { x: it.x, y: it.y };

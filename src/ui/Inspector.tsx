@@ -446,7 +446,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
             <TextInput value={c.ref} onChange={(v) => upd((x) => (x.ref = v))} />
           </Field>
         )}
-        <Field label={def.valueIsLabel ? 'Net name' : 'Value'}>
+        <Field label={def.valueIsLabel ? 'Net name' : 'Value'} hint="Supports maths, e.g. $R_{load}$ or $\SI{10}{\kilo\ohm}$">
           <TextInput value={c.value} focusKey="value" onChange={(v) => upd((x) => (x.value = v))} />
         </Field>
         {(def.fields ?? []).map((f) => (
@@ -558,8 +558,26 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
             onChange={(v) => mutate((d) => ids.forEach((id) => ((d.items[id] as WireItem).routing = v)))}
           />
         </Field>
-        <Field label="Crossings" hint="Rest the pointer on a crossing to choose which wire hops over, or to solder it">
-          <span className="muted small">{first.hopLayer ? `stacking layer ${first.hopLayer > 0 ? '+' : ''}${first.hopLayer}` : 'automatic'}</span>
+        <Field label="Crossings" hint="Which wire hops over at crossings. For a single crossing, rest the pointer on it to choose, or to solder it">
+          <Segmented
+            value={!first.hopLayer ? 0 : first.hopLayer > 0 ? 1 : -1}
+            options={[
+              { value: 1, label: 'Over', title: 'Hop over every other wire' },
+              { value: 0, label: 'Auto', title: 'Horizontal segments hop over vertical ones' },
+              { value: -1, label: 'Under', title: 'Let every other wire hop over' },
+            ]}
+            onChange={(v) =>
+              mutate((d) => {
+                const layers = Object.values(d.items).flatMap((it) => (it.type === 'wire' && !ids.includes(it.id) && it.hopLayer ? [it.hopLayer] : []));
+                const layer = v > 0 ? Math.max(0, ...layers) + 1 : v < 0 ? Math.min(0, ...layers) - 1 : 0;
+                for (const id of ids) {
+                  const w = d.items[id] as WireItem;
+                  if (layer) w.hopLayer = layer;
+                  else delete w.hopLayer;
+                }
+              })
+            }
+          />
         </Field>
         <div className="btn-row">
           <button className="secondary-btn" onClick={() => mutate((d) => ids.forEach((id) => delete (d.items[id] as WireItem).style))}>
@@ -589,7 +607,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
       </Section>
       {wires.length === 1 && (
         <Section title="Label">
-          <Field label="Text">
+          <Field label="Text" hint="Supports maths, e.g. $V_{CC}$">
             <TextInput value={first.label ?? ''} focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => mutate((d) => void ((d.items[first.id] as WireItem).label = v || undefined))} />
           </Field>
           {first.label && (
@@ -672,16 +690,16 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   return (
     <>
       <div className="panel-title">{shapes.length > 1 ? `${shapes.length} shapes` : title}</div>
-      {!isImage && first.kind !== 'polygon' && (
+      {!isImage && (
         <Section title={isText ? 'Text' : 'Label'}>
-          <Field label={isText ? 'Content' : 'Title'} wide>
+          <Field label={isText ? 'Content' : 'Title'} wide hint="Supports maths: $…$ inline, $$…$$ display, \$ for a dollar sign">
             <TextInput value={first.text ?? ''} multiline={isText} focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder={isText ? '' : 'Optional title'} />
           </Field>
           <Field label="Font size">
             <NumberInput value={first.fontSize ?? (isText ? 16 : 13)} min={6} max={120} suffix="px" onChange={(v) => upd((s) => (s.fontSize = v))} />
           </Field>
           <Field label="Bold">
-            <Toggle checked={first.bold ?? !isText} onChange={(v) => upd((s) => (s.bold = v))} />
+            <Toggle checked={first.bold ?? !(isText || isLine)} onChange={(v) => upd((s) => (s.bold = v))} />
           </Field>
           <Field label="Text colour">
             <ColorInput value={first.textColor ?? ''} allowNone onChange={(v) => upd((s) => (s.textColor = v || undefined))} />

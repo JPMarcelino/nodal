@@ -1,5 +1,5 @@
 import { useSyncExternalStore, type CSSProperties } from 'react';
-import { hasMath, mathVersion, onMathReady } from '../model/latex';
+import { hasMath, mathVersion, onMathReady, unescapeDollars } from '../model/latex';
 import { layoutRich } from '../model/richText';
 
 interface Props {
@@ -22,12 +22,13 @@ export function RichText({ text, x, y, fontSize, anchor = 'start', fill, fontWei
   const math = hasMath(text);
   // re-render once MathJax has loaded
   useSyncExternalStore(onMathReady, mathVersion, mathVersion);
-  const lines = text.split('\n');
   if (!math) {
+    const plain = unescapeDollars(text);
+    const lines = plain.split('\n');
     return (
       <text x={x} y={y} fontSize={fontSize} textAnchor={anchor} fill={fill} fontWeight={fontWeight} className={className} style={style}>
         {lines.length === 1
-          ? text
+          ? plain
           : lines.map((l, i) => (
               <tspan key={i} x={x} dy={i === 0 ? 0 : (fontSize ?? 12) * 1.3}>
                 {l || ' '}
@@ -67,7 +68,8 @@ export function RichText({ text, x, y, fontSize, anchor = 'start', fill, fontWei
                   dangerouslySetInnerHTML={{ __html: r.svg.body.replace(/currentColor/g, fill) }}
                 />
               ) : (
-                <text key={j} x={x0 + r.x} y={base} fill={fill} opacity={0.6} style={{ whiteSpace: 'pre' }}>
+                <text key={j} x={x0 + r.x} y={base} fill={r.error ? '#e5484d' : fill} opacity={r.error ? 1 : 0.6} style={{ whiteSpace: 'pre' }}>
+                  {r.error && <title>{`LaTeX: ${r.error}`}</title>}
                   {r.tex}
                 </text>
               ),

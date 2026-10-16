@@ -1,5 +1,8 @@
 /**
  * LaTeX maths in text: `$…$` inline, `$$…$$` display style, `\$` for a literal dollar.
+ * Like pandoc and Obsidian, an inline formula can't start or end with a space and
+ * the closing `$` can't be followed by a digit, so prices ("$5 and $10") stay text.
+ * A `$$…$$` formula may span lines.
  * Formulas are typeset by MathJax into plain SVG paths, so they look the same on the
  * canvas and in every export. MathJax is loaded on first use; until then (and in
  * places that cannot wait) text falls back to showing the source.
@@ -14,14 +17,26 @@ export interface MathSvg {
   hEx: number;
   depthEx: number;
   error: boolean;
+  /** What went wrong, when error is set. */
+  message?: string;
 }
 
 export type Run = { math: false; text: string } | { math: true; tex: string; display: boolean };
 
-const MATH_RE = /(?<!\\)\$\$([\s\S]+?)(?<!\\)\$\$|(?<!\\)\$((?:\\\$|[^$])+?)(?<!\\)\$/g;
+const MATH_RE = /(?<!\\)\$\$([\s\S]+?)(?<!\\)\$\$|(?<!\\)\$(?![\s$])((?:\\\$|[^$\n])*?)(?<![\s\\])\$(?!\d)/g;
+const DISPLAY_RE = /(?<!\\)\$\$[\s\S]+?(?<!\\)\$\$/g;
 
 /** True when the text contains at least one formula. */
 export const hasMath = (text: string) => text.includes('$') && new RegExp(MATH_RE.source).test(text);
+
+/** `\$` → `$` in text that has no formulas. */
+export const unescapeDollars = (text: string) => (text.includes('\\$') ? text.replace(/\\\$/g, '$') : text);
+
+/** Splits text into lines, keeping a `$$…$$` formula that spans lines on one line. */
+export function mathLines(text: string): string[] {
+  if (!text.includes('$$')) return text.split('\n');
+  return text.replace(new RegExp(DISPLAY_RE.source, 'g'), (m) => m.replace(/\n/g, '\u0000')).split('\n').map((l) => l.replace(/\u0000/g, '\n'));
+}
 
 /** Splits one line of text into plain and maths runs. */
 export function splitMath(line: string): Run[] {
@@ -40,6 +55,22 @@ export function splitMath(line: string): Run[] {
 
 /** Plain-text version of a string with maths (for exports that cannot draw formulas, e.g. DXF, CSV). */
 export const stripMath = (text: string) => splitMath(text).map((r) => (r.math ? r.tex : r.text)).join('');
+
+/** The siunitx commands people reach for in circuit notes (MathJax has no siunitx). */
+const unit = (sym: string) => `\\mathrm{${sym}}`;
+const MACROS: Record<string, string | [string, number]> = {
+  SI: ['#1\\,\\mathrm{#2}', 2],
+  si: ['\\mathrm{#1}', 1],
+  num: ['#1', 1],
+  ohm: '\\Omega',
+  micro: '\\mu',
+  degree: '^{\\circ}',
+  celsius: '{}^{\\circ}\\mathrm{C}',
+  percent: '\\%',
+  ...Object.fromEntries(
+    Object.entries({ pico: 'p', nano: 'n', milli: 'm', kilo: 'k', mega: 'M', giga: 'G', volt: 'V', ampere: 'A', amp: 'A', farad: 'F', henry: 'H', hertz: 'Hz', watt: 'W', second: 's', siemens: 'S', decibel: 'dB', coulomb: 'C', joule: 'J' }).map(([k, v]) => [k, unit(v)]),
+  ),
+};
 
 type Convert = (tex: string, display: boolean) => MathSvg;
 let convert: Convert | null = null;
@@ -68,8 +99,9 @@ export function loadMath(): Promise<void> {
     ]);
     const adaptor = liteAdaptor();
     RegisterHTMLHandler(adaptor);
-    const packages = AllPackages.filter((p: string) => p !== 'bussproofs' && p !== 'autoload' && p !== 'require');
-    const doc = mathjax.document('', { InputJax: new TeX({ packages }), OutputJax: new SVG({ fontCache: 'none' }) });
+    // noerrors would draw a broken formula as a box; real errors carry a message instead
+    const packages = AllPackages.filter((p: string) => !['bussproofs', 'autoload', 'require', 'noerrors'].includes(p));
+    const doc = mathjax.document('', { InputJax: new TeX({ packages, macros: MACROS }), OutputJax: new SVG({ fontCache: 'none' }) });
     convert = (tex, display) => {
       const node = doc.convert(tex, { display, em: 16, ex: 8, containerWidth: 80 * 16 });
       const svg = adaptor.firstChild(node) as Parameters<typeof adaptor.innerHTML>[0];
@@ -77,13 +109,15 @@ export function loadMath(): Promise<void> {
       const style = adaptor.getAttribute(svg, 'style') ?? '';
       const valign = /vertical-align:\s*(-?[\d.]+)ex/.exec(style);
       const body = adaptor.innerHTML(svg);
+      const err = /data-mjx-error="([^"]*)"/.exec(body);
       return {
         body,
         viewBox: adaptor.getAttribute(svg, 'viewBox') ?? '0 0 0 0',
         wEx: num(adaptor.getAttribute(svg, 'width')),
         hEx: num(adaptor.getAttribute(svg, 'height')),
         depthEx: valign ? -parseFloat(valign[1]) : 0,
-        error: body.includes('data-mjx-error') || body.includes('merror'),
+        error: !!err || body.includes('merror'),
+        message: err ? err[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&') : undefined,
       };
     };
     version++;
@@ -107,7 +141,7 @@ export function texToSvg(tex: string, display = false): MathSvg | null {
     try {
       hit = convert(tex, display);
     } catch {
-      hit = { body: '', viewBox: '0 0 0 0', wEx: 0, hEx: 0, depthEx: 0, error: true };
+      hit = { body: '', viewBox: '0 0 0 0', wEx: 0, hEx: 0, depthEx: 0, error: true, message: 'Could not typeset this formula' };
     }
     cache.set(key, hit);
   }
