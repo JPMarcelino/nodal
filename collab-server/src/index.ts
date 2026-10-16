@@ -1,4 +1,13 @@
 import { DurableObject } from 'cloudflare:workers';
+import {
+  EXPIRE_MS,
+  MAX_MESSAGE,
+  gateMessage,
+  isRoomFull,
+  isWellFormedToken,
+  resolveOwnership,
+  shouldReapOnAlarm,
+} from './policy';
 
 /*
  * Relay for Nodal live sessions. One Durable Object per room forwards messages
@@ -26,13 +35,7 @@ interface Env {
   ROOMS: DurableObjectNamespace<Room>;
 }
 
-const MAX_PEERS = 32;
-const MAX_MESSAGE = 4 * 1024 * 1024;
-// storage.put takes at most 128 keys at once: 12 MB in 100 kB chunks stays under that
-const MAX_SNAPSHOT = 12 * 1024 * 1024;
 const CHUNK = 100_000;
-/** Rooms nobody has saved to for this long are deleted (and an ended room's marker is forgotten). */
-const EXPIRE_MS = 24 * 3600 * 1000;
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -47,15 +50,19 @@ export default {
 export class Room extends DurableObject<Env> {
   async fetch(req: Request): Promise<Response> {
     const sockets = this.ctx.getWebSockets();
-    if (sockets.length >= MAX_PEERS) return new Response('This session is full\n', { status: 429 });
-    const edit = await this.canEdit(new URL(req.url).searchParams.get('w'));
-    const { 0: client, 1: server } = new WebSocketPair();
+    if (isRoomFull(sockets.length)) return new Response('This session is full\n', { status: 429 });
+    // The ended tombstone is checked before claiming ownership, so a
+    // latecomer's token is never persisted into a closed room. (Rules live
+    // in ./policy.ts and are unit-tested; keep this wiring in the same order.)
     if (await this.ctx.storage.get<boolean>('ended')) {
+      const { 0: client, 1: server } = new WebSocketPair();
       server.accept();
       server.send(JSON.stringify({ t: 'ended' }));
       server.close(1000, 'ended');
       return new Response(null, { status: 101, webSocket: client });
     }
+    const edit = await this.canEdit(new URL(req.url).searchParams.get('w'));
+    const { 0: client, 1: server } = new WebSocketPair();
     const id = crypto.randomUUID().slice(0, 8);
     // hibernatable: the object can sleep between messages without dropping connections
     this.ctx.acceptWebSocket(server);
@@ -68,12 +75,11 @@ export class Room extends DurableObject<Env> {
 
   /** The first edit token a room sees becomes its owner's; later connections must present the same one. */
   private async canEdit(token: string | null): Promise<boolean> {
-    if (!token || token.length < 16 || token.length > 128) return false;
+    if (!isWellFormedToken(token)) return false;
     const hash = await sha256(token);
-    const owner = await this.ctx.storage.get<string>('owner');
-    if (owner) return owner === hash;
-    await this.ctx.storage.put('owner', hash);
-    return true;
+    const verdict = resolveOwnership((await this.ctx.storage.get<string>('owner')) ?? null, hash);
+    if (verdict.claim) await this.ctx.storage.put('owner', verdict.claim);
+    return verdict.edit;
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
@@ -84,12 +90,11 @@ export class Room extends DurableObject<Env> {
     } catch {
       return;
     }
-    if (m.t === 'end' && attachment(ws).edit) return this.end();
-    if (typeof m.d !== 'string') return;
-    if (m.t === 'p') this.broadcast(JSON.stringify({ t: m.t, from: peerId(ws), d: m.d }), ws);
-    else if (!attachment(ws).edit) return;
-    else if (m.t === 'b') this.broadcast(JSON.stringify({ t: m.t, from: peerId(ws), d: m.d }), ws);
-    else if (m.t === 'save' && m.d.length <= MAX_SNAPSHOT) await this.saveSnapshot(m.d);
+    // Enforcement lives in policy.gateMessage (unit-tested); this only acts on its verdict.
+    const decision = gateMessage(m.t, m.d, attachment(ws).edit);
+    if (decision === 'end') return this.end();
+    if (decision === 'relay') this.broadcast(JSON.stringify({ t: m.t, from: peerId(ws), d: m.d }), ws);
+    else if (decision === 'save') await this.saveSnapshot(m.d as string);
   }
 
   async webSocketClose(ws: WebSocket) {
@@ -101,8 +106,8 @@ export class Room extends DurableObject<Env> {
   }
 
   async alarm() {
-    const ended = await this.ctx.storage.get<boolean>('ended');
-    if (!ended && this.ctx.getWebSockets().length) await this.ctx.storage.setAlarm(Date.now() + EXPIRE_MS);
+    const ended = (await this.ctx.storage.get<boolean>('ended')) ?? false;
+    if (!shouldReapOnAlarm(ended, this.ctx.getWebSockets().length)) await this.ctx.storage.setAlarm(Date.now() + EXPIRE_MS);
     else await this.ctx.storage.deleteAll();
   }
 
