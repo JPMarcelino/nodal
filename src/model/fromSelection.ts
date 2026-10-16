@@ -3,8 +3,7 @@ import { docBounds, makeComponent } from './doc';
 import { toWorld } from './geometry';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Point, Prim, ShapeItem, SymbolDef } from './types';
-import { wirePolyline } from './wires';
-import { wireStyleFor } from './bus';
+import { wirePolyline, wireStyleFor } from './wires';
 import { inkPoints } from './ink';
 import { polyPoints } from './polygon';
 

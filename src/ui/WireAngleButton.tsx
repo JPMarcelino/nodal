@@ -28,23 +28,3 @@ export function WireAngleButton() {
     </button>
   );
 }
-
-/** Tool rail toggle between drawing plain wires and buses. */
-export function BusButton() {
-  const bus = useStore((s) => s.prefs.drawBus);
-  const k = prettyKey(keysFor('wire.bus')[0] ?? '');
-  return (
-    <button
-      className={bus ? 'tool-btn wire-angle-btn active' : 'tool-btn wire-angle-btn'}
-      onClick={() => A.setDrawBus()}
-      aria-pressed={bus}
-      title={`${bus ? 'Drawing buses' : 'Drawing plain wires'} — click${k ? ` (${k})` : ''} to switch. Name a bus like D[0..7]; wires tapped onto it named D0…D7 join those signals`}
-    >
-      <svg width={17} height={17} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeLinecap="round">
-        <path d="M2 9H16" strokeWidth={4} />
-        <path d="M7 12.5L10 5.5" strokeWidth={1.4} />
-      </svg>
-      <span className="tool-key">Bus</span>
-    </button>
-  );
-}

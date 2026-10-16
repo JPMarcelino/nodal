@@ -1,4 +1,4 @@
-import { wireStyleFor } from './bus';
+import { wireStyleFor } from './wires';
 import type { CircuitDoc, ComponentItem, Dash, Item, ShapeItem, WireItem } from './types';
 
 /**

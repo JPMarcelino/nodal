@@ -1,7 +1,6 @@
 import { eq, projectOnSegment, rotate, segmentIntersection, sideVector, simplify, toWorld } from './geometry';
-import { wireStyleFor } from './bus';
 import { instanceSymbol } from './registry';
-import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, WireItem, WireStyle } from './types';
+import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, LabelSide, Point, WireItem, WireStyle } from './types';
 
 export interface PortPos {
   pt: Point;
@@ -62,6 +61,11 @@ export function wirePolyline(doc: CircuitDoc, w: WireItem): Point[] {
   const raw = [a.pt, ...w.pts, b.pt];
   if (w.routing === 'straight') return simplify(raw);
   return orthogonalize(raw, a.dir, b.dir);
+}
+
+/** Effective style of a wire: the document wire defaults, then the wire's own overrides. */
+export function wireStyleFor(settings: DocSettings, w: Pick<WireItem, 'style'>): WireStyle {
+  return { ...settings.wire, ...w.style };
 }
 
 export function wireStyle(doc: CircuitDoc, w: WireItem): WireStyle {

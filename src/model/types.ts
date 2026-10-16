@@ -194,12 +194,6 @@ export interface WireItem extends ItemBase {
   style?: Partial<WireStyle>;
   /** 'straight' allows diagonal segments instead of automatic orthogonal elbows. */
   routing?: 'ortho' | 'straight';
-  /**
-   * A bus: a bundle of signals drawn heavier, named like "D[0..7]". It joins
-   * nothing electrically; plain wires tapped onto it join the signal they are
-   * named after (see bus.ts).
-   */
-  bus?: boolean;
   /** Stacking layer at crossings: a higher layer hops over a lower one (undefined = 0). */
   hopLayer?: number;
   label?: string;
@@ -287,10 +281,6 @@ export interface DocSettings {
   showGrid: boolean;
   snap: boolean;
   wire: WireStyle;
-  /** Bus look over the wire defaults (unset keys: see DEFAULT_BUS_STYLE). */
-  bus?: Partial<WireStyle>;
-  /** Hide the slash-and-count marks showing how many signals each bus carries. */
-  hideBusMarks?: boolean;
   hops: 'arc' | 'gap' | 'none';
   hopSize: number;
   junctionSize: number;

@@ -21,7 +21,7 @@ import {
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
 import { deletePolyCorner } from '../model/polygon';
-import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle, WireItem } from '../model/types';
+import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { viewCentre } from '../io/importFiles';
 import { S, mutate, pushRecent, select, set, setPrefs, toast } from './store';
@@ -61,28 +61,6 @@ export function setWireAngle(to?: WireAngle) {
   const next = to ?? WIRE_ANGLES[(i + 1) % WIRE_ANGLES.length].value;
   setPrefs({ wireAngle: next });
   toast(WIRE_ANGLES.find((a) => a.value === next)!.title);
-}
-
-/** Switches the wire tool between drawing plain wires and buses (and picks the wire tool). */
-export function setDrawBus(on = !S().prefs.drawBus) {
-  setPrefs({ drawBus: on });
-  if (S().tool !== 'wire') setTool('wire');
-  toast(on ? 'Drawing buses: name one like D[0..7], then tap it with wires named D0, D1…' : 'Drawing plain wires');
-}
-
-/** Turns the selected wires into a bus, or back into plain wires when they all are buses already. */
-export function toggleBusSelection() {
-  const ids = S().selection.filter((id) => S().doc.items[id]?.type === 'wire');
-  if (!ids.length) return;
-  const on = !ids.every((id) => (S().doc.items[id] as WireItem).bus);
-  mutate((d) => {
-    for (const id of ids) {
-      const w = d.items[id] as WireItem;
-      if (on) w.bus = true;
-      else delete w.bus;
-    }
-  });
-  toast(on ? `${ids.length > 1 ? `${ids.length} wires are` : 'Wire is'} now a bus` : `${ids.length > 1 ? `${ids.length} buses are` : 'Bus is'} now a plain wire`);
 }
 
 export function renameGroup(gid: string, name: string) {

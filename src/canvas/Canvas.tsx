@@ -6,8 +6,7 @@ import { cleanup, deleteWirePart, scaleItems, selectionPivot, translateDetached,
 import { getSymbol, instanceSymbol } from '../model/registry';
 import { gridScale, scaleStep } from '../model/symbols/scale';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
-import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireLabelSpot, wireStyle } from '../model/wires';
-import { wireStyleFor } from '../model/bus';
+import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireLabelSpot, wireStyle, wireStyleFor } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
 import { buildAngledPreview, buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd, wireRouter } from '../model/wireCommit';
 import { routeObstacles } from '../model/route';
@@ -741,12 +740,10 @@ export function Canvas() {
         straight: g.angled,
         group: S().scope,
         routeGrid: S().prefs.wireAvoid ? grid : undefined,
-        bus: S().prefs.drawBus,
         ...(brush ? { style: { ...brush } } : {}),
       });
     });
-    // a new bus is selected so it can be named straight away
-    if (newId && S().doc.items[newId]) set({ selection: S().prefs.drawBus ? [newId] : [] });
+    if (newId && S().doc.items[newId]) set({ selection: [] });
     return newId !== null;
   };
 
@@ -1996,7 +1993,7 @@ export function Canvas() {
             )}
           {g?.kind === 'wire' && (() => {
             const pts = wirePreview(g);
-            const st = wireStyleFor(doc.settings, { bus: prefs.drawBus, style: S().wireBrush ?? undefined });
+            const st = wireStyleFor(doc.settings, { style: S().wireBrush ?? undefined });
             return (
               <g className="wire-preview">
                 <path d={buildWirePath(pts, st.radius)} fill="none" stroke={inkColor(st.color, EDITOR_PALETTE)} strokeWidth={st.width} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} strokeDasharray={dashArray(st.dash, st.width)} />

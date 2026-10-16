@@ -1,12 +1,11 @@
 import { memo, useMemo, useRef, type ReactNode } from 'react';
 import { componentBounds, measureText, segmentIntersectsRect, sideVector, toWorld } from '../model/geometry';
-import { busMembers, wireStyleFor } from '../model/bus';
 import { drawOrderCached, labelsShown } from '../model/doc';
 import { refreshTouching, touchingCells, touchingFromCells } from '../model/netlist';
 import { isDnp } from '../model/partFields';
 import { instanceSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, LabelSpotName, LabelStyle, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
-import { buildWirePath, wireLabelSpot, endpointInfo, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wireCrossingsChanged, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
+import { buildWirePath, wireLabelSpot, endpointInfo, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wireCrossingsChanged, wirePolyline, wireStyle, wireStyleFor, type Crossing, type Hop } from '../model/wires';
 import { SheetFrame } from './SheetFrame';
 import { RichText } from './RichText';
 import { hasMath } from '../model/latex';
@@ -430,9 +429,8 @@ export const WireView = memo(function WireView({
   const color = inkColor(st.color, palette);
   const d = buildWirePath(pts, st.radius, hops, settings.hops, settings.hopSize);
   const spot = w.label && !w.labelHidden && !settings.hideWireLabels ? wireLabelSpot(w, pts, st.width) : null;
-  const mark = w.bus && w.label && !settings.hideBusMarks ? busMark(pts, busMembers(w.label).length, st.width) : null;
   return (
-    <g className={w.bus ? 'wire bus' : 'wire'} data-id={w.id} opacity={dim ? 0.25 : 1}>
+    <g className="wire" data-id={w.id} opacity={dim ? 0.25 : 1}>
       <path
         d={d}
         fill="none"
@@ -443,43 +441,9 @@ export const WireView = memo(function WireView({
         strokeDasharray={dashArray(st.dash, st.width)}
       />
       {w.label && spot && <RichText text={w.label} x={spot.x} y={spot.y} anchor={spot.anchor} fontSize={10} className="wire-label" fill={color} />}
-      {mark && (
-        <g className="bus-mark">
-          <path d={mark.d} stroke={color} strokeWidth={Math.max(1, st.width * 0.3)} strokeLinecap="round" fill="none" />
-          <text x={mark.text.x} y={mark.text.y} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill={color}>
-            {mark.count}
-          </text>
-        </g>
-      )}
     </g>
   );
 });
-
-/** Slash across a bus with the number of signals it carries, a third of the way along its longest run. */
-function busMark(pts: Point[], count: number, width: number) {
-  if (count < 2 || pts.length < 2) return null;
-  let best = 0;
-  let len = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const l = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
-    if (l > len) [best, len] = [i, l];
-  }
-  if (len < 30) return null;
-  const a = pts[best];
-  const b = pts[best + 1];
-  const u = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
-  // the count goes below (or left of a vertical run), clear of the name above / right
-  let n = { x: -u.y, y: u.x };
-  if (n.y < -0.01 || (Math.abs(n.y) <= 0.01 && n.x > 0)) n = { x: -n.x, y: -n.y };
-  const p = { x: a.x + (b.x - a.x) * 0.3, y: a.y + (b.y - a.y) * 0.3 };
-  const s = 4 + width;
-  const t = { x: (u.x + n.x) * s, y: (u.y + n.y) * s };
-  return {
-    d: `M${p.x - t.x},${p.y - t.y}L${p.x + t.x},${p.y + t.y}`,
-    text: { x: p.x + t.x + n.x * 6, y: p.y + t.y + n.y * 6 },
-    count,
-  };
-}
 
 /* ------------------------------------------------------------------ */
 /* Shapes                                                              */
@@ -719,16 +683,12 @@ export function Scene({ doc, data, palette, highlight, frames = false }: { doc: 
     const a = s.kind === 'callout' ? calloutAnchor(doc, s) : null;
     return <ShapeView key={s.id} s={s} palette={palette} ax={a?.x} ay={a?.y} />;
   };
-  const dots: { x: number; y: number; color: string; key: string; r?: number }[] = [];
+  const dots: { x: number; y: number; color: string; key: string }[] = [];
   const js = doc.settings.junctionSize;
   for (const it of items) {
     if (it.type === 'junction' && (data.junctionDegree.get(it.id) ?? 0) >= 3) {
-      const at = wires.filter((w) => (w.a.kind === 'junction' && w.a.id === it.id) || (w.b.kind === 'junction' && w.b.id === it.id));
-      // wires tapping a bus enter it like bus entries, without a dot; a bus branching off a bus gets one
-      const buses = at.filter((w) => w.bus);
-      if (buses.length && buses.length < 3) continue;
-      const w = buses[0] ?? at[0];
-      dots.push({ x: it.x, y: it.y, color: w ? wireStyle(doc, w).color : doc.settings.wire.color, key: it.id, r: buses.length ? Math.max(js, wireStyle(doc, w).width * 0.9) : undefined });
+      const w = wires.find((w) => (w.a.kind === 'junction' && w.a.id === it.id) || (w.b.kind === 'junction' && w.b.id === it.id));
+      dots.push({ x: it.x, y: it.y, color: w ? wireStyle(doc, w).color : doc.settings.wire.color, key: it.id });
     }
   }
   // butted pins count as joined: with a wire on them too, three or more branches meet there
@@ -767,7 +727,7 @@ export function Scene({ doc, data, palette, highlight, frames = false }: { doc: 
       </g>
       <g className="layer-dots">
         {dots.map((d) => (
-          <circle key={d.key} cx={d.x} cy={d.y} r={d.r ?? js} fill={inkColor(d.color, palette)} />
+          <circle key={d.key} cx={d.x} cy={d.y} r={js} fill={inkColor(d.color, palette)} />
         ))}
       </g>
       <g className="layer-above">{above.map(shapeEl)}</g>
