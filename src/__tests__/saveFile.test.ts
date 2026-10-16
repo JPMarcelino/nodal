@@ -3,6 +3,7 @@ import { saveFile } from '../io/files';
 
 const g = globalThis as unknown as Record<string, unknown>;
 g.window ??= globalThis;
+(g.window as Record<string, unknown>).addEventListener ??= () => {};
 const w = g.window as Record<string, unknown>;
 
 const FILTERS = [{ name: 'Nodal circuit', extensions: ['nodal', 'json'] }];

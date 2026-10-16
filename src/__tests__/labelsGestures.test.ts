@@ -4,6 +4,7 @@ import type { CircuitDoc } from '../model/types';
 
 const g = globalThis as unknown as Record<string, unknown>;
 g.window ??= globalThis;
+(g.window as Record<string, unknown>).addEventListener ??= () => {};
 g.localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
 afterEach(async () => {
