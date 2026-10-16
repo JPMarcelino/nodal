@@ -69,8 +69,6 @@ export interface Prefs {
   rightWidth: number;
   /** Angles new wires are drawn at. */
   wireAngle: WireAngle;
-  /** The wire tool draws buses (heavy, named signal bundles) instead of plain wires. */
-  drawBus: boolean;
 }
 
 
@@ -157,7 +155,6 @@ const DEFAULT_PREFS: Prefs = {
   leftWidth: 280,
   rightWidth: 290,
   wireAngle: 'ortho',
-  drawBus: false,
 };
 
 function initialDoc(): CircuitDoc {

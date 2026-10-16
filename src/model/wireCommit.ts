@@ -1,6 +1,5 @@
 import { uid } from './doc';
 import { eq, simplify } from './geometry';
-import { busNets, nextTapName } from './bus';
 import { cleanup, splitWire } from './ops';
 import type { CircuitDoc, Endpoint, Point, WireAngle, WireItem, WireStyle } from './types';
 import { routeLeg, routeObstacles } from './route';
@@ -165,8 +164,6 @@ export interface CommitWireOptions {
   angle?: WireAngle;
   /** Keep diagonal segments (clicked vertices may already have some): the wire is saved straight-routed. */
   straight?: boolean;
-  /** Draw a bus instead of a plain wire. */
-  bus?: boolean;
 }
 
 /**
@@ -189,21 +186,9 @@ export function commitWire(doc: CircuitDoc, start: WireTarget, end: WireTarget, 
   const w: WireItem = { id: uid('w'), type: 'wire', a, b, pts: pts.slice(1, -1), group: opts.group };
   if (angle !== 'ortho' || opts.straight) w.routing = 'straight';
   if (opts.style) w.style = { ...opts.style };
-  if (opts.bus) w.bus = true;
   doc.items[w.id] = w;
   cleanup(doc);
-  if (!doc.items[w.id]) return null;
-  if (!opts.bus) nameBusTap(doc, w.id);
-  return w.id;
-}
-
-/** A plain wire drawn onto a named bus picks up the bus's next signal nobody taps yet. */
-function nameBusTap(doc: CircuitDoc, id: string) {
-  const w = doc.items[id] as WireItem;
-  if (w.label?.trim()) return;
-  const net = busNets(doc).find((n) => n.taps.some((t) => t.wire === id));
-  const name = net && nextTapName(doc, net, id);
-  if (name) w.label = name;
+  return doc.items[w.id] ? w.id : null;
 }
 
 /**

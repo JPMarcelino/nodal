@@ -143,8 +143,7 @@ export function computeNets(doc: CircuitDoc, opts?: { ignoreLabels?: boolean }):
   const dsu = new DSU();
   const comps = Object.values(doc.items).filter((i): i is ComponentItem => i.type === 'component');
   for (const it of Object.values(doc.items)) {
-    // a bus carries many signals, so it joins none of them; its taps are joined by name
-    if (it.type !== 'wire' || it.bus) continue;
+    if (it.type !== 'wire') continue;
     const a = key(it.a, it.id, 'a');
     const b = key(it.b, it.id, 'b');
     dsu.union(`w:${it.id}`, a);
@@ -173,7 +172,7 @@ export function computeNets(doc: CircuitDoc, opts?: { ignoreLabels?: boolean }):
       }
     }
     for (const it of Object.values(doc.items)) {
-      if (it.type !== 'wire' || it.bus) continue;
+      if (it.type !== 'wire') continue;
       const name = (it.label ?? '').trim();
       if (!name) continue;
       const k = `w:${it.id}`;

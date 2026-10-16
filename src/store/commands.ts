@@ -2,9 +2,7 @@ import { copyAsSvg, doExport, exportSelection, fileNew, fileOpen, filePrint, fil
 import { importFile } from '../io/importFiles';
 import { exportLibraryFile, exportTemplateFile, importLibraryFile, importTemplateFile } from '../io/sharing';
 import { selectionToDrawing } from '../model/fromSelection';
-import { busNets, busOfWire } from '../model/bus';
 import { selectedGroup } from '../model/doc';
-import type { WireItem } from '../model/types';
 import { computeNets, netOfWire } from '../model/netlist';
 import * as A from './actions';
 import { clearExplainOverlays } from './explain';
@@ -155,8 +153,6 @@ export const COMMANDS: Command[] = [
 
   // Wire
   { id: 'wire.angle', label: 'Cycle wire angle: 90° / 45° / any (Tab while drawing)', category: 'Wire', keys: ['Shift+A'], run: () => A.setWireAngle() },
-  { id: 'wire.bus', label: 'Draw buses instead of wires (toggle)', category: 'Wire', keys: ['Shift+B'], cadence: [], run: () => A.setDrawBus() },
-  { id: 'wire.makeBus', label: 'Turn selected wires into a bus (or back into wires)', category: 'Wire', keys: [], run: A.toggleBusSelection, when: () => S().selection.some((id) => S().doc.items[id]?.type === 'wire') },
   { id: 'wire.reroute', label: 'Re-route selected wires', category: 'Wire', keys: ['Shift+W'], run: A.rerouteWires },
   { id: 'wire.highlightNet', label: 'Highlight net of selected wire', category: 'Wire', keys: ['N'], run: highlightNet },
   { id: 'wire.hops', label: 'Cycle wire crossing style (arc / gap / none)', category: 'Wire', keys: ['Mod+Shift+J'], run: cycleHops },
@@ -249,12 +245,6 @@ function highlightNet() {
   if (highlight) return set({ highlight: null });
   const w = selection.find((id) => doc.items[id]?.type === 'wire');
   if (!w) return toast('Select a wire to highlight its net');
-  if ((doc.items[w] as WireItem).bus) {
-    const bus = busOfWire(busNets(doc), w);
-    if (!bus) return;
-    set({ highlight: new Set([...bus.wires, ...bus.taps.map((t) => t.wire)]) });
-    return toast(`Bus ${bus.name || '(unnamed)'}: ${bus.members.length} signals, ${bus.taps.length} taps`);
-  }
   const net = netOfWire(computeNets(doc), w);
   if (net) {
     set({ highlight: new Set(net.wires) });
