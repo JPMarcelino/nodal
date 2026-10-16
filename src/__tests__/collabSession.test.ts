@@ -1,6 +1,6 @@
 import { produce } from 'immer';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { gateMessage, isWellFormedToken, resolveOwnership } from '../../collab-server/src/policy';
+import { gateMessage, isRoomFull, isWellFormedToken, MAX_PEERS, resolveOwnership } from '../../collab-server/src/policy';
 import { createDoc, makeShape } from '../model/doc';
 import type { CircuitDoc } from '../model/types';
 
@@ -123,8 +123,15 @@ class FakeSocket {
       r = { sockets: new Set(), ids: new Map(), snapshot: null };
       rooms.set(this.room, r);
     }
-    // Same order as Room.fetch: the ended tombstone is answered before any
-    // ownership claim, so a closed room is never re-claimed.
+    // Same order as Room.fetch: a full room is rejected first, then the
+    // ended tombstone is answered before any ownership claim, so a closed
+    // room is never re-claimed. Both checks use the shared policy module.
+    if (isRoomFull(r.sockets.size)) {
+      // mirrors Room.fetch's 429: no init, the socket just dies
+      this.readyState = FakeSocket.CLOSED;
+      setTimeout(() => this.onclose?.(), 0);
+      return;
+    }
     if (r.ended) {
       this.readyState = FakeSocket.CLOSED;
       setTimeout(() => {
@@ -504,6 +511,61 @@ describe('session orchestration (fake relay)', () => {
     expect(c.session.useCollab.getState().status).toBe('off');
     expect(connectCount(room)).toBe(3);
   }, 30000);
+
+  it('a token-holding latecomer cannot claim an ended room', async () => {
+    const a = await person();
+    people.push(a);
+    a.store.mutate((d) => void (d.name = 'Shared'));
+    const link = await a.session.startSession();
+    await until('A live', () => a.session.useCollab.getState().status === 'live');
+    const room = a.session.parseLink(link)!.room;
+    const ownerBefore = rooms.get(room)?.owner;
+    expect(ownerBefore).toBeTruthy();
+
+    await a.session.leaveSession();
+    await until('room ended', () => rooms.get(room)?.ended === true);
+    const ownerAfterEnd = rooms.get(room)?.owner;
+    expect(rooms.get(room)?.sockets.size ?? 0).toBe(0);
+
+    // a fresh well-formed token that never owned the room (same shape as
+    // session.ts rememberToken: randomId(24), so isWellFormedToken passes)
+    const fresh = 'latecomer-token-12345678';
+    expect(isWellFormedToken(fresh)).toBe(true);
+    expect(fresh).not.toBe(ownerAfterEnd);
+    mem.set('nodal.collab.owned', JSON.stringify({ [room]: fresh }));
+    const c = await person();
+    people.push(c);
+    await c.session.joinSession(link);
+    await until('C told', () => c.store.S().toasts.some((t) => t.text.includes('has ended')));
+    expect(c.session.useCollab.getState().status).toBe('off');
+    // the ended tombstone was answered before any ownership claim: the
+    // latecomer's token was never persisted into the closed room
+    expect(rooms.get(room)?.owner).toBe(ownerAfterEnd);
+    expect(rooms.get(room)?.sockets.size ?? 0).toBe(0);
+  }, 30000);
+
+  it('a full room rejects the 33rd peer without init (mirrors Room.fetch 429)', async () => {
+    const roomId = 'fullroom12';
+    const seen: string[][] = [];
+    for (let i = 0; i < MAX_PEERS; i++) {
+      const s = new FakeSocket(`wss://test/room/${roomId}`);
+      expect(s.readyState).toBe(FakeSocket.OPEN);
+      seen.push([s.id, roomId]);
+    }
+    expect(rooms.get(roomId)?.sockets.size).toBe(MAX_PEERS);
+    expect(isRoomFull(rooms.get(roomId)?.sockets.size ?? 0)).toBe(true);
+
+    const extra = new FakeSocket(`wss://test/room/${roomId}?w=latecomer-token-12345678`);
+    const got: string[] = [];
+    extra.onmessage = (e) => void got.push(String((JSON.parse(e.data) as { t?: unknown }).t));
+    expect(extra.readyState).toBe(FakeSocket.CLOSED);
+    await new Promise((r) => setTimeout(r, 10));
+    // no init was delivered and the room did not grow or get claimed
+    expect(got).toEqual([]);
+    expect(rooms.get(roomId)?.sockets.size).toBe(MAX_PEERS);
+    expect(rooms.get(roomId)?.owner).toBeUndefined();
+    expect(seen).toHaveLength(MAX_PEERS);
+  });
 
   it('mirrors the followed peer view; a local view change unfollows', async () => {
     const a = await person();
