@@ -151,6 +151,37 @@ export interface ComponentItem extends ItemBase {
   /** Value label offset when it has been dragged separately from the reference. */
   valueDx?: number;
   valueDy?: number;
+  /** Fixed spot for the reference and value instead of the automatic one (offsets apply on top). */
+  labelSpot?: LabelSpotName;
+  /** Look of the reference label; missing keys use the defaults. */
+  refStyle?: LabelStyle;
+  /** Look of the value label; missing keys use the defaults. */
+  valueStyle?: LabelStyle;
+}
+
+export type LabelSpotName = 'split' | 'right' | 'left' | 'above' | 'below' | 'topRight' | 'topLeft' | 'bottomRight' | 'bottomLeft';
+
+/** Per-label text styling of a part's reference or value. */
+export interface LabelStyle {
+  /** Font size (default 11 for the reference, 10.5 for the value). */
+  size?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  font?: 'serif' | 'mono';
+  color?: string;
+  /** 0…1 (default 1). */
+  opacity?: number;
+  /** Text alignment about the label's anchor point; unset = the spot's own. */
+  align?: 'start' | 'middle' | 'end';
+  /** Rotation in degrees about the anchor point. */
+  rotate?: number;
+  /** Paint a background-coloured box behind the text so it reads over wires. */
+  backdrop?: boolean;
+  /** Text drawn before / after the label (display only, e.g. "R = "). */
+  prefix?: string;
+  suffix?: string;
+  allCaps?: boolean;
 }
 
 export interface WireItem extends ItemBase {

@@ -16,7 +16,7 @@ import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, rebaseGesture, select, set, toast, useStore } from '../store/store';
 import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelLayout, shapeTitle, useSceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, shapeTitle, useSceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
@@ -172,6 +172,7 @@ export function Canvas() {
   const [spaceDown, setSpaceDown] = useState(false);
   const [fileDrag, setFileDrag] = useState(false);
   const [editingText, setEditingText] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState<{ id: string; which: 'ref' | 'value' } | null>(null);
   const lastClick = useRef<{ t: number; p: Point }>({ t: 0, p: { x: 0, y: 0 } });
   // hover menus: open after the pointer rests on a hot spot, close shortly after leaving it
   const [hotMenu, setHotMenu] = useState<HotSpot | null>(null);
@@ -421,23 +422,24 @@ export function Canvas() {
   );
   const hitItem = useCallback((p: Point): string | null => hitItems(p)[0] ?? null, [hitItems]);
 
-  /** Selected component label (reference or value *text*) under the pointer; dragging it moves just that label. */
-  const hitLabel = useCallback((p: Point): { id: string; which: 'ref' | 'value' } | null => {
+  /** Selected component label (reference or value *text*) under the pointer; dragging it moves just that label. `any` looks at every part. */
+  const hitLabel = useCallback((p: Point, any = false): { id: string; which: 'ref' | 'value' } | null => {
     const d = S().doc;
-    for (const id of S().selection) {
+    const ids = any ? Object.keys(d.items).reverse() : S().selection;
+    for (const id of ids) {
       const c = d.items[id];
       if (c?.type !== 'component') continue;
       const def = instanceSymbol(d, c);
       const L = labelLayout(c, def);
-      const texts: [{ x: number; y: number; anchor: 'start' | 'middle' | 'end' } | null | undefined, string, number, 'ref' | 'value'][] = [];
       const shown = labelsShown(d.settings, c, def);
-      if (shown.ref) texts.push([L.ref, c.ref, 11, 'ref']);
-      if (shown.value && c.value) texts.push([L.value, c.value, def.valueIsLabel ? 11 : 10.5, 'value']);
-      for (const [at, text, size, which] of texts) {
-        if (!at) continue;
-        const m = measureRich(text, size, 500);
-        const x = at.anchor === 'start' ? at.x : at.anchor === 'middle' ? at.x - m.w / 2 : at.x - m.w;
-        if (pointInRect(p, { x, y: at.y - size, w: m.w, h: size * 1.3 }, 2)) return { id: c.id, which };
+      for (const which of ['ref', 'value'] as const) {
+        const at = L[which];
+        if (!at || !shown[which] || !(which === 'ref' || c.value)) continue;
+        const look = labelLook(c, which, def);
+        // test in the label's own (unrotated) frame
+        const r = ((look.st.rotate ?? 0) * Math.PI) / 180;
+        const q = r ? { x: at.x + (p.x - at.x) * Math.cos(r) + (p.y - at.y) * Math.sin(r), y: at.y - (p.x - at.x) * Math.sin(r) + (p.y - at.y) * Math.cos(r) } : p;
+        if (pointInRect(q, labelBox(at, look), 2)) return { id: c.id, which };
       }
     }
     return null;
@@ -887,7 +889,7 @@ export function Canvas() {
   /* ---------------------------- pointer ---------------------------- */
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (editingText) return;
+    if (editingText || editingLabel) return;
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
     const w = toWorldPt(e.clientX, e.clientY);
@@ -1059,6 +1061,12 @@ export function Canvas() {
       select([wireLabel]);
       beginGesture();
       setGesture({ kind: 'wireLabel', id: wireLabel, net });
+      return;
+    }
+    const labelEdit = isDouble ? hitLabel(w, true) : null;
+    if (labelEdit && !S().doc.items[labelEdit.id]?.locked) {
+      select([labelEdit.id]);
+      setEditingLabel(labelEdit);
       return;
     }
     const labelOf = hitLabel(w);
@@ -1898,6 +1906,7 @@ export function Canvas() {
         </div>
       )}
       {editingText && <TextEditor id={editingText} onDone={() => setEditingText(null)} />}
+      {editingLabel && <LabelEditor {...editingLabel} onDone={() => setEditingLabel(null)} />}
       {prefs.showMinimap && <Minimap data={data} />}
       {hotMenu && !g && (
         <HotSpotMenu
@@ -2133,6 +2142,74 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
         height: m.h * view.zoom + 12,
         fontWeight: weight,
         color: it.textColor || undefined,
+      }}
+    />
+  );
+}
+
+/** In-place editor for a part's reference or value, opened by double-clicking the label. */
+function LabelEditor({ id, which, onDone }: { id: string; which: 'ref' | 'value'; onDone: () => void }) {
+  const doc = useStore((s) => s.doc);
+  const view = useStore((s) => s.view);
+  const c = doc.items[id] as ComponentItem | undefined;
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [value, setValue] = useState(c?.[which] ?? '');
+  const done = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      ref.current?.focus();
+      ref.current?.select();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+  if (!c) return null;
+  const def = instanceSymbol(doc, c);
+  const at = labelLayout(c, def)[which];
+  if (!at) return null;
+  // edit the bare text (no prefix/suffix/caps) at the label's own size
+  const key = which === 'ref' ? 'refStyle' : 'valueStyle';
+  const st = { ...c[key], prefix: undefined, suffix: undefined, allCaps: undefined };
+  const look = labelLook({ ...c, [which]: value || ' ', [key]: st }, which, def);
+  const box = labelBox(at, look);
+  const width = Math.max(60, box.w * view.zoom + 24);
+  const anchor = st.align ?? at.anchor;
+  const left = anchor === 'start' ? at.x * view.zoom + view.x - 5 : anchor === 'middle' ? at.x * view.zoom + view.x - width / 2 : at.x * view.zoom + view.x - width + 5;
+  const commit = () => {
+    if (done.current) return;
+    done.current = true;
+    const text = value.trim() ? value : '';
+    if (text !== c[which]) mutate((d) => void ((d.items[id] as ComponentItem)[which] = text));
+    onDone();
+  };
+  return (
+    <textarea
+      ref={ref}
+      className="text-editor"
+      value={value}
+      placeholder={which === 'ref' ? 'Reference' : def.valueIsLabel ? 'Net name' : 'Value'}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          done.current = true;
+          onDone();
+        } else if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      style={{
+        left,
+        top: box.y * view.zoom + view.y - 3,
+        fontSize: look.size * view.zoom,
+        lineHeight: 1.3,
+        width,
+        height: box.h * view.zoom + 10,
+        fontWeight: look.weight,
+        textAlign: anchor === 'start' ? 'left' : anchor === 'middle' ? 'center' : 'right',
       }}
     />
   );
