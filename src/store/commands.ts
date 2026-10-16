@@ -94,7 +94,7 @@ export const COMMANDS: Command[] = [
   { id: 'tool.altMove', label: 'Alt move (only the selection moves; wires to it are left behind)', category: 'Tools', keys: ['Shift+M'], run: () => A.setAltMove() },
   { id: 'tool.node', label: 'Edit points tool (drag wire bends & ends)', category: 'Tools', keys: ['E'], run: () => A.setTool('node') },
   { id: 'tool.solder', label: 'Solder tool (click crossings / pins to solder, junctions to unsolder)', category: 'Tools', keys: ['S'], run: () => A.setTool('solder') },
-  { id: 'tool.wire', label: 'Wire tool', category: 'Tools', keys: ['W'], cadence: ['W', 'Shift+W'], run: () => A.setTool('wire') },
+  { id: 'tool.wire', label: 'Wire tool (again: cycle 90° / 45° / any)', category: 'Tools', keys: ['W'], cadence: ['W', 'Shift+W'], run: () => (S().tool === 'wire' ? A.setWireAngle() : A.setTool('wire')) },
   { id: 'tool.rect', label: 'Rectangle (outline)', category: 'Tools', keys: ['B'], run: () => A.setTool('rect') },
   { id: 'tool.zone', label: 'Filled zone', category: 'Tools', keys: ['Z'], run: () => A.setTool('zone') },
   { id: 'tool.ellipse', label: 'Ellipse', category: 'Tools', keys: ['O'], run: () => A.setTool('ellipse') },

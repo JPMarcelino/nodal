@@ -1724,9 +1724,8 @@ export function Canvas() {
           ))}
 
           {/* selection */}
-          {selection.map((id) => (
-            <SelectionOutline key={id} doc={doc} id={id} polys={data.polys} z={z} />
-          ))}
+          {/* a text item being typed into is framed by its editor, not its stale bounds */}
+          {selection.map((id) => (id === editingText && (doc.items[id] as ShapeItem).kind === 'text' ? null : <SelectionOutline key={id} doc={doc} id={id} polys={data.polys} z={z} />))}
           {selectionBounds && <rect x={selectionBounds.x - 6} y={selectionBounds.y - 6} width={selectionBounds.w + 12} height={selectionBounds.h + 12} className="multi-sel" strokeWidth={1 / z} rx={4 / z} />}
           {/* selected wire node / segment (Del removes it) */}
           {(() => {
@@ -1751,6 +1750,7 @@ export function Canvas() {
             ))}
           {singleShape &&
             !singleShape.locked &&
+            !(singleShape.id === editingText && singleShape.kind === 'text') &&
             !(tool === 'node' && singleShape.kind === 'polygon') &&
             shapeHandles(singleShape).map((h) => (
               <rect key={h.h} x={h.p.x - 4 / z} y={h.p.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className="handle" strokeWidth={1.5 / z} />

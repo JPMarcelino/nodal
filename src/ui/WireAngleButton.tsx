@@ -19,7 +19,7 @@ export function WireAngleButton() {
     <button
       className={tool === 'wire' ? 'tool-btn wire-angle-btn active-soft' : 'tool-btn wire-angle-btn'}
       onClick={() => A.setWireAngle()}
-      title={`Wire angle: ${cur.title} — click (or Tab while wiring${k ? `, ${k}` : ''}) for ${A.WIRE_ANGLES.map((a) => a.label).join(' / ')}`}
+      title={`Wire angle: ${cur.title} — click (or W / Tab while wiring${k ? `, ${k}` : ''}) for ${A.WIRE_ANGLES.map((a) => a.label).join(' / ')}`}
     >
       <svg width={17} height={17} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
         {ICONS[angle]}

@@ -3,6 +3,7 @@ import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, nextRef, r
 import { eq, projectOnSegment, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
 import { packPoly, polyPoints } from './polygon';
+import { touchingPins } from './netlist';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, WireItem } from './types';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
@@ -409,6 +410,33 @@ export function transformItems(
 ) {
   transformNonWires(base, doc, ids, map, rotateBy, flip);
   transformWires(base, doc, ids, map);
+  bridgeTouchingPins(base, doc, ids);
+}
+
+/**
+ * Pins butted together are connected without a wire; when a move pulls them
+ * apart, a wire between them keeps the connection. Ids derive from the pins,
+ * so repeated calls during a drag rebuild the same wire.
+ */
+function bridgeTouchingPins(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>) {
+  const moves = (comp: string) => ids.has(comp) && !base.items[comp]?.locked;
+  for (const group of touchingPins(base)) {
+    const pins = group.map((k) => {
+      const [comp, port] = k.split(':');
+      return { comp, port };
+    });
+    const still = pins.find((p) => !moves(p.comp));
+    if (!still) continue;
+    const stillAt = endpointInfo(doc, { kind: 'port', ...still })?.pt;
+    for (const p of pins) {
+      if (!moves(p.comp)) continue;
+      const at = endpointInfo(doc, { kind: 'port', ...p })?.pt;
+      if (!at || !stillAt || eq(at, stillAt)) continue;
+      let id = `w-${p.comp}-${p.port}-${still.comp}-${still.port}`;
+      while (base.items[id]) id += '_';
+      doc.items[id] = { id, type: 'wire', a: { kind: 'port', ...still }, b: { kind: 'port', ...p }, pts: [], group: base.items[still.comp]?.group };
+    }
+  }
 }
 
 /** Components, junctions and shapes of a transform (wires are handled separately). */

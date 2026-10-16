@@ -463,7 +463,7 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
   const rot = st.rotate ?? 0;
   const advanced = [st.font, st.opacity, st.align, st.rotate, st.backdrop, st.prefix, st.suffix, off.x || undefined, off.y || undefined].filter((v) => v !== undefined).length;
   const spotName = SPOTS.find((o) => o.value === (c.labelSpot ?? ''))!.label;
-  const shownNames = def.valueIsLabel ? (c.showValue ? 'shown' : 'hidden') : [c.showRef && 'ref', c.showValue && 'value'].filter(Boolean).join(' + ') || 'hidden';
+  const shownNames = def.valueIsLabel ? (c.showValue ? 'shown' : 'hidden') : [c.showRef && 'name', c.showValue && 'value'].filter(Boolean).join(' + ') || 'hidden';
   return (
     <Section
       title="Labels"
@@ -492,7 +492,7 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
         <>
           <Field label="Show">
             <span className="row-gap wrap">
-              <Toggle checked={c.showRef} onChange={(v) => upd((x) => (x.showRef = v))} label="Ref" />
+              <Toggle checked={c.showRef} onChange={(v) => upd((x) => (x.showRef = v))} label="Name" />
               <Toggle checked={c.showValue} onChange={(v) => upd((x) => (x.showValue = v))} label="Value" />
             </span>
           </Field>
