@@ -691,8 +691,20 @@ export function Scene({ doc, data, palette, highlight, frames = false }: { doc: 
       dots.push({ x: it.x, y: it.y, color: w ? wireStyle(doc, w).color : doc.settings.wire.color, key: it.id });
     }
   }
+  // butted pins count as joined: with a wire on them too, three or more branches meet there
+  const dotted = new Set<string>();
+  for (const keys of data.touchCells.values()) {
+    if (keys.length < 2 || !keys.some((k) => data.touching.has(k))) continue;
+    const n = keys.reduce((sum, k) => sum + (data.portDegree.get(k) ?? 0), keys.length);
+    if (n < 3) continue;
+    for (const k of keys) dotted.add(k);
+    const [comp, port] = keys[0].split(':');
+    const c = doc.items[comp];
+    const p = c?.type === 'component' ? portPosition(doc, c, port) : null;
+    if (p) dots.push({ x: p.pt.x, y: p.pt.y, color: doc.settings.wire.color, key: keys[0] });
+  }
   for (const [k, n] of data.portDegree) {
-    if (n < 2) continue;
+    if (n < 2 || dotted.has(k)) continue;
     const [comp, port] = k.split(':');
     const c = doc.items[comp];
     if (!c || c.type !== 'component') continue;
