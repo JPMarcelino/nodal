@@ -1291,7 +1291,7 @@ export function Canvas() {
         const c = S().doc.items[g.id] as ComponentItem | undefined;
         if (!c) return;
         const raw = (g.base * dist(w, c)) / g.d0;
-        // quarter steps keep pins on the grid more often; Shift for any size
+        // quarter steps (pins land on the grid at any size); Shift for any size
         const k = Math.min(10, Math.max(0.1, e.shiftKey ? Math.round(raw * 100) / 100 : Math.max(0.25, Math.round(raw * 4) / 4)));
         gestureUpdate((d) => {
           (d.items[g.id] as ComponentItem).scale = k === 1 ? undefined : k;
