@@ -114,7 +114,7 @@ function shiftPrim(p: Prim, sx: number, sy: number): Prim {
 }
 
 /** Moves absolute SVG path coordinates; relative commands need no change. */
-function shiftPath(d: string, sx: number, sy: number): string {
+export function shiftPath(d: string, sx: number, sy: number): string {
   let out = '';
   let cmd = '';
   let i = 0;
