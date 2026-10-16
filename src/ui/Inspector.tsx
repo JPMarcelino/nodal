@@ -28,6 +28,7 @@ import { computeNets, netOfWire } from '../model/netlist';
 import { measureRich } from '../model/richText';
 import { DNP, PART_FIELDS, customFieldKeys, hasPartFields, isDnp } from '../model/partFields';
 import { getSymbol, stateSymbol } from '../model/registry';
+import { gridScale } from '../model/symbols/scale';
 import type { CircuitDoc, ComponentItem, LabelSide, Dash, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { docBounds } from '../model/doc';
@@ -800,11 +801,17 @@ function SizeField({ ids }: { ids: string[] }) {
   const k = comps[0].scale ?? 1;
   const same = comps.every((c) => (c.scale ?? 1) === k);
   const setK = (v: number) => {
-    const s = Math.round(Math.min(10, Math.max(0.1, v)) * 1000) / 1000;
-    mutate((d) => comps.forEach((c) => ((d.items[c.id] as ComponentItem).scale = s === 1 ? undefined : s)));
+    const s = Math.min(10, Math.max(0.1, v));
+    mutate((d) =>
+      comps.forEach((c) => {
+        // each part snaps to the nearest size that keeps its pins on the grid
+        const k = gridScale(getSymbol(d, c.symbol), s);
+        (d.items[c.id] as ComponentItem).scale = k === 1 ? undefined : k;
+      }),
+    );
   };
   return (
-    <Row label={same ? 'Size' : 'Size (mixed)'} hint="Scales the drawing, its pins and text; line widths stay the same. Drag a corner handle on the canvas too (Shift: any size)">
+    <Row label={same ? 'Size' : 'Size (mixed)'} hint="Scales the drawing, its pins and text; line widths stay the same. Snaps to the nearest size that keeps every pin on the grid. Drag a corner handle on the canvas too">
       <span className="row-gap wrap">
         <Segmented value={same && SIZES.includes(k) ? k : -1} options={SIZES.map((v) => ({ value: v, label: `${v * 100}%` }))} onChange={setK} />
         <NumberInput value={Math.round(k * 100)} min={10} max={1000} step={5} suffix="%" onChange={(v) => setK(v / 100)} />

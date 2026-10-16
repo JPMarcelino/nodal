@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { toWorld } from '../model/geometry';
 import { instanceSymbol } from '../model/registry';
-import { BUILTIN_SYMBOLS } from '../model/symbols';
+import { BUILTIN, BUILTIN_SYMBOLS } from '../model/symbols';
 import { compileSource } from '../model/symbols/dsl';
-import { gridAlignSymbol } from '../model/symbols/scale';
+import { gridScale, scaleStep, scaleSymbol } from '../model/symbols/scale';
 import type { SymbolDef } from '../model/types';
 
 const onGrid = (v: number) => Math.abs(Math.round(v / 10) * 10 - v) < 0.01;
@@ -20,19 +20,32 @@ function pinsOnGrid(def: SymbolDef) {
 describe('pins of placed parts stay on the grid', () => {
   it('leaves symbols already on the grid untouched', () => {
     for (const s of BUILTIN_SYMBOLS) pinsOnGrid(instanceSymbol({ symbols: {} }, { symbol: s.id }));
-    const res = BUILTIN_SYMBOLS.find((s) => s.id === 'resistor')!;
-    expect(gridAlignSymbol(res)).toBe(res);
+    expect(instanceSymbol({ symbols: {} }, { symbol: 'resistor' })).toBe(BUILTIN.resistor);
   });
 
-  it('at any size', () => {
-    for (const scale of [0.25, 0.5, 0.75, 1.25, 1.5, 1.75, 2, 2.5, 3, 0.33, 1.1, 1.37])
+  it('at any size, with the drawing scaled exactly and never reshaped', () => {
+    for (const scale of [0.1, 0.25, 0.5, 0.75, 1.25, 1.5, 1.75, 2, 2.5, 3, 0.33, 1.1, 1.37])
       for (const s of BUILTIN_SYMBOLS) {
         const def = instanceSymbol({ symbols: {} }, { symbol: s.id, scale });
         pinsOnGrid(def);
-        // no two pins collapse onto one point unless they already did
-        const key = (p: { x: number; y: number }) => `${p.x},${p.y}`;
-        expect(new Set(def.ports.map(key)).size).toBe(new Set(s.ports.map(key)).size);
+        // same drawing as a plain scale by the snapped size, moved as a whole
+        const plain = scaleSymbol(s, gridScale(s, scale));
+        expect(def.prims).toHaveLength(plain.prims.length);
+        if (!def.ports.length) continue;
+        const dx = def.ports[0].x - plain.ports[0].x;
+        const dy = def.ports[0].y - plain.ports[0].y;
+        def.ports.forEach((p, i) => {
+          expect(p.x - plain.ports[i].x).toBeCloseTo(dx, 2);
+          expect(p.y - plain.ports[i].y).toBeCloseTo(dy, 2);
+        });
       }
+  });
+
+  it('snaps sizes to steps that keep the pin spacing on the grid', () => {
+    const step = scaleStep(BUILTIN.resistor);
+    expect(step).toBeGreaterThan(0);
+    expect(gridScale(BUILTIN.resistor, 1)).toBe(1);
+    for (const k of [0.3, 1.4, 2.2]) expect(gridScale(BUILTIN.resistor, k) / step).toBeCloseTo(Math.round(gridScale(BUILTIN.resistor, k) / step), 6);
   });
 
   it('for user symbols with an odd-grid outline', () => {
@@ -43,28 +56,6 @@ describe('pins of placed parts stay on the grid', () => {
     });
     const placed = instanceSymbol({ symbols: { odd: def } }, { symbol: 'odd' });
     pinsOnGrid(placed);
-    // the drawing keeps its shape: the anchor moved, nothing was stretched
     expect(placed.prims).toHaveLength(def.prims.length);
-  });
-
-  it('stretches a lead to meet a snapped pin', () => {
-    const def = gridAlignSymbol({
-      id: 'x', name: 'x', category: 'x', prefix: 'U', w: 40, h: 20,
-      prims: [{ t: 'line', pts: [0, 10, 13, 10] }, { t: 'line', pts: [27, 10, 40, 10] }, { t: 'line', pts: [20, 0, 20, 3] }],
-      ports: [{ id: 'a', name: 'a', x: 0, y: 10, side: 'left' }, { id: 'b', name: 'b', x: 40, y: 10, side: 'right' }, { id: 'c', name: 'c', x: 23, y: 3, side: 'top' }],
-    } as SymbolDef);
-    pinsOnGrid(def);
-    const c = def.ports.find((p) => p.id === 'c')!;
-    expect(def.prims.some((p) => p.t === 'line' && p.pts.includes(c.x) && p.pts.includes(c.y))).toBe(true);
-  });
-});
-
-describe('tiny parts', () => {
-  it('keep their pins inside the outline', () => {
-    for (const s of BUILTIN_SYMBOLS) {
-      const def = instanceSymbol({ symbols: {} }, { symbol: s.id, scale: 0.1 });
-      pinsOnGrid(def);
-      for (const p of def.ports) expect(p.x >= -0.01 && p.x <= def.w + 0.01 && p.y >= -0.01 && p.y <= def.h + 0.01, `${s.id} ${p.id}`).toBe(true);
-    }
   });
 });

@@ -143,29 +143,13 @@ function shiftPath(d: string, sx: number, sy: number): string {
   return out;
 }
 
-/**
- * Snaps coordinates to grid lines through `c`, keeping distinct coordinates
- * distinct and in order (so tiny parts never merge two pins into one point).
- */
-function snapAxis(vals: number[], c: number): (v: number) => number {
-  const uniq = [...new Set(vals)].sort((a, b) => a - b);
-  const snapped = uniq.map((v) => c + snapG(v - c));
-  // spread from the middle outwards so a symmetric part stays symmetric
-  const mid = uniq.findIndex((v) => v >= c);
-  const m = mid < 0 ? uniq.length - 1 : mid;
-  for (let i = m + 1; i < uniq.length; i++) if (snapped[i] <= snapped[i - 1] + 0.01) snapped[i] = snapped[i - 1] + PIN_GRID;
-  for (let i = m - 1; i >= 0; i--) if (snapped[i] >= snapped[i + 1] - 0.01) snapped[i] = snapped[i + 1] - PIN_GRID;
-  return (v) => r(snapped[uniq.indexOf(v)]);
-}
-
 const aligned = new WeakMap<SymbolDef, SymbolDef>();
 
 /**
- * The symbol with every pin on the grid relative to the part's anchor (its
- * centre), so pins of a placed part always land on grid points. The anchor
- * moves by under half a grid step (padding the outline on one side) and any
- * pin still off the grid is snapped, its lead stretched to meet it. Symbols
- * already on the grid come back unchanged.
+ * The symbol with its pins on the grid relative to the part's anchor (its
+ * centre), so the pins of a placed part land on grid points. Only the anchor
+ * moves, by under half a grid step (padding the outline on one side): the
+ * drawing itself is never changed. Symbols already on the grid come back as is.
  */
 export function gridAlignSymbol(def: SymbolDef): SymbolDef {
   const hit = aligned.get(def);
@@ -180,42 +164,46 @@ export function gridAlignSymbol(def: SymbolDef): SymbolDef {
     };
     const ax = axis(def.w, def.ports.map((p) => p.x));
     const ay = axis(def.h, def.ports.map((p) => p.y));
-    const cx = ax.size / 2;
-    const cy = ay.size / 2;
-    let prims = def.prims.map((p) => shiftPrim(p, ax.shift, ay.shift));
-    const from = def.ports.map((p) => ({ x: r(p.x + ax.shift), y: r(p.y + ay.shift) }));
-    const sx = snapAxis(from.map((p) => p.x), cx);
-    const sy = snapAxis(from.map((p) => p.y), cy);
-    const to = from.map((p) => ({ x: sx(p.x), y: sy(p.y) }));
-    from.forEach((f, i) => {
-      const t = to[i];
-      if (near(f.x, t.x) && near(f.y, t.y)) return;
-      let stretched = false;
-      prims = prims.map((p) => {
-        if (p.t !== 'line' && p.t !== 'poly') return p;
-        const n = p.pts.length;
-        const at = [0, n - 2].find((k) => near(p.pts[k], f.x) && near(p.pts[k + 1], f.y));
-        if (at === undefined) return p;
-        stretched = true;
-        const pts = p.pts.slice();
-        pts[at] = t.x;
-        pts[at + 1] = t.y;
-        return { ...p, pts };
-      });
-      if (!stretched) prims.push({ t: 'line', pts: [f.x, f.y, t.x, t.y] });
-    });
-    // pins pushed past the outline: grow it by whole grid steps on both sides
-    const grow = (lo: number, hi: number, size: number) => Math.ceil(Math.max(0, -lo, hi - size) / PIN_GRID - 0.001) * PIN_GRID;
-    const gx = grow(Math.min(...to.map((t) => t.x)), Math.max(...to.map((t) => t.x)), ax.size);
-    const gy = grow(Math.min(...to.map((t) => t.y)), Math.max(...to.map((t) => t.y)), ay.size);
+    // clear the rounding dust off pins that are now on the grid
+    const pin = (v: number, c: number) => (near(c + snapG(v - c), v) ? r(c + snapG(v - c)) : v);
     out = {
       ...def,
-      w: ax.size + 2 * gx,
-      h: ay.size + 2 * gy,
-      prims: prims.map((p) => shiftPrim(p, gx, gy)),
-      ports: def.ports.map((p, i) => ({ ...p, x: r(to[i].x + gx), y: r(to[i].y + gy) })),
+      w: ax.size,
+      h: ay.size,
+      prims: def.prims.map((p) => shiftPrim(p, ax.shift, ay.shift)),
+      ports: def.ports.map((p) => ({ ...p, x: pin(p.x + ax.shift, ax.size / 2), y: pin(p.y + ay.shift, ay.size / 2) })),
     };
   }
   aligned.set(def, out);
   return out;
+}
+
+const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+const steps = new WeakMap<SymbolDef, number>();
+
+/**
+ * The smallest size step that keeps a symbol's pins on the grid: every
+ * distance between two pins must stay a whole number of grid steps. 0 when
+ * the pins put no limit on the size (a single pin).
+ */
+export function scaleStep(def: SymbolDef): number {
+  let step = steps.get(def);
+  if (step === undefined) {
+    let g = 0;
+    for (const key of ['x', 'y'] as const) {
+      const vs = def.ports.map((p) => Math.round(p[key]));
+      for (const v of vs) g = gcd(g, Math.abs(v - vs[0]));
+    }
+    step = g ? PIN_GRID / g : 0;
+    steps.set(def, step);
+  }
+  return step;
+}
+
+/** The size nearest `k` at which the part's pins stay on the grid. */
+export function gridScale(def: SymbolDef, k: number): number {
+  const step = scaleStep(def);
+  if (!step) return k;
+  const m = Math.max(1, Math.round(k / step));
+  return Math.round(m * step * 1e6) / 1e6;
 }
