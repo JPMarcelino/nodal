@@ -177,7 +177,10 @@ class FakeSocket {
       return;
     }
     if (decision === 'end') {
+      // mirrors Room.end()'s storage.deleteAll(): the snapshot and the
+      // owner hash are wiped, then only the ended marker is re-put
       r.snapshot = null;
+      r.owner = undefined;
       r.ended = true;
       for (const s of [...r.sockets]) {
         r.sockets.delete(s);
@@ -524,14 +527,15 @@ describe('session orchestration (fake relay)', () => {
 
     await a.session.leaveSession();
     await until('room ended', () => rooms.get(room)?.ended === true);
-    const ownerAfterEnd = rooms.get(room)?.owner;
+    // mirrors Room.end()'s storage.deleteAll(): owner and snapshot are wiped
+    expect(rooms.get(room)?.owner).toBeUndefined();
     expect(rooms.get(room)?.sockets.size ?? 0).toBe(0);
 
     // a fresh well-formed token that never owned the room (same shape as
     // session.ts rememberToken: randomId(24), so isWellFormedToken passes)
     const fresh = 'latecomer-token-12345678';
     expect(isWellFormedToken(fresh)).toBe(true);
-    expect(fresh).not.toBe(ownerAfterEnd);
+    expect(fresh).not.toBe(ownerBefore);
     mem.set('nodal.collab.owned', JSON.stringify({ [room]: fresh }));
     const c = await person();
     people.push(c);
@@ -539,8 +543,9 @@ describe('session orchestration (fake relay)', () => {
     await until('C told', () => c.store.S().toasts.some((t) => t.text.includes('has ended')));
     expect(c.session.useCollab.getState().status).toBe('off');
     // the ended tombstone was answered before any ownership claim: the
-    // latecomer's token was never persisted into the closed room
-    expect(rooms.get(room)?.owner).toBe(ownerAfterEnd);
+    // latecomer's token was never persisted into the closed room, so a
+    // swapped order (claim-then-check) would fail here by storing fresh
+    expect(rooms.get(room)?.owner).toBeUndefined();
     expect(rooms.get(room)?.sockets.size ?? 0).toBe(0);
   }, 30000);
 
