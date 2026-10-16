@@ -4,6 +4,7 @@ import { drawOrderCached, itemBounds, labelsShown, makeShape } from '../model/do
 import { componentBounds, dist, eq, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
 import { getSymbol, instanceSymbol } from '../model/registry';
+import { gridScale, scaleStep } from '../model/symbols/scale';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireLabelSpot, wireStyle } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
@@ -1290,9 +1291,10 @@ export function Canvas() {
       case 'scale': {
         const c = S().doc.items[g.id] as ComponentItem | undefined;
         if (!c) return;
-        const raw = (g.base * dist(w, c)) / g.d0;
-        // quarter steps (pins land on the grid at any size); Shift for any size
-        const k = Math.min(10, Math.max(0.1, e.shiftKey ? Math.round(raw * 100) / 100 : Math.max(0.25, Math.round(raw * 4) / 4)));
+        const raw = Math.min(10, Math.max(0.1, (g.base * dist(w, c)) / g.d0));
+        // only sizes that keep every pin on the grid (quarter steps for single-pin parts)
+        const def = getSymbol(S().doc, c.symbol);
+        const k = scaleStep(def) ? gridScale(def, raw) : Math.max(0.25, Math.round(raw * 4) / 4);
         gestureUpdate((d) => {
           (d.items[g.id] as ComponentItem).scale = k === 1 ? undefined : k;
         });

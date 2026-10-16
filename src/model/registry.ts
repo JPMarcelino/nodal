@@ -1,5 +1,5 @@
 import { BUILTIN, BUILTIN_SYMBOLS, MISSING_SYMBOL } from './symbols';
-import { gridAlignSymbol, scaleSymbol } from './symbols/scale';
+import { gridAlignSymbol, gridScale, scaleSymbol } from './symbols/scale';
 import type { CircuitDoc, ComponentItem, SymbolDef } from './types';
 
 let userLibrary: Record<string, SymbolDef> = {};
@@ -28,7 +28,8 @@ export function stateSymbol(def: SymbolDef, c: Pick<ComponentItem, 'closed'>): S
 
 /** The drawing a placed part uses: its symbol in its switch state, at the part's size, pins on the grid. */
 export function instanceSymbol(doc: Pick<CircuitDoc, 'symbols'>, c: Pick<ComponentItem, 'symbol' | 'scale' | 'closed'>): SymbolDef {
-  return gridAlignSymbol(scaleSymbol(stateSymbol(getSymbol(doc, c.symbol), c), c.scale ?? 1));
+  const def = stateSymbol(getSymbol(doc, c.symbol), c);
+  return gridAlignSymbol(scaleSymbol(def, c.scale ? gridScale(def, c.scale) : 1));
 }
 
 /** A symbol that is an alternative drawing ("type") of another symbol. */
