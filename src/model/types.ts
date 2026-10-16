@@ -215,7 +215,7 @@ export interface ShapeItem extends ItemBase {
   fontSize?: number;
   textColor?: string;
   bold?: boolean;
-  /** Title offset from its default spot (rect / zone / ellipse); dragged with the shape selected. */
+  /** Title offset from its default spot (rect / zone / ellipse / polygon); dragged with the shape selected. */
   textDx?: number;
   textDy?: number;
   /** Stacking within its layer. */

@@ -73,7 +73,7 @@ You can also share without a live session. Open **File → Share & collaborate�
 - Unconnected pins are marked, so dangling connections are easy to spot
 
 ### Zones, shapes and annotation
-- Outline **rectangles** (**B**) and **filled zones** (**Z**) for highlighting areas, each with an optional title. They sit **behind wires** by default; switch one to *Above all* (**Ctrl+Alt+L**) if needed.
+- Outline **rectangles** (**B**) and **filled zones** (**Z**) for highlighting areas, each with an optional title (ellipses and polygons can have one too). New zones cycle through a palette of colours, so neighbouring zones stand apart. They sit **behind wires** by default; switch one to *Above all* (**Ctrl+Alt+L**) if needed.
 - Ellipses, lines, arrows and free text
 - Stroke, fill, opacity, corner radius and dash settings; z-ordering within each layer
 - Locking a zone lets clicks pass through it
@@ -103,7 +103,7 @@ Ink and callouts are saved with the circuit and exported. Traced nets are tempor
 Turn on **Drawing frame** in the document properties for a sheet border with zone markers (1, 2, 3… / A, B, C…) and a title block (company, title, description, author, date, size, revision, sheet number). Sizes A5–A0, US Letter/Legal/Tabloid and ANSI C–E, landscape or portrait. With a frame, exports use the sheet as the page and printing uses its paper size.
 
 ### Maths (LaTeX)
-Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone/shape titles, wire labels and part values, e.g. `$f_c = \frac{1}{2\pi RC}$` or `$R_{load}$`. Formulas are typeset with MathJax as vector paths, so they look the same in SVG, PNG and PDF exports. Type `\$` for a literal dollar sign.
+Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone/shape titles, wire labels and part values, e.g. `$f_c = \frac{1}{2\pi RC}$` or `$R_{load}$`. Formulas are typeset with MathJax as vector paths, so they look the same in SVG, PNG and PDF exports. Type `\$` for a literal dollar sign. As in pandoc and Obsidian, an inline formula can't start or end with a space and the closing `$` can't be followed by a digit, so prices like "$5 and $10" stay as text. A `$$…$$` formula can span several lines (e.g. an `aligned` block). The common siunitx commands work too: `$\SI{10}{\kilo\ohm}$`, `$\si{\micro\farad}$`, `\ohm`, `\volt`, `\hertz`, `\celsius` and so on. A formula with a mistake shows its source in red; hover it to see the error.
 
 ### Colour, fill and size
 - The **Style** section of the inspector works on anything selected (one part, or a mix of parts, wires and shapes) and changes them all at once. It covers line colour, fill colour and opacity, line width, solid/dashed/dotted lines, and text/label colour, with one-click swatches or any colour.

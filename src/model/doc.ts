@@ -140,9 +140,23 @@ export const SHAPE_DEFAULTS: Record<ShapeKind, Partial<ShapeItem>> = {
   frame: { stroke: '#a855f7', strokeWidth: 1.5, fill: 'none', fillOpacity: 0, dash: 'dashed', radius: 0, layer: 'above', fontSize: 13, text: '' },
 };
 
+/** Colours new zones cycle through, so neighbouring zones stand apart. */
+export const ZONE_COLOURS = ['#7aa2f7', '#9ece6a', '#ff9e64', '#bb9af7', '#2ac3de', '#f7768e', '#e0af68', '#3ddc97'];
+
+/** The zone colour used least so far (the first such in the cycle). */
+export function nextZoneColour(doc: CircuitDoc): string {
+  const used = new Map(ZONE_COLOURS.map((c) => [c, 0]));
+  for (const it of Object.values(doc.items)) {
+    const c = it.type === 'shape' && it.kind === 'zone' ? it.fill.toLowerCase() : '';
+    if (used.has(c)) used.set(c, used.get(c)! + 1);
+  }
+  const least = Math.min(...used.values());
+  return ZONE_COLOURS.find((c) => used.get(c) === least)!;
+}
+
 export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number, w: number, h: number): ShapeItem {
   const z = Math.max(0, ...Object.values(doc.items).map((i) => i.z ?? 0)) + 1;
-  return {
+  const shape = {
     id: uid('s'),
     type: 'shape',
     kind,
@@ -160,6 +174,8 @@ export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number
     z,
     ...SHAPE_DEFAULTS[kind],
   } as ShapeItem;
+  if (kind === 'zone') shape.stroke = shape.fill = nextZoneColour(doc);
+  return shape;
 }
 
 /** Wires attached to an item (component ports or junction). */

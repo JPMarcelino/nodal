@@ -437,15 +437,15 @@ function shapeHeads(s: ShapeItem) {
 }
 
 /** Shapes whose title can be dragged around. */
-export const hasMovableTitle = (s: ShapeItem) => !!s.text && (s.kind === 'rect' || s.kind === 'zone' || s.kind === 'ellipse');
+export const hasMovableTitle = (s: ShapeItem) => !!s.text && (s.kind === 'rect' || s.kind === 'zone' || s.kind === 'ellipse' || s.kind === 'polygon');
 
 /** Where a shape's title text sits: anchor point (baseline) and its box. */
 export function shapeTitle(s: ShapeItem): { x: number; y: number; anchor: 'start' | 'middle'; box: { x: number; y: number; w: number; h: number } } {
   const fs = s.fontSize ?? 13;
   const dx = s.textDx ?? 0;
   const dy = s.textDy ?? 0;
-  const m = measureRich(s.text ?? '', fs, s.kind !== 'ellipse' && s.bold === false ? 400 : 600);
-  if (s.kind === 'ellipse') {
+  const m = measureRich(s.text ?? '', fs, s.bold === false ? 400 : 600);
+  if (s.kind === 'ellipse' || s.kind === 'polygon') {
     const x = s.x + s.w / 2 + dx;
     const y = s.y + s.h / 2 + 5 + dy;
     return { x, y, anchor: 'middle', box: { x: x - m.w / 2, y: y - fs, w: m.w, h: fs * 1.3 } };
@@ -514,7 +514,7 @@ export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: Sh
         <g className="shape" data-id={s.id}>
           <ellipse cx={s.x + s.w / 2} cy={s.y + s.h / 2} rx={Math.abs(s.w / 2)} ry={Math.abs(s.h / 2)} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} />
           {s.text && (
-            <RichText text={s.text} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={600} />
+            <RichText text={s.text} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold === false ? 400 : 600} />
           )}
         </g>
       );
@@ -522,6 +522,9 @@ export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: Sh
       return (
         <g className="shape" data-id={s.id}>
           <polygon points={polyPoints(s).map((p) => `${p.x},${p.y}`).join(' ')} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinejoin="round" />
+          {s.text && (
+            <RichText text={s.text} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold === false ? 400 : 600} />
+          )}
         </g>
       );
     case 'image':
@@ -544,7 +547,7 @@ export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: Sh
           <ArrowHeadEl tip={endTip} x={ux} y={uy} size={size} kind={endKind} color={ink} sw={s.strokeWidth} />
           <ArrowHeadEl tip={startTip} x={-ux} y={-uy} size={size} kind={startKind} color={ink} sw={s.strokeWidth} />
           {s.text && (
-            <RichText text={s.text} x={s.x + s.w / 2} y={s.y + s.h / 2 - 6} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} />
+            <RichText text={s.text} x={s.x + s.w / 2} y={s.y + s.h / 2 - 6} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold ? 600 : 400} />
           )}
         </g>
       );
@@ -593,9 +596,8 @@ export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: Sh
     }
     case 'text': {
       const fs = s.fontSize ?? 16;
-      const lines = (s.text ?? '').split('\n');
       const m = measureRich(s.text ?? '', fs, s.bold ? 700 : 400);
-      const first = hasMath(lines[0]) ? layoutRich(lines[0], fs, s.bold ? 700 : 400)[0].ascent : fs;
+      const first = hasMath(s.text ?? '') ? layoutRich(s.text ?? '', fs, s.bold ? 700 : 400)[0].ascent : fs;
       return (
         <g className="shape" data-id={s.id}>
           {s.fillOpacity > 0 && <rect x={s.x - 6} y={s.y - 4} width={m.w + 12} height={m.h + 8} rx={4} fill={fill} fillOpacity={s.fillOpacity} />}
