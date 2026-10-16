@@ -4,7 +4,7 @@ import { busNets, nextTapName } from './bus';
 import { cleanup, splitWire } from './ops';
 import type { CircuitDoc, Endpoint, Point, WireAngle, WireItem, WireStyle } from './types';
 import { routeLeg, routeObstacles } from './route';
-import { adjustWireForMove, hitWire, wirePolyline } from './wires';
+import { adjustWireForMove, endpointInfo, hitWire, wirePolyline } from './wires';
 
 /* ------------------------------------------------------------------ */
 /* Wire gesture targets (UI-agnostic copy of the Canvas Target type)   */
@@ -111,14 +111,26 @@ export function resolveWireEndpoint(doc: CircuitDoc, t: WireTarget, self?: strin
     case 'junction':
       return { kind: 'junction', id: t.id };
     case 'wireEnd': {
-      const w = doc.items[t.wire] as WireItem | undefined;
-      if (!w) return { kind: 'free', ...t.pt };
+      let w = doc.items[t.wire] as WireItem | undefined;
+      let end = t.end;
+      const endAt = (x: WireItem, e: 'a' | 'b') => {
+        const info = endpointInfo(doc, x[e]);
+        return !!info && eq(info.pt, t.pt);
+      };
+      if (!w || !endAt(w, end)) {
+        // resolving the start may have split this wire, handing the end to the other piece
+        const moved = Object.values(doc.items).find((i): i is WireItem => i.type === 'wire' && i.id !== self && ((i.a.kind === 'free' && eq(i.a, t.pt)) || (i.b.kind === 'free' && eq(i.b, t.pt))));
+        if (moved) {
+          w = moved;
+          end = moved.a.kind === 'free' && eq(moved.a, t.pt) ? 'a' : 'b';
+        } else if (!w) return { kind: 'free', ...t.pt };
+      }
       // already connected earlier in this same commit (a loop closing where it started)
-      if (w[t.end].kind !== 'free') return w[t.end];
+      if (w[end].kind !== 'free') return w[end];
       const jid = uid('j');
       doc.items[jid] = { id: jid, type: 'junction', x: t.pt.x, y: t.pt.y, group: w.group };
       w.pts = wirePolyline(doc, w).slice(1, -1);
-      w[t.end] = { kind: 'junction', id: jid };
+      w[end] = { kind: 'junction', id: jid };
       return { kind: 'junction', id: jid };
     }
     case 'wire': {
