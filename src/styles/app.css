@@ -2011,6 +2011,27 @@ select.input {
   user-select: text;
 }
 
+/* group names: faint tags above groups while outside them */
+.group-tag {
+  fill: var(--text-faint);
+  opacity: 0.6;
+  /* a halo in the canvas colour keeps it legible over wires */
+  paint-order: stroke;
+  stroke: var(--canvas);
+  vector-effect: non-scaling-stroke;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+}
+
+.group-tag.active {
+  fill: var(--accent);
+  opacity: 0.95;
+}
+
 /* tool rail */
 
 .tool-rail {

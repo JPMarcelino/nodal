@@ -34,7 +34,8 @@ import { getSymbol, stateSymbol } from '../model/registry';
 import { gridScale } from '../model/symbols/scale';
 import type { CircuitDoc, ComponentItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, Dash, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
-import { docBounds } from '../model/doc';
+import { docBounds, selectedGroup } from '../model/doc';
+import { scaleItems, selectionPivot } from '../model/ops';
 import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
@@ -1099,16 +1100,29 @@ function SizeField({ ids }: { ids: string[] }) {
   const same = comps.every((c) => (c.scale ?? 1) === k);
   const setK = (v: number) => {
     const s = Math.min(10, Math.max(0.1, v));
+    if (ids.length > 1) {
+      // several items (a group): resize them as one, so every part grows alike and the layout spreads with it
+      const base = S().doc;
+      mutate((d) => void scaleItems(base, d as CircuitDoc, new Set(ids), s / k, selectionPivot(base, ids)));
+      return;
+    }
     mutate((d) =>
       comps.forEach((c) => {
-        // each part snaps to the nearest size that keeps its pins on the grid
+        // a lone part snaps to the nearest size that keeps its pins on the grid
         const k = gridScale(getSymbol(d, c.symbol), s);
         (d.items[c.id] as ComponentItem).scale = k === 1 ? undefined : k;
       }),
     );
   };
   return (
-    <Row label={same ? 'Size' : 'Size (mixed)'} hint="Scales the drawing, its pins and text; line widths stay the same. Snaps to the nearest size that keeps every pin on the grid. Drag a corner handle on the canvas too">
+    <Row
+      label={same ? 'Size' : 'Size (mixed)'}
+      hint={
+        ids.length > 1
+          ? 'Resizes the selection as one: every part, text and the spacing between them grow alike (relative to the first part’s size); line widths stay the same. Drag a corner of the selection on the canvas too'
+          : 'Scales the drawing, its pins and text; line widths stay the same. Snaps to the nearest size that keeps every pin on the grid. Drag a corner handle on the canvas too'
+      }
+    >
       <span className="row-gap wrap">
         <Segmented value={same && SIZES.includes(k) ? k : -1} options={SIZES.map((v) => ({ value: v, label: `${v * 100}%` }))} onChange={setK} />
         <NumberInput value={Math.round(k * 100)} min={10} max={1000} step={5} suffix="%" onChange={(v) => setK(v / 100)} />
@@ -1119,13 +1133,36 @@ function SizeField({ ids }: { ids: string[] }) {
 
 function MultiPanel({ ids }: { ids: string[] }) {
   const doc = useStore((s) => s.doc);
+  const scope = useStore((s) => s.scope);
+  const group = selectedGroup(doc, ids, scope);
   const items = ids.map((id) => doc.items[id]).filter(Boolean);
   const comps = items.filter((i): i is ComponentItem => i.type === 'component');
   const wires = items.filter((i): i is WireItem => i.type === 'wire');
   const shapes = items.filter((i): i is ShapeItem => i.type === 'shape');
   return (
     <>
-      <div className="panel-title">{items.length} items selected</div>
+      {group ? (
+        <div className="panel-title">
+          Group <span className="net-chip">{doc.groups[group].name}</span>
+        </div>
+      ) : (
+        <div className="panel-title">{items.length} items selected</div>
+      )}
+      {group && (
+        <Section title="Group" summary={doc.groups[group].name}>
+          <Field label="Name" hint="Shown faintly above the group on the canvas; double-click it there to rename too">
+            <TextInput value={doc.groups[group].name} focusKey="groupName" placeholder="Group name" onChange={(v) => A.renameGroup(group, v)} />
+          </Field>
+          <div className="btn-row">
+            <button className="secondary-btn" onClick={() => A.enterGroup(ids[0])}>
+              Enter group
+            </button>
+            <button className="secondary-btn" onClick={() => A.ungroupSelection()}>
+              Ungroup
+            </button>
+          </div>
+        </Section>
+      )}
       <div className="stats">
         {comps.length > 0 && (
           <span>
@@ -1150,7 +1187,7 @@ function MultiPanel({ ids }: { ids: string[] }) {
       <StyleSection ids={ids} title={`Style · ${items.length} items`} />
       {comps.length > 0 && (
         <Section title="Parts">
-          <SizeField ids={comps.map((c) => c.id)} />
+          <SizeField ids={ids} />
         </Section>
       )}
       {wires.length > 0 && (

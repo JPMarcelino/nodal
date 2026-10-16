@@ -610,6 +610,38 @@ export function selectionPivot(doc: CircuitDoc, ids: Iterable<string>): Point {
   return { x: snap(b.x + b.w / 2, g), y: snap(b.y + b.h / 2, g) };
 }
 
+/**
+ * Resizes a selection as one: positions, wire bends and shapes spread out
+ * from `pivot` by `factor`, and every part and text grows by the same factor
+ * (relative to the size it had in `base`), so the layout stays as it was.
+ * Returns the factor used, kept so no part goes outside 10%…1000%.
+ */
+export function scaleItems(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, factor: number, pivot: Point): number {
+  let r = factor;
+  for (const id of ids) {
+    const c = base.items[id];
+    if (c?.type !== 'component' || c.locked) continue;
+    const k = c.scale ?? 1;
+    r = Math.min(Math.max(r, 0.1 / k), 10 / k);
+  }
+  transformItems(base, doc, ids, (p) => ({ x: pivot.x + (p.x - pivot.x) * r, y: pivot.y + (p.y - pivot.y) * r }));
+  for (const id of ids) {
+    const b = base.items[id];
+    const it = doc.items[id];
+    if (!b || !it || b.locked) continue;
+    if (b.type === 'component' && it.type === 'component') {
+      const k = Math.round((b.scale ?? 1) * r * 1e4) / 1e4;
+      if (Math.abs(k - 1) < 1e-4) delete it.scale;
+      else it.scale = k;
+    } else if (b.type === 'shape' && it.type === 'shape' && b.kind === 'text') {
+      it.fontSize = Math.round((b.fontSize ?? 16) * r * 100) / 100;
+      it.w = b.w * r;
+      it.h = b.h * r;
+    }
+  }
+  return r;
+}
+
 export function rotateItems(doc: CircuitDoc, ids: Set<string>, deg: 90 | -90) {
   const base = clone(doc);
   const single = [...ids].filter((id) => doc.items[id]?.type !== 'wire');

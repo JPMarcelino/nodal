@@ -85,6 +85,12 @@ export function toggleBusSelection() {
   toast(on ? `${ids.length > 1 ? `${ids.length} wires are` : 'Wire is'} now a bus` : `${ids.length > 1 ? `${ids.length} buses are` : 'Bus is'} now a plain wire`);
 }
 
+export function renameGroup(gid: string, name: string) {
+  const v = name.trim();
+  if (!v || !S().doc.groups[gid] || S().doc.groups[gid].name === v) return;
+  mutate((d) => void (d.groups[gid].name = v));
+}
+
 export function startPlacing(symbol: string) {
   set({ placing: { symbol, rot: 0, flipX: false, repeat: true }, tool: 'select', contextMenu: null });
   pushRecent(symbol);

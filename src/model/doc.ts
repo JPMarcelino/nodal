@@ -216,6 +216,32 @@ export function topGroup(doc: CircuitDoc, it: Item, scope?: string): string | un
   return chain[chain.length - 1];
 }
 
+/** Groups sitting directly in `scope` (the root when unset), with their names at the top-left of what they hold. */
+export function groupTags(doc: CircuitDoc, scope?: string): { id: string; name: string; x: number; y: number }[] {
+  const out: { id: string; name: string; x: number; y: number }[] = [];
+  for (const g of Object.values(doc.groups)) {
+    if ((g.group ?? undefined) !== (scope ?? undefined) || !g.name) continue;
+    const rects = groupMembers(doc, g.id).flatMap((id) => {
+      const it = doc.items[id];
+      const r = it && !it.hidden ? itemBounds(doc, it) : null;
+      return r ? [r] : [];
+    });
+    if (!rects.length) continue;
+    out.push({ id: g.id, name: g.name, x: Math.min(...rects.map((r) => r.x)), y: Math.min(...rects.map((r) => r.y)) });
+  }
+  return out;
+}
+
+/** The group a selection is exactly (all of its members and nothing else), if any. */
+export function selectedGroup(doc: CircuitDoc, selection: string[], scope?: string): string | undefined {
+  const first = doc.items[selection[0]];
+  const gid = first && topGroup(doc, first, scope);
+  if (!gid) return undefined;
+  const members = groupMembers(doc, gid);
+  const sel = new Set(selection);
+  return members.length === sel.size && members.every((id) => sel.has(id)) ? gid : undefined;
+}
+
 export function groupMembers(doc: CircuitDoc, groupId: string): string[] {
   return Object.values(doc.items)
     .filter((i) => groupChain(doc, i.group).includes(groupId))
