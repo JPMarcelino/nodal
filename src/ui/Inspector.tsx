@@ -22,14 +22,14 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { defaultHeadSize } from '../canvas/Scene';
+import { defaultHeadSize, frozenLabelOffsets, labelLook } from '../canvas/Scene';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { computeNets, netOfWire } from '../model/netlist';
 import { measureRich } from '../model/richText';
 import { DNP, PART_FIELDS, customFieldKeys, hasPartFields, isDnp } from '../model/partFields';
 import { getSymbol, stateSymbol } from '../model/registry';
 import { gridScale } from '../model/symbols/scale';
-import type { CircuitDoc, ComponentItem, LabelSide, Dash, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
+import type { CircuitDoc, ComponentItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, Dash, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { docBounds } from '../model/doc';
 import * as A from '../store/actions';
@@ -420,6 +420,178 @@ function PartDetails({ c }: { c: ComponentItem }) {
   );
 }
 
+const SPOTS: { value: LabelSpotName | ''; label: string }[] = [
+  { value: '', label: 'Automatic' },
+  { value: 'split', label: 'Reference above, value below' },
+  { value: 'above', label: 'Both above' },
+  { value: 'below', label: 'Both below' },
+  { value: 'right', label: 'Both right' },
+  { value: 'left', label: 'Both left' },
+  { value: 'topRight', label: 'Top right corner' },
+  { value: 'topLeft', label: 'Top left corner' },
+  { value: 'bottomRight', label: 'Bottom right corner' },
+  { value: 'bottomLeft', label: 'Bottom left corner' },
+];
+
+/** Placement and per-label text styling of a part's reference and value. */
+function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
+  const [tab, setTab] = useState<'ref' | 'value'>('ref');
+  const which = def.valueIsLabel ? 'value' : tab;
+  const key = which === 'ref' ? 'refStyle' : 'valueStyle';
+  const st: LabelStyle = c[key] ?? {};
+  const look = labelLook(c, which, def);
+  const upd = (fn: (c: ComponentItem) => void) => mutate((d) => fn(d.items[c.id] as ComponentItem));
+  const setStyle = (patch: Partial<LabelStyle>) =>
+    upd((x) => {
+      const next: LabelStyle = { ...x[key], ...patch };
+      for (const k of Object.keys(next) as (keyof LabelStyle)[]) if (next[k] === undefined || next[k] === '') delete next[k];
+      if (Object.keys(next).length) x[key] = next;
+      else delete x[key];
+    });
+  const moved = c.labelDx != null || c.labelDy != null || c.valueDx != null || c.valueDy != null;
+  const off = which === 'ref' ? { x: c.labelDx ?? 0, y: c.labelDy ?? 0 } : { x: c.valueDx ?? c.labelDx ?? 0, y: c.valueDy ?? c.labelDy ?? 0 };
+  const setOffset = (axis: 'x' | 'y', v: number) =>
+    upd((x) => {
+      // pin both labels where they are drawn now, then move just this one
+      Object.assign(x, frozenLabelOffsets(x, def));
+      if (which === 'ref') x[axis === 'x' ? 'labelDx' : 'labelDy'] = v;
+      else x[axis === 'x' ? 'valueDx' : 'valueDy'] = v;
+    });
+  const rot = st.rotate ?? 0;
+  return (
+    <Section
+      title="Labels"
+      actions={
+        (c.refStyle || c.valueStyle) && (
+          <button className="link-btn" title="Clear the text styling of both labels" onClick={() => upd((x) => void (delete x.refStyle, delete x.valueStyle))}>
+            Reset style
+          </button>
+        )
+      }
+    >
+      {!def.valueIsLabel && (
+        <Field label="Placement" hint="Where the reference and value sit around the part; dragging a label fine-tunes it">
+          <select
+            className="input"
+            value={c.labelSpot ?? ''}
+            onChange={(e) =>
+              upd((x) => {
+                const v = e.target.value as LabelSpotName | '';
+                if (v) x.labelSpot = v;
+                else delete x.labelSpot;
+                delete x.labelDx;
+                delete x.labelDy;
+                delete x.valueDx;
+                delete x.valueDy;
+              })
+            }
+          >
+            {SPOTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      {!def.valueIsLabel && (
+        <Field label="Edit">
+          <Segmented
+            value={tab}
+            options={[
+              { value: 'ref', label: 'Reference' },
+              { value: 'value', label: 'Value' },
+            ]}
+            onChange={setTab}
+          />
+        </Field>
+      )}
+      <Field label="Text size">
+        <NumberInput value={look.size} min={4} max={96} step={0.5} suffix="pt" onChange={(size) => setStyle({ size })} />
+      </Field>
+      <Field label="Emphasis">
+        <span className="row-gap wrap">
+          <Toggle checked={look.weight >= 600} onChange={(bold) => setStyle({ bold })} label="Bold" />
+          <Toggle checked={!!st.italic} onChange={(v) => setStyle({ italic: v || undefined })} label="Italic" />
+          <Toggle checked={!!st.underline} onChange={(v) => setStyle({ underline: v || undefined })} label="Underline" />
+          <Toggle checked={!!st.allCaps} onChange={(v) => setStyle({ allCaps: v || undefined })} label="Caps" />
+        </span>
+      </Field>
+      <Field label="Font">
+        <Segmented
+          value={st.font ?? ''}
+          options={[
+            { value: '', label: 'Sans' },
+            { value: 'serif', label: 'Serif' },
+            { value: 'mono', label: 'Mono' },
+          ]}
+          onChange={(v) => setStyle({ font: v || undefined })}
+        />
+      </Field>
+      <Field label="Colour">
+        <ColorInput value={st.color ?? ''} allowNone onChange={(color) => setStyle({ color: color || undefined })} />
+      </Field>
+      <Field label="Opacity">
+        <Slider value={st.opacity ?? 1} min={0.1} max={1} onChange={(v) => setStyle({ opacity: v >= 1 ? undefined : v })} />
+      </Field>
+      <Field label="Align">
+        <Segmented
+          value={st.align ?? ''}
+          options={[
+            { value: '', label: 'Auto' },
+            { value: 'start', label: 'Left' },
+            { value: 'middle', label: 'Centre' },
+            { value: 'end', label: 'Right' },
+          ]}
+          onChange={(v) => setStyle({ align: v || undefined })}
+        />
+      </Field>
+      <Field label="Rotation">
+        <span className="row-gap wrap">
+          <Segmented
+            value={rot}
+            options={[0, 90, -90, 45].map((r) => ({ value: r, label: `${r}°` }))}
+            onChange={(r) => setStyle({ rotate: r || undefined })}
+          />
+          <NumberInput value={rot} min={-360} max={360} step={15} suffix="°" onChange={(r) => setStyle({ rotate: r || undefined })} />
+        </span>
+      </Field>
+      <Field label="Backdrop" hint="Paint the canvas colour behind the text so it stays legible over wires">
+        <Toggle checked={!!st.backdrop} onChange={(v) => setStyle({ backdrop: v || undefined })} />
+      </Field>
+      <Field label="Prefix" hint="Drawn before the text only, e.g. “R = ”">
+        <TextInput value={st.prefix ?? ''} placeholder="none" onChange={(prefix) => setStyle({ prefix })} />
+      </Field>
+      <Field label="Suffix" hint="Drawn after the text only, e.g. “ ±5%”">
+        <TextInput value={st.suffix ?? ''} placeholder="none" onChange={(suffix) => setStyle({ suffix })} />
+      </Field>
+      <Field label="Offset" hint="Shift of this label from its spot; arrow keys step, Shift steps ×10">
+        <span className="row-gap">
+          <NumberInput value={off.x} step={1} suffix="x" onChange={(v) => setOffset('x', v)} />
+          <NumberInput value={off.y} step={1} suffix="y" onChange={(v) => setOffset('y', v)} />
+        </span>
+      </Field>
+      {moved && (
+        <button
+          className="secondary-btn full"
+          title="Put the reference and value labels back in their default spots"
+          onClick={() =>
+            upd((x) => {
+              delete x.labelDx;
+              delete x.labelDy;
+              delete x.valueDx;
+              delete x.valueDy;
+            })
+          }
+        >
+          Reset label positions
+        </button>
+      )}
+      <div className="inspector-tip">Double-click a label on the canvas to edit its text.</div>
+    </Section>
+  );
+}
+
 function ComponentPanel({ c }: { c: ComponentItem }) {
   const doc = useStore((s) => s.doc);
   const def = getSymbol(doc, c.symbol);
@@ -472,23 +644,8 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
             </span>
           </Field>
         )}
-        {!!(c.labelDx || c.labelDy || c.valueDx || c.valueDy) && (
-          <button
-            className="secondary-btn full"
-            title="Put the reference and value labels back in their default spots"
-            onClick={() =>
-              upd((x) => {
-                delete x.labelDx;
-                delete x.labelDy;
-                delete x.valueDx;
-                delete x.valueDy;
-              })
-            }
-          >
-            Reset label positions
-          </button>
-        )}
       </Section>
+      <LabelSection c={c} def={def} />
       {hasPartFields(def) && <PartDetails c={c} />}
       <Section title="Appearance">
         <Field label="Rotation">

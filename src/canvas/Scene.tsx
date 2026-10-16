@@ -1,10 +1,10 @@
-import { memo, useMemo, useRef } from 'react';
+import { memo, useMemo, useRef, type ReactNode } from 'react';
 import { componentBounds, measureText, segmentIntersectsRect, sideVector, toWorld } from '../model/geometry';
 import { drawOrderCached, labelsShown } from '../model/doc';
 import { refreshTouching, touchingCells, touchingFromCells } from '../model/netlist';
 import { isDnp } from '../model/partFields';
 import { instanceSymbol } from '../model/registry';
-import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
+import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, LabelSpotName, LabelStyle, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
 import { buildWirePath, wireLabelSpot, endpointInfo, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wireCrossingsChanged, wirePolyline, wireStyle, type Crossing, type Hop } from '../model/wires';
 import { SheetFrame } from './SheetFrame';
 import { RichText } from './RichText';
@@ -206,6 +206,7 @@ function baseLabelLayout(c: ComponentItem, def: SymbolDef) {
     return { value: { x: b.x - 4 + dx, y: c.y + 4 + dy, anchor: 'end' as const }, ref: null };
   }
   const spots = labelCandidates(b, c);
+  if (c.labelSpot && spots[c.labelSpot]) return spots[c.labelSpot];
   // dragged labels are offsets from this fixed spot (see frozenLabelOffsets)
   if (hasLabelOffsets(c)) return b.w >= b.h ? spots.split : spots.right;
   // otherwise use the first spot that keeps both labels off the wires leaving the pins
@@ -239,7 +240,7 @@ const hasLabelOffsets = (c: ComponentItem) => c.labelDx != null || c.labelDy != 
 /** Offsets that keep both labels exactly where they are drawn now; written when a label is first dragged. */
 export function frozenLabelOffsets(c: ComponentItem, def: SymbolDef) {
   const o = labelOffsets(c);
-  if (hasLabelOffsets(c) || def.valueIsLabel) return { labelDx: o.ref.x, labelDy: o.ref.y, valueDx: o.value.x, valueDy: o.value.y };
+  if (hasLabelOffsets(c) || def.valueIsLabel || c.labelSpot) return { labelDx: o.ref.x, labelDy: o.ref.y, valueDx: o.value.x, valueDy: o.value.y };
   const auto = baseLabelLayout(c, def);
   const b = componentBounds(c, def);
   const spots = labelCandidates(b, c);
@@ -264,7 +265,7 @@ interface LabelSpot {
 }
 
 /** Spots the reference and value can take around a part's bounds. */
-function labelCandidates(b: Rect, c: ComponentItem): Record<'split' | 'right' | 'left' | 'above' | 'below' | 'topRight' | 'bottomRight' | 'topLeft', LabelSpot> {
+function labelCandidates(b: Rect, c: ComponentItem): Record<LabelSpotName, LabelSpot> {
   const r = b.x + b.w + 6;
   const l = b.x - 6;
   const both = (x: number, y1: number, y2: number, anchor: LabelPos['anchor']): LabelSpot => ({ ref: { x, y: y1, anchor }, value: { x, y: y2, anchor } });
@@ -277,20 +278,75 @@ function labelCandidates(b: Rect, c: ComponentItem): Record<'split' | 'right' | 
     topRight: both(b.x + b.w + 2, b.y - 18, b.y - 5, 'start'),
     bottomRight: both(b.x + b.w + 2, b.y + b.h + 14, b.y + b.h + 27, 'start'),
     topLeft: both(b.x - 2, b.y - 18, b.y - 5, 'end'),
+    bottomLeft: both(b.x - 2, b.y + b.h + 14, b.y + b.h + 27, 'end'),
   };
 }
 
 /** Approximate boxes of the visible labels at a spot. */
 function labelRects(spot: LabelSpot, c: ComponentItem): Rect[] {
   const out: Rect[] = [];
-  const box = (at: LabelPos, text: string, size: number) => {
-    const m = measureRich(text, size, 600);
-    const x = at.anchor === 'start' ? at.x : at.anchor === 'middle' ? at.x - m.w / 2 : at.x - m.w;
-    out.push({ x, y: at.y - size, w: m.w, h: size * 1.25 });
-  };
-  if (c.showRef && c.ref) box(spot.ref, c.ref, 11);
-  if (c.showValue && c.value) box(spot.value, c.value, 10.5);
+  for (const which of ['ref', 'value'] as const) {
+    if (!(which === 'ref' ? c.showRef && c.ref : c.showValue && c.value)) continue;
+    const look = labelLook(c, which);
+    out.push(labelBox(spot[which], look));
+  }
   return out;
+}
+
+/** Upper-cases plain text but leaves `$…$` maths alone. */
+const upper = (t: string) => t.split(/(\$[^$]*\$)/).map((s, i) => (i % 2 ? s : s.toUpperCase())).join('');
+
+/** Text, size, weight and style a part label is drawn with. */
+export function labelLook(c: ComponentItem, which: 'ref' | 'value', def?: Pick<SymbolDef, 'valueIsLabel'>) {
+  const st: LabelStyle = (which === 'ref' ? c.refStyle : c.valueStyle) ?? {};
+  const raw = which === 'ref' ? c.ref : c.value;
+  let text = raw ? `${st.prefix ?? ''}${raw}${st.suffix ?? ''}` : raw;
+  if (st.allCaps) text = upper(text);
+  const netName = which === 'value' && !!def?.valueIsLabel;
+  const size = st.size ?? (which === 'ref' || netName ? 11 : 10.5);
+  const normal = which === 'ref' ? 650 : netName ? 700 : 400;
+  const weight = st.bold === undefined ? normal : st.bold ? 700 : 400;
+  return { st, text, size, weight };
+}
+export type LabelLook = ReturnType<typeof labelLook>;
+
+/** Approximate unrotated box of a label's text at its anchor. */
+export function labelBox(at: LabelPos, look: LabelLook): Rect {
+  const m = measureRich(look.text, look.size, look.weight);
+  const anchor = look.st.align ?? at.anchor;
+  const x = anchor === 'start' ? at.x : anchor === 'middle' ? at.x - m.w / 2 : at.x - m.w;
+  return { x, y: at.y - look.size, w: m.w, h: Math.max(look.size * 1.3, m.h) };
+}
+
+const LABEL_FONTS = { serif: 'Georgia, "Times New Roman", serif', mono: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace' };
+
+function PartLabel({ at, look, fill, bg, className, children }: { at: LabelPos; look: LabelLook; fill: string; bg: string; className: string; children?: ReactNode }) {
+  const { st, text, size, weight } = look;
+  const box = st.backdrop ? labelBox(at, look) : null;
+  return (
+    <g transform={st.rotate ? `rotate(${st.rotate} ${at.x} ${at.y})` : undefined} opacity={st.opacity}>
+      {box && <rect x={box.x - 2} y={box.y - 1} width={box.w + 4} height={box.h + 1} rx={2} fill={bg} />}
+      <RichText
+        text={text}
+        x={at.x}
+        y={at.y}
+        anchor={st.align ?? at.anchor}
+        fontSize={size}
+        fontWeight={weight}
+        className={className}
+        fill={fill}
+        style={{
+          fontSize: size,
+          fontWeight: weight,
+          fontStyle: st.italic ? 'italic' : undefined,
+          textDecoration: st.underline ? 'underline' : undefined,
+          fontFamily: st.font ? LABEL_FONTS[st.font] : undefined,
+        }}
+      >
+        {children}
+      </RichText>
+    </g>
+  );
 }
 
 export const ComponentView = memo(function ComponentView({
@@ -333,20 +389,18 @@ export const ComponentView = memo(function ComponentView({
         );
       })}
       {c.showRef && labels.ref && (
-        <RichText text={c.ref} x={labels.ref.x} y={labels.ref.y} anchor={labels.ref.anchor} fontSize={11} className="ref-label" fill={labelColor} />
+        <PartLabel at={labels.ref} look={labelLook(c, 'ref', def)} className="ref-label" fill={c.refStyle?.color || labelColor} bg={palette.bg} />
       )}
       {c.showValue && c.value && labels.value && (
-        <RichText
-          text={c.value}
-          x={labels.value.x}
-          y={labels.value.y}
-          anchor={labels.value.anchor}
-          fontSize={def.valueIsLabel ? 11 : 10.5}
+        <PartLabel
+          at={labels.value}
+          look={labelLook(c, 'value', def)}
           className={def.valueIsLabel ? 'net-label' : 'value-label'}
-          fill={def.valueIsLabel ? color : settings.labelColor || palette.value}
+          fill={c.valueStyle?.color || (def.valueIsLabel ? color : settings.labelColor || palette.value)}
+          bg={palette.bg}
         >
           {dnp && <tspan className="dnp-tag"> DNP</tspan>}
-        </RichText>
+        </PartLabel>
       )}
     </g>
   );
