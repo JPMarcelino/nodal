@@ -1826,8 +1826,30 @@ select.input {
 }
 
 .sel-box.locked {
+  fill: color-mix(in srgb, var(--danger) 6%, transparent);
+  stroke: color-mix(in srgb, var(--danger) 70%, transparent);
+}
+
+.sel-wire.locked {
+  stroke: var(--danger);
+}
+
+.lock-badge {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.lock-badge-bg {
+  fill: var(--panel, #fff);
+  stroke: color-mix(in srgb, var(--danger) 60%, transparent);
+  stroke-width: 1.2;
+}
+
+.lock-badge-icon {
   fill: none;
-  stroke: var(--warn);
+  stroke: var(--danger);
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .sel-wire {

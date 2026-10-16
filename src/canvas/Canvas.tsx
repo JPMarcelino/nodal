@@ -53,7 +53,7 @@ type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'p1' | 'p2';
 
 type Gesture =
   | { kind: 'pan'; client: Point; view: { x: number; y: number } }
-  | { kind: 'marquee'; start: Point; cur: Point; additive: boolean }
+  | { kind: 'marquee'; start: Point; cur: Point; additive: boolean; keep?: boolean }
   /**
    * `pick`: selected by a click without a drag: the item pressed when it was already
    * part of a larger selection, or the next item down when items overlap. `floating`: a keyboard
@@ -389,7 +389,8 @@ export function Canvas() {
       const d = S().doc;
       const z = S().view.zoom;
       const t = (6 / z) * hitSlop();
-      const items = Object.values(d.items).filter((i) => !i.hidden && !i.locked);
+      // locked items stay selectable (to inspect or unlock them); they just don't move or edit
+      const items = Object.values(d.items).filter((i) => !i.hidden);
       // frames are not drawn (so not clickable) while presenting
       const shapes = items.filter((i): i is ShapeItem => i.type === 'shape' && (X().presenting === null || i.kind !== 'frame')).sort((a, b) => b.z - a.z);
       const shapeHit = (s: ShapeItem) => {
@@ -413,7 +414,7 @@ export function Canvas() {
       const circuit: string[] = [];
       for (const c of items) if (c.type === 'component' && pointInRect(p, itemBounds(d, c)!, 1)) circuit.push(c.id);
       for (const [id, pts] of data.polys) {
-        if (!d.items[id] || d.items[id].locked || d.items[id].hidden) continue;
+        if (!d.items[id] || d.items[id].hidden) continue;
         let best = Infinity;
         for (let i = 0; i < pts.length - 1; i++) best = Math.min(best, projectOnSegment(p, pts[i], pts[i + 1]).d);
         if (best <= Math.max(4, t)) circuit.push(id);
@@ -661,7 +662,7 @@ export function Canvas() {
     }
     const hit = hitItem(w);
     const item = hit ? S().doc.items[hit] : null;
-    if (item?.type === 'wire' && item.routing === 'straight') {
+    if (item?.type === 'wire' && item.routing === 'straight' && !item.locked) {
       // straight wires: grabbing a segment drops a new bend there and drags it
       const pts = data.polys.get(item.id) ?? [];
       const h = hitWire(new Map([[item.id, pts]]), w, Infinity);
@@ -941,6 +942,17 @@ export function Canvas() {
 
   /* ---------------------------- pointer ---------------------------- */
 
+  /** The selected locked item whose lock badge is under the pointer. */
+  const lockBadgeAt = (p: Point): string | null => {
+    const d = S().doc;
+    const z = S().view.zoom;
+    for (const id of S().selection) {
+      const r = lockBadge(d, id, z);
+      if (r && pointInRect(p, r, 2 / z)) return id;
+    }
+    return null;
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     if (editingText || editingLabel || renamingGroup) return;
     const target = e.currentTarget as HTMLElement;
@@ -956,6 +968,13 @@ export function Canvas() {
       return;
     }
     if (e.button !== 0) return;
+    // the lock badge of a selected locked item unlocks it
+    const badge = tool === 'select' && !placing && !gRef.current ? lockBadgeAt(w) : null;
+    if (badge) {
+      mutate((d) => d.items[badge] && (d.items[badge].locked = false));
+      toast('Unlocked');
+      return;
+    }
     const carried = gRef.current;
     if (carried?.kind === 'move' && carried.floating) {
       finishMove(carried);
@@ -1174,6 +1193,12 @@ export function Canvas() {
       const wasSoleWire = wasSelected && S().selection.length === 1;
       if (!wasSelected) select([hit]);
       const cur = S().selection;
+      // a locked item is only selected; dragging from it still draws a marquee
+      if (S().doc.items[hit].locked && !next && cur.length === 1) {
+        set({ wirePart: null });
+        setGesture({ kind: 'marquee', start: w, cur: w, additive: false, keep: true });
+        return;
+      }
       if (S().doc.items[hit].type === 'wire' && cur.length === 1 && cur[0] === hit) {
         const pts = data.polys.get(hit) ?? [];
         const h = hitWire(new Map([[hit, pts]]), w, Infinity);
@@ -1487,7 +1512,7 @@ export function Canvas() {
       case 'marquee': {
         const r = rectFromPoints(g.start, w);
         if (r.w < 2 && r.h < 2) {
-          if (!g.additive) set({ selection: [] });
+          if (!g.additive && !g.keep) set({ selection: [] });
         } else {
           const crossing = w.x < g.start.x;
           const ids = marqueeHits(S().doc, data.polys, r, crossing);
@@ -1662,8 +1687,11 @@ export function Canvas() {
   // a lone wire shows its box too: pressing anywhere inside moves the whole wire
   const selectionBounds = selection.length > 1 || doc.items[selection[0]]?.type === 'wire' ? unionBounds(doc, selection) : null;
   const overScale = g?.kind === 'scale' || g?.kind === 'groupScale' || (tool === 'select' && !g && !placing && groupHandles().some((h) => dist(h, cursor) < 7 / z)) || (tool === 'select' && !g && !placing && !!singleComp && !singleComp.locked && compHandles(singleComp).some((h) => dist(h, cursor) < 7 / z));
+  const overBadge = tool === 'select' && !g && !placing && selection.some((id) => doc.items[id]?.locked) && lockBadgeAt(cursor) !== null;
   const cursorStyle: string = overScale
     ? 'nwse-resize'
+    : overBadge
+      ? 'pointer'
     : g?.kind === 'pan' || spaceDown || tool === 'pan'
       ? g?.kind === 'pan'
         ? 'grabbing'
@@ -1812,6 +1840,10 @@ export function Canvas() {
           {/* selection */}
           {/* a text item being typed into is framed by its editor, not its stale bounds */}
           {selection.map((id) => (id === editingText && (doc.items[id] as ShapeItem).kind === 'text' ? null : <SelectionOutline key={id} doc={doc} id={id} polys={data.polys} z={z} />))}
+          {selection.map((id) => {
+            const r = lockBadge(doc, id, z);
+            return r && <LockBadge key={`lock-${id}`} r={r} />;
+          })}
           {selectionBounds && <rect x={selectionBounds.x - 6} y={selectionBounds.y - 6} width={selectionBounds.w + 12} height={selectionBounds.h + 12} className="multi-sel" strokeWidth={1 / z} rx={4 / z} />}
           {/* selected wire node / segment (Del removes it) */}
           {(() => {
@@ -2129,17 +2161,39 @@ function HoverOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; poly
   return <rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} rx={4} className="hover-box" strokeWidth={1 / z} />;
 }
 
+/** Where a selected locked item's lock badge sits: just off its top-right corner, a constant size on screen. */
+function lockBadge(doc: CircuitDoc, id: string, z: number): Rect | null {
+  const it = doc.items[id];
+  if (!it?.locked) return null;
+  const b = itemBounds(doc, it);
+  if (!b) return null;
+  const s = 18 / z;
+  return { x: b.x + b.w + 4 + 2 / z, y: b.y - 4 - s - 2 / z, w: s, h: s };
+}
+
+/** A semi-transparent padlock; clicking it unlocks (handled in the canvas pointer-down). */
+function LockBadge({ r }: { r: Rect }) {
+  const k = r.w / 24;
+  return (
+    <g className="lock-badge" transform={`translate(${r.x} ${r.y}) scale(${k})`}>
+      <rect x={0} y={0} width={24} height={24} rx={6} className="lock-badge-bg" />
+      <rect x={6} y={11} width={12} height={8} rx={1.5} className="lock-badge-icon" strokeWidth={1.8} />
+      <path d="M8.5 11V8.5a3.5 3.5 0 0 1 7 0V11" className="lock-badge-icon" strokeWidth={1.8} fill="none" />
+    </g>
+  );
+}
+
 function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; polys: Map<string, Point[]>; z: number }) {
   const it = doc.items[id];
   if (!it) return null;
   if (it.type === 'wire') {
     const pts = polys.get(id) ?? [];
-    return <path d={buildWirePath(pts, 0)} className="sel-wire" strokeWidth={Math.max(6 / z, 4)} fill="none" />;
+    return <path d={buildWirePath(pts, 0)} className={it.locked ? 'sel-wire locked' : 'sel-wire'} strokeWidth={Math.max(6 / z, 4)} fill="none" />;
   }
   const b = itemBounds(doc, it);
   if (!b) return null;
   if (it.type === 'shape' && (it.kind === 'line' || it.kind === 'arrow')) {
-    return <line x1={it.x} y1={it.y} x2={it.x + it.w} y2={it.y + it.h} className="sel-wire" strokeWidth={Math.max(6 / z, 4)} />;
+    return <line x1={it.x} y1={it.y} x2={it.x + it.w} y2={it.y + it.h} className={it.locked ? 'sel-wire locked' : 'sel-wire'} strokeWidth={Math.max(6 / z, 4)} />;
   }
   const pad = it.type === 'junction' ? 3 : 4;
   return (
@@ -2151,7 +2205,6 @@ function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; 
       rx={3}
       className={it.locked ? 'sel-box locked' : 'sel-box'}
       strokeWidth={1.5 / z}
-      strokeDasharray={it.locked ? `${4 / z} ${3 / z}` : undefined}
     />
   );
 }
