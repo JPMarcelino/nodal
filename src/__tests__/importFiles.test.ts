@@ -4,6 +4,7 @@ import type { CircuitDoc } from '../model/types';
 // the store touches window / localStorage when it loads
 const g = globalThis as unknown as Record<string, unknown>;
 g.window ??= globalThis;
+(g.window as Record<string, unknown>).addEventListener ??= () => {};
 g.localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 
 describe('importFileText', () => {
