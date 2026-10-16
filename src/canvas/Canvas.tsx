@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
-import { drawOrderCached, itemBounds, labelsShown, makeShape } from '../model/doc';
-import { componentBounds, dist, eq, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
-import { cleanup, deleteWirePart, translateDetached, translateItems } from '../model/ops';
+import { drawOrderCached, groupMembers, groupTags, itemBounds, labelsShown, makeShape, selectedGroup } from '../model/doc';
+import { componentBounds, dist, eq, measureText, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
+import { cleanup, deleteWirePart, scaleItems, selectionPivot, translateDetached, translateItems } from '../model/ops';
 import { getSymbol, instanceSymbol } from '../model/registry';
 import { gridScale, scaleStep } from '../model/symbols/scale';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
@@ -77,6 +77,8 @@ type Gesture =
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
   /** Resizing a part from a corner handle: its size follows the distance from its centre. */
   | { kind: 'scale'; id: string; base: number; d0: number }
+  /** Resizing a multi-selection (a group) as one by a corner of its box, about `pivot`. */
+  | { kind: 'groupScale'; ids: Set<string>; pivot: Point; d0: number }
   | { kind: 'label'; id: string; which: 'ref' | 'value'; start: Point; base: { dx: number; dy: number }; frozen: ReturnType<typeof frozenLabelOffsets> }
   /** Sliding a wire's net label along its net, to either side of the wire. */
   | { kind: 'wireLabel'; id: string; net: string[] }
@@ -174,6 +176,7 @@ export function Canvas() {
   const [fileDrag, setFileDrag] = useState(false);
   const [editingText, setEditingText] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState<{ id: string; which: 'ref' | 'value' } | null>(null);
+  const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const lastClick = useRef<{ t: number; p: Point }>({ t: 0, p: { x: 0, y: 0 } });
   // hover menus: open after the pointer rests on a hot spot, close shortly after leaving it
   const [hotMenu, setHotMenu] = useState<HotSpot | null>(null);
@@ -468,6 +471,51 @@ export function Canvas() {
   const singleShape = selection.length === 1 && doc.items[selection[0]]?.type === 'shape' ? (doc.items[selection[0]] as ShapeItem) : null;
   const singleWire = selection.length === 1 && doc.items[selection[0]]?.type === 'wire' ? (doc.items[selection[0]] as WireItem) : null;
   const singleComp = selection.length === 1 && doc.items[selection[0]]?.type === 'component' ? (doc.items[selection[0]] as ComponentItem) : null;
+  /** Group name tags shown while outside the group (hidden when presenting). */
+  const tags = useMemo(
+    () =>
+      presenting
+        ? []
+        : groupTags(doc, scope).map((t) => {
+            // sit above the parts' names and values too, not just their bodies
+            let y = t.y;
+            for (const id of groupMembers(doc, t.id)) {
+              const c = doc.items[id];
+              if (c?.type !== 'component' || c.hidden) continue;
+              const def = instanceSymbol(doc, c);
+              const lay = labelLayout(c, def);
+              const shown = labelsShown(doc.settings, c, def);
+              for (const which of ['ref', 'value'] as const) {
+                const at = lay[which];
+                if (at && shown[which] && c[which]) y = Math.min(y, labelBox(at, labelLook(c, which, def)).y);
+              }
+            }
+            return { ...t, y };
+          }),
+    [doc, scope, presenting],
+  );
+  const TAG_SIZE = 10;
+  const tagBox = (t: (typeof tags)[number], z: number) => ({ x: t.x, y: t.y - (TAG_SIZE + 6) / z, w: (measureText(t.name, TAG_SIZE, 600).w + 4) / z, h: (TAG_SIZE + 4) / z });
+  const groupTagAt = (w: Point) => {
+    const z = S().view.zoom;
+    return tags.find((t) => pointInRect(w, tagBox(t, z), 1 / z));
+  };
+
+  /** Corner handles of a multi-selection holding parts (a group): dragging one resizes it all. */
+  const groupHandles = (): Point[] => {
+    const sel = S().selection;
+    const d = S().doc;
+    if (S().tool !== 'select' || S().placing || sel.length < 2 || !sel.some((id) => d.items[id]?.type === 'component' && !d.items[id].locked)) return [];
+    const b = unionBounds(d, sel);
+    if (!b) return [];
+    const o = 6;
+    return [
+      { x: b.x - o, y: b.y - o },
+      { x: b.x + b.w + o, y: b.y - o },
+      { x: b.x + b.w + o, y: b.y + b.h + o },
+      { x: b.x - o, y: b.y + b.h + o },
+    ];
+  };
   /** Corner handles of a selected part, just outside its body so they stay clear of its pins. */
   const compHandles = (c: ComponentItem): Point[] => {
     const b = componentBounds(c, instanceSymbol(doc, c));
@@ -856,7 +904,7 @@ export function Canvas() {
         }
       }
       if (g && combo === 'Escape') {
-        if (g.kind === 'move' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'scale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
+        if (g.kind === 'move' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'scale' || g.kind === 'groupScale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
         setGesture(null);
         // a cancelled copy takes its staged items with it
         if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => S().doc.items[id]) });
@@ -866,9 +914,11 @@ export function Canvas() {
       return false;
     };
     canvasActions.floatMove = ({ detach, copy }) => armMove(detach, copy);
+    canvasActions.renameGroup = setRenamingGroup;
     return () => {
       canvasKeys.handle = null;
       canvasActions.floatMove = null;
+      canvasActions.renameGroup = null;
     };
   });
 
@@ -892,7 +942,7 @@ export function Canvas() {
   /* ---------------------------- pointer ---------------------------- */
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (editingText || editingLabel) return;
+    if (editingText || editingLabel || renamingGroup) return;
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
     const w = toWorldPt(e.clientX, e.clientY);
@@ -1019,6 +1069,20 @@ export function Canvas() {
     }
 
     // ---- select tool ----
+    // a group's name tag: click selects the group, double-click renames it
+    const tag = groupTagAt(w);
+    if (tag) {
+      if (isDouble) setRenamingGroup(tag.id);
+      else select(groupMembers(S().doc, tag.id), e.shiftKey ? 'toggle' : 'replace');
+      return;
+    }
+    if (groupHandles().some((h) => dist(h, w) < 7 / v.zoom)) {
+      const ids = new Set(S().selection);
+      const pivot = selectionPivot(S().doc, ids);
+      beginGesture();
+      setGesture({ kind: 'groupScale', ids, pivot, d0: Math.max(1, dist(w, pivot)) });
+      return;
+    }
     if (singleComp && !singleComp.locked && compHandles(singleComp).some((h) => dist(h, w) < 7 / v.zoom)) {
       beginGesture();
       setGesture({ kind: 'scale', id: singleComp.id, base: singleComp.scale ?? 1, d0: Math.max(1, dist(w, singleComp)) });
@@ -1313,6 +1377,12 @@ export function Canvas() {
         });
         break;
       }
+      case 'groupScale': {
+        // 5% steps, so sizes come out round
+        const r = Math.max(0.05, Math.round((dist(w, g.pivot) / g.d0) * 20) / 20);
+        gestureUpdate((d, base) => void scaleItems(base, d as CircuitDoc, g.ids, r, g.pivot));
+        break;
+      }
       case 'resize': {
         const p = snapOn ? sp(w) : w;
         gestureUpdate((d) => {
@@ -1430,6 +1500,7 @@ export function Canvas() {
         if (!g.floating) finishMove(g);
         break;
       case 'scale':
+      case 'groupScale':
       case 'segment':
       case 'resize':
       case 'label':
@@ -1590,7 +1661,7 @@ export function Canvas() {
   const g = gesture;
   // a lone wire shows its box too: pressing anywhere inside moves the whole wire
   const selectionBounds = selection.length > 1 || doc.items[selection[0]]?.type === 'wire' ? unionBounds(doc, selection) : null;
-  const overScale = g?.kind === 'scale' || (tool === 'select' && !g && !placing && !!singleComp && !singleComp.locked && compHandles(singleComp).some((h) => dist(h, cursor) < 7 / z));
+  const overScale = g?.kind === 'scale' || g?.kind === 'groupScale' || (tool === 'select' && !g && !placing && groupHandles().some((h) => dist(h, cursor) < 7 / z)) || (tool === 'select' && !g && !placing && !!singleComp && !singleComp.locked && compHandles(singleComp).some((h) => dist(h, cursor) < 7 / z));
   const cursorStyle: string = overScale
     ? 'nwse-resize'
     : g?.kind === 'pan' || spaceDown || tool === 'pan'
@@ -1721,6 +1792,16 @@ export function Canvas() {
             ) : null,
           )}
 
+          {/* group names, faint, just above each group */}
+          {tags.map((t) => {
+            const on = selectedGroup(doc, selection, scope) === t.id;
+            return (
+              <text key={`tag-${t.id}`} x={t.x} y={t.y - 6 / z} fontSize={TAG_SIZE / z} className={on ? 'group-tag active' : 'group-tag'}>
+                {t.name}
+              </text>
+            );
+          })}
+
           {/* hover */}
           {hover.item && !selSet.has(hover.item) && !g && <HoverOutline doc={doc} id={hover.item} polys={data.polys} z={z} />}
           {/* items hovered in the layers panel */}
@@ -1747,6 +1828,9 @@ export function Canvas() {
             }
             return null;
           })()}
+          {groupHandles().map((h, i) => (
+            <rect key={`g${i}`} x={h.x - 4 / z} y={h.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className="handle scale-handle" strokeWidth={1.5 / z} />
+          ))}
           {singleComp &&
             !singleComp.locked &&
             tool === 'select' &&
@@ -1912,6 +1996,7 @@ export function Canvas() {
       )}
       {editingText && <TextEditor id={editingText} onDone={() => setEditingText(null)} />}
       {editingLabel && <LabelEditor {...editingLabel} onDone={() => setEditingLabel(null)} />}
+      {renamingGroup && <GroupNameEditor gid={renamingGroup} onDone={() => setRenamingGroup(null)} />}
       {prefs.showMinimap && <Minimap data={data} />}
       {hotMenu && !g && (
         <HotSpotMenu
@@ -2148,6 +2233,53 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
         fontWeight: weight,
         color: it.textColor || undefined,
       }}
+    />
+  );
+}
+
+/** In-place editor for a group's name, over its tag. */
+function GroupNameEditor({ gid, onDone }: { gid: string; onDone: () => void }) {
+  const doc = useStore((s) => s.doc);
+  const view = useStore((s) => s.view);
+  const scope = useStore((s) => s.scope);
+  const g = doc.groups[gid];
+  const tag = groupTags(doc, scope).find((t) => t.id === gid) ?? groupTags(doc, g?.group).find((t) => t.id === gid);
+  const [value, setValue] = useState(g?.name ?? '');
+  const done = useRef(false);
+  const ref = useRef<HTMLInputElement>(null);
+  // focus after the double-click that opened it has finished, so the canvas can't take focus back
+  useEffect(() => {
+    const t = setTimeout(() => {
+      ref.current?.focus();
+      ref.current?.select();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+  if (!g) return null;
+  const commit = () => {
+    if (done.current) return;
+    done.current = true;
+    A.renameGroup(gid, value);
+    onDone();
+  };
+  const at = tag ?? { x: (-view.x + 40) / view.zoom, y: (-view.y + 60) / view.zoom };
+  return (
+    <input
+      ref={ref}
+      className="text-editor group-name-editor"
+      value={value}
+      placeholder="Group name"
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          done.current = true;
+          onDone();
+        } else if (e.key === 'Enter') commit();
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{ left: at.x * view.zoom + view.x - 5, top: at.y * view.zoom + view.y - 30, width: Math.max(140, value.length * 8 + 30), height: 24, fontSize: 12 }}
     />
   );
 }

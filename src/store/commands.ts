@@ -3,6 +3,7 @@ import { importFile } from '../io/importFiles';
 import { exportLibraryFile, exportTemplateFile, importLibraryFile, importTemplateFile } from '../io/sharing';
 import { selectionToDrawing } from '../model/fromSelection';
 import { busNets, busOfWire } from '../model/bus';
+import { selectedGroup } from '../model/doc';
 import type { WireItem } from '../model/types';
 import { computeNets, netOfWire } from '../model/netlist';
 import * as A from './actions';
@@ -134,6 +135,7 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.flipH', label: 'Flip horizontally', category: 'Arrange', keys: ['X'], cadence: ['Shift+R'], run: () => A.flipSelection('x') },
   { id: 'arrange.flipV', label: 'Flip vertically', category: 'Arrange', keys: ['Y'], run: () => A.flipSelection('y') },
   { id: 'arrange.group', label: 'Group', category: 'Arrange', keys: ['Mod+G'], run: A.groupSelection },
+  { id: 'arrange.renameGroup', label: 'Rename group', category: 'Arrange', keys: [], run: renameGroupCmd, when: () => !!(selectedGroup(S().doc, S().selection, S().scope) ?? S().scope) },
   { id: 'arrange.ungroup', label: 'Ungroup', category: 'Arrange', keys: ['Mod+Shift+G'], run: A.ungroupSelection },
   { id: 'arrange.forward', label: 'Bring forward', category: 'Arrange', keys: ['Mod+]'], run: () => A.reorder('forward') },
   { id: 'arrange.backward', label: 'Send backward', category: 'Arrange', keys: ['Mod+['], run: () => A.reorder('backward') },
@@ -274,6 +276,12 @@ function focusMode() {
 function focusSearch() {
   set({ leftPanel: true, leftTab: 'library' });
   setTimeout(() => (document.getElementById('library-search') as HTMLInputElement | null)?.focus(), 30);
+}
+
+/** Renames the selected group (or the one being edited) in place on the canvas. */
+function renameGroupCmd() {
+  const gid = selectedGroup(S().doc, S().selection, S().scope) ?? S().scope;
+  if (gid) canvasActions.renameGroup?.(gid);
 }
 
 function focusValue() {

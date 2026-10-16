@@ -55,6 +55,7 @@ import {
   Trash2,
   Type,
   Undo2,
+  Pencil,
   Ungroup,
   Waypoints,
 } from 'lucide-react';
@@ -218,6 +219,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
         sub: rows(
           multi && cmd('arrange.group', 'Group', <Group size={I} />),
           grouped && cmd('arrange.ungroup', 'Ungroup', <Ungroup size={I} />),
+          grouped && cmd('arrange.renameGroup', 'Rename group…', <Pencil size={I} />),
           t?.group && { label: 'Enter group', icon: <LogIn size={I} />, run: () => A.enterGroup(target), key: keysFor('arrange.enterGroup')[0] },
         ),
       },
