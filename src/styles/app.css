@@ -4787,6 +4787,22 @@ body {
   margin-right: auto;
 }
 
+.svg-import {
+  width: 440px;
+}
+
+.svg-import-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.svg-import-row > span:first-child {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 .se-confirm .grow {
   flex: 1;
 }

@@ -481,6 +481,11 @@ export interface SvgPolyline {
   width: number;
   color: string;
   dashed: boolean;
+  /** Fill of the outline it came from (#rrggbb or 'none'; unset = none). */
+  fill?: string;
+  fillOpacity?: number;
+  /** False when the source drew only a fill (no outline). */
+  stroked?: boolean;
 }
 export interface SvgBox {
   kind: 'rect' | 'ellipse';
@@ -499,7 +504,7 @@ export interface SvgDrawing {
   lines: SvgPolyline[];
   boxes: SvgBox[];
   /** Small filled dots — connection points in a schematic. */
-  dots: { x: number; y: number }[];
+  dots: { x: number; y: number; r?: number }[];
   texts: { x: number; y: number; size: number; anchor: 'start' | 'middle' | 'end'; text: string; color: string }[];
 }
 
@@ -564,7 +569,7 @@ export function svgToDrawing(text: string): SvgDrawing {
     if (s.box) {
       const bx = { x: X(s.box.x), y: Y(s.box.y), w: r2(s.box.w * k), h: r2(s.box.h * k) };
       if (s.box.kind === 'ellipse' && s.fill && bx.w <= DOT_MAX && bx.h <= DOT_MAX) {
-        out.dots.push({ x: r2(bx.x + bx.w / 2), y: r2(bx.y + bx.h / 2) });
+        out.dots.push({ x: r2(bx.x + bx.w / 2), y: r2(bx.y + bx.h / 2), r: r2(Math.max(bx.w, bx.h) / 2) });
         continue;
       }
       out.boxes.push({ kind: s.box.kind, ...bx, rx: r2(s.box.rx * k), stroke: s.stroke || '#000000', strokeWidth: width, fill: s.fillColor || 'none', fillOpacity: s.fill ? s.fillOpacity : 0, dashed: s.dashed });
@@ -578,7 +583,7 @@ export function svgToDrawing(text: string): SvgDrawing {
       const w = (Math.max(...xs) - Math.min(...xs)) * k;
       const h = (Math.max(...ys) - Math.min(...ys)) * k;
       if (w <= DOT_MAX && h <= DOT_MAX && w > 0 && Math.abs(w - h) < Math.max(w, h) * 0.3) {
-        out.dots.push({ x: X((Math.max(...xs) + Math.min(...xs)) / 2), y: Y((Math.max(...ys) + Math.min(...ys)) / 2) });
+        out.dots.push({ x: X((Math.max(...xs) + Math.min(...xs)) / 2), y: Y((Math.max(...ys) + Math.min(...ys)) / 2), r: r2(Math.max(w, h) / 2) });
         continue;
       }
     }
@@ -590,7 +595,8 @@ export function svgToDrawing(text: string): SvgDrawing {
         const last = pts[pts.length - 1];
         if (!last || last.x !== q.x || last.y !== q.y) pts.push(q);
       }
-      if (pts.length >= 2) out.lines.push({ pts, closed: p.closed, width: width || Math.max(0.5, r2((s.sw || 1) * k)), color, dashed: s.dashed });
+      if (pts.length >= 2)
+        out.lines.push({ pts, closed: p.closed, width: width || Math.max(0.5, r2((s.sw || 1) * k)), color, dashed: s.dashed, fill: s.fill ? s.fillColor || '#000000' : 'none', fillOpacity: s.fill ? s.fillOpacity : 0, stroked: !!s.sw });
     }
   }
   for (const t of texts) out.texts.push({ x: X(t.x), y: Y(t.y), size: Math.max(4, r2(t.size * k)), anchor: t.anchor, text: t.text, color: t.color || '#000000' });

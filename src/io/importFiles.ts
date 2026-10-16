@@ -1,8 +1,9 @@
 import { normalizeDoc } from '../model/doc';
 import { snap } from '../model/geometry';
-import { insertSvgDrawing } from '../model/svgDrawing';
+import { insertSvgDrawing, type SvgImportOptions } from '../model/svgDrawing';
 import type { CircuitDoc, Point } from '../model/types';
 import { S, mutate, toast } from '../store/store';
+import { askSvgImport } from '../ui/SvgImportDialog';
 import { openAnyFile } from './files';
 import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from './imageImport';
 import { importLibraryText, importTemplateText, insertCircuit } from './sharing';
@@ -21,13 +22,13 @@ export const viewCentre = (): Point => {
 /**
  * Imports one file by sniffing its contents: a circuit is added to the open one, a symbol library
  * merges into "My symbols", a template / copied selection is inserted at `at`,
- * and an SVG becomes editable wires and shapes placed at `at`.
+ * and an SVG becomes editable wires and shapes placed at `at` (asking how, unless `svg` says).
  */
-export async function importFileText(name: string, text: string, at?: Point): Promise<void> {
+export async function importFileText(name: string, text: string, at?: Point, svg?: SvgImportOptions): Promise<void> {
   try {
     const trimmed = text.trimStart();
     if (/\.svg$/i.test(name) || (trimmed.startsWith('<') && /<svg[\s>]/i.test(text))) {
-      importSvgDrawing(name, text, at ?? viewCentre());
+      await importSvgDrawing(name, text, at ?? viewCentre(), svg);
       return;
     }
     let data: { format?: unknown };
@@ -62,17 +63,23 @@ export async function importFileText(name: string, text: string, at?: Point): Pr
   }
 }
 
-/** Adds an SVG as editable wires, shapes and text (grouped), centred on `at`, in one undo step. */
-function importSvgDrawing(fileName: string, text: string, at: Point) {
+/** Adds an SVG as editable items (grouped), centred on `at`, in one undo step; asks how unless `opts` is given. */
+async function importSvgDrawing(fileName: string, text: string, at: Point, opts?: SvgImportOptions) {
   const drawing = svgToDrawing(text);
   const name = fileName.replace(/\.svg$/i, '').trim() || 'Imported SVG';
+  const how = opts ?? (await askSvgImport(name, drawing));
+  if (!how) return;
   const g = S().doc.settings.grid;
   const ids: string[] = [];
   mutate((d) => {
-    ids.push(...insertSvgDrawing(d as CircuitDoc, drawing, { x: snap(at.x, g), y: snap(at.y, g) }, S().scope, name));
+    ids.push(...insertSvgDrawing(d as CircuitDoc, drawing, { x: snap(at.x, g), y: snap(at.y, g) }, S().scope, name, how));
   }, ids);
-  const wires = ids.filter((id) => S().doc.items[id]?.type === 'wire').length;
-  toast(`Imported “${name}” — ${wires} wire${wires === 1 ? '' : 's'}${ids.length > wires ? ` and ${ids.length - wires} other item${ids.length - wires === 1 ? '' : 's'}` : ''} (grouped; double-click to edit inside)`, 'success');
+  const count = (type: string) => ids.filter((id) => S().doc.items[id]?.type === type).length;
+  const n = (k: number, one: string) => `${k} ${one}${k === 1 ? '' : 's'}`;
+  const [parts, wires] = [count('component'), count('wire')];
+  const rest = ids.length - parts - wires;
+  const what = [parts && n(parts, 'part'), wires && n(wires, 'wire'), rest && n(rest, wires || parts ? 'other item' : 'item')].filter(Boolean).join(', ');
+  toast(`Imported “${name}” — ${what || 'nothing'} (grouped; double-click to edit inside)`, 'success');
 }
 
 /** Imports one file of any supported kind; text formats go through `importFileText`. */

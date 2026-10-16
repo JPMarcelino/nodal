@@ -1,8 +1,26 @@
-import type { SvgDrawing } from '../io/svgImport';
-import { makeShape, uid } from './doc';
+import type { SvgDrawing, SvgPolyline } from '../io/svgImport';
+import { makeComponent, makeShape, uid } from './doc';
 import { measureText, projectOnSegment } from './geometry';
 import { groupItems } from './ops';
+import { packPoly } from './polygon';
+import { boxPath, pathPolys, recognizeSymbols } from './svgSymbols';
 import type { CircuitDoc, Endpoint, JunctionItem, Point, WireItem } from './types';
+import { instanceSymbol } from './registry';
+import { portPosition } from './wires';
+
+/** How an imported SVG is turned into items. */
+export interface SvgImportOptions {
+  /** Open strokes: connected wires, or plain drawn lines. */
+  strokes: 'wires' | 'lines';
+  /** Closed outlines: polygon shapes (keeping their fill), or treated like the strokes. */
+  closed: 'polygons' | 'strokes';
+  /** Rectangles, circles and ellipses: rectangle / ellipse shapes, or treated like closed outlines. */
+  boxes: 'shapes' | 'outlines';
+  /** Replace drawings that exactly match a library symbol with that part. */
+  symbols: boolean;
+}
+
+export const DEFAULT_SVG_IMPORT: SvgImportOptions = { strokes: 'wires', closed: 'strokes', boxes: 'shapes', symbols: false };
 
 /** How close (canvas units) two points must be to count as connected. */
 const EPS = 0.75;
@@ -38,21 +56,70 @@ class PointGrid {
 }
 
 /**
- * Adds an imported SVG drawing to the document as editable items: strokes
- * become straight-routed wires (split and joined by junctions wherever they
- * meet), plain rectangles / ellipses become shapes and text becomes text.
- * Everything is grouped (when there is more than one item) and offset by `at`.
+ * Adds an imported SVG drawing to the document as editable items: by default
+ * strokes become straight-routed wires (split and joined by junctions wherever
+ * they meet), plain rectangles / ellipses become shapes and text becomes text;
+ * `opts` can make them lines and polygons instead, and turn drawings of
+ * library symbols into parts (wired up at their pins). Everything is grouped
+ * (when there is more than one item) and offset by `at`.
  */
-export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point, scope?: string, name?: string): string[] {
+export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point, scope?: string, name?: string, opts: SvgImportOptions = DEFAULT_SVG_IMPORT): string[] {
   const move = (p: Point): Point => ({ x: Math.round((p.x + at.x) * 100) / 100, y: Math.round((p.y + at.y) * 100) / 100 });
-  const lines = drawing.lines.map((l) => ({ ...l, pts: l.pts.map(move) }));
+  const ids: string[] = [];
+  const z0 = Math.max(0, ...Object.values(doc.items).map((i) => i.z ?? 0));
+
+  // 0. parts: symbols found in the drawing replace the pieces that drew them
+  const portAt = new Map<string, Endpoint>();
+  if (opts.symbols) {
+    const found = recognizeSymbols(doc, drawing);
+    drawing = found.rest;
+    const refs = new Set(Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])));
+    for (const p of found.parts) {
+      const pos = move(p);
+      const c = makeComponent(doc, p.symbol, pos.x, pos.y, p.rot, p.flipX);
+      if (p.scale) c.scale = p.scale;
+      // keep the drawing's reference unless the circuit already uses it
+      if (p.ref && !refs.has(p.ref)) c.ref = p.ref;
+      refs.add(c.ref);
+      doc.items[c.id] = c;
+      ids.push(c.id);
+      for (const port of instanceSymbol(doc, c).ports) {
+        const pos = portPosition(doc, c, port.id);
+        if (pos && !portAt.has(key(pos.pt))) portAt.set(key(pos.pt), { kind: 'port', comp: c.id, port: port.id });
+      }
+    }
+  }
+
+  // closed outlines (and boxes treated as outlines) become polygons when asked
+  const polygons: SvgPolyline[] = [];
+  const asStrokes: SvgPolyline[] = [];
+  const outlineOf = (b: SvgDrawing['boxes'][number]): SvgPolyline[] =>
+    pathPolys(boxPath(b.kind, b.x, b.y, b.w, b.h, b.rx)).map((pts) => ({
+      pts: pts.slice(0, -1),
+      closed: true,
+      width: b.strokeWidth || 1,
+      color: b.stroke,
+      dashed: b.dashed,
+      fill: b.fill,
+      fillOpacity: b.fillOpacity,
+      stroked: b.strokeWidth > 0,
+    }));
+  const boxes = opts.boxes === 'shapes' ? drawing.boxes : [];
+  for (const l of [...drawing.lines, ...(opts.boxes === 'outlines' ? drawing.boxes.flatMap(outlineOf) : [])]) {
+    if (l.closed && l.pts.length >= 3 && opts.closed === 'polygons') polygons.push(l);
+    else asStrokes.push(l);
+  }
+  const strokes = asStrokes.map((l) => ({ ...l, pts: l.pts.map(move) }));
+  const lines = opts.strokes === 'wires' ? strokes : [];
 
   // 1. connection points: dots, shared line ends, and line ends landing on another line
   const junctionAt = new Map<string, Point>();
   const addJ = (p: Point) => {
-    if (!junctionAt.has(key(p))) junctionAt.set(key(p), p);
+    // a pin is a connection point already
+    if (!junctionAt.has(key(p)) && !portAt.has(key(p))) junctionAt.set(key(p), p);
   };
-  for (const d of drawing.dots) addJ(move(d));
+  const dots = opts.strokes === 'wires' ? drawing.dots : [];
+  for (const d of dots) addJ(move(d));
   const endCount = new Map<string, number>();
   for (const l of lines) {
     if (l.closed) continue;
@@ -105,11 +172,11 @@ export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point
   }
 
   // 3. build the items
-  const ids: string[] = [];
   const junctionId = new Map<string, string>();
-  const z0 = Math.max(0, ...Object.values(doc.items).map((i) => i.z ?? 0));
   const endpoint = (p: Point): Endpoint => {
     const k = key(p);
+    const pin = portAt.get(k);
+    if (pin) return pin;
     const j = junctionAt.get(k);
     if (!j) return { kind: 'free', x: p.x, y: p.y };
     let id = junctionId.get(k);
@@ -122,7 +189,7 @@ export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point
     }
     return { kind: 'junction', id };
   };
-  for (const d of drawing.dots) endpoint(move(d));
+  for (const d of dots) endpoint(move(d));
   const defaults = doc.settings.wire;
   for (const { pts, style } of pieces) {
     const color = ink(style.color);
@@ -142,7 +209,44 @@ export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point
     doc.items[w.id] = w;
     ids.push(w.id);
   }
-  for (const b of drawing.boxes) {
+  const addShape = (s: ReturnType<typeof makeShape>) => {
+    s.layer = 'below';
+    s.z = z0 + ids.length + 1;
+    doc.items[s.id] = s;
+    ids.push(s.id);
+  };
+  if (opts.strokes === 'lines') {
+    // one line shape per segment (shapes are single segments)
+    for (const l of strokes) {
+      const pts = l.closed && l.pts.length > 2 ? [...l.pts, l.pts[0]] : l.pts;
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        const s = makeShape(doc, 'line', a.x, a.y, Math.round((b.x - a.x) * 100) / 100, Math.round((b.y - a.y) * 100) / 100);
+        Object.assign(s, { stroke: ink(l.color), strokeWidth: l.width, dash: l.dashed ? 'dashed' : 'solid' });
+        addShape(s);
+      }
+    }
+    for (const d of drawing.dots) {
+      const r = d.r ?? 2;
+      const p = move(d);
+      const s = makeShape(doc, 'ellipse', p.x - r, p.y - r, 2 * r, 2 * r);
+      Object.assign(s, { strokeWidth: 0, fill: '#000000', fillOpacity: 1 });
+      addShape(s);
+    }
+  }
+  for (const l of polygons) {
+    const s = makeShape(doc, 'polygon', 0, 0, 1, 1);
+    const fill = l.fill && l.fill !== 'none' ? ink(l.fill) : 'none';
+    Object.assign(s, packPoly(l.pts.map(move)), {
+      stroke: ink(l.color),
+      strokeWidth: l.stroked === false ? 0 : l.width,
+      fill: fill === 'none' ? ink(l.color) : fill,
+      fillOpacity: fill === 'none' ? 0 : (l.fillOpacity ?? 1),
+      dash: l.dashed ? 'dashed' : 'solid',
+    });
+    addShape(s);
+  }
+  for (const b of boxes) {
     const p = move(b);
     const s = makeShape(doc, b.kind, p.x, p.y, b.w, b.h);
     Object.assign(s, {
