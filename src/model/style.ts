@@ -1,3 +1,4 @@
+import { wireStyleFor } from './bus';
 import type { CircuitDoc, ComponentItem, Dash, Item, ShapeItem, WireItem } from './types';
 
 /**
@@ -42,7 +43,7 @@ export function lookOf(doc: CircuitDoc, it: Item): Partial<Look> {
     case 'component':
       return { line: it.color ?? '', fill: it.fill ?? '', fillOpacity: it.fillOpacity ?? 1, width: it.lineWidth ?? 2, dash: it.dash ?? 'solid', text: it.labelColor ?? '' };
     case 'wire': {
-      const st = { ...doc.settings.wire, ...it.style };
+      const st = wireStyleFor(doc.settings, it);
       return { line: st.color, width: st.width, dash: st.dash };
     }
     case 'shape':

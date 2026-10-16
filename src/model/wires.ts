@@ -1,4 +1,5 @@
 import { eq, projectOnSegment, rotate, segmentIntersection, sideVector, simplify, toWorld } from './geometry';
+import { wireStyleFor } from './bus';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, WireItem, WireStyle } from './types';
 
@@ -64,7 +65,7 @@ export function wirePolyline(doc: CircuitDoc, w: WireItem): Point[] {
 }
 
 export function wireStyle(doc: CircuitDoc, w: WireItem): WireStyle {
-  return { ...doc.settings.wire, ...w.style };
+  return wireStyleFor(doc.settings, w);
 }
 
 /* ------------------------------------------------------------------ */

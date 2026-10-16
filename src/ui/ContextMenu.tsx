@@ -64,7 +64,7 @@ import { exportTemplateFile } from '../io/sharing';
 import * as A from '../store/actions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { S, set, useStore, type ContextMenuState } from '../store/store';
-import type { CircuitDoc } from '../model/types';
+import type { CircuitDoc, WireItem } from '../model/types';
 
 interface Entry {
   label: string;
@@ -227,6 +227,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
         sub: rows(
           cmd('wire.highlightNet', 'Highlight net', <Waypoints size={I} />),
           cmd('wire.reroute', 'Re-route', <Route size={I} />),
+          cmd('wire.makeBus', S().selection.every((id) => S().doc.items[id]?.type !== 'wire' || (S().doc.items[id] as WireItem).bus) ? 'Make plain wire' : 'Make bus', <Route size={I} strokeWidth={3} />),
           { label: 'Edit points', icon: <PenTool size={I} />, run: () => A.setTool('node'), key: keysFor('tool.node')[0] },
         ),
       },

@@ -2,8 +2,9 @@ import { computeHotSpots } from './hotspots';
 import { toWorld } from './geometry';
 import { computeNets, touchingPins } from './netlist';
 import { instanceSymbol } from './registry';
-import type { CircuitDoc, ComponentItem, Point, SymbolDef } from './types';
-import { wirePolyline } from './wires';
+import { busNets } from './bus';
+import type { CircuitDoc, ComponentItem, Point, SymbolDef, WireItem } from './types';
+import { endpointInfo, wirePolyline } from './wires';
 
 export type ErcSeverity = 'error' | 'warning';
 
@@ -30,7 +31,10 @@ export type ErcRule =
   | 'loose-end'
   | 'touching-end'
   | 'stacked-parts'
-  | 'nc-connected';
+  | 'nc-connected'
+  | 'bus-unnamed'
+  | 'bus-tap'
+  | 'bus-pin';
 
 export const ERC_RULES: Record<ErcRule, string> = {
   'duplicate-ref': 'Duplicate reference designators',
@@ -44,6 +48,9 @@ export const ERC_RULES: Record<ErcRule, string> = {
   'touching-end': 'Wire ends touching something without connecting',
   'stacked-parts': 'Parts stacked on top of each other',
   'nc-connected': 'No-connect flags on wired pins',
+  'bus-unnamed': 'Buses without a name',
+  'bus-tap': 'Bus taps not named after a signal of their bus',
+  'bus-pin': 'Part pins wired straight onto a bus',
 };
 
 /** Pin names that carry power: leaving one open is an error, not a warning. */
@@ -171,6 +178,8 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
   const unfinished = new Set<string>();
   for (const h of computeHotSpots(doc, polys, [])) {
     if (h.kind === 'end' || h.kind === 'touch' || h.kind === 'pinTouch') unfinished.add(h.wire);
+    // a bus is allowed to just stop
+    if (h.kind === 'end' && (doc.items[h.wire] as WireItem | undefined)?.bus) continue;
     if (h.kind === 'end') {
       issues.push({ key: `loose-end:${h.wire}:${h.end}`, rule: 'loose-end', severity: 'warning', message: 'Wire end is not connected to anything', items: [h.wire], at: h.pt });
     } else if (h.kind === 'touch' || h.kind === 'pinTouch') {
@@ -190,6 +199,26 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
     }
   }
 
+  /* ----------------------------- buses ------------------------------ */
+  for (const bus of busNets(doc)) {
+    const first = doc.items[bus.wires[0]] as WireItem;
+    const at = polys.get(first.id)?.[0] ?? null;
+    if (!bus.name) {
+      issues.push({ key: `bus-unnamed:${first.id}`, rule: 'bus-unnamed', severity: 'warning', message: 'Bus has no name — name it like D[0..7] so its taps know their signals', items: bus.wires, at });
+    }
+    for (const t of bus.taps) {
+      const w = doc.items[t.wire] as WireItem;
+      const name = (w.label ?? '').trim();
+      if (bus.members.includes(name) || !bus.name) continue;
+      const tapAt = t.junction ? (doc.items[t.junction] as { x: number; y: number } | undefined) : polys.get(w.id)?.[0];
+      const message = name ? `Tap “${name}” is not a signal of bus ${bus.name}` : `Wire tapping bus ${bus.name} has no name, so it joins none of its signals`;
+      issues.push({ key: `bus-tap:${t.wire}`, rule: 'bus-tap', severity: 'warning', message, items: [t.wire], at: tapAt ? { x: tapAt.x, y: tapAt.y } : null });
+    }
+    for (const p of bus.pins) {
+      issues.push({ key: `bus-pin:${p.comp}:${p.port}`, rule: 'bus-pin', severity: 'warning', message: `${describePin(doc, p.comp, p.port)} is wired straight onto a bus — tap the bus with a named wire`, items: [p.comp, ...bus.wires], at: endpointInfo(doc, { kind: 'port', ...p })?.pt ?? null });
+    }
+  }
+
   /* ----------------------------- nets ------------------------------- */
   const nets = computeNets(doc);
   const labelUses = new Map<string, ComponentItem[]>();
@@ -204,7 +233,7 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
   // wire labels join nets by name too, so a label used by a wire connects to something else
   const wireLabelNames = new Map<string, string[]>();
   for (const it of Object.values(doc.items)) {
-    if (it.type !== 'wire') continue;
+    if (it.type !== 'wire' || it.bus) continue;
     const name = (it.label ?? '').trim();
     if (!name) continue;
     wireLabelNames.set(name, [...(wireLabelNames.get(name) ?? []), it.id]);

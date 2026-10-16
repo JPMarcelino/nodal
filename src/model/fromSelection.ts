@@ -4,6 +4,7 @@ import { toWorld } from './geometry';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Point, Prim, ShapeItem, SymbolDef } from './types';
 import { wirePolyline } from './wires';
+import { wireStyleFor } from './bus';
 import { inkPoints } from './ink';
 import { polyPoints } from './polygon';
 
@@ -36,7 +37,7 @@ export function selectionToDrawing(doc: CircuitDoc, ids: string[]): SelectionDra
   for (const it of items) {
     if (it.type === 'component') prims.push(...componentPrims(doc, it, at));
     else if (it.type === 'wire') {
-      const style = { ...doc.settings.wire, ...it.style };
+      const style = wireStyleFor(doc.settings, it);
       const pts = wirePolyline(doc, it).map(at);
       if (pts.length > 1) prims.push({ t: 'line', pts: flat(pts), w: style.width, ...(style.dash !== 'solid' ? { dash: true } : {}) });
     } else if (it.type === 'junction') {

@@ -33,6 +33,16 @@ export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Poin
     a: { kind: 'junction', id: jid },
     pts: simplify([pt, ...second]).slice(1, -1),
   };
+  // a bus is named once, however many pieces taps cut it into: on the longer piece, where the name has room
+  if (w.bus) {
+    const len = (pts: Point[]) => pts.reduce((n, p, i) => (i ? n + Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y) : 0), 0);
+    const keep = len([pt, ...second]) > len([...first, pt]) ? w2 : w;
+    const drop = keep === w ? w2 : w;
+    for (const k of ['label', 'labelAt', 'labelSide', 'labelHidden'] as const) {
+      if (keep === w2) (w2 as unknown as Record<string, unknown>)[k] = w[k];
+      delete drop[k];
+    }
+  }
   w.b = { kind: 'junction', id: jid };
   w.pts = simplify([...first, pt]).slice(1, -1);
   doc.items[w2.id] = w2;
@@ -229,7 +239,8 @@ export function cleanup(doc: CircuitDoc) {
         delete doc.items[it.id];
         changed = true;
       } else if (ends === 2 && ws.length === 2) {
-        // two wires simply continuing through: join them into one
+        // two wires simply continuing through: join them into one (a wire running into a bus stays a tap)
+        if (!(doc.items[ws[0]] as WireItem).bus !== !(doc.items[ws[1]] as WireItem).bus) continue;
         mergeAtJunction(doc, it.id, ws[0], ws[1]);
         changed = true;
       } else if (ends <= 2) {
@@ -264,6 +275,8 @@ function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: strin
   }
   w1.a = a1;
   w1.b = b2;
+  // the joined wire keeps a name either half had
+  if (!w1.label && w2.label) for (const k of ['label', 'labelAt', 'labelSide', 'labelHidden'] as const) (w1 as unknown as Record<string, unknown>)[k] = w2[k];
   setFullPolyline(w1, [...p1, ...p2.slice(1)]);
   delete doc.items[w2id];
   delete doc.items[jid];
