@@ -1196,7 +1196,7 @@ export function Canvas() {
         setGesture({ kind: 'marquee', start: w, cur: w, additive: false, keep: true });
         return;
       }
-      if (S().doc.items[hit].type === 'wire' && cur.length === 1 && cur[0] === hit) {
+      if (!S().doc.items[hit].locked && S().doc.items[hit].type === 'wire' && cur.length === 1 && cur[0] === hit) {
         const pts = data.polys.get(hit) ?? [];
         const h = hitWire(new Map([[hit, pts]]), w, Infinity);
         if (wasSoleWire && h && !next) set({ wirePart: { wire: hit, kind: 'segment', index: h.seg } });

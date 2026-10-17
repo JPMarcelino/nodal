@@ -203,6 +203,7 @@ export function commitWire(doc: CircuitDoc, start: WireTarget, end: WireTarget, 
 export function moveWireSegment(doc: CircuitDoc, wireId: string, base: Point[], seg: number, dx: number, dy: number, baseDoc?: CircuitDoc): boolean {
   const wire = doc.items[wireId] as WireItem | undefined;
   if (!wire || wire.type !== 'wire') return false;
+  if (wire.locked) return false;
   if (seg < 0 || seg >= base.length - 1) return false;
   const pts = base.map((p) => ({ ...p }));
   const jA = !!baseDoc && wire.a.kind === 'junction' && seg === 0 ? wire.a.id : null;
