@@ -213,3 +213,23 @@ export async function copyAsSvg() {
     toast('Clipboard is not available', 'error');
   }
 }
+
+export async function copyAsPng() {
+  const { doc, selection } = S();
+  const ids = selection.length ? selection : undefined;
+  try {
+    const Ctor = globalThis.ClipboardItem as unknown as typeof ClipboardItem | undefined;
+    const canWrite = typeof navigator !== 'undefined' && typeof navigator.clipboard?.write === 'function';
+    if (typeof Ctor === 'undefined' || !canWrite) throw new Error('unsupported');
+    // Pass the promise (not an awaited blob) so Safari keeps the user activation.
+    const blobPromise = (async () => {
+      await prepareMath(doc).catch(() => undefined);
+      return exportPng(doc, { theme: 'light', background: true, padding: 10, ids, scale: 2 });
+    })();
+    const item = new Ctor({ 'image/png': blobPromise } as unknown as Record<string, Promise<Blob>>);
+    await navigator.clipboard.write([item]);
+    toast('Image copied to clipboard', 'success');
+  } catch {
+    toast("Copying images isn't supported here — use Export as PNG", 'error');
+  }
+}

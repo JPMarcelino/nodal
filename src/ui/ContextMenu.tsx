@@ -60,7 +60,7 @@ import {
   Waypoints,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { copyAsSvg, doExport, filePrint, startAreaExport, type ExportKind } from '../io/fileActions';
+import { copyAsPng, copyAsSvg, doExport, filePrint, startAreaExport, type ExportKind } from '../io/fileActions';
 import { exportTemplateFile } from '../io/sharing';
 import * as A from '../store/actions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
@@ -99,6 +99,7 @@ function exportRows(ids?: string[]): Row[] {
     { label: 'PNG image', icon: <FileImage size={I} />, run: x('png') },
     { label: 'SVG vector', icon: <FileCode2 size={I} />, run: x('svg') },
     { label: 'Copy as SVG', icon: <Copy size={I} />, run: () => void copyAsSvg(), key: keysFor('file.copySvg')[0] },
+    { label: 'Copy as image', icon: <Copy size={I} />, run: () => void copyAsPng(), key: keysFor('file.copyPng')[0] },
     '-',
     { label: 'DXF (CAD)', icon: <Layers3 size={I} />, run: x('dxf') },
     { label: 'SPICE netlist', icon: <FileText size={I} />, run: x('spice') },

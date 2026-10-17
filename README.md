@@ -126,7 +126,7 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 - **No accidental data loss:** New or Open with unsaved changes asks whether to save first. Deleting library symbols or named versions asks for confirmation. Closing the page warns when changes exist nowhere else. A restore point is saved whenever you switch away, and *History → Other circuits on this device* reopens any circuit you closed or replaced.
 - Export to **PNG** (1–4×, light/dark), **SVG**, **DXF** (layered, for AutoCAD/LibreCAD), **SPICE netlist** (correct transistor pin order, engineering values such as `4k7` converted), **KiCad netlist** (parts, footprints and nets for PCB layout), **bill of materials (CSV)** with footprints, part numbers and DNP, and **JSON**; print or save as PDF
 - Buses: draw a thick wire as the bus and attach signals with **bus entry** symbols; signals connect by their net labels
-- Copy the selection as SVG to paste into other apps
+- Copy the selection as SVG or as a PNG image to paste into other apps
 
 ### Version history
 - The **History** tab (clock icon, **Ctrl+Alt+H**) keeps restore points of each circuit on this device. A version is saved automatically every few minutes while you edit and whenever you open another circuit; **Ctrl+Alt+V** saves a named one.
