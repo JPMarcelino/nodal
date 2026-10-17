@@ -227,6 +227,16 @@ describe('moveWireSegment (segment gesture splicing)', () => {
     expect(w.b).toEqual({ kind: 'free', x: 100, y: 20 });
     expect(w.pts).toEqual([]);
   });
+
+  it('refuses to move a segment of a locked wire', () => {
+    const doc = createDoc();
+    const w = freeWire(doc, 0, 0, 100, 0);
+    w.locked = true;
+    expect(moveWireSegment(doc, w.id, [{ x: 0, y: 0 }, { x: 100, y: 0 }], 0, 0, 20)).toBe(false);
+    expect(w.a).toEqual({ kind: 'free', x: 0, y: 0 });
+    expect(w.b).toEqual({ kind: 'free', x: 100, y: 0 });
+    expect(w.pts).toEqual([]);
+  });
 });
 
 describe('reconnectWireEnd (endpoint detach-vs-reconnect)', () => {
