@@ -1,4 +1,5 @@
 import { current, isDraft } from 'immer';
+import { withContents } from './containers';
 import { connectorsOf, detachConnector, isConnector, resolveConnector } from './connectors';
 import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, outsideRefs, refersTo, uid } from './doc';
 import { eq, projectOnSegment, rectsIntersect, rotate, simplify, snap, unionRects } from './geometry';
@@ -918,8 +919,25 @@ export function ungroupItems(doc: CircuitDoc, ids: string[], scope?: string): nu
 
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom';
 
+/**
+ * What each aligned / distributed item takes along: a container carries what lies inside it,
+ * and anything selected that lies inside a selected container rides with it rather than
+ * being placed on its own. Worked out up front, before any item has moved.
+ */
+function carriedBy(doc: CircuitDoc, ids: string[]): { movable: string[]; carry: Map<string, Set<string>> } {
+  const carry = new Map<string, Set<string>>();
+  const riding = new Set<string>();
+  for (const id of ids) {
+    const set = withContents(doc, [id]);
+    carry.set(id, set);
+    for (const o of set) if (o !== id) riding.add(o);
+  }
+  return { movable: ids.filter((id) => !riding.has(id)), carry };
+}
+
 export function alignItems(doc: CircuitDoc, ids: string[], mode: AlignMode) {
-  const movable = ids.filter((id) => doc.items[id] && doc.items[id].type !== 'wire');
+  const picked = ids.filter((id) => doc.items[id] && doc.items[id].type !== 'wire');
+  const { movable, carry } = carriedBy(doc, picked);
   if (movable.length < 2) return;
   const boxes = movable.map((id) => ({ id, r: itemBounds(doc, doc.items[id])! }));
   const all = unionRects(boxes.map((b) => b.r).filter((r): r is Rect => !!r));
@@ -935,13 +953,14 @@ export function alignItems(doc: CircuitDoc, ids: string[], mode: AlignMode) {
     if (mode === 'bottom') dy = all.y + all.h - (r.y + r.h);
     if (mode === 'vcenter') dy = all.y + all.h / 2 - (r.y + r.h / 2);
     const g = doc.settings.snap ? doc.settings.grid : 1;
-    translateItems(base, doc, new Set([id]), snap(dx, g), snap(dy, g));
+    translateItems(base, doc, carry.get(id)!, snap(dx, g), snap(dy, g));
     Object.assign(base.items, clone(doc.items));
   }
 }
 
 export function distributeItems(doc: CircuitDoc, ids: string[], axis: 'x' | 'y') {
-  const movable = ids.filter((id) => doc.items[id] && doc.items[id].type !== 'wire');
+  const picked = ids.filter((id) => doc.items[id] && doc.items[id].type !== 'wire');
+  const { movable, carry } = carriedBy(doc, picked);
   if (movable.length < 3) return;
   const boxes = movable.map((id) => ({ id, r: itemBounds(doc, doc.items[id])! }));
   const key = axis === 'x' ? 'x' : 'y';
@@ -956,7 +975,7 @@ export function distributeItems(doc: CircuitDoc, ids: string[], axis: 'x' | 'y')
     const target = first + step * i;
     const delta = snap(target - (r[key] + r[size] / 2), g);
     const base = clone(doc);
-    translateItems(base, doc, new Set([id]), axis === 'x' ? delta : 0, axis === 'y' ? delta : 0);
+    translateItems(base, doc, carry.get(id)!, axis === 'x' ? delta : 0, axis === 'y' ? delta : 0);
   });
 }
 

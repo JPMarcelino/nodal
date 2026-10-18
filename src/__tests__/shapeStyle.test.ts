@@ -5,7 +5,7 @@ import { createDoc, makeShape } from '../model/doc';
 import { flipItems } from '../model/ops';
 import { measureRich, wrapRich } from '../model/richText';
 import { measureTextShape, shapeText } from '../model/shapeText';
-import { applyLook, lookOf } from '../model/style';
+import { applyLook, gradientLine, lookOf } from '../model/style';
 import type { CircuitDoc, ShapeItem } from '../model/types';
 
 function docWith(...shapes: ShapeItem[]): CircuitDoc {
@@ -170,5 +170,24 @@ describe('flipping images', () => {
     // a vertical flip is a mirror plus a half turn
     flipItems(doc, new Set([img.id]), 'y');
     expect(doc.items[img.id]).toMatchObject({ flipX: true, rot: 180 });
+  });
+});
+
+describe('gradient line', () => {
+  it('keeps the angle true on a box that is not square', () => {
+    const g = gradientLine({ x: 0, y: 0, w: 200, h: 100 }, 0);
+    expect(g).toEqual({ x1: 0, y1: 50, x2: 200, y2: 50 });
+    const d = gradientLine({ x: 10, y: 20, w: 200, h: 100 }, 45);
+    // direction is exactly 45 degrees, not skewed by the box shape
+    expect(d.x2 - d.x1).toBeCloseTo(d.y2 - d.y1, 6);
+    expect((d.x1 + d.x2) / 2).toBeCloseTo(110, 6);
+    expect((d.y1 + d.y2) / 2).toBeCloseTo(70, 6);
+  });
+
+  it('writes user-space gradients into the svg', () => {
+    const d0 = createDoc();
+    const s = { ...makeShape(d0, 'rect', 0, 0, 200, 100), fill: '#ff0000', fillOpacity: 1, gradient: { to: '#0000ff', angle: 0 } } as ShapeItem;
+    d0.items[s.id] = s;
+    expect(exportSvg(d0, { theme: 'light', background: false, padding: 10 }).svg).toContain('gradientUnits="userSpaceOnUse"');
   });
 });

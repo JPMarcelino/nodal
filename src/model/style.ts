@@ -1,6 +1,6 @@
 import { wireStyleFor } from './wires';
 import { defaultAlign, defaultValign, lineCap, lineJoin, textSize } from './shapeText';
-import type { CircuitDoc, ComponentItem, Dash, Item, ShapeItem, WireItem } from './types';
+import type { CircuitDoc, ComponentItem, Dash, Item, Rect, ShapeItem, WireItem } from './types';
 
 /**
  * One set of style properties for every kind of item, so a selection of parts,
@@ -202,4 +202,18 @@ export function commonLook(doc: CircuitDoc, items: Item[]): { value: Partial<Loo
     }
   }
   return { value, keys, mixed };
+}
+
+/**
+ * Endpoints (user space) of a gradient at `deg` across `box`: through the centre
+ * at the true angle (0 = left to right, clockwise), long enough that the corners
+ * take the end colours, as in CSS. Unlike box fractions this does not skew on a
+ * box that is not square.
+ */
+export function gradientLine(box: Rect, deg: number): { x1: number; y1: number; x2: number; y2: number } {
+  const a = (deg * Math.PI) / 180;
+  const dx = Math.cos(a), dy = Math.sin(a);
+  const half = (Math.abs(box.w * dx) + Math.abs(box.h * dy)) / 2;
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+  return { x1: cx - dx * half, y1: cy - dy * half, x2: cx + dx * half, y2: cy + dy * half };
 }

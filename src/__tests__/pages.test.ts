@@ -4,7 +4,7 @@ import { changedKeys, SyncState, writeEntries } from '../collab/sync';
 import { createDoc, makeComponent, makeShape, normalizeDoc, uid } from '../model/doc';
 import { computeNets } from '../model/netlist';
 import { deletePage, duplicatePage, moveItemsToPage } from '../model/pageOps';
-import { addPage, docPages, editPage, itemPage, movePage, pageItemIds, viewDoc } from '../model/pages';
+import { addPage, docPages, editPage, itemPage, movePage, pageItemIds, samePage, viewDoc } from '../model/pages';
 import type { CircuitDoc, ComponentItem, WireItem } from '../model/types';
 
 // the store touches window / localStorage when it loads
@@ -245,5 +245,17 @@ describe('loading pages', () => {
     const entries = sync.local(b, ['pages']);
     const other = writeEntries(createDoc(), entries);
     expect(docPages(other).map((p) => p.name)).toEqual(['Page 1', 'Two']);
+  });
+});
+
+describe('presence on pages', () => {
+  it('matches peers by page, an unset or stale page meaning the first', () => {
+    const doc = createDoc();
+    const second = addPage(doc);
+    const first = docPages(doc)[0].id;
+    expect(samePage(doc, undefined, first)).toBe(true);
+    expect(samePage(doc, 'gone', undefined)).toBe(true);
+    expect(samePage(doc, second, first)).toBe(false);
+    expect(samePage(doc, second, second)).toBe(true);
   });
 });

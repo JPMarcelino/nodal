@@ -225,6 +225,7 @@ export function ToolRail() {
   const tool = useStore((s) => s.tool);
   const placing = useStore((s) => s.placing);
   const altMove = useStore((s) => s.altMove);
+  const armed = useStore((s) => s.shapePreset);
   const lastExplain = useExplain((s) => s.lastTool);
   const timelineOpen = useExplain((s) => s.timelineOpen);
   return (
@@ -233,7 +234,7 @@ export function ToolRail() {
         <span key={t.cmd} style={{ display: 'contents' }}>
           {(i === 4 || i === 6) && <span className="rail-sep" />}
           <button
-            className={tool === t.tool && !!t.alt === altMove && !placing ? 'tool-btn active' : 'tool-btn'}
+            className={tool === t.tool && !!t.alt === altMove && !placing && !(armed && t.tool === 'rect') ? 'tool-btn active' : 'tool-btn'}
             onClick={() => (t.alt ? A.setAltMove() : A.setTool(t.tool))}
             title={`${t.label} (${prettyKey(keysFor(t.cmd)[0] ?? '')})`}
           >

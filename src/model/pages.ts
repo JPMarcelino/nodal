@@ -29,6 +29,9 @@ export function resolvePage(doc: Pick<CircuitDoc, 'pages'>, page?: string | null
   return (page && pages.find((p) => p.id === page)?.id) || pages[0].id;
 }
 
+/** Whether two page ids (either may be unset or stale) name the same page. */
+export const samePage = (doc: Pick<CircuitDoc, 'pages'>, a?: string | null, b?: string | null) => resolvePage(doc, a) === resolvePage(doc, b);
+
 export const itemPage = (doc: Pick<CircuitDoc, 'pages'>, it: Pick<Item, 'page'>) => resolvePage(doc, it.page);
 
 export const pageIndex = (doc: Pick<CircuitDoc, 'pages'>, page?: string | null) => docPages(doc).findIndex((p) => p.id === resolvePage(doc, page));

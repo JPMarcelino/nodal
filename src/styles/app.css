@@ -3396,6 +3396,10 @@ select.input {
   z-index: 1;
 }
 
+.avatar.away {
+  opacity: 0.55;
+}
+
 .avatar.following {
   box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ring);
   z-index: 1;

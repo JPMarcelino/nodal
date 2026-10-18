@@ -9,6 +9,7 @@ import type { CircuitDoc, Item, SymbolDef } from '../model/types';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { PresetShape } from '../canvas/PresetShape';
 import { PRESET_CATEGORIES, SHAPE_PRESETS, searchPresets, type ShapePreset } from '../model/shapePresets';
+import { isPathShape } from '../model/path';
 import * as A from '../store/actions';
 import { S, mutate, removeSymbolFromLibrary, select, set, toast, toggleFavorite, useStore, useViewDoc } from '../store/store';
 import { CheckPanel, useErcIssues } from './CheckPanel';
@@ -357,7 +358,10 @@ function itemLabel(doc: CircuitDoc, it: Item, netName?: string): string {
       return 'Junction';
     case 'shape':
       if (it.kind === 'callout') return `Callout ${it.step ?? ''}${it.text ? ` “${it.text.split('\n')[0].slice(0, 24)}”` : ''}`;
-      return it.text ? `${kindName(it.kind)} “${it.text.split('\n')[0].slice(0, 24)}”` : kindName(it.kind);
+      {
+        const name = it.kind === 'polygon' && isPathShape(it) ? 'Path' : kindName(it.kind);
+        return it.text ? `${name} “${it.text.split('\n')[0].slice(0, 24)}”` : name;
+      }
   }
 }
 

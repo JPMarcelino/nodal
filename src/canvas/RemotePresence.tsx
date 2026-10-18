@@ -1,12 +1,16 @@
 import { follow, useCollab } from '../collab/session';
 import { itemBounds } from '../model/doc';
+import { samePage } from '../model/pages';
+import { useStore } from '../store/store';
 import type { CircuitDoc, Point } from '../model/types';
 import { buildWirePath } from '../model/wires';
 
 /** Other people's selections and cursors, drawn in world coordinates (inside the view transform). */
 export function RemotePresence({ doc, polys, z }: { doc: CircuitDoc; polys: Map<string, Point[]>; z: number }) {
   const peers = useCollab((s) => s.peers);
-  const list = Object.values(peers);
+  const page = useStore((s) => s.page);
+  // only people on the page you are looking at (their cursor and selection mean nothing on another)
+  const list = Object.values(peers).filter((p) => samePage(doc, p.page, page));
   if (!list.length) return null;
   return (
     <g className="remote-presence" pointerEvents="none">

@@ -1,5 +1,5 @@
 import { makeShape } from './doc';
-import { arcNodes, closeLoop, joinNodes, type PathNode, unitPath } from './path';
+import { arcNodes, joinNodes, type PathNode, unitPath } from './path';
 import type { CircuitDoc, ShapeItem } from './types';
 
 /**
@@ -54,8 +54,8 @@ const star = () =>
 
 const polygon = (poly: number[]) => (): Partial<ShapeItem> => ({ kind: 'polygon', poly });
 /** A curved outline, fitted to the unit box once. */
-const curved = (nodes: PathNode[]) => {
-  const f = unitPath(nodes);
+const curved = (nodes: PathNode[], open?: boolean) => {
+  const f = unitPath(nodes, open);
   return (): Partial<ShapeItem> => ({ kind: 'polygon', ...f });
 };
 
@@ -67,16 +67,17 @@ const DOCUMENT: PathNode[] = [
   { x: 0, y: 0.85, in: { x: 0.4, y: 0.55 } },
 ];
 
-/** Database cylinder: the top ellipse (front and back), the sides and the bottom's front, then the top's front again to close. */
-const CYLINDER: PathNode[] = closeLoop(
-  joinNodes(
-    arcNodes(0.5, 0.15, 0.5, 0.15, 180, 0),
-    arcNodes(0.5, 0.15, 0.5, 0.15, 0, -180),
-    [{ x: 0, y: 0.85 }],
-    arcNodes(0.5, 0.85, 0.5, 0.15, 180, 0),
-    [{ x: 1, y: 0.15 }],
-    arcNodes(0.5, 0.15, 0.5, 0.15, 0, 180),
-  ),
+/**
+ * Database cylinder as one open path, so no stretch is stroked twice: the back
+ * of the top rim, the right side, the bottom's front, the left side, then the
+ * rim's front. A fill closes it with a chord that stays inside the top ellipse.
+ */
+const CYLINDER: PathNode[] = joinNodes(
+  arcNodes(0.5, 0.15, 0.5, 0.15, 180, 360),
+  [{ x: 1, y: 0.85 }],
+  arcNodes(0.5, 0.85, 0.5, 0.15, 0, 180),
+  [{ x: 0, y: 0.15 }],
+  arcNodes(0.5, 0.15, 0.5, 0.15, 180, 0),
 );
 
 /** A cloud: bumps bulging out between points round an ellipse. */
@@ -146,7 +147,7 @@ export const SHAPE_PRESETS: ShapePreset[] = [
   { id: 'flow-merge', name: 'Merge', category: 'Flowchart', keywords: 'inverted triangle', build: polygon([0, 0, 1, 0, 0.5, 1]) },
   { id: 'flow-extract', name: 'Extract', category: 'Flowchart', keywords: 'triangle', build: polygon(TRIANGLE) },
   { id: 'flow-document', name: 'Document', category: 'Flowchart', keywords: 'page paper report wave', build: curved(DOCUMENT) },
-  { id: 'flow-database', name: 'Database', category: 'Flowchart', keywords: 'cylinder storage disk db', build: curved(CYLINDER) },
+  { id: 'flow-database', name: 'Database', category: 'Flowchart', keywords: 'cylinder storage disk db', build: curved(CYLINDER, true) },
   { id: 'flow-delay', name: 'Delay', category: 'Flowchart', keywords: 'wait d shape', build: curved(DELAY) },
   { id: 'flow-display', name: 'Display', category: 'Flowchart', keywords: 'screen monitor', build: curved(DISPLAY) },
   { id: 'flow-stored-data', name: 'Stored data', category: 'Flowchart', keywords: 'storage', build: curved(STORED) },
@@ -174,12 +175,20 @@ export function searchPresets(query: string): ShapePreset[] {
   });
 }
 
-/** A new shape of a preset in the given box (a square preset is cut down to equal sides). */
-export function makePresetShape(doc: CircuitDoc, preset: ShapePreset, x: number, y: number, w: number, h: number): ShapeItem {
+/** Page colour of each theme, for when the document sets none (matches --canvas in the stylesheet). */
+const THEME_CANVAS = { dark: '#0f0e0c', light: '#fffdf9' };
+
+/**
+ * A new shape of a preset in the given box (a square preset is cut down to equal
+ * sides). Basic and flowchart shapes are filled with the page colour so they hide
+ * what is behind them; arrows keep the outline-only default.
+ */
+export function makePresetShape(doc: CircuitDoc, preset: ShapePreset, x: number, y: number, w: number, h: number, theme: 'dark' | 'light' = 'dark'): ShapeItem {
   const side = Math.min(w, h);
   const bw = preset.square ? side : w;
   const bh = preset.square ? side : h;
   const fields = preset.build({ w: bw, h: bh });
   const s = makeShape(doc, fields.kind ?? 'rect', x, y, bw, bh);
+  if (preset.category !== 'Arrows') Object.assign(s, { fill: doc.settings.background || THEME_CANVAS[theme], fillOpacity: 1 });
   return Object.assign(s, fields);
 }

@@ -3,7 +3,7 @@ import { createDoc, itemBounds, makeShape } from '../model/doc';
 import { marqueeHits } from '../model/marquee';
 import { flipItems, matchSizes, rotateItems, rotateShapeBy, selectionPivot } from '../model/ops';
 import { polyPoints } from '../model/polygon';
-import { dragRotation, mapShapeFrame, normDeg, resizeInFrame, rotatedBounds, rotateDeg, toShapeFrame } from '../model/rotation';
+import { dragRotation, mapShapeFrame, normDeg, resizeInFrame, rotatedBounds, rotateDeg, setShapeSize, toShapeFrame } from '../model/rotation';
 import type { CircuitDoc, Rect, ShapeItem, ShapeKind } from '../model/types';
 
 function withShape(kind: ShapeKind, x: number, y: number, w: number, h: number, extra: Partial<ShapeItem> = {}) {
@@ -180,5 +180,29 @@ describe('make same size', () => {
     expect(matchSizes(doc, [a.id, b.id, t.id], 'both')).toBe(1);
     const s = shape(doc, b.id);
     expect({ x: s.x, y: s.y, w: s.w, h: s.h }).toEqual({ x: 160, y: 170, w: 100, h: 100 });
+  });
+});
+
+describe('sizing a turned shape', () => {
+  it('keeps the centre fixed when the size is typed in', () => {
+    const doc = createDoc();
+    const s = Object.assign(makeShape(doc, 'rect', 100, 100, 80, 40), { rot: 30 });
+    setShapeSize(s, { w: 120 });
+    expect(s.x + s.w / 2).toBe(140);
+    expect(s.y + s.h / 2).toBe(120);
+    setShapeSize(s, { h: 100 });
+    expect(s.y + s.h / 2).toBe(120);
+    const flat = makeShape(doc, 'rect', 100, 100, 80, 40);
+    setShapeSize(flat, { w: 120 });
+    expect(flat.x).toBe(100);
+  });
+
+  it('snaps the dragged edge to the grid in its own frame', () => {
+    const b = { x: 0, y: 0, w: 100, h: 50 };
+    // east handle dragged to a point whose local x is about 133 -> 130 on a 10 grid
+    const p = rotateDeg({ x: 133, y: 25 }, 30, { x: 50, y: 25 });
+    const r = resizeInFrame(b, 30, 'e', p, 10, 10);
+    expect(r.w).toBeCloseTo(130, 6);
+    expect(r.h).toBeCloseTo(50, 6);
   });
 });
