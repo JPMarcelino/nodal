@@ -24,6 +24,9 @@ import {
   ExternalLink,
   Plus,
   X,
+  Scaling,
+  StretchHorizontal,
+  StretchVertical,
 } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { defaultHeadSize, frozenLabelOffsets, labelLook } from '../canvas/Scene';
@@ -38,6 +41,7 @@ import type { CircuitDoc, ComponentItem, LabelSide, LabelSpotName, LabelStyle, S
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { docBounds, selectedGroup } from '../model/doc';
 import { scaleItems, selectionPivot } from '../model/ops';
+import { normDeg, ROT_KINDS, shapeRot } from '../model/rotation';
 import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
@@ -160,6 +164,16 @@ function AlignBar() {
       </button>
       <button title="Distribute vertically (Alt+Shift+V)" onClick={() => A.distribute('y')}>
         <AlignVerticalDistributeCenter size={15} />
+      </button>
+      <span className="sep" />
+      <button title="Make same width as the first selected" onClick={() => A.matchSize('width')}>
+        <StretchHorizontal size={15} />
+      </button>
+      <button title="Make same height as the first selected" onClick={() => A.matchSize('height')}>
+        <StretchVertical size={15} />
+      </button>
+      <button title="Make same size as the first selected" onClick={() => A.matchSize('both')}>
+        <Scaling size={15} />
       </button>
     </div>
   );
@@ -883,6 +897,15 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   const isText = first.kind === 'text';
   const isLine = first.kind === 'line' || first.kind === 'arrow';
   const isImage = first.kind === 'image';
+  // boxy shapes store a free rotation (0–360°, like a part's); point-based ones are turned by rewriting their points
+  const turnable = ROT_KINDS.has(first.kind);
+  const rot = shapeRot(first);
+  const setRot = (v: number) =>
+    upd((s) => {
+      const r = normDeg(v);
+      if (r) s.rot = r;
+      else delete s.rot;
+    });
   const title = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', polygon: 'Polygon', line: 'Line', arrow: 'Arrow', text: 'Text', image: 'Image', ink: 'Ink', callout: 'Callout', frame: 'Frame' }[first.kind];
   return (
     <>
@@ -964,20 +987,32 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
           </Field>
         </Section>
       )}
-      {shapes.length === 1 && !isText && (
+      {shapes.length === 1 && (!isText || turnable) && (
         <Section title="Geometry">
-          <Field label="Position">
-            <span className="row-gap">
-              <NumberInput value={first.x} suffix="x" onChange={(v) => upd((s) => (s.x = v))} />
-              <NumberInput value={first.y} suffix="y" onChange={(v) => upd((s) => (s.y = v))} />
-            </span>
-          </Field>
-          <Field label="Size">
-            <span className="row-gap">
-              <NumberInput value={first.w} suffix="w" onChange={(v) => upd((s) => (s.w = v))} />
-              <NumberInput value={first.h} suffix="h" onChange={(v) => upd((s) => (s.h = v))} />
-            </span>
-          </Field>
+          {turnable && (
+            <Field label="Rotation" hint="Clockwise, about the centre. Drag the round handle above the shape too (Shift snaps to 15°)">
+              <span className="row-gap">
+                <Segmented value={rot} options={[0, 90, 180, 270].map((r) => ({ value: r, label: `${r}°` }))} onChange={setRot} />
+                <NumberInput value={rot} min={-360} max={360} step={15} suffix="°" onChange={setRot} />
+              </span>
+            </Field>
+          )}
+          {!isText && (
+            <>
+              <Field label="Position">
+                <span className="row-gap">
+                  <NumberInput value={first.x} suffix="x" onChange={(v) => upd((s) => (s.x = v))} />
+                  <NumberInput value={first.y} suffix="y" onChange={(v) => upd((s) => (s.y = v))} />
+                </span>
+              </Field>
+              <Field label="Size">
+                <span className="row-gap">
+                  <NumberInput value={first.w} suffix="w" onChange={(v) => upd((s) => (s.w = v))} />
+                  <NumberInput value={first.h} suffix="h" onChange={(v) => upd((s) => (s.h = v))} />
+                </span>
+              </Field>
+            </>
+          )}
         </Section>
       )}
     </>

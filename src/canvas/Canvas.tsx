@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
 import { drawOrderCached, groupMembers, groupTags, itemBounds, labelsShown, makeShape, selectedGroup } from '../model/doc';
 import { componentBounds, dist, eq, measureText, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
-import { cleanup, deleteWirePart, scaleItems, selectionPivot, translateDetached, translateItems } from '../model/ops';
+import { cleanup, deleteWirePart, rotateShapeBy, scaleItems, selectionPivot, translateDetached, translateItems } from '../model/ops';
+import { dragRotation, fromShapeFrame, HANDLE_ROT_KINDS, rectCentre, resizeInFrame, rotateDeg, shapeBox, shapeRot, shapeTransform, toShapeFrame } from '../model/rotation';
 import { getSymbol, instanceSymbol } from '../model/registry';
 import { gridScale, scaleStep } from '../model/symbols/scale';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
@@ -74,6 +75,8 @@ type Gesture =
   | { kind: 'polygon'; pts: Point[]; cur: Point }
   | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
+  /** Turning a lone shape by its rotation handle about `centre`; `base` is its rotation when the drag began. */
+  | { kind: 'rotate'; id: string; centre: Point; start: Point; base: number }
   /** Resizing a part from a corner handle: its size follows the distance from its centre. */
   | { kind: 'scale'; id: string; base: number; d0: number }
   /** Resizing a multi-selection (a group) as one by a corner of its box, about `pivot`. */
@@ -385,6 +388,7 @@ export function Canvas() {
   /** Every item under the pointer, topmost first. */
   const hitItems = useCallback(
     (p: Point): string[] => {
+      const pw = p;
       const d = S().doc;
       const z = S().view.zoom;
       const t = (6 / z) * hitSlop();
@@ -398,7 +402,10 @@ export function Canvas() {
        * steals the click from wires and parts drawn inside it.
        */
       const shapeHit = (s: ShapeItem): 'strong' | 'weak' | false => {
-        const r = itemBounds(d, s)!;
+        // a turned shape is tested in its own frame, against its unturned box
+        const turned = shapeRot(s) !== 0;
+        const p = turned ? toShapeFrame(s, pw) : pw;
+        const r = turned ? shapeBox(s) : itemBounds(d, s)!;
         if (hasMovableTitle(s) && pointInRect(p, shapeTitle(s).box, 3)) return 'strong';
         if (s.kind === 'frame' && pointInRect(p, frameTag(s), 2)) return 'strong';
         if (s.kind === 'line' || s.kind === 'arrow') return projectOnSegment(p, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }).d < t + s.strokeWidth && 'strong';
@@ -551,7 +558,7 @@ export function Canvas() {
       ];
     if (s.kind === 'text' || s.kind === 'callout') return [];
     const { x, y, w, h } = s;
-    return [
+    const out: { h: Handle; p: Point }[] = [
       { h: 'nw', p: { x, y } },
       { h: 'n', p: { x: x + w / 2, y } },
       { h: 'ne', p: { x: x + w, y } },
@@ -561,6 +568,16 @@ export function Canvas() {
       { h: 'sw', p: { x, y: y + h } },
       { h: 'w', p: { x, y: y + h / 2 } },
     ];
+    // a turned shape's handles sit on its turned outline
+    return shapeRot(s) ? out.map((o) => ({ h: o.h, p: fromShapeFrame(s, o.p) })) : out;
+  };
+
+  /** The round rotation handle on a short stalk above a lone shape's top edge (turning with the shape). */
+  const rotHandle = (s: ShapeItem): { at: Point; foot: Point } | null => {
+    if (!HANDLE_ROT_KINDS.has(s.kind) || s.locked || S().tool !== 'select') return null;
+    const b = shapeBox(s);
+    const foot = { x: b.x + b.w / 2, y: b.y };
+    return { foot: fromShapeFrame(s, foot), at: fromShapeFrame(s, { x: foot.x, y: b.y - 22 / view.zoom }) };
   };
 
   /* -------------------------- edit points -------------------------- */
@@ -917,7 +934,7 @@ export function Canvas() {
         }
       }
       if (g && combo === 'Escape') {
-        if (g.kind === 'move' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'scale' || g.kind === 'groupScale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
+        if (g.kind === 'move' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'rotate' || g.kind === 'scale' || g.kind === 'groupScale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
         setGesture(null);
         // a cancelled copy takes its staged items with it
         if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => S().doc.items[id]) });
@@ -1119,7 +1136,13 @@ export function Canvas() {
       setGesture({ kind: 'scale', id: singleComp.id, base: singleComp.scale ?? 1, d0: Math.max(1, dist(w, singleComp)) });
       return;
     }
-    if (singleShape && !singleShape.locked && hasMovableTitle(singleShape) && pointInRect(w, shapeTitle(singleShape).box, 3)) {
+    const rh = singleShape && rotHandle(singleShape);
+    if (singleShape && rh && dist(rh.at, w) < 7 / v.zoom) {
+      beginGesture();
+      setGesture({ kind: 'rotate', id: singleShape.id, centre: rectCentre(shapeBox(singleShape)), start: w, base: shapeRot(singleShape) });
+      return;
+    }
+    if (singleShape && !singleShape.locked && hasMovableTitle(singleShape) && pointInRect(toShapeFrame(singleShape, w), shapeTitle(singleShape).box, 3)) {
       beginGesture();
       setGesture({ kind: 'shapeTitle', id: singleShape.id, start: w, base: { dx: singleShape.textDx ?? 0, dy: singleShape.textDy ?? 0 } });
       return;
@@ -1420,8 +1443,16 @@ export function Canvas() {
         gestureUpdate((d, base) => void scaleItems(base, d as CircuitDoc, g.ids, r, g.pivot));
         break;
       }
+      case 'rotate': {
+        // Shift snaps the angle to 15° steps
+        const r = dragRotation(g.centre, g.start, w, g.base, e.shiftKey ? 15 : 0);
+        gestureUpdate((d, base) => rotateShapeBy(base, d as CircuitDoc, g.id, r - g.base, g.centre));
+        break;
+      }
       case 'resize': {
-        const p = snapOn ? sp(w) : w;
+        // a turned shape resizes in its own frame, where the grid doesn't line up
+        const turned = shapeRot(g.base);
+        const p = snapOn && !turned ? sp(w) : w;
         gestureUpdate((d) => {
           const s = d.items[g.id] as ShapeItem;
           const b = g.base;
@@ -1437,25 +1468,17 @@ export function Canvas() {
             s.h = p.y - b.y;
             return;
           }
-          let x1 = b.x,
-            y1 = b.y,
-            x2 = b.x + b.w,
-            y2 = b.y + b.h;
-          if (g.handle.includes('w')) x1 = p.x;
-          if (g.handle.includes('e')) x2 = p.x;
-          if (g.handle.includes('n')) y1 = p.y;
-          if (g.handle.includes('s')) y2 = p.y;
-          s.x = Math.min(x1, x2);
-          s.y = Math.min(y1, y2);
-          s.w = Math.max(grid, Math.abs(x2 - x1));
-          s.h = Math.max(grid, Math.abs(y2 - y1));
+          // the side or corner opposite the handle stays put, turned or not
+          Object.assign(s, resizeInFrame({ x: b.x, y: b.y, w: b.w, h: b.h }, turned, g.handle, p, grid));
         });
         break;
       }
       case 'shapeTitle': {
         gestureUpdate((d) => {
           const s = d.items[g.id] as ShapeItem;
-          const o = clampTitleOffset(s, Math.round(g.base.dx + w.x - g.start.x), Math.round(g.base.dy + w.y - g.start.y));
+          // the offset lives in the shape's own (unturned) frame
+          const m = rotateDeg({ x: w.x - g.start.x, y: w.y - g.start.y }, -shapeRot(s));
+          const o = clampTitleOffset(s, Math.round(g.base.dx + m.x), Math.round(g.base.dy + m.y));
           s.textDx = Math.round(o.dx);
           s.textDy = Math.round(o.dy);
         });
@@ -1540,6 +1563,7 @@ export function Canvas() {
       case 'groupScale':
       case 'segment':
       case 'resize':
+      case 'rotate':
       case 'label':
       case 'wireLabel':
       case 'shapeTitle':
@@ -1700,8 +1724,14 @@ export function Canvas() {
   const selectionBounds = selection.length > 1 || doc.items[selection[0]]?.type === 'wire' ? unionBounds(doc, selection) : null;
   const overScale = g?.kind === 'scale' || g?.kind === 'groupScale' || (tool === 'select' && !g && !placing && groupHandles().some((h) => dist(h, cursor) < 7 / z)) || (tool === 'select' && !g && !placing && !!singleComp && !singleComp.locked && compHandles(singleComp).some((h) => dist(h, cursor) < 7 / z));
   const overBadge = tool === 'select' && !g && !placing && selection.some((id) => doc.items[id]?.locked) && lockBadgeAt(cursor) !== null;
+  const overRot = g?.kind === 'rotate' || (tool === 'select' && !g && !placing && !!singleShape && (() => {
+    const rh = rotHandle(singleShape);
+    return !!rh && dist(rh.at, cursor) < 7 / z;
+  })());
   const cursorStyle: string = overScale
     ? 'nwse-resize'
+    : overRot
+      ? g?.kind === 'rotate' ? 'grabbing' : 'grab'
     : overBadge
       ? 'pointer'
     : g?.kind === 'pan' || spaceDown || tool === 'pan'
@@ -1712,7 +1742,7 @@ export function Canvas() {
         ? badgeCursor('area', prefs.theme) ?? 'crosshair'
         : g?.kind === 'arm'
           ? hover.item && !selection.length ? 'pointer' : 'crosshair'
-        : g?.kind === 'move' || g?.kind === 'shapeTitle' || (tool === 'select' && !placing && !g && singleShape && hasMovableTitle(singleShape) && pointInRect(cursor, shapeTitle(singleShape).box, 3))
+        : g?.kind === 'move' || g?.kind === 'shapeTitle' || (tool === 'select' && !placing && !g && singleShape && hasMovableTitle(singleShape) && pointInRect(toShapeFrame(singleShape, cursor), shapeTitle(singleShape).box, 3))
           ? 'move'
           : tool === 'node' && !placing
             ? g?.kind === 'node' || g?.kind === 'endpoint' || g?.kind === 'polyPart' || nodeAt(cursor) || (!g && polyPartAt(cursor))
@@ -1888,6 +1918,19 @@ export function Canvas() {
             shapeHandles(singleShape).map((h) => (
               <rect key={h.h} x={h.p.x - 4 / z} y={h.p.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className="handle" strokeWidth={1.5 / z} />
             ))}
+          {singleShape &&
+            !(singleShape.id === editingText && singleShape.kind === 'text') &&
+            (() => {
+              const rh = rotHandle(singleShape);
+              return (
+                rh && (
+                  <g className="rot-handle">
+                    <line x1={rh.foot.x} y1={rh.foot.y} x2={rh.at.x} y2={rh.at.y} className="rot-stalk" strokeWidth={1 / z} />
+                    <circle cx={rh.at.x} cy={rh.at.y} r={4.5 / z} className="handle" strokeWidth={1.5 / z} />
+                  </g>
+                )
+              );
+            })()}
           {tool === 'node' &&
             (() => {
               const hot = !g ? polyPartAt(cursor) : null;
@@ -2168,9 +2211,11 @@ function HoverOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; poly
     const pts = polys.get(id) ?? [];
     return <path d={buildWirePath(pts, 0)} className="hover-wire" strokeWidth={8 / z} fill="none" />;
   }
-  const b = itemBounds(doc, it);
+  // a turned shape is outlined along its turned box
+  const turned = it.type === 'shape' && shapeRot(it) ? it : null;
+  const b = turned ? shapeBox(turned) : itemBounds(doc, it);
   if (!b) return null;
-  return <rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} rx={4} className="hover-box" strokeWidth={1 / z} />;
+  return <rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} rx={4} className="hover-box" strokeWidth={1 / z} transform={turned ? shapeTransform(turned) : undefined} />;
 }
 
 /** Where a selected locked item's lock badge sits: just off its top-right corner, a constant size on screen. */
@@ -2202,7 +2247,8 @@ function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; 
     const pts = polys.get(id) ?? [];
     return <path d={buildWirePath(pts, 0)} className={it.locked ? 'sel-wire locked' : 'sel-wire'} strokeWidth={Math.max(6 / z, 4)} fill="none" />;
   }
-  const b = itemBounds(doc, it);
+  const turned = it.type === 'shape' && shapeRot(it) ? it : null;
+  const b = turned ? shapeBox(turned) : itemBounds(doc, it);
   if (!b) return null;
   if (it.type === 'shape' && (it.kind === 'line' || it.kind === 'arrow')) {
     return <line x1={it.x} y1={it.y} x2={it.x + it.w} y2={it.y + it.h} className={it.locked ? 'sel-wire locked' : 'sel-wire'} strokeWidth={Math.max(6 / z, 4)} />;
@@ -2217,6 +2263,7 @@ function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; 
       rx={3}
       className={it.locked ? 'sel-box locked' : 'sel-box'}
       strokeWidth={1.5 / z}
+      transform={turned ? shapeTransform(turned) : undefined}
     />
   );
 }

@@ -3,9 +3,10 @@ import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateSha
 import { eq, projectOnSegment, rectsIntersect, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
 import { packPoly, polyPoints } from './polygon';
+import { mapShapeFrame, rectCentre, ROT_KINDS, rotateDeg, shapeBox, shapeRot } from './rotation';
 import { touchingPins } from './netlist';
 import { instanceSymbol } from './registry';
-import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, WireItem } from './types';
+import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, ShapeItem, WireItem } from './types';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
 import type { TouchTarget } from './hotspots';
 
@@ -465,14 +466,23 @@ function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
     } else if (b.type === 'shape' && it.type === 'shape') {
       const p1 = map({ x: b.x, y: b.y });
       const p2 = map({ x: b.x + b.w, y: b.y + b.h });
-      if (b.kind === 'line' || b.kind === 'arrow') {
+      if (ROT_KINDS.has(b.kind)) {
+        // boxy shapes keep their own frame: a turn adds to `rot` instead of reshaping the box
+        const f = mapShapeFrame(b, map, rotateBy);
+        it.x = f.x;
+        it.y = f.y;
+        // free text is sized by its content (scaleItems sets its font size)
+        if (b.kind !== 'text') {
+          it.w = f.w;
+          it.h = f.h;
+        }
+        if (f.rot) it.rot = f.rot;
+        else delete it.rot;
+      } else if (b.kind === 'line' || b.kind === 'arrow') {
         it.x = p1.x;
         it.y = p1.y;
         it.w = p2.x - p1.x;
         it.h = p2.y - p1.y;
-      } else if (b.kind === 'text') {
-        it.x = p1.x;
-        it.y = p1.y;
       } else if (b.kind === 'callout') {
         it.x = p1.x;
         it.y = p1.y;
@@ -634,11 +644,55 @@ export function scaleItems(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
 export function rotateItems(doc: CircuitDoc, ids: Set<string>, deg: 90 | -90) {
   const base = clone(doc);
   const single = [...ids].filter((id) => doc.items[id]?.type !== 'wire');
+  const lone = single.length === 1 ? doc.items[single[0]] : null;
+  // a lone part turns about its origin, a lone shape about its own centre
   const piv =
-    single.length === 1 && doc.items[single[0]].type === 'component'
-      ? { x: (doc.items[single[0]] as ComponentItem).x, y: (doc.items[single[0]] as ComponentItem).y }
-      : selectionPivot(doc, ids);
+    lone?.type === 'component' ? { x: lone.x, y: lone.y } : lone?.type === 'shape' ? rectCentre(shapeBox(lone)) : selectionPivot(doc, ids);
   transformItems(base, doc, ids, (p) => rotate({ x: p.x - piv.x, y: p.y - piv.y }, deg === 90 ? 90 : 270, piv), deg);
+}
+
+/**
+ * Turns one shape by any angle about `pivot` (the rotation handle). Boxy kinds
+ * add to their `rot`; point-based kinds have their points turned. `base` is the
+ * gesture-start document, so a drag never accumulates error.
+ */
+export function rotateShapeBy(base: CircuitDoc, doc: CircuitDoc, id: string, deg: number, pivot: Point) {
+  if (base.items[id]?.type !== 'shape') return;
+  transformItems(base, doc, new Set([id]), (p) => rotateDeg(p, deg, pivot));
+}
+
+export type SizeMode = 'width' | 'height' | 'both';
+
+/** Shape kinds "make same size" resizes (text and callouts are sized by their content). */
+const sizable = (it: Item | undefined): it is ShapeItem => it?.type === 'shape' && it.kind !== 'text' && it.kind !== 'callout' && !it.locked;
+
+/**
+ * Make same width / height / size: every selected shape takes the size of the
+ * first selected one (`ids[0]` when it is a shape, else the first shape). Sizes
+ * are each shape's own (unrotated) box; turned shapes keep their centre, the
+ * rest their top-left corner. Lines and arrows keep their direction. Parts only
+ * scale uniformly, so they are left alone. Returns how many shapes changed.
+ */
+export function matchSizes(doc: CircuitDoc, ids: string[], mode: SizeMode): number {
+  const ref = ids.map((id) => doc.items[id]).find((it): it is ShapeItem => it?.type === 'shape' && it.kind !== 'text' && it.kind !== 'callout');
+  if (!ref) return 0;
+  const W = Math.abs(ref.w);
+  const H = Math.abs(ref.h);
+  let n = 0;
+  for (const id of ids) {
+    const s = doc.items[id];
+    if (s === ref || !sizable(s)) continue;
+    const c = rectCentre(shapeBox(s));
+    const turned = !!shapeRot(s);
+    if (mode !== 'height') s.w = s.w < 0 ? -W : W;
+    if (mode !== 'width') s.h = s.h < 0 ? -H : H;
+    if (turned) {
+      s.x = c.x - s.w / 2;
+      s.y = c.y - s.h / 2;
+    }
+    n++;
+  }
+  return n;
 }
 
 export function flipItems(doc: CircuitDoc, ids: Set<string>, axis: 'x' | 'y') {

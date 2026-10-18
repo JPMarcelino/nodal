@@ -53,6 +53,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
       'arrange.rotateCw', 'arrange.rotateCcw', 'arrange.flipH', 'arrange.flipV', '-',
       'arrange.group', 'arrange.ungroup', 'arrange.enterGroup', '-',
       'arrange.alignLeft', 'arrange.alignHCenter', 'arrange.alignRight', 'arrange.alignTop', 'arrange.alignVCenter', 'arrange.alignBottom', 'arrange.distH', 'arrange.distV', '-',
+      'arrange.sameWidth', 'arrange.sameHeight', 'arrange.sameSize', '-',
       'arrange.front', 'arrange.forward', 'arrange.backward', 'arrange.back',
     ],
   },

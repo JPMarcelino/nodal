@@ -6,6 +6,7 @@ import type { CircuitDoc, ComponentItem, Point, Prim, ShapeItem, SymbolDef } fro
 import { wirePolyline, wireStyleFor } from './wires';
 import { inkPoints } from './ink';
 import { polyPoints } from './polygon';
+import { fromShapeFrame, rotatedCorners, shapeBox, shapeRot } from './rotation';
 
 /*
  * "Create symbol from selection": turns selected parts, wires, junctions and
@@ -132,6 +133,20 @@ function mapPath(d: string, T: (x: number, y: number) => Point): string | null {
 }
 
 function shapePrims(s: ShapeItem, at: (p: Point) => Point): Prim[] {
+  if (shapeRot(s) && s.kind !== 'text') {
+    // a turned box becomes its turned outline (a title inside it is dropped)
+    const b = shapeBox(s);
+    const c = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    const outline =
+      s.kind === 'ellipse'
+        ? Array.from({ length: 48 }, (_, i) => ({ x: c.x + (b.w / 2) * Math.cos((i / 24) * Math.PI), y: c.y + (b.h / 2) * Math.sin((i / 24) * Math.PI) }))
+        : rotatedCorners(b, 0);
+    if (s.kind === 'image' && !(s.strokeWidth > 0)) return [];
+    return [{ t: 'poly', pts: outline.flatMap((p) => {
+      const q = at(fromShapeFrame(s, p));
+      return [r(q.x), r(q.y)];
+    }), fill: 'none', w: s.strokeWidth }];
+  }
   const a = at({ x: s.x, y: s.y });
   const z = at({ x: s.x + s.w, y: s.y + s.h });
   const x = Math.min(a.x, z.x);

@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { docBounds, itemBounds } from '../model/doc';
+import { shapeTransform } from '../model/rotation';
 import { unionRects } from '../model/geometry';
 import { sheetRect } from '../model/sheet';
 import type { Rect } from '../model/types';
@@ -54,7 +55,7 @@ export function Minimap({ data }: { data: SceneData }) {
           {Object.values(doc.items).map((it) => {
             if (it.hidden) return null;
             if (it.type === 'shape' && (it.kind === 'zone' || it.kind === 'rect')) {
-              return <rect key={it.id} x={it.x} y={it.y} width={it.w} height={it.h} fill={it.fill} fillOpacity={Math.max(0.15, it.fillOpacity)} stroke="none" />;
+              return <rect key={it.id} x={it.x} y={it.y} width={it.w} height={it.h} fill={it.fill} fillOpacity={Math.max(0.15, it.fillOpacity)} stroke="none" transform={shapeTransform(it)} />;
             }
             if (it.type === 'component') {
               const r = itemBounds(doc, it)!;

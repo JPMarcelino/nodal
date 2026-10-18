@@ -1,6 +1,7 @@
 import { calloutLayout } from './callout';
 import { componentBounds, polylineBounds, unionRects } from './geometry';
 import { measureRich } from './richText';
+import { rotatedBounds, shapeBox, shapeRot } from './rotation';
 import { getSymbol, instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, Item, Rect, ShapeItem, ShapeKind, SymbolDef } from './types';
 import { wirePolyline } from './wires';
@@ -102,6 +103,8 @@ export function itemBounds(doc: CircuitDoc, it: Item): Rect | null {
       return { x: it.x - 3, y: it.y - 3, w: 6, h: 6 };
     case 'shape':
       // free text is sized by its content, so the outline always follows the text
+      // turned shapes take the bounds of their turned box
+      if (shapeRot(it)) return rotatedBounds(shapeBox(it), shapeRot(it));
       if (it.kind === 'text') return { x: it.x, y: it.y, ...measureRich(it.text ?? '', it.fontSize ?? 16, it.bold ? 700 : 400) };
       if (it.kind === 'callout') return calloutLayout(it).box;
       if (it.kind === 'ink') {

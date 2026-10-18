@@ -233,6 +233,12 @@ export interface ShapeItem extends ItemBase {
   fillOpacity: number;
   dash: Dash;
   radius: number;
+  /**
+   * Degrees clockwise about the box centre (rect, zone, ellipse, text, image;
+   * x / y / w / h stay the unrotated box). Point-based kinds bake rotation into
+   * their points instead — see model/rotation.ts.
+   */
+  rot?: number;
   /** Arrowhead at the start / end point (line & arrow shapes). */
   headStart?: HeadKind;
   headEnd?: HeadKind;

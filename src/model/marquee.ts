@@ -1,5 +1,7 @@
 import { itemBounds } from './doc';
 import { pointInRect, rectContains, rectsIntersect, segmentIntersectsRect } from './geometry';
+import { pointInPolygon } from './polygon';
+import { rotatedCorners, shapeBox, shapeRot } from './rotation';
 import type { CircuitDoc, Item, Point, Rect } from './types';
 
 /** Whether any segment of a polyline passes through a rectangle. */
@@ -21,6 +23,11 @@ export function marqueeHits(doc: CircuitDoc, polys: Map<string, Point[]>, r: Rec
     }
     if (crossing && it.type === 'shape' && (it.kind === 'line' || it.kind === 'arrow')) {
       return segmentIntersectsRect({ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y + it.h }, r);
+    }
+    if (crossing && it.type === 'shape' && shapeRot(it)) {
+      // a turned box is touched where its outline runs, or when it holds the rectangle
+      const pts = rotatedCorners(shapeBox(it), shapeRot(it));
+      return crossesRect([...pts, pts[0]], r) || pointInPolygon({ x: r.x, y: r.y }, pts);
     }
     return crossing ? rectsIntersect(b, r) : rectContains(r, b);
   };
