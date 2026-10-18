@@ -11,7 +11,7 @@ import { netFlow, resolveNet, type NetFlow, type TraceSeed } from '../model/trac
 import type { CircuitDoc, Item, Point, ShapeItem } from '../model/types';
 import { buildWirePath, hitWire, portPosition } from '../model/wires';
 import { TRACE_COLORS, X, isExplainTool, setX, useExplain, type Trace } from '../store/explain';
-import { S, beginGesture, endGesture, gestureUpdate, inGesture, mutate, useStore } from '../store/store';
+import { S, beginGesture, endGesture, gestureUpdate, inGesture, mutate, useStore, useViewDoc, vdoc } from '../store/store';
 import { EDITOR_PALETTE, inkColor, type SceneData } from './Scene';
 import { gestureSlots } from './touch';
 import { ExplainDock, TracePanel } from '../ui/ExplainDock';
@@ -45,7 +45,7 @@ let fadeId = 0;
 export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefObject<HTMLDivElement> }) {
   const tool = useStore((s) => s.tool);
   const view = useStore((s) => s.view);
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const theme = useStore((s) => s.prefs.theme);
   const ex = useExplain();
   const active = isExplainTool(tool);
@@ -259,7 +259,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const w = toWorld(e.clientX, e.clientY);
-    const d = S().doc;
+    const d = vdoc();
     const zz = S().view.zoom;
     if (X().editing) {
       (document.activeElement as HTMLElement | null)?.blur?.();
@@ -329,7 +329,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
 
   /** Marks ink and callouts touched by the eraser between two points. */
   const eraseAt = (a: Point, b: Point, hits: Set<string>) => {
-    const d = S().doc;
+    const d = vdoc();
     const tol = 8 / S().view.zoom;
     const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (tol / 2)));
     for (const it of Object.values(d.items)) {
@@ -351,7 +351,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
     const cur = gRef.current;
     if (!cur) {
       if (tool === 'trace' || tool === 'callout') {
-        const t = hitThing(w, S().doc);
+        const t = hitThing(w, vdoc());
         if (t.item !== hover.item || JSON.stringify(t.seed) !== JSON.stringify(hover.seed)) setHover({ item: t.item, seed: t.seed });
       }
       return;
@@ -393,7 +393,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
         return;
       }
       case 'callout-anchor': {
-        const t = hitThing(w, S().doc);
+        const t = hitThing(w, vdoc());
         gestureUpdate((d) => {
           const s = d.items[cur.id] as ShapeItem;
           const target = t.item ? (d.items[t.item] as Item) : null;

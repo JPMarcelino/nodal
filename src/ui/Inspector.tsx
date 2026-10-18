@@ -1,3 +1,4 @@
+import { sheetNumber, viewDoc } from '../model/pages';
 import {
   AlignCenterHorizontal,
   ChevronsDownUp,
@@ -195,6 +196,7 @@ function WireStyleEditor({ style, onChange, corners }: { style: WireStyle; onCha
 /** Drawing frame: sheet size, orientation and title block fields. */
 function SheetSection() {
   const doc = useStore((s) => s.doc);
+  const pageSheet = useStore((s) => sheetNumber(viewDoc(s.doc, s.page)));
   const on = doc.settings.titleBlock;
   const sheet = sheetOf(doc);
   const setSheet = (patch: Partial<SheetSettings>) => mutate((d) => void (d.settings.sheet = { ...sheetOf(d as CircuitDoc), ...patch }));
@@ -247,7 +249,12 @@ function SheetSection() {
             <TextInput value={sheet.date} placeholder={`Today (${todayText()})`} onChange={(date) => setSheet({ date })} />
           </Field>
           <Field label="Sheet">
-            <TextInput value={sheet.sheetNo} placeholder="1 / 1" onChange={(sheetNo) => setSheet({ sheetNo })} />
+            {/* with several pages, each page is a sheet and numbers itself */}
+            {pageSheet ? (
+              <span className="section-note">{pageSheet} · from the page</span>
+            ) : (
+              <TextInput value={sheet.sheetNo} placeholder="1 / 1" onChange={(sheetNo) => setSheet({ sheetNo })} />
+            )}
           </Field>
           <Field label="Position">
             <span className="row-gap">
@@ -340,7 +347,7 @@ function DocumentPanel() {
         <button
           className="secondary-btn full"
           onClick={() => {
-            mutate((d) => Object.values(d.items).forEach((i) => i.type === 'wire' && delete (i as WireItem).style));
+            mutate((d) => Object.values(d.items).forEach((i) => i.type === 'wire' && delete (i as WireItem).style), undefined, { allPages: true });
             toast('All wires now use the default style');
           }}
         >
@@ -795,7 +802,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           className="secondary-btn full"
           onClick={() => {
             if (!net) return;
-            mutate((d) => net.wires.forEach((id) => d.items[id] && ((d.items[id] as WireItem).style = { ...first.style })));
+            mutate((d) => net.wires.forEach((id) => d.items[id] && ((d.items[id] as WireItem).style = { ...first.style })), undefined, { allPages: true });
             toast(`Applied to all ${net.wires.length} wires of net ${net.name}`);
           }}
         >

@@ -58,6 +58,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
       'arrange.front', 'arrange.forward', 'arrange.backward', 'arrange.back',
     ],
   },
+  { label: 'Page', items: ['page.new', 'page.duplicate', 'page.rename', 'page.delete', '-', 'page.prev', 'page.next', '-', 'page.moveLeft', 'page.moveRight'] },
   { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.corners'] },
   {
     label: 'Explain',

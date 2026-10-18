@@ -4,7 +4,7 @@ import { DEFAULT_HOLD, DEFAULT_TRANSITION, holdOf, renumberSteps, transitionOf }
 import type { CircuitDoc, ShapeItem } from '../model/types';
 import * as A from '../store/actions';
 import { setX, useExplain } from '../store/explain';
-import { beginGesture, endGesture, gestureUpdate, mutate, select, set, useStore } from '../store/store';
+import { beginGesture, endGesture, gestureUpdate, mutate, select, set, useStore, useViewDoc } from '../store/store';
 import { pause, playPlan, seek, stepTime, togglePlay } from './playback';
 import { startPresenting } from './Presenter';
 
@@ -23,7 +23,7 @@ type Drag =
  * retime, drag a block to reorder, click the ruler to scrub.
  */
 export function Timeline() {
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const selection = useStore((s) => s.selection);
   const playing = useExplain((s) => s.playing);
   const playT = useExplain((s) => s.playT);

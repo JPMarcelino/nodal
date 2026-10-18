@@ -41,7 +41,8 @@ export function sameContent(a: CircuitDoc, b: CircuitDoc): boolean {
     JSON.stringify(a.settings) === JSON.stringify(b.settings) &&
     JSON.stringify(a.items) === JSON.stringify(b.items) &&
     JSON.stringify(a.groups) === JSON.stringify(b.groups) &&
-    JSON.stringify(a.symbols) === JSON.stringify(b.symbols)
+    JSON.stringify(a.symbols) === JSON.stringify(b.symbols) &&
+    JSON.stringify(a.pages ?? []) === JSON.stringify(b.pages ?? [])
   );
 }
 

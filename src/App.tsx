@@ -13,6 +13,7 @@ import { SymbolEditor } from './ui/SymbolEditor';
 import { ToolRail, TopBar } from './ui/TopBar';
 import { Presenter } from './ui/Presenter';
 import { Timeline } from './ui/Timeline';
+import { PageBar } from './ui/PageBar';
 import { useExplain } from './store/explain';
 import { AskHost } from './ui/Ask';
 import { SvgImportHost } from './ui/SvgImportDialog';
@@ -108,6 +109,7 @@ export function App() {
           <ToolRail />
           <Canvas />
           {showTimeline && <Timeline />}
+          <PageBar />
         </main>
         {right && <Inspector />}
       </div>

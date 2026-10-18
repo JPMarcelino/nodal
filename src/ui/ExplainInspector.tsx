@@ -5,7 +5,7 @@ import { restackItems } from '../model/ops';
 import type { CircuitDoc, ShapeItem } from '../model/types';
 import * as A from '../store/actions';
 import { X, setX } from '../store/explain';
-import { S, mutate, set } from '../store/store';
+import { S, mutate, set, vdoc } from '../store/store';
 import { ColorInput, Field, NumberInput, Section, TextInput, Toggle } from './controls';
 import { renumberCallouts } from './ExplainDock';
 import { seek, stepTime } from './playback';
@@ -122,7 +122,7 @@ export function FramePanel({ shapes }: { shapes: ShapeItem[] }) {
     return w / Math.max(1, h);
   };
   const show = () => {
-    const i = presentationSteps(S().doc).findIndex((s) => s.id === first.id);
+    const i = presentationSteps(vdoc()).findIndex((s) => s.id === first.id);
     if (!X().timelineOpen) toggleTimeline();
     if (i >= 0) seek(stepTime(i));
   };

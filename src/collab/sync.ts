@@ -3,13 +3,13 @@ import type { CircuitDoc } from '../model/types';
 
 /*
  * Live-collaboration sync, modelled on Excalidraw: the document is split into
- * independent entries (every item, group and symbol, plus the settings and the
- * name). Each entry carries a version and a random nonce. Edits bump the
+ * independent entries (every item, group and symbol, plus the settings, the
+ * name and the page list; an item's page travels with the item). Each entry carries a version and a random nonce. Edits bump the
  * version; a received entry wins when its version is higher, and ties go to
  * the lower nonce, so every client settles on the same state without a server
  * that understands the document. Deletions are kept as tombstones (no value).
  *
- * Keys: `i:<id>` item, `g:<id>` group, `s:<id>` symbol, `settings`, `name`.
+ * Keys: `i:<id>` item, `g:<id>` group, `s:<id>` symbol, `settings`, `name`, `pages`.
  */
 
 export interface Entry {
@@ -34,6 +34,8 @@ const nonce = () => Math.floor(Math.random() * 2 ** 31);
 function valueOf(doc: CircuitDoc, k: string): unknown {
   if (k === 'settings') return doc.settings;
   if (k === 'name') return doc.name;
+  // an empty list (not a tombstone) stands for "one implicit page"
+  if (k === 'pages') return doc.pages ?? [];
   const coll = COLL[k[0]];
   return coll && k[1] === ':' ? (doc[coll] as Record<string, unknown>)[k.slice(2)] : undefined;
 }
@@ -43,6 +45,7 @@ export function changedKeys(a: CircuitDoc, b: CircuitDoc): string[] {
   const out: string[] = [];
   if (a.settings !== b.settings) out.push('settings');
   if (a.name !== b.name) out.push('name');
+  if (a.pages !== b.pages) out.push('pages');
   for (const coll of ['items', 'groups', 'symbols'] as const) {
     const x = a[coll] as Record<string, unknown>;
     const y = b[coll] as Record<string, unknown>;
@@ -63,6 +66,9 @@ export function writeEntries(doc: CircuitDoc, entries: Entry[]): CircuitDoc {
       if (e.val) next.settings = e.val as CircuitDoc['settings'];
     } else if (e.k === 'name') {
       if (typeof e.val === 'string') next.name = e.val;
+    } else if (e.k === 'pages') {
+      if (Array.isArray(e.val) && e.val.length) next.pages = e.val as CircuitDoc['pages'];
+      else delete next.pages;
     } else {
       const coll = COLL[e.k[0]];
       if (!coll || e.k[1] !== ':') continue;
@@ -125,7 +131,7 @@ export class SyncState {
   /** Starts tracking every part of `doc` at version 1 (used by whoever opens the room). */
   seed(doc: CircuitDoc): Entry[] {
     this.meta.clear();
-    const keys = ['settings', 'name'];
+    const keys = ['settings', 'name', 'pages'];
     for (const coll of ['items', 'groups', 'symbols'] as const) for (const id in doc[coll]) keys.push(`${PREFIX[coll]}:${id}`);
     return this.local(doc, keys);
   }

@@ -24,6 +24,8 @@ import {
   FileJson,
   FileSpreadsheet,
   FileText,
+  File as PageIcon,
+  Files as PagesIcon,
   FlipHorizontal2,
   FlipVertical2,
   Focus,
@@ -67,7 +69,8 @@ import { copyAsPng, copyAsSvg, doExport, filePrint, startAreaExport, type Export
 import { exportTemplateFile } from '../io/sharing';
 import * as A from '../store/actions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
-import { S, set, useStore, type ContextMenuState } from '../store/store';
+import { S, activePage, set, useStore, type ContextMenuState, useViewDoc } from '../store/store';
+import { docPages } from '../model/pages';
 import { canConvertToPath } from '../model/path';
 import type { CircuitDoc } from '../model/types';
 
@@ -250,6 +253,17 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
           cmd('symbols.fromSelection', 'Create symbol from selection…', <Shapes size={I} />),
         ),
       },
+      {
+        label: 'Move to page',
+        icon: <PagesIcon size={I} />,
+        sub: rows(
+          ...docPages(S().doc)
+            .filter((p) => p.id !== activePage())
+            .map((p) => ({ label: p.name, icon: <PageIcon size={I} />, run: () => A.moveSelectionToPage(p.id) })),
+          '-',
+          { label: 'New page', icon: <Plus size={I} />, run: () => A.moveSelectionToPage(null) },
+        ),
+      },
       '-',
       cmd('edit.lock', locked ? 'Unlock' : 'Lock', <Lock size={I} />),
       cmd('edit.hide', 'Hide', <Eye size={I} />),
@@ -356,7 +370,7 @@ function Panel({ list, strip, className, sub = false }: { list: Row[]; strip?: E
 
 export function ContextMenu() {
   const menu = useStore((s) => s.contextMenu);
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const selection = useStore((s) => s.selection);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {

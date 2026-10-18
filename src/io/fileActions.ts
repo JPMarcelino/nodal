@@ -2,7 +2,7 @@ import { normalizeDoc, uid } from '../model/doc';
 import { prepareMath } from '../model/latex';
 import { toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
 import type { CircuitDoc, Rect } from '../model/types';
-import { S, newDoc, replaceDoc, set, toast } from '../store/store';
+import { S, newDoc, replaceDoc, set, toast, vdoc } from '../store/store';
 import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, printDoc, selectionDoc, type SvgOptions } from './export';
 import { openTextFile, sanitizeName, saveFile } from './files';
@@ -117,8 +117,11 @@ export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'kicad' | 'bom' | 'js
 export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { scale?: number } = {}) {
   const full = S().doc;
   const part = !!opts.ids?.length;
+  // drawings show the page on screen; netlists, BOM and JSON cover every page
+  const drawing = kind === 'svg' || kind === 'png' || kind === 'dxf';
+  const src = drawing ? vdoc() : full;
   // images crop to the ids themselves; data formats get the reduced circuit
-  const doc = part && kind !== 'svg' && kind !== 'png' ? selectionDoc(full, opts.ids!) : full;
+  const doc = part && kind !== 'svg' && kind !== 'png' ? selectionDoc(src, opts.ids!) : src;
   const base = sanitizeName(full.name) + (part ? '-selection' : '');
   const svgOpts: SvgOptions = { theme: 'light', background: false, padding: 20, ...opts };
   try {
@@ -162,12 +165,13 @@ export async function filePrint() {
 export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partial<SvgOptions> & { scale?: number }) {
   const base = `${sanitizeName(S().doc.name)}-area`;
   const svgOpts: SvgOptions = { theme: 'light', background: false, padding: 8, ...opts, clip: rect };
+  const doc = vdoc();
   try {
-    await prepareMath(S().doc);
+    await prepareMath(doc);
     const res =
       kind === 'svg'
-        ? await saveFile(exportSvg(S().doc, svgOpts).svg, `${base}.svg`, [{ name: 'SVG image', extensions: ['svg'] }])
-        : await saveFile(await exportPng(S().doc, { ...svgOpts, scale: opts.scale ?? 3 }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
+        ? await saveFile(exportSvg(doc, svgOpts).svg, `${base}.svg`, [{ name: 'SVG image', extensions: ['svg'] }])
+        : await saveFile(await exportPng(doc, { ...svgOpts, scale: opts.scale ?? 3 }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
     if (res !== false) toast(`Exported ${kind.toUpperCase()} of selected area`, 'success');
   } catch (e) {
     toast(`Export failed: ${(e as Error).message}`, 'error');
@@ -203,7 +207,8 @@ export function exportSelection(kind: ExportKind = 'png') {
 }
 
 export async function copyAsSvg() {
-  const { doc, selection } = S();
+  const { selection } = S();
+  const doc = vdoc();
   await prepareMath(doc).catch(() => undefined);
   const { svg } = exportSvg(doc, { theme: 'light', background: false, padding: 10, ids: selection.length ? selection : undefined });
   try {
@@ -215,7 +220,8 @@ export async function copyAsSvg() {
 }
 
 export async function copyAsPng() {
-  const { doc, selection } = S();
+  const { selection } = S();
+  const doc = vdoc();
   const ids = selection.length ? selection : undefined;
   try {
     const Ctor = globalThis.ClipboardItem as unknown as typeof ClipboardItem | undefined;

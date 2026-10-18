@@ -1,3 +1,4 @@
+import { normalizePages } from '../model/pages';
 import { migrateItems, uid } from '../model/doc';
 import type { CircuitDoc } from '../model/types';
 import { pruneAutos, sameContent, type Version } from '../model/versions';
@@ -157,7 +158,8 @@ export async function restoreVersion(v: Version) {
     d.items = migrateItems(structuredClone(v.doc.items));
     d.groups = v.doc.groups;
     d.symbols = v.doc.symbols;
-  }, []);
+    d.pages = normalizePages({ ...v.doc, items: {} }).pages;
+  }, [], { allPages: true });
   toast('Version restored · Undo brings back what was there', 'success');
 }
 

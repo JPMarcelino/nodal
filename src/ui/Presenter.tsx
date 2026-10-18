@@ -8,7 +8,7 @@ import { measureRich } from '../model/richText';
 import type { ShapeItem, Tool } from '../model/types';
 import * as A from '../store/actions';
 import { X, setX, useExplain } from '../store/explain';
-import { S, set, toast, useStore, type View } from '../store/store';
+import { S, set, toast, useStore, type View, vdoc, useViewDoc } from '../store/store';
 import { flyTo, flyToShot, pause, playPlan, seek, stepTime, stepTraces, togglePlay } from './playback';
 
 /* ------------------------------------------------------------------ */
@@ -32,7 +32,7 @@ export function startPresenting() {
     .requestFullscreen?.()
     .then(() => (wentFullscreen = true))
     .catch(() => undefined);
-  if (!presentationSteps(s.doc).length) toast('Nothing to step through yet. Draw frames (Shift+F) or add callouts (C).');
+  if (!presentationSteps(vdoc()).length) toast('Nothing to step through yet. Draw frames (Shift+F) or add callouts (C).');
 }
 
 export function stopPresenting() {
@@ -61,7 +61,7 @@ function toggleVanish() {
 
 export function Presenter() {
   const idx = useExplain((s) => s.presenting);
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const tool = useStore((s) => s.tool);
   const theme = useStore((s) => s.prefs.theme);
   const playing = useExplain((s) => s.playing);
@@ -76,7 +76,7 @@ export function Presenter() {
   useEffect(() => {
     if (idx === null || X().playing) return;
     const t = window.setTimeout(() => {
-      const d = S().doc;
+      const d = vdoc();
       const c = stepId ? (d.items[stepId] as ShapeItem | undefined) : undefined;
       setX({ traces: stepTraces(d, c) });
       if (c) flyToShot(stepShot(d, c), Math.max(250, transitionOf(c) * 1000));
@@ -91,7 +91,7 @@ export function Presenter() {
   useEffect(() => {
     if (idx === null || X().playing) return;
     const t = window.setTimeout(() => {
-      const d = S().doc;
+      const d = vdoc();
       const c = stepId ? (d.items[stepId] as ShapeItem | undefined) : undefined;
       flyToShot(c ? stepShot(d, c) : playPlan(d).overview, 200);
     }, 120);
@@ -103,7 +103,7 @@ export function Presenter() {
     // stepping by hand stops the clock; play resumes from the step on screen
     const goTo = (i: number) => {
       pause();
-      const to = Math.max(-1, Math.min(presentationSteps(S().doc).length, i));
+      const to = Math.max(-1, Math.min(presentationSteps(vdoc()).length, i));
       setX({ presenting: to, playT: to < 0 ? 0 : stepTime(Math.min(to, playPlan().entries.length - 1)) });
     };
     const go = (d: number) => goTo((X().presenting ?? -1) + d);
@@ -114,7 +114,7 @@ export function Presenter() {
       if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) go(1);
       else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(e.key)) go(-1);
       else if (e.key === 'Home') goTo(-1);
-      else if (e.key === 'End') goTo(presentationSteps(S().doc).length - 1);
+      else if (e.key === 'End') goTo(presentationSteps(vdoc()).length - 1);
       else if (e.key === 'p' || e.key === 'P' || e.key === 'MediaPlayPause') togglePlay();
       else if (e.key === 'Escape') stopPresenting();
       else if (e.key === 'v' || e.key === 'V') toggleVanish();

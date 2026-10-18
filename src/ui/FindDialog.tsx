@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { computeNets } from '../model/netlist';
 import { instanceSymbol } from '../model/registry';
 import * as A from '../store/actions';
-import { select, set, useStore } from '../store/store';
+import { docPages, itemPage, multiPage } from '../model/pages';
+import { goToItems, select, set, useStore } from '../store/store';
 import { Modal } from './Dialogs';
 
 interface Hit {
@@ -46,6 +47,14 @@ export function FindDialog() {
       const pins = n.pins.map((p) => `${p.ref}.${p.portName}`).join(' ');
       out.push({ key: `net:${n.name}`, kind: 'Net', label: n.name, meta: `${n.pins.length} pin${n.pins.length === 1 ? '' : 's'}${pins ? ` · ${pins}` : ''}`, ids: n.wires, net: n.wires });
     }
+    // with several pages, say which page each hit is on (Find searches them all)
+    if (multiPage(doc)) {
+      const names = new Map(docPages(doc).map((p) => [p.id, p.name]));
+      for (const h of out) {
+        const pages = [...new Set(h.ids.flatMap((id) => (doc.items[id] ? [itemPage(doc, doc.items[id])] : [])))];
+        if (pages.length) h.meta = [h.meta, pages.map((p) => names.get(p)).join(', ')].filter(Boolean).join(' · ');
+      }
+    }
     const order = { Part: 0, Label: 1, Net: 2, Wire: 3, Text: 4 };
     return out.sort((a, b) => order[a.kind] - order[b.kind] || a.label.localeCompare(b.label, undefined, { numeric: true }));
   }, [doc]);
@@ -74,9 +83,11 @@ export function FindDialog() {
   const go = (h: Hit | undefined) => {
     if (!h) return;
     close();
-    select(h.ids);
+    // a hit on another page switches to it first
+    const ids = h.ids.length ? goToItems(h.ids) : [];
+    select(ids);
     set({ highlight: h.net ? new Set(h.net) : null });
-    A.revealItems(h.ids);
+    A.revealItems(ids);
   };
 
   return (

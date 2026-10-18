@@ -10,7 +10,7 @@ import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { PresetShape } from '../canvas/PresetShape';
 import { PRESET_CATEGORIES, SHAPE_PRESETS, searchPresets, type ShapePreset } from '../model/shapePresets';
 import * as A from '../store/actions';
-import { S, mutate, removeSymbolFromLibrary, select, set, toast, toggleFavorite, useStore } from '../store/store';
+import { S, mutate, removeSymbolFromLibrary, select, set, toast, toggleFavorite, useStore, useViewDoc } from '../store/store';
 import { CheckPanel, useErcIssues } from './CheckPanel';
 import { confirmDelete } from './Ask';
 import { HistoryPanel } from './HistoryPanel';
@@ -367,7 +367,7 @@ type VisFilter = 'any' | 'shown' | 'hidden';
 type LockFilter = 'any' | 'locked' | 'unlocked';
 
 function Layers() {
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const selection = useStore((s) => s.selection);
   const [filter, setFilter] = useState<'all' | 'component' | 'wire' | 'shape'>('all');
   const [vis, setVis] = useState<VisFilter>('any');
