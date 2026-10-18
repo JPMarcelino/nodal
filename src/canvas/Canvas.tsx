@@ -391,35 +391,50 @@ export function Canvas() {
       // locked items stay selectable (to inspect or unlock them); they just don't move or edit
       const items = Object.values(d.items).filter((i) => !i.hidden);
       // frames are not drawn (so not clickable) while presenting
-      const shapes = items.filter((i): i is ShapeItem => i.type === 'shape' && (X().presenting === null || i.kind !== 'frame')).sort((a, b) => b.z - a.z);
-      const shapeHit = (s: ShapeItem) => {
+      const shapes = items.filter((i): i is ShapeItem => i.type === 'shape' && (X().presenting === null || i.kind !== 'frame'));
+      /**
+       * 'strong' for a hit on what the shape visibly draws; 'weak' for a click
+       * inside a see-through fill (tinted zones, highlighter), which never
+       * steals the click from wires and parts drawn inside it.
+       */
+      const shapeHit = (s: ShapeItem): 'strong' | 'weak' | false => {
         const r = itemBounds(d, s)!;
-        if (hasMovableTitle(s) && pointInRect(p, shapeTitle(s).box, 3)) return true;
-        if (s.kind === 'frame' && pointInRect(p, frameTag(s), 2)) return true;
-        if (s.kind === 'line' || s.kind === 'arrow') return projectOnSegment(p, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }).d < t + s.strokeWidth;
-        if (s.kind === 'text' || s.kind === 'image' || s.kind === 'callout') return pointInRect(p, r, 4);
-        if (s.kind === 'ink') return inkHit(s, p, t);
-        if (s.kind === 'polygon') return polyHit(s, p, t);
+        if (hasMovableTitle(s) && pointInRect(p, shapeTitle(s).box, 3)) return 'strong';
+        if (s.kind === 'frame' && pointInRect(p, frameTag(s), 2)) return 'strong';
+        if (s.kind === 'line' || s.kind === 'arrow') return projectOnSegment(p, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }).d < t + s.strokeWidth && 'strong';
+        if (s.kind === 'text' || s.kind === 'image' || s.kind === 'callout') return pointInRect(p, r, 4) && 'strong';
+        if (s.kind === 'ink') return inkHit(s, p, t) && (s.highlighter ? 'weak' : 'strong');
+        const seeThrough = s.fillOpacity < 0.5;
+        if (s.kind === 'polygon') {
+          if (!polyHit(s, p, t)) return false;
+          // inside the outline only through the fill: see-through fills are weak
+          return seeThrough && polyHit({ ...s, fillOpacity: 0 }, p, t) === false ? 'weak' : 'strong';
+        }
         const inside = pointInRect(p, r, t);
         if (!inside) return false;
-        if (s.fillOpacity > 0) return true;
-        return !pointInRect(p, { x: r.x + t, y: r.y + t, w: r.w - 2 * t, h: r.h - 2 * t });
+        const onEdge = !pointInRect(p, { x: r.x + t, y: r.y + t, w: r.w - 2 * t, h: r.h - 2 * t });
+        if (onEdge) return 'strong';
+        return s.fillOpacity > 0 && (seeThrough ? 'weak' : 'strong');
       };
       const out: string[] = [];
-      for (const s of shapes) if (s.layer === 'above' && shapeHit(s)) out.push(s.id);
       for (const it of items) if (it.type === 'junction' && dist(it, p) < t + 2) out.push(it.id);
-      // parts and wires in their shared stacking order, front first (as drawn)
+      // shapes, parts and wires in their shared stacking order, front first (as drawn)
       const rank = drawOrderCached(d);
-      const circuit: string[] = [];
-      for (const c of items) if (c.type === 'component' && pointInRect(p, itemBounds(d, c)!, 1)) circuit.push(c.id);
+      const strong: string[] = [];
+      const weak: string[] = [];
+      for (const s of shapes) {
+        const h = shapeHit(s);
+        if (h) (h === 'weak' ? weak : strong).push(s.id);
+      }
+      for (const c of items) if (c.type === 'component' && pointInRect(p, itemBounds(d, c)!, 1)) strong.push(c.id);
       for (const [id, pts] of data.polys) {
         if (!d.items[id] || d.items[id].hidden) continue;
         let best = Infinity;
         for (let i = 0; i < pts.length - 1; i++) best = Math.min(best, projectOnSegment(p, pts[i], pts[i + 1]).d);
-        if (best <= Math.max(4, t)) circuit.push(id);
+        if (best <= Math.max(4, t)) strong.push(id);
       }
-      out.push(...circuit.sort((a, b) => rank.get(b)! - rank.get(a)!));
-      for (const s of shapes) if (s.layer === 'below' && shapeHit(s)) out.push(s.id);
+      const front = (a: string, b: string) => rank.get(b)! - rank.get(a)!;
+      out.push(...strong.sort(front), ...weak.sort(front));
       return out;
     },
     [data],

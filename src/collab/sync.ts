@@ -73,7 +73,12 @@ export function writeEntries(doc: CircuitDoc, entries: Entry[]): CircuitDoc {
       const rec = next[coll] as Record<string, unknown>;
       const id = e.k.slice(2);
       if (e.val === undefined) delete rec[id];
-      else rec[id] = e.val;
+      else if (coll === 'items' && e.val && typeof e.val === 'object' && 'layer' in e.val) {
+        // a peer on an older version still sends shape layers; stacking is z alone now
+        const it = { ...(e.val as Record<string, unknown>) };
+        delete it.layer;
+        rec[id] = it;
+      } else rec[id] = e.val;
     }
   }
   return next;

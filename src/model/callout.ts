@@ -1,4 +1,4 @@
-import { itemBounds } from './doc';
+import { drawOrderCached, itemBounds } from './doc';
 import { measureRich } from './richText';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem } from './types';
 
@@ -46,9 +46,10 @@ export function makeAnchor(doc: CircuitDoc, target: Item | null, p: Point): NonN
 }
 
 export function callouts(doc: CircuitDoc): ShapeItem[] {
+  const rank = drawOrderCached(doc);
   return Object.values(doc.items)
     .filter((i): i is ShapeItem => i.type === 'shape' && i.kind === 'callout' && !i.hidden)
-    .sort((a, b) => (a.step ?? 0) - (b.step ?? 0) || a.z - b.z);
+    .sort((a, b) => (a.step ?? 0) - (b.step ?? 0) || rank.get(a.id)! - rank.get(b.id)!);
 }
 
 /** Next free step number; callouts and presentation frames share one sequence. */

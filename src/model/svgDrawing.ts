@@ -210,7 +210,6 @@ export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point
     ids.push(w.id);
   }
   const addShape = (s: ReturnType<typeof makeShape>) => {
-    s.layer = 'below';
     s.z = z0 + ids.length + 1;
     doc.items[s.id] = s;
     ids.push(s.id);
@@ -256,7 +255,6 @@ export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point
       fillOpacity: b.fillOpacity,
       dash: b.dashed ? 'dashed' : 'solid',
       radius: b.kind === 'rect' ? b.rx : 0,
-      layer: 'below',
       z: z0 + ids.length + 1,
     });
     doc.items[s.id] = s;

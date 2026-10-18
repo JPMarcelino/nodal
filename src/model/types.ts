@@ -238,8 +238,6 @@ export interface ShapeItem extends ItemBase {
   headEnd?: HeadKind;
   /** Arrowhead length in px; undefined = auto (stroke width based). */
   headSize?: number;
-  /** 'below' renders behind wires and components; 'above' on top of everything. */
-  layer: 'below' | 'above';
   text?: string;
   /** Image shapes: the picture as a data URL (PNG / JPEG). */
   src?: string;
@@ -249,8 +247,6 @@ export interface ShapeItem extends ItemBase {
   /** Title offset from its default spot (rect / zone / ellipse / polygon); dragged with the shape selected. */
   textDx?: number;
   textDy?: number;
-  /** Stacking within its layer. */
-  z: number;
   /** Ink strokes: flat [x, y, pressure, …] list, x / y as fractions (0–1) of the box. */
   ink?: number[];
   /** Polygon corners: flat [x, y, …] list as fractions (0–1) of the box. */

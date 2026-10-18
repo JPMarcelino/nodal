@@ -140,7 +140,6 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.backward', label: 'Send backward', category: 'Arrange', keys: ['Mod+['], run: () => A.reorder('backward') },
   { id: 'arrange.front', label: 'Bring to front', category: 'Arrange', keys: ['Mod+Shift+]'], run: () => A.reorder('front') },
   { id: 'arrange.back', label: 'Send to back', category: 'Arrange', keys: ['Mod+Shift+['], run: () => A.reorder('back') },
-  { id: 'arrange.layer', label: 'Toggle zone above / behind wires', category: 'Arrange', keys: ['Mod+Alt+L'], run: A.toggleLayer },
   { id: 'arrange.alignLeft', label: 'Align left', category: 'Arrange', keys: ['Alt+ArrowLeft'], run: () => A.align('left') },
   { id: 'arrange.alignRight', label: 'Align right', category: 'Arrange', keys: ['Alt+ArrowRight'], run: () => A.align('right') },
   { id: 'arrange.alignTop', label: 'Align top', category: 'Arrange', keys: ['Alt+ArrowUp'], run: () => A.align('top') },

@@ -1,4 +1,4 @@
-import { uid } from '../model/doc';
+import { migrateItems, uid } from '../model/doc';
 import type { CircuitDoc } from '../model/types';
 import { pruneAutos, sameContent, type Version } from '../model/versions';
 import { S, inGesture, mutate, toast, useStore } from '../store/store';
@@ -60,15 +60,21 @@ const changed = () => listeners.forEach((fn) => fn());
 
 /* -------------------------------- queries -------------------------------- */
 
+/** Brings a stored version's items up to the current model (e.g. shape layers → z); reads are fresh copies. */
+function upgrade(v: Version): Version {
+  if (v?.doc?.items) migrateItems(v.doc.items);
+  return v;
+}
+
 /** Versions of a document, newest first. */
 export async function listVersions(docId: string): Promise<Version[]> {
   const all = await run<Version[]>('readonly', (os) => os.index('docId').getAll(docId));
-  return all.sort((a, b) => b.t - a.t);
+  return all.map(upgrade).sort((a, b) => b.t - a.t);
 }
 
 /** Latest version of every other circuit kept on this device, newest first. */
 export async function listOtherCircuits(exclude?: string, limit = 25): Promise<Version[]> {
-  const all = await run<Version[]>('readonly', (os) => os.getAll());
+  const all = (await run<Version[]>('readonly', (os) => os.getAll())).map(upgrade);
   const latest = new Map<string, Version>();
   for (const v of all) {
     if (v.docId === exclude || !Object.keys(v.doc.items).length) continue;
@@ -147,7 +153,8 @@ export async function restoreVersion(v: Version) {
   mutate((d) => {
     d.name = v.doc.name;
     d.settings = v.doc.settings;
-    d.items = v.doc.items;
+    // versions saved before shapes shared the one stacking order
+    d.items = migrateItems(structuredClone(v.doc.items));
     d.groups = v.doc.groups;
     d.symbols = v.doc.symbols;
   }, []);

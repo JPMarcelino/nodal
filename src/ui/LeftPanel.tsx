@@ -398,7 +398,6 @@ function Layers() {
       >
         <span className={`layer-icon ${it.type}`} />
         <span className="layer-name">{itemLabel(doc, it, netByWire.get(it.id))}</span>
-        {it.type === 'shape' && <span className="layer-tag">{it.layer === 'above' ? 'above' : 'below'}</span>}
         {it.type === 'wire' && !!it.hopLayer && (
           <span className="layer-tag" title={`Crossing layer ${it.hopLayer > 0 ? '+' : ''}${it.hopLayer}`}>
             {it.hopLayer > 0 ? 'over' : 'under'}

@@ -210,8 +210,6 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
           cmd('arrange.forward', 'Bring forward', <ArrowUpToLine size={I} />),
           cmd('arrange.backward', 'Send backward', <ArrowDownToLine size={I} />),
           cmd('arrange.back', 'Send to back', <SendToBack size={I} />),
-          types.has('shape') && '-',
-          types.has('shape') && cmd('arrange.layer', 'Behind / above wires', <Layers3 size={I} />),
         ),
       },
       (multi || grouped || t?.group) && {

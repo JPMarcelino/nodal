@@ -671,14 +671,11 @@ export { measureText };
 export function Scene({ doc, data, palette, highlight, frames = false }: { doc: CircuitDoc; data: SceneData; palette: Palette; highlight?: Set<string> | null; frames?: boolean }) {
   // presentation frames are only drawn while editing
   const items = Object.values(doc.items).filter((i) => !i.hidden && (frames || !(i.type === 'shape' && i.kind === 'frame')));
-  const shapes = items.filter((i): i is ShapeItem => i.type === 'shape').sort((a, b) => a.z - b.z);
-  const below = shapes.filter((s) => s.layer === 'below');
-  const above = shapes.filter((s) => s.layer === 'above');
-  // front-to-back order from the layers panel (z, else creation order)
+  // one back-to-front stack for shapes, wires and parts (the layers panel order, z else creation order)
   const order = drawOrderCached(doc);
   const byOrder = (a: { id: string }, b: { id: string }) => order.get(a.id)! - order.get(b.id)!;
-  const wires = items.filter((i): i is WireItem => i.type === 'wire').sort(byOrder);
-  const circuit = items.filter((i): i is WireItem | ComponentItem => i.type === 'wire' || i.type === 'component').sort(byOrder);
+  const wires = items.filter((i): i is WireItem => i.type === 'wire');
+  const stack = items.filter((i): i is WireItem | ComponentItem | ShapeItem => i.type !== 'junction').sort(byOrder);
   const shapeEl = (s: ShapeItem) => {
     const a = s.kind === 'callout' ? calloutAnchor(doc, s) : null;
     return <ShapeView key={s.id} s={s} palette={palette} ax={a?.x} ay={a?.y} />;
@@ -714,14 +711,15 @@ export function Scene({ doc, data, palette, highlight, frames = false }: { doc: 
   return (
     <>
       <SheetFrame doc={doc} ink={palette.sym} dim={palette.value} />
-      <g className="layer-below">{below.map(shapeEl)}</g>
-      {/* wires and parts share one stack, so the layers panel order is what you see */}
-      <g className="layer-circuit">
-        {circuit.map((it) =>
+      {/* shapes, wires and parts share one stack, so the layers panel order is what you see */}
+      <g className="layer-stack">
+        {stack.map((it) =>
           it.type === 'wire' ? (
             <WireView key={it.id} w={it} pts={data.polys.get(it.id) ?? []} hops={data.hops.get(it.id)} settings={doc.settings} palette={palette} dim={!!highlight && !highlight.has(it.id)} />
-          ) : (
+          ) : it.type === 'component' ? (
             <ComponentView key={it.id} c={it} def={instanceSymbol(doc, it)} settings={doc.settings} palette={palette} />
+          ) : (
+            shapeEl(it)
           ),
         )}
       </g>
@@ -730,7 +728,6 @@ export function Scene({ doc, data, palette, highlight, frames = false }: { doc: 
           <circle key={d.key} cx={d.x} cy={d.y} r={js} fill={inkColor(d.color, palette)} />
         ))}
       </g>
-      <g className="layer-above">{above.map(shapeEl)}</g>
     </>
   );
 }

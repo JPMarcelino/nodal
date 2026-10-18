@@ -13,11 +13,13 @@ import {
   flipItems,
   groupItems,
   insertFragment,
+  restackItems,
   rotateItems,
   translateItems,
   ungroupItems,
   type AlignMode,
   type Fragment,
+  type StackMove,
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
 import { deletePolyCorner } from '../model/polygon';
@@ -334,37 +336,10 @@ export function distribute(axis: 'x' | 'y') {
   mutate((d) => distributeItems(d as CircuitDoc, ids, axis));
 }
 
-function shapeIds() {
-  return S().selection.filter((id) => S().doc.items[id]?.type === 'shape');
-}
-
-export function reorder(dir: 'forward' | 'backward' | 'front' | 'back') {
-  const ids = shapeIds();
-  if (!ids.length) return toast('Ordering applies to rectangles, zones, text and lines');
-  mutate((d) => {
-    const shapes = Object.values(d.items).filter((i): i is ShapeItem => i.type === 'shape').sort((a, b) => a.z - b.z);
-    const selSet = new Set(ids);
-    let order = shapes.map((s) => s.id);
-    if (dir === 'front') order = [...order.filter((id) => !selSet.has(id)), ...order.filter((id) => selSet.has(id))];
-    else if (dir === 'back') order = [...order.filter((id) => selSet.has(id)), ...order.filter((id) => !selSet.has(id))];
-    else if (dir === 'forward') {
-      for (let i = order.length - 2; i >= 0; i--)
-        if (selSet.has(order[i]) && !selSet.has(order[i + 1])) [order[i], order[i + 1]] = [order[i + 1], order[i]];
-    } else {
-      for (let i = 1; i < order.length; i++)
-        if (selSet.has(order[i]) && !selSet.has(order[i - 1])) [order[i], order[i - 1]] = [order[i - 1], order[i]];
-    }
-    order.forEach((id, i) => ((d.items[id] as ShapeItem).z = i + 1));
-  });
-}
-
-export function toggleLayer() {
-  const ids = shapeIds();
-  if (!ids.length) return toast('Select a zone or shape to move it above/below wires');
-  const first = S().doc.items[ids[0]] as ShapeItem;
-  const layer = first.layer === 'below' ? 'above' : 'below';
-  mutate((d) => ids.forEach((id) => ((d.items[id] as ShapeItem).layer = layer)));
-  toast(layer === 'above' ? 'Shape now drawn above wires' : 'Shape now drawn behind wires');
+export function reorder(dir: StackMove) {
+  const ids = S().selection.filter((id) => S().doc.items[id] && S().doc.items[id].type !== 'junction');
+  if (!ids.length) return toast('Select something to move it forward or back');
+  mutate((d) => void restackItems(d as CircuitDoc, ids, dir));
 }
 
 export function toggleLock() {

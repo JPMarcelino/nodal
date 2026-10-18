@@ -1,5 +1,5 @@
 import { calloutAnchor } from './callout';
-import { docBounds, itemBounds } from './doc';
+import { docBounds, drawOrderCached, itemBounds } from './doc';
 import { unionRects } from './geometry';
 import { computeNets } from './netlist';
 import { resolveNet } from './trace';
@@ -27,9 +27,10 @@ export const isStep = (i: Item): i is ShapeItem => i.type === 'shape' && (i.kind
 
 /** Frames and callouts in walkthrough order. */
 export function presentationSteps(doc: CircuitDoc): ShapeItem[] {
+  const rank = drawOrderCached(doc);
   return Object.values(doc.items)
     .filter(isStep)
-    .sort((a, b) => (a.step ?? 0) - (b.step ?? 0) || a.z - b.z);
+    .sort((a, b) => (a.step ?? 0) - (b.step ?? 0) || rank.get(a.id)! - rank.get(b.id)!);
 }
 
 export { nextStep as nextPresentationStep } from './callout';
