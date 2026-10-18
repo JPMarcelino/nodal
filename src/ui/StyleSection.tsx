@@ -96,12 +96,12 @@ export function StyleSection({ ids, title = 'Style' }: { ids: string[]; title?: 
       }
     >
       {keys.has('line') && (
-        <Row label={`Line${hint('line')}`}>
+        <Row label={`Line colour${hint('line')}`}>
           <SwatchRow value={value.line ?? ''} mixed={mixed.has('line')} onChange={(line) => set({ line })} noneTitle="Default colour" />
         </Row>
       )}
       {keys.has('fill') && (
-        <Row label={`Fill${hint('fill')}`}>
+        <Row label={`Fill colour${hint('fill')}`}>
           <SwatchRow value={value.fill ?? ''} mixed={mixed.has('fill')} onChange={(fill) => set({ fill })} noneTitle="No fill" />
         </Row>
       )}
@@ -116,15 +116,6 @@ export function StyleSection({ ids, title = 'Style' }: { ids: string[]; title?: 
       {keys.has('width') && (
         <Row label={`Line width${hint('width')}`}>
           <span className="stack">
-            <Segmented
-              value={[1, 2, 3].includes(value.width ?? 0) && !mixed.has('width') ? value.width! : -1}
-              options={[
-                { value: 1, label: 'Thin' },
-                { value: 2, label: 'Normal' },
-                { value: 3, label: 'Thick' },
-              ]}
-              onChange={(width) => set({ width })}
-            />
             <NumberInput value={value.width ?? 2} min={0.25} max={30} step={0.25} suffix="px" onChange={(width) => set({ width })} />
           </span>
         </Row>
@@ -135,7 +126,7 @@ export function StyleSection({ ids, title = 'Style' }: { ids: string[]; title?: 
         </Row>
       )}
       {keys.has('text') && (
-        <Row label={`Text${hint('text')}`}>
+        <Row label={`Text colour${hint('text')}`}>
           <SwatchRow value={value.text ?? ''} mixed={mixed.has('text')} onChange={(text) => set({ text })} noneTitle="Default text colour" />
         </Row>
       )}

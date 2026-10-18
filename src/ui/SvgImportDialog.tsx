@@ -117,7 +117,7 @@ function SvgImportDialog({ q }: { q: Question }) {
             onChange={(boxes) => set({ boxes })}
           />
         </div>
-        <label className="check" title="Drawings whose geometry matches a library symbol exactly (moved, rotated, mirrored or scaled) become that part, wired up at its pins">
+        <label className="check" title="Drawings whose geometry matches a library symbol exactly (moved, rotated, flipped or scaled) become that part, wired up at its pins">
           <input type="checkbox" checked={o.symbols} onChange={(e) => set({ symbols: e.target.checked })} /> Recognise library symbols (exact matches)
         </label>
         <div className="btn-row">

@@ -138,7 +138,7 @@ export function CheckPanel() {
         })}
         {!issues.length && !ignored.length && (
           <div className="empty-note">
-            Every pin is wired or flagged no-connect, nets and labels line up, and no reference is used twice.
+            Every pin is wired or flagged no-connect, nets and labels line up, and no part name is used twice.
           </div>
         )}
         {ignored.length > 0 && (
