@@ -12,7 +12,7 @@ import { stripMath } from '../model/latex';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 import { withoutFrames } from '../model/presentation';
-import { polyPoints } from '../model/polygon';
+import { shapeOutline } from '../model/path';
 
 export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string }> = {
   light: { sym: '#1f2433', symBg: '#ffffff', label: '#1f2433', value: '#5a6275', bg: '#ffffff', selection: '#3b82f6', ink: '#000000', grid: '#e6e8ee' },
@@ -377,7 +377,8 @@ export function exportDxf(doc: CircuitDoc): string {
         }
         poly(layer, pts.map(W), true, aciColor(it.stroke));
       } else if (it.kind === 'polygon') {
-        poly(layer, polyPoints(it), true, aciColor(it.stroke));
+        // curves flattened; an open path stays open
+        poly(layer, shapeOutline(it), !it.open, aciColor(it.stroke));
       } else if (it.kind === 'line' || it.kind === 'arrow') {
         // the drawn path: bends, elbows and glued ends in, curves flattened
         poly(layer, resolveConnector(doc, it).flat, false, aciColor(it.stroke));

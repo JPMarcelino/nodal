@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { withContents } from '../model/containers';
 import { createDoc, makeShape } from '../model/doc';
 import { translateItems } from '../model/ops';
+import { pathBounds, pathNodes } from '../model/path';
 import { SHAPE_PRESETS, getPreset, makePresetShape, searchPresets } from '../model/shapePresets';
 import type { CircuitDoc, ShapeItem } from '../model/types';
 
@@ -26,6 +27,13 @@ describe('shape presets', () => {
       const f = p.build({ w: 80, h: 60 });
       if (f.kind !== 'polygon') continue;
       const a = f.poly!;
+      if (f.curve) {
+        // curved outlines: the curve itself (not its nodes) spans the unit box
+        const b = pathBounds(pathNodes({ x: 0, y: 0, w: 1, h: 1, poly: a, curve: f.curve }), f.open);
+        expect([b.x, b.y, b.x + b.w, b.y + b.h].map((v) => Math.round(v * 1e3) / 1e3 + 0), p.id).toEqual([0, 0, 1, 1]);
+        expect(f.curve.length, p.id).toBe(a.length * 2);
+        continue;
+      }
       expect(a.length % 2, p.id).toBe(0);
       expect(a.length / 2, p.id).toBeGreaterThanOrEqual(3);
       expect(a.every((v) => v >= 0 && v <= 1), p.id).toBe(true);

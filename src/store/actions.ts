@@ -27,6 +27,8 @@ import {
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
 import { deletePolyCorner } from '../model/polygon';
+import { canConvertToPath, convertToPath, pathNodes, setNodeKind, setPathNodes } from '../model/path';
+import { resolveConnector } from '../model/connectors';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { viewCentre } from '../io/importFiles';
@@ -136,6 +138,62 @@ export function placeAtCenter(symbol: string) {
 /* ------------------------------------------------------------------ */
 /* Edit                                                                */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------ paths ------------------------------ */
+
+const selectedPolygons = () =>
+  editable().filter((id) => {
+    const it = S().doc.items[id];
+    return it.type === 'shape' && it.kind === 'polygon';
+  });
+
+/** Convert to path: boxes, ellipses and loose lines / arrows in the selection become editable outlines that look the same. */
+export function convertSelectionToPath() {
+  const ids = editable().filter((id) => {
+    const it = S().doc.items[id];
+    return it.type === 'shape' && canConvertToPath(it);
+  });
+  if (!ids.length) {
+    toast('Select a rectangle, ellipse or unattached line to convert');
+    return;
+  }
+  mutate((d) => {
+    for (const id of ids) {
+      const s = d.items[id] as ShapeItem;
+      convertToPath(s, s.kind === 'line' || s.kind === 'arrow' ? resolveConnector(d as CircuitDoc, s) : undefined);
+    }
+  });
+}
+
+/** Closes or opens the selected outlines (opening drops the stretch from the last node back to the first). */
+export function setPathClosed(closed: boolean) {
+  const ids = selectedPolygons();
+  if (!ids.length) return;
+  mutate((d) => {
+    for (const id of ids) {
+      const s = d.items[id] as ShapeItem;
+      const nodes = pathNodes(s);
+      if (closed ? !s.open || nodes.length < 3 : s.open) continue;
+      setPathNodes(s, nodes, !closed);
+    }
+  });
+}
+
+/** Corner / smooth for the picked node (edit points tool), or every node of the selected outlines. */
+export function setPathNodeKind(kind: 'corner' | 'smooth') {
+  const ids = selectedPolygons();
+  if (!ids.length) return;
+  const wp = S().wirePart;
+  const picked = wp && wp.kind === 'node' && ids.length === 1 && wp.wire === ids[0] ? wp.index : null;
+  mutate((d) => {
+    for (const id of ids) {
+      const s = d.items[id] as ShapeItem;
+      let nodes = pathNodes(s);
+      for (let i = 0; i < nodes.length; i++) if (picked === null || picked === i) nodes = setNodeKind(nodes, s.open, i, kind);
+      setPathNodes(s, nodes);
+    }
+  });
+}
 
 export function deleteSelection() {
   // a selected wire node/segment deletes just that part

@@ -1,3 +1,4 @@
+import { closeLoop, type PathNode } from '../model/path';
 import type { Fill, Prim } from '../model/types';
 
 /*
@@ -486,6 +487,8 @@ export interface SvgPolyline {
   fillOpacity?: number;
   /** False when the source drew only a fill (no outline). */
   stroked?: boolean;
+  /** Curved outlines: the nodes with their Bézier handles (same coordinates as `pts`, which is the flattened curve). */
+  nodes?: PathNode[];
 }
 export interface SvgBox {
   kind: 'rect' | 'ellipse';
@@ -550,6 +553,62 @@ export function flattenSegs(segs: Seg[], k = 1): { pts: number[]; closed: boolea
 }
 
 /**
+ * The subpaths of `segs` as nodes with Bézier handles (quadratics raised to
+ * cubics), one entry per polyline flattenSegs returns, in the same order;
+ * null for subpaths without curves.
+ */
+export function subpathNodes(segs: Seg[]): ({ nodes: PathNode[]; closed: boolean } | null)[] {
+  const out: ({ nodes: PathNode[]; closed: boolean } | null)[] = [];
+  let cur: PathNode[] = [];
+  // points flattenSegs would hold for this subpath (it drops those with fewer than two)
+  let count = 0;
+  let curved = false;
+  let closed = false;
+  const flush = () => {
+    if (count >= 2) out.push(curved ? { nodes: closed ? closeLoop(cur) : cur, closed } : null);
+    cur = [];
+    count = 0;
+    curved = false;
+    closed = false;
+  };
+  for (const g of segs) {
+    const last = cur[cur.length - 1];
+    if (g.c === 'M') {
+      flush();
+      cur = [{ x: g.p[0], y: g.p[1] }];
+      count = 1;
+    } else if (g.c === 'L') {
+      cur.push({ x: g.p[0], y: g.p[1] });
+      count++;
+    } else if (g.c === 'Z') {
+      if (cur.length && (cur[0].x !== last.x || cur[0].y !== last.y)) {
+        cur.push({ x: cur[0].x, y: cur[0].y });
+        count++;
+      }
+      closed = true;
+      const start = cur[0];
+      flush();
+      if (start) {
+        cur = [{ x: start.x, y: start.y }];
+        count = 1;
+      }
+    } else if (last) {
+      const q = g.p;
+      const end = { x: q[q.length - 2], y: q[q.length - 1] };
+      if (g.c === 'C') last.out = { x: q[0], y: q[1] };
+      else last.out = { x: last.x + ((q[0] - last.x) * 2) / 3, y: last.y + ((q[1] - last.y) * 2) / 3 };
+      const c2 = g.c === 'C' ? { x: q[2], y: q[3] } : { x: end.x + ((q[0] - end.x) * 2) / 3, y: end.y + ((q[1] - end.y) * 2) / 3 };
+      cur.push({ ...end, in: c2 });
+      curved = true;
+      // flattenSegs adds at least four points per curve
+      count += 4;
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
  * Converts SVG markup into an editable drawing at its own size (capped at
  * 2000 px), centred on (0, 0): strokes become polylines (for wires), plain
  * rectangles / circles / ellipses become boxes, small dots become junctions.
@@ -588,15 +647,20 @@ export function svgToDrawing(text: string): SvgDrawing {
       }
     }
     const color = s.stroke || s.fillColor || '#000000';
-    for (const p of polys) {
+    const curves = subpathNodes(s.segs);
+    const N = (q: { x: number; y: number }) => ({ x: X(q.x), y: Y(q.y) });
+    for (const [pi, p] of polys.entries()) {
       const pts: { x: number; y: number }[] = [];
       for (let i = 0; i < p.pts.length; i += 2) {
         const q = { x: X(p.pts[i]), y: Y(p.pts[i + 1]) };
         const last = pts[pts.length - 1];
         if (!last || last.x !== q.x || last.y !== q.y) pts.push(q);
       }
+      // curves are kept as Béziers for outlines that become polygons
+      const c = curves.length === polys.length ? curves[pi] : null;
+      const nodes = c ? c.nodes.map((n) => ({ ...N(n), ...(n.in ? { in: N(n.in) } : {}), ...(n.out ? { out: N(n.out) } : {}) })) : undefined;
       if (pts.length >= 2)
-        out.lines.push({ pts, closed: p.closed, width: width || Math.max(0.5, r2((s.sw || 1) * k)), color, dashed: s.dashed, fill: s.fill ? s.fillColor || '#000000' : 'none', fillOpacity: s.fill ? s.fillOpacity : 0, stroked: !!s.sw });
+        out.lines.push({ pts, closed: p.closed, width: width || Math.max(0.5, r2((s.sw || 1) * k)), color, dashed: s.dashed, fill: s.fill ? s.fillColor || '#000000' : 'none', fillOpacity: s.fill ? s.fillOpacity : 0, stroked: !!s.sw, ...(nodes ? { nodes } : {}) });
     }
   }
   for (const t of texts) out.texts.push({ x: X(t.x), y: Y(t.y), size: Math.max(4, r2(t.size * k)), anchor: t.anchor, text: t.text, color: t.color || '#000000' });

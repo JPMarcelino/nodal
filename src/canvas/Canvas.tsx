@@ -25,7 +25,8 @@ import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, da
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
-import { constrain45, deletePolyCorner, dragPolyPart, packPoly, polyHit, polyPoints, setPolyPoints } from '../model/polygon';
+import { constrain45, packPoly, polyHit } from '../model/polygon';
+import { cubicAt, dragHandle, insertNode, isSmooth, minNodes, moveNode, nearestOnPath, pathD, pathNodes, pathSegs, setNodeKind, setPathNodes, type PathNode } from '../model/path';
 import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
@@ -77,10 +78,21 @@ type Gesture =
   | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point; preset?: string; glueA?: GlueHit | null; glueB?: GlueHit | null }
   /** Dragging a selected connector's end (re-gluing it to what it is dropped on) or bend `idx`. */
   | { kind: 'conn'; id: string; part: 'start' | 'end' | 'bend'; idx: number; moved: boolean; glue: GlueHit | null }
-  /** Edit points on a polygon: dragging corner `idx`, or with `edge` the edge from corner `idx` to the next one. */
-  | { kind: 'polyPart'; id: string; base: Point[]; idx: number; edge: boolean; start: Point; moved: boolean }
+  /**
+   * Edit points on a polygon / path: dragging node `idx`, one of its handles
+   * (`in` / `out`; Alt breaks a smooth pair), or the stretch from node `idx`
+   * to the next one (`edge`). `click`: where on that stretch a click without a
+   * drag adds a node.
+   */
+  | { kind: 'polyPart'; id: string; base: PathNode[]; idx: number; part: 'node' | 'edge' | 'in' | 'out'; start: Point; moved: boolean; click?: { seg: number; t: number } }
   /** Polygon being clicked out corner by corner; it closes when a click lands back on the first corner. */
   | { kind: 'polygon'; pts: Point[]; cur: Point }
+  /**
+   * Path tool: nodes placed so far; `drag` while the button is held on the
+   * newest node (pulling out its handles), `closing` when that press landed
+   * back on the first node.
+   */
+  | { kind: 'path'; nodes: PathNode[]; cur: Point; drag: boolean; closing: boolean }
   | { kind: 'exportArea'; start: Point; cur: Point }
   | { kind: 'resize'; id: string; handle: Handle; base: ShapeItem; start: Point }
   /** Turning a lone shape by its rotation handle about `centre`; `base` is its rotation when the drag began. */
@@ -117,6 +129,7 @@ const BADGE_GLYPHS: Partial<Record<Tool, string>> = {
   zone: '<rect x="3" y="3.5" width="7" height="6" rx="1" fill="#1f2433" fill-opacity="0.35" stroke="#1f2433" stroke-width="1.4"/>',
   ellipse: '<circle cx="6.5" cy="6.5" r="3.4" fill="none" stroke="#1f2433" stroke-width="1.4"/>',
   polygon: '<path d="M6.5 2.8l3.7 2.7-1.4 4.4H4.2L2.8 5.5z" fill="none" stroke="#1f2433" stroke-width="1.3" stroke-linejoin="round"/>',
+  path: '<path d="M2.8 10C3.5 5 9.5 8 10.2 3" fill="none" stroke="#1f2433" stroke-width="1.3" stroke-linecap="round"/><rect x="1.8" y="9" width="2" height="2" fill="#1f2433"/><rect x="9.2" y="2" width="2" height="2" fill="#1f2433"/>',
   line: '<path d="M3 9.5L9.5 3.5" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round"/>',
   arrow: '<path d="M3 9.5L9 3.5M6.4 3.5H9v2.6" fill="none" stroke="#1f2433" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
   solder: '<circle cx="6.5" cy="6.5" r="4.3" fill="none" stroke="#1f2433" stroke-width="1.1"/><circle cx="6.5" cy="6.5" r="2.3" fill="#1f2433"/>',
@@ -210,8 +223,8 @@ export function Canvas() {
         const before = g as Gesture | null;
         if (gRef.current === before) return;
         if (inGesture()) endGesture(false);
-        // only a wire or polygon being clicked out survives between touches; anything else is dropped
-        setGesture(before?.kind === 'wire' || before?.kind === 'polygon' ? before : null);
+        // only a wire, polygon or path being clicked out survives between touches; anything else is dropped
+        setGesture(before?.kind === 'wire' || before?.kind === 'polygon' || before?.kind === 'path' ? before : null);
       },
     };
     return () => {
@@ -658,29 +671,53 @@ export function Canvas() {
   };
 
   /**
-   * Polygon part under the pointer in the edit points tool: a corner, an edge's
-   * midpoint knob (dragging it adds a corner) or anywhere along an edge.
-   * Selected polygons win over the rest.
+   * Polygon / path part under the pointer in the edit points tool: a handle of
+   * a selected outline, a node, a stretch's midpoint knob (dragging it adds a
+   * node) or anywhere along a stretch. Selected outlines win over the rest.
    */
-  const polyPartAt = (p: Point): { id: string; idx: number; part: 'corner' | 'mid' | 'edge'; pts: Point[] } | null => {
+  const polyPartAt = (p: Point): { id: string; idx: number; part: 'in' | 'out' | 'corner' | 'mid' | 'edge'; nodes: PathNode[]; t: number } | null => {
     const d = S().doc;
     const tol = (7 / S().view.zoom) * hitSlop();
     const sel = new Set(S().selection);
     const polys = Object.values(d.items).filter((i): i is ShapeItem => i.type === 'shape' && i.kind === 'polygon' && !i.hidden && !i.locked);
     polys.sort((a, b) => Number(sel.has(b.id)) - Number(sel.has(a.id)));
-    for (const part of ['corner', 'mid', 'edge'] as const) {
+    for (const part of ['handle', 'corner', 'mid', 'edge'] as const) {
       for (const s of polys) {
-        const pts = polyPoints(s);
-        for (let i = 0; i < pts.length; i++) {
-          const a = pts[i];
-          const b = pts[(i + 1) % pts.length];
-          const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-          const hit = part === 'corner' ? dist(a, p) < tol : part === 'mid' ? dist(mid, p) < tol * 0.8 : projectOnSegment(p, a, b).d < tol * 0.7 + s.strokeWidth / 2;
-          if (hit) return { id: s.id, idx: i, part, pts };
+        const nodes = pathNodes(s);
+        if (part === 'handle') {
+          if (!sel.has(s.id)) continue;
+          for (let i = 0; i < nodes.length; i++)
+            for (const which of ['out', 'in'] as const) {
+              const h = nodes[i][which];
+              if (h && dist(h, p) < tol) return { id: s.id, idx: i, part: which, nodes, t: 0 };
+            }
+          continue;
         }
+        if (part === 'corner') {
+          const i = nodes.findIndex((n) => dist(n, p) < tol);
+          if (i >= 0) return { id: s.id, idx: i, part, nodes, t: 0 };
+          continue;
+        }
+        if (part === 'mid') {
+          const i = pathSegs(nodes, s.open).findIndex((g) => dist(cubicAt(g, 0.5), p) < tol * 0.8);
+          if (i >= 0) return { id: s.id, idx: i, part, nodes, t: 0.5 };
+          continue;
+        }
+        const near = nearestOnPath(nodes, s.open, p);
+        if (near && near.d < tol * 0.7 + s.strokeWidth / 2) return { id: s.id, idx: near.seg, part, nodes, t: near.t };
       }
     }
     return null;
+  };
+
+  /** Adds a node to a polygon / path at `t` along stretch `seg` (the curve keeps its shape); returns the new node's index. */
+  const insertPathNode = (d: CircuitDoc, id: string, seg: number, t: number, snapTo?: Point): number => {
+    const s = d.items[id] as ShapeItem;
+    const r = insertNode(pathNodes(s), s.open, seg, t);
+    // a straight stretch takes the node on the grid; a curve keeps it on the curve
+    if (snapTo && r.index >= 0 && !r.nodes[r.index].in && !r.nodes[r.index].out) Object.assign(r.nodes[r.index], snapTo);
+    setPathNodes(s, r.nodes);
+    return r.index;
   };
 
   const onNodeDown = (w: Point, e: React.PointerEvent, isDouble: boolean) => {
@@ -688,31 +725,46 @@ export function Canvas() {
     const pp = polyPartAt(w);
     if (pp) {
       if (!selSet.has(pp.id)) select([pp.id]);
+      if (pp.part === 'in' || pp.part === 'out') {
+        set({ wirePart: { wire: pp.id, kind: 'node', index: pp.idx } });
+        beginGesture();
+        setGesture({ kind: 'polyPart', id: pp.id, base: pp.nodes, idx: pp.idx, part: pp.part, start: w, moved: false });
+        return;
+      }
       if (pp.part === 'corner') {
         set({ wirePart: { wire: pp.id, kind: 'node', index: pp.idx } });
         if (isDouble) {
-          // double-click a corner removes it (a polygon keeps three)
-          mutate((d) => void deletePolyCorner(d.items[pp.id] as ShapeItem, pp.idx));
-          set({ wirePart: null });
+          // double-click a node switches it between corner and smooth (Del removes it)
+          mutate((d) => {
+            const s = d.items[pp.id] as ShapeItem;
+            const ns = pathNodes(s);
+            setPathNodes(s, setNodeKind(ns, s.open, pp.idx, ns[pp.idx].in || ns[pp.idx].out ? 'corner' : 'smooth'));
+          });
           return;
         }
         beginGesture();
-        setGesture({ kind: 'polyPart', id: pp.id, base: pp.pts, idx: pp.idx, edge: false, start: w, moved: false });
+        setGesture({ kind: 'polyPart', id: pp.id, base: pp.nodes, idx: pp.idx, part: 'node', start: w, moved: false });
         return;
       }
       if (pp.part === 'mid' || isDouble || e.altKey) {
-        // a new corner on the edge, dragged straight away
-        const at = sp(projectOnSegment(w, pp.pts[pp.idx], pp.pts[(pp.idx + 1) % pp.pts.length]).pt);
-        const base = [...pp.pts.slice(0, pp.idx + 1), at, ...pp.pts.slice(pp.idx + 1)];
+        // a new node on the stretch, dragged straight away
         beginGesture();
-        gestureUpdate((d) => setPolyPoints(d.items[pp.id] as ShapeItem, base));
-        set({ wirePart: { wire: pp.id, kind: 'node', index: pp.idx + 1 } });
-        setGesture({ kind: 'polyPart', id: pp.id, base, idx: pp.idx + 1, edge: false, start: at, moved: true });
+        let idx = -1;
+        const straight = pathSegs(pp.nodes, (S().doc.items[pp.id] as ShapeItem).open)[pp.idx]?.line;
+        gestureUpdate((d) => void (idx = insertPathNode(d as CircuitDoc, pp.id, pp.idx, pp.t, straight ? sp(w) : undefined)));
+        if (idx < 0) {
+          endGesture(false);
+          return;
+        }
+        const base = pathNodes(S().doc.items[pp.id] as ShapeItem);
+        set({ wirePart: { wire: pp.id, kind: 'node', index: idx } });
+        setGesture({ kind: 'polyPart', id: pp.id, base, idx, part: 'node', start: base[idx] ?? w, moved: true });
         return;
       }
       set({ wirePart: null });
       beginGesture();
-      setGesture({ kind: 'polyPart', id: pp.id, base: pp.pts, idx: pp.idx, edge: true, start: w, moved: false });
+      // dragging a stretch moves it; a plain click adds a node there
+      setGesture({ kind: 'polyPart', id: pp.id, base: pp.nodes, idx: pp.idx, part: 'edge', start: w, moved: false, click: selSet.has(pp.id) ? { seg: pp.idx, t: pp.t } : undefined });
       return;
     }
     if (singleShape && !singleShape.locked && singleShape.kind !== 'polygon') {
@@ -809,10 +861,37 @@ export function Canvas() {
     set({ selection: [id] });
   };
 
-  // switching tools drops a half-drawn polygon
+  // switching tools drops a half-drawn polygon or path
   useEffect(() => {
     if (gRef.current?.kind === 'polygon' && tool !== 'polygon') setGesture(null);
+    if (gRef.current?.kind === 'path' && tool !== 'path') setGesture(null);
   }, [tool]);
+
+  /* ------------------------------ path ------------------------------ */
+
+  /** Where the next path node goes: on the grid (Alt: anywhere), at 45° steps from the last node with Shift. */
+  const pathPoint = (g: Extract<Gesture, { kind: 'path' }> | null, w: Point, e: { shiftKey: boolean; altKey: boolean }): Point => {
+    const p = e.altKey ? w : sp(w);
+    const last = g?.nodes[g.nodes.length - 1];
+    return e.shiftKey && last ? constrain45(last, p) : p;
+  };
+
+  /** A press on the first node of a path being drawn closes it. */
+  const onFirstNode = (g: Extract<Gesture, { kind: 'path' }>, w: Point) => g.nodes.length >= 3 && dist(g.nodes[0], w) < (8 / S().view.zoom) * hitSlop();
+
+  const commitPath = (nodes: PathNode[], open: boolean) => {
+    setGesture(null);
+    if (nodes.length < minNodes(open)) return;
+    let id = '';
+    mutate((d) => {
+      const s = makeShape(d as CircuitDoc, 'polygon', 0, 0, 1, 1);
+      setPathNodes(s, nodes, open);
+      s.group = S().scope;
+      d.items[s.id] = s;
+      id = s.id;
+    });
+    set({ selection: [id] });
+  };
 
   const commitWire = (g: Extract<Gesture, { kind: 'wire' }>, end: Target) => {
     const brush = S().wireBrush;
@@ -949,6 +1028,20 @@ export function Canvas() {
       if (g?.kind === 'wire' || (combo === 'Tab' && !g && tool === 'wire')) {
         if (combo === 'Tab') {
           A.setWireAngle();
+          return true;
+        }
+      }
+      if (g?.kind === 'path') {
+        if (combo === 'Escape') {
+          setGesture(null);
+          return true;
+        }
+        if (combo === 'Backspace' || combo === 'Delete') {
+          setGesture(g.nodes.length > 1 ? { ...g, nodes: g.nodes.slice(0, -1), drag: false, closing: false } : null);
+          return true;
+        }
+        if (combo === 'Enter') {
+          commitPath(g.nodes, true);
           return true;
         }
       }
@@ -1101,6 +1194,23 @@ export function Canvas() {
       return;
     }
 
+    if (g?.kind === 'path') {
+      if (onFirstNode(g, w)) {
+        // closes on release; a drag first pulls out the first node's handles
+        setGesture({ ...g, drag: true, closing: true, cur: g.nodes[0] });
+        return;
+      }
+      const p = pathPoint(g, w, e);
+      const last = g.nodes[g.nodes.length - 1];
+      if (isDouble) {
+        commitPath(eq(p, last) ? g.nodes : [...g.nodes, { x: p.x, y: p.y }], true);
+        return;
+      }
+      // pressing on the newest node again pulls its handles out afresh
+      setGesture(eq(p, last) ? { ...g, drag: true, closing: false } : { ...g, nodes: [...g.nodes, { x: p.x, y: p.y }], cur: p, drag: true, closing: false });
+      return;
+    }
+
     if (g?.kind === 'polygon') {
       const p = polygonPoint(g, w, e.shiftKey);
       if (closesPolygon(g, p)) {
@@ -1161,6 +1271,11 @@ export function Canvas() {
     if (tool === 'polygon') {
       const p = sp(w);
       setGesture({ kind: 'polygon', pts: [p], cur: p });
+      return;
+    }
+    if (tool === 'path') {
+      const p = pathPoint(null, w, e);
+      setGesture({ kind: 'path', nodes: [{ x: p.x, y: p.y }], cur: p, drag: true, closing: false });
       return;
     }
     if (tool === 'line' || tool === 'arrow') {
@@ -1291,7 +1406,7 @@ export function Canvas() {
     if (hit) {
       const item = S().doc.items[hit];
       if (isDouble) {
-        onDoubleClick(hit);
+        onDoubleClick(hit, w);
         return;
       }
       if (e.altKey && item.type === 'wire') {
@@ -1359,7 +1474,7 @@ export function Canvas() {
     return { kind: 'move', start: w, ids, moved: false, client, detach: S().altMove || wiresOnly, dx: 0, dy: 0, pick, rejoin: wiresOnly };
   };
 
-  const onDoubleClick = (id: string) => {
+  const onDoubleClick = (id: string, at?: Point) => {
     const d = S().doc;
     const it = d.items[id];
     if (!it) return;
@@ -1367,6 +1482,12 @@ export function Canvas() {
     const chainTop = it.group && it.group !== scope;
     if (chainTop) {
       A.enterGroup(id);
+      return;
+    }
+    // a polygon's outline (or any open path) opens its nodes in the edit points tool; inside it edits the title
+    if (it.type === 'shape' && it.kind === 'polygon' && !it.locked && at && (it.open || polyHit({ ...it, fillOpacity: 0 }, at, (6 / S().view.zoom) * hitSlop()))) {
+      A.setTool('node');
+      select([id]);
       return;
     }
     if (it.type === 'shape' && (it.kind === 'text' || it.kind === 'rect' || it.kind === 'zone' || it.kind === 'ellipse' || it.kind === 'polygon') && !it.locked) {
@@ -1505,6 +1626,20 @@ export function Canvas() {
       case 'polygon':
         setGesture({ ...g, cur: polygonPoint(g, w, e.shiftKey) });
         break;
+      case 'path': {
+        if (!g.drag) {
+          setGesture({ ...g, cur: onFirstNode(g, w) ? g.nodes[0] : pathPoint(g, w, e) });
+          break;
+        }
+        // pulling handles out of the newest node (the first when closing): symmetric, Shift at 45° steps
+        const i = g.closing ? 0 : g.nodes.length - 1;
+        const n = g.nodes[i];
+        const h = e.shiftKey ? constrain45(n, w) : w;
+        const nodes = g.nodes.slice();
+        nodes[i] = dist(h, n) > 3 / S().view.zoom ? { x: n.x, y: n.y, out: h, in: { x: 2 * n.x - h.x, y: 2 * n.y - h.y } } : { x: n.x, y: n.y };
+        setGesture({ ...g, nodes, cur: w });
+        break;
+      }
       case 'conn': {
         // Alt: off the grid and without gluing
         const p = e.altKey ? w : sp(w);
@@ -1537,20 +1672,31 @@ export function Canvas() {
         break;
       }
       case 'polyPart': {
-        // corners land on the grid (Alt: anywhere); edges move by whole grid steps
-        let d: Point;
-        if (g.edge) {
-          const step = snapOn && !e.altKey ? grid : 1;
-          d = { x: snap(w.x - g.start.x, step), y: snap(w.y - g.start.y, step) };
-          if (e.shiftKey) Math.abs(d.x) > Math.abs(d.y) ? (d.y = 0) : (d.x = 0);
+        let nodes: PathNode[];
+        if (g.part === 'in' || g.part === 'out') {
+          // handles go anywhere (Shift: 45° steps from their node); Alt breaks a smooth pair
+          const n = g.base[g.idx];
+          const p = e.shiftKey ? constrain45(n, w) : w;
+          nodes = dragHandle(g.base, g.idx, g.part, p, e.altKey);
         } else {
-          const prev = g.base[(g.idx - 1 + g.base.length) % g.base.length];
-          let p = e.altKey ? { x: Math.round(w.x), y: Math.round(w.y) } : sp(w);
-          if (e.shiftKey) p = constrain45(prev, p);
-          d = { x: p.x - g.base[g.idx].x, y: p.y - g.base[g.idx].y };
+          // nodes land on the grid (Alt: anywhere); stretches move by whole grid steps
+          let d: Point;
+          if (g.part === 'edge') {
+            const step = snapOn && !e.altKey ? grid : 1;
+            d = { x: snap(w.x - g.start.x, step), y: snap(w.y - g.start.y, step) };
+            if (e.shiftKey) Math.abs(d.x) > Math.abs(d.y) ? (d.y = 0) : (d.x = 0);
+          } else {
+            const prev = g.base[(g.idx - 1 + g.base.length) % g.base.length];
+            let p = e.altKey ? { x: Math.round(w.x), y: Math.round(w.y) } : sp(w);
+            if (e.shiftKey) p = constrain45(prev, p);
+            d = { x: p.x - g.base[g.idx].x, y: p.y - g.base[g.idx].y };
+          }
+          if (!g.moved && !d.x && !d.y) return;
+          nodes = moveNode(g.base, g.idx, d);
+          if (g.part === 'edge') nodes = moveNode(nodes, (g.idx + 1) % g.base.length, d);
         }
-        if (!g.moved && !d.x && !d.y) return;
-        gestureUpdate((doc) => setPolyPoints(doc.items[g.id] as ShapeItem, dragPolyPart(g.base, g.idx, g.edge, d)));
+        if (!g.moved && g.part !== 'node' && g.part !== 'edge' && dist(w, g.start) < 2 / S().view.zoom) return;
+        gestureUpdate((doc) => setPathNodes(doc.items[g.id] as ShapeItem, nodes));
         if (!g.moved) setGesture({ ...g, moved: true });
         break;
       }
@@ -1718,7 +1864,21 @@ export function Canvas() {
         if (g.kind === 'segment' && !g.moved && g.pick) select([g.pick]);
         setGesture(null);
         break;
+      case 'path':
+        if (g.closing) commitPath(g.nodes, false);
+        else setGesture({ ...g, drag: false });
+        break;
       case 'polyPart':
+        endGesture(g.moved);
+        setGesture(null);
+        if (!g.moved && g.click && S().doc.items[g.id]) {
+          // a click on a stretch adds a node there (picked, ready to drag or switch)
+          const c = g.click;
+          let idx = -1;
+          mutate((d) => void (idx = insertPathNode(d as CircuitDoc, g.id, c.seg, c.t)));
+          if (idx >= 0) set({ wirePart: { wire: g.id, kind: 'node', index: idx } });
+        }
+        break;
       case 'conn':
         endGesture(g.moved);
         setGesture(null);
@@ -2122,30 +2282,53 @@ export function Canvas() {
           {tool === 'node' &&
             (() => {
               const hot = !g ? polyPartAt(cursor) : null;
+              const gp = g?.kind === 'polyPart' ? g : null;
               return [...new Set([...selection, ...(hover.item && !g ? [hover.item] : [])])].map((id) => {
                 const it = doc.items[id];
                 if (it?.type !== 'shape' || it.kind !== 'polygon' || it.locked) return null;
-                const pts = polyPoints(it);
+                const nodes = pathNodes(it);
+                const segs = pathSegs(nodes, it.open);
+                const segD = (k: number) => {
+                  const q = segs[k];
+                  return q ? `M${q.a.x} ${q.a.y}C${q.c1.x} ${q.c1.y} ${q.c2.x} ${q.c2.y} ${q.b.x} ${q.b.y}` : '';
+                };
+                // handles only on outlines that are selected (hovered ones just show their nodes)
+                const showHandles = selSet.has(id);
+                const edgeIdx = hot?.id === id && hot.part === 'edge' ? hot.idx : gp?.id === id && gp.part === 'edge' ? gp.idx : -1;
                 return (
                   <g key={id} className="node-handles">
-                    {(hot?.id === id && hot.part === 'edge') || (g?.kind === 'polyPart' && g.id === id && g.edge)
-                      ? (() => {
-                          const i = hot?.id === id ? hot.idx : (g as Extract<Gesture, { kind: 'polyPart' }>).idx;
-                          const a = pts[i];
-                          const b = pts[(i + 1) % pts.length];
-                          return a && b ? <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="wire-part-seg" strokeWidth={7} strokeLinecap="round" /> : null;
-                        })()
-                      : null}
-                    {pts.map((a, i) => {
-                      const b = pts[(i + 1) % pts.length];
-                      const on = hot?.id === id && hot.part === 'mid' && hot.idx === i;
-                      return <circle key={`m${i}`} cx={(a.x + b.x) / 2} cy={(a.y + b.y) / 2} r={(on ? 4 : 2.75) / z} className={on ? 'handle poly-mid active' : 'handle poly-mid'} strokeWidth={1.2 / z} />;
-                    })}
-                    {pts.map((p, i) => {
-                      const active = (hot?.id === id && hot.part === 'corner' && hot.idx === i) || (g?.kind === 'polyPart' && g.id === id && !g.edge && g.idx === i);
+                    {edgeIdx >= 0 && <path d={segD(edgeIdx)} className="wire-part-seg" fill="none" strokeWidth={7} strokeLinecap="round" />}
+                    {!gp &&
+                      segs.map((q, i) => {
+                        const m = cubicAt(q, 0.5);
+                        const on = hot?.id === id && hot.part === 'mid' && hot.idx === i;
+                        return <circle key={`m${i}`} cx={m.x} cy={m.y} r={(on ? 4 : 2.75) / z} className={on ? 'handle poly-mid active' : 'handle poly-mid'} strokeWidth={1.2 / z} />;
+                      })}
+                    {showHandles &&
+                      nodes.map((n, i) =>
+                        (['in', 'out'] as const).map((which) => {
+                          const h = n[which];
+                          if (!h) return null;
+                          const active = (hot?.id === id && hot.part === which && hot.idx === i) || (gp?.id === id && gp.part === which && gp.idx === i);
+                          return (
+                            <g key={`${which}${i}`}>
+                              <line x1={n.x} y1={n.y} x2={h.x} y2={h.y} className="rot-stalk" strokeWidth={1 / z} />
+                              <circle cx={h.x} cy={h.y} r={(active ? 4.5 : 3.25) / z} className={active ? 'handle active' : 'handle'} strokeWidth={1.2 / z} />
+                            </g>
+                          );
+                        }),
+                      )}
+                    {nodes.map((p, i) => {
+                      const active = (hot?.id === id && hot.part === 'corner' && hot.idx === i) || (gp?.id === id && gp.part === 'node' && gp.idx === i);
                       const selected = wirePart?.wire === id && wirePart.kind === 'node' && wirePart.index === i;
                       const r = (active ? 5 : 3.75) / z;
-                      return <rect key={i} x={p.x - r} y={p.y - r} width={2 * r} height={2 * r} rx={1 / z} className={active ? 'handle node active' : selected ? 'handle node selected' : 'handle node'} strokeWidth={1.5 / z} />;
+                      const cls = active ? 'handle node active' : selected ? 'handle node selected' : 'handle node';
+                      // smooth nodes are round, corners square
+                      return isSmooth(p) ? (
+                        <circle key={i} cx={p.x} cy={p.y} r={r} className={cls} strokeWidth={1.5 / z} />
+                      ) : (
+                        <rect key={i} x={p.x - r} y={p.y - r} width={2 * r} height={2 * r} rx={1 / z} className={cls} strokeWidth={1.5 / z} />
+                      );
                     })}
                   </g>
                 );
@@ -2260,6 +2443,7 @@ export function Canvas() {
             return glue && <GlueMarkers doc={doc} glue={glue} z={z} />;
           })()}
           {g?.kind === 'polygon' && <PolygonPreview g={g} z={z} closing={closesPolygon(g, g.cur) && g.pts.length >= 3} />}
+          {g?.kind === 'path' && <PathPreview g={g} z={z} />}
           {tool === 'wire' && !g && <TargetMarker t={findTarget(cursor)} z={z} subtle />}
           {ghost && (
             <g opacity={0.55} pointerEvents="none">
@@ -2383,6 +2567,39 @@ function PolygonPreview({ g, z, closing }: { g: Extract<Gesture, { kind: 'polygo
         <circle key={i} cx={p.x} cy={p.y} r={2.5 / z} className="polygon-vertex" />
       ))}
       {g.pts.length >= 3 && <circle cx={first.x} cy={first.y} r={(closing ? 7 : 5) / z} className={closing ? 'polygon-close on' : 'polygon-close'} strokeWidth={1.5 / z} />}
+    </g>
+  );
+}
+
+/** Path tool: the outline so far, the next stretch to the pointer, the handles being pulled and, about to close, a ring on the first node. */
+function PathPreview({ g, z }: { g: Extract<Gesture, { kind: 'path' }>; z: number }) {
+  const last = g.nodes[g.nodes.length - 1];
+  const first = g.nodes[0];
+  const closing = g.nodes.length >= 3 && (g.closing || eq(g.cur, first));
+  let d = pathD(g.nodes, !g.closing);
+  if (!g.drag) {
+    // the stretch the next click would add (bending out of the last node's handle)
+    const end = closing ? first : g.cur;
+    const c2 = closing && first.in ? first.in : end;
+    d += last.out ? `M${last.x} ${last.y}C${last.out.x} ${last.out.y} ${c2.x} ${c2.y} ${end.x} ${end.y}` : `M${last.x} ${last.y}L${end.x} ${end.y}`;
+  }
+  const busy = g.drag ? g.nodes[g.closing ? 0 : g.nodes.length - 1] : last;
+  return (
+    <g pointerEvents="none">
+      <path d={d} className="shape-preview" fill="none" />
+      {(['in', 'out'] as const).map((k) => {
+        const h = busy[k];
+        return h ? (
+          <g key={k}>
+            <line x1={busy.x} y1={busy.y} x2={h.x} y2={h.y} className="rot-stalk" strokeWidth={1 / z} />
+            <circle cx={h.x} cy={h.y} r={3 / z} className="polygon-vertex" />
+          </g>
+        ) : null;
+      })}
+      {g.nodes.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={2.5 / z} className="polygon-vertex" />
+      ))}
+      {g.nodes.length >= 3 && <circle cx={first.x} cy={first.y} r={(closing ? 7 : 5) / z} className={closing ? 'polygon-close on' : 'polygon-close'} strokeWidth={1.5 / z} />}
     </g>
   );
 }

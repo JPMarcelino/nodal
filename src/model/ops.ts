@@ -3,7 +3,7 @@ import { connectorsOf, detachConnector, isConnector, resolveConnector } from './
 import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
 import { eq, projectOnSegment, rectsIntersect, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
-import { packPoly, polyPoints } from './polygon';
+import { mapNodes, pathNodes, setPathNodes } from './path';
 import { mapShapeFrame, normDeg, rectCentre, ROT_KINDS, rotateDeg, shapeBox, shapeRot } from './rotation';
 import { touchingPins } from './netlist';
 import { instanceSymbol } from './registry';
@@ -510,7 +510,8 @@ function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
         // map every point, so rotating or flipping a drawing turns the drawing, not just its box
         Object.assign(it, packInk(inkPoints(b).map((q) => ({ ...map(q), p: q.p }))));
       } else if (b.kind === 'polygon') {
-        Object.assign(it, packPoly(polyPoints(b).map(map)));
+        // nodes and handles both: an affine map keeps every curve exact
+        setPathNodes(it, mapNodes(pathNodes(b), map), b.open);
       } else {
         it.x = Math.min(p1.x, p2.x);
         it.y = Math.min(p1.y, p2.y);

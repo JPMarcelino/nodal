@@ -1,7 +1,7 @@
 import { produce } from 'immer';
 import { drawOrderCached } from './doc';
 import { dist, polylineBounds, simplify, toWorld } from './geometry';
-import { pointInPolygon, polyPoints } from './polygon';
+import { pointInPolygon, shapeOutline } from './path';
 import { instanceSymbol } from './registry';
 import { rectCentre, rotateDeg, shapeBox, shapeRot } from './rotation';
 import type { Attach, CircuitDoc, ConnectorRoute, Item, Point, Rect, ShapeItem } from './types';
@@ -65,7 +65,8 @@ export function targetFrame(doc: Pick<CircuitDoc, 'items' | 'symbols'>, it: Item
   const rot = shapeRot(it);
   const f: TargetFrame = { c: rectCentre(box), u: rotateDeg({ x: box.w / 2, y: 0 }, rot), v: rotateDeg({ x: 0, y: box.h / 2 }, rot), outline: 'rect' };
   if (it.kind === 'ellipse') f.outline = 'ellipse';
-  else if (it.kind === 'polygon' && it.poly && it.poly.length >= 6) f.outline = polyPoints(it).map((p) => toLocal(f, p));
+  // curved outlines glue to their flattened curve
+  else if (it.kind === 'polygon' && it.poly && it.poly.length >= (it.curve ? 4 : 6)) f.outline = shapeOutline(it, 0.5).map((p) => toLocal(f, p));
   return f;
 }
 

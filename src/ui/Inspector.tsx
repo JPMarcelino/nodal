@@ -43,6 +43,7 @@ import { docBounds, selectedGroup } from '../model/doc';
 import { scaleItems, selectionPivot } from '../model/ops';
 import { normDeg, ROT_KINDS, shapeRot } from '../model/rotation';
 import { detachConnector } from '../model/connectors';
+import { isSmooth, pathNodes } from '../model/path';
 import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
@@ -961,6 +962,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
             </Field>
           )}
           {isLine && <AttachFields s={first} />}
+          {first.kind === 'polygon' && <PathFields s={first} />}
           {(first.kind === 'rect' || first.kind === 'zone') && (
             <>
               <Field label="Container" hint="Moves what's inside with it">
@@ -1023,6 +1025,32 @@ const ROUTE_OPTIONS: { value: ConnectorRoute; label: string }[] = [
 ];
 
 /** What a connector's ends are glued to, each with a button to let go (the end stays where it is). */
+/** Polygons and paths: closed or open, and corner / smooth nodes (the picked node in the edit points tool, else all of them). */
+function PathFields({ s }: { s: ShapeItem }) {
+  const wirePart = useStore((st) => st.wirePart);
+  const picked = wirePart?.wire === s.id && wirePart.kind === 'node' ? wirePart.index : null;
+  const nodes = pathNodes(s);
+  const node = picked !== null ? nodes[picked] : null;
+  const kind = node ? (isSmooth(node) ? 'smooth' : !node.in && !node.out ? 'corner' : null) : null;
+  return (
+    <>
+      <Field label="Closed" hint="An open path leaves out the stretch from the last node back to the first">
+        <Toggle checked={!s.open} onChange={(v) => A.setPathClosed(v)} />
+      </Field>
+      <Field label={node ? `Node ${picked! + 1}` : 'All nodes'} hint="Pick a node with the edit points tool (E) to change just that one. Double-click a node to switch it too">
+        <span className="row-gap">
+          <button className={kind === 'corner' ? 'secondary-btn active' : 'secondary-btn'} onClick={() => A.setPathNodeKind('corner')}>
+            Corner
+          </button>
+          <button className={kind === 'smooth' ? 'secondary-btn active' : 'secondary-btn'} onClick={() => A.setPathNodeKind('smooth')}>
+            Smooth
+          </button>
+        </span>
+      </Field>
+    </>
+  );
+}
+
 function AttachFields({ s }: { s: ShapeItem }) {
   const doc = useStore((st) => st.doc);
   const name = (id: string) => {
