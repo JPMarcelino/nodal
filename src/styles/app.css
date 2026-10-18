@@ -1874,6 +1874,38 @@ select.input {
   stroke: var(--panel);
 }
 
+/* connectors: a glued end, the "+" that adds a bend, and the connection points of what an end would glue to */
+.handle.glued {
+  fill: var(--accent);
+  stroke: var(--panel);
+}
+
+.conn-mid {
+  fill: var(--panel);
+  stroke: var(--accent);
+  opacity: 0.85;
+}
+
+.conn-mid-plus {
+  stroke: var(--accent);
+  stroke-linecap: round;
+}
+
+.glue-outline {
+  fill: none;
+  stroke: var(--accent-2);
+  opacity: 0.8;
+}
+
+.glue-spot {
+  fill: var(--panel);
+  stroke: var(--accent-2);
+}
+
+.glue-spot.active {
+  fill: var(--accent-2);
+}
+
 /* stalk from a shape's top edge to its rotation handle */
 .rot-stalk {
   stroke: var(--accent);

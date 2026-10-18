@@ -1,3 +1,4 @@
+import { isConnector, resolveConnector } from './connectors';
 import { instanceSymbol } from './registry';
 import { rotatedBounds, shapeBox, shapeRot } from './rotation';
 import type { CircuitDoc, Item, Point } from './types';
@@ -5,7 +6,8 @@ import { endpointInfo, wirePolyline } from './wires';
 
 /**
  * Alignment guides for moving items: the moving items' key points (part
- * centres and pins, wire bends, junctions, shape corners and centres) are
+ * centres and pins, wire bends, junctions, shape corners and centres,
+ * connector ends and bends) are
  * matched against the same points of everything that stays put.
  */
 
@@ -39,6 +41,8 @@ function itemPoints(doc: CircuitDoc, it: Item): Point[] {
     case 'wire':
       return wirePolyline(doc, it);
     case 'shape': {
+      // lines and arrows line up by their ends and bends, as drawn
+      if (isConnector(it)) return resolveConnector(doc, it).through;
       if (shapeRot(it)) {
         // a turned shape lines up by the box around it
         const b = rotatedBounds(shapeBox(it), shapeRot(it));

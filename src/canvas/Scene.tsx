@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, type ReactNode } from 'react';
-import { componentBounds, measureText, segmentIntersectsRect, sideVector, toWorld } from '../model/geometry';
+import { componentBounds, measureText, polylineBounds, segmentIntersectsRect, sideVector, toWorld } from '../model/geometry';
 import { drawOrderCached, labelsShown } from '../model/doc';
 import { refreshTouching, touchingCells, touchingFromCells } from '../model/netlist';
 import { isDnp } from '../model/partFields';
@@ -17,6 +17,7 @@ import { SymbolBody } from './SymbolGraphic';
 import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
 import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
 import { polyPoints } from '../model/polygon';
+import { connectorD, isConnector, resolveConnector, type ConnectorPath } from '../model/connectors';
 import { shapeTransform } from '../model/rotation';
 
 export interface Palette {
@@ -485,13 +486,6 @@ export function ArrowHeadEl({ tip, x, y, size, kind, color, sw }: { tip: Point; 
   return <path d={`M${left}L${tip.x},${tip.y}L${right}`} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />;
 }
 
-function shapeHeads(s: ShapeItem) {
-  const len = Math.hypot(s.w, s.h);
-  const ux = len ? s.w / len : 1;
-  const uy = len ? s.h / len : 0;
-  const size = s.headSize ?? defaultHeadSize(s.strokeWidth);
-  return { ux, uy, size, endTip: { x: s.x + s.w, y: s.y + s.h }, startTip: { x: s.x, y: s.y } };
-}
 
 /** Shapes whose title can be dragged around. */
 export const hasMovableTitle = (s: ShapeItem) => !!s.text && (s.kind === 'rect' || s.kind === 'zone' || s.kind === 'ellipse' || s.kind === 'polygon');
@@ -579,19 +573,25 @@ function ShapeDefs({ shapes, palette }: { shapes: ShapeItem[]; palette: Palette 
   );
 }
 
-export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: ShapeItem; palette: Palette; ax?: number; ay?: number }) {
+/**
+ * One shape. Lines and arrows take their resolved `path` (glued ends where
+ * their targets are now; see model/connectors.ts); without it they are drawn
+ * from their own stored points.
+ */
+export const ShapeView = memo(function ShapeView({ s, palette, ax, ay, path }: { s: ShapeItem; palette: Palette; ax?: number; ay?: number; path?: ConnectorPath }) {
   // a turned shape is drawn in its own frame, title and all
   const tf = shapeTransform(s);
-  const body = shapeBody(s, palette, ax, ay);
+  const conn = isConnector(s) ? path ?? resolveConnector(null, s) : null;
+  const body = shapeBody(s, palette, ax, ay, conn);
   const turned = tf ? <g transform={tf}>{body}</g> : body;
   const shadow = hasShadow(s);
   if (!shadow && (s.opacity === undefined || s.opacity >= 1)) return turned;
   // opacity and shadow act on the finished shape, outside its turn (so the shadow keeps falling the same way)
-  const flat = shadow && (s.kind === 'line' || s.kind === 'arrow');
+  const flat = shadow && conn ? polylineBounds(conn.flat) : null;
   return (
     <g opacity={s.opacity} filter={shadow ? `url(#${SHADOW_ID})` : undefined}>
       {/* a straight line has no area to size the filter by */}
-      {flat && <rect x={Math.min(s.x, s.x + s.w) - 10} y={Math.min(s.y, s.y + s.h) - 10} width={Math.abs(s.w) + 20} height={Math.abs(s.h) + 20} fill="none" stroke="none" />}
+      {flat && <rect x={flat.x - 10} y={flat.y - 10} width={flat.w + 20} height={flat.h + 20} fill="none" stroke="none" />}
       {turned}
     </g>
   );
@@ -610,7 +610,7 @@ function HeaderBand({ s, ink }: { s: ShapeItem; ink: string }) {
   );
 }
 
-function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number) {
+function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number, conn?: ConnectorPath | null) {
   const da = dashArray(s.dash, s.strokeWidth || 1);
   const ink = inkColor(s.stroke, palette);
   const stroke = s.strokeWidth > 0 ? ink : 'none';
@@ -672,18 +672,18 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number) {
       );
     case 'line':
     case 'arrow': {
-      const { ux, uy, size, endTip, startTip } = shapeHeads(s);
+      // the path as resolved: bends, routing and glued ends; heads point along its first / last stretch
+      const p = conn ?? resolveConnector(null, s);
+      const size = s.headSize ?? defaultHeadSize(s.strokeWidth);
       const endKind: HeadKind = s.headEnd ?? (s.kind === 'arrow' ? 'open' : 'none');
       const startKind: HeadKind = s.headStart ?? 'none';
-      const e = headInset(endKind, size);
-      const st = headInset(startKind, size);
       return (
         <g className="shape" data-id={s.id}>
-          <line x1={startTip.x + ux * st} y1={startTip.y + uy * st} x2={endTip.x - ux * e} y2={endTip.y - uy * e} stroke={ink} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />
-          <ArrowHeadEl tip={endTip} x={ux} y={uy} size={size} kind={endKind} color={ink} sw={s.strokeWidth} />
-          <ArrowHeadEl tip={startTip} x={-ux} y={-uy} size={size} kind={startKind} color={ink} sw={s.strokeWidth} />
+          <path d={connectorD(p, headInset(startKind, size), headInset(endKind, size))} fill="none" stroke={ink} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />
+          <ArrowHeadEl tip={p.end} x={p.endDir.x} y={p.endDir.y} size={size} kind={endKind} color={ink} sw={s.strokeWidth} />
+          <ArrowHeadEl tip={p.start} x={p.startDir.x} y={p.startDir.y} size={size} kind={startKind} color={ink} sw={s.strokeWidth} />
           {s.text && (
-            <RichText text={shapeText(s)} x={s.x + s.w / 2} y={s.y + s.h / 2 - 6} anchor={s.align ?? defaultAlign(s)} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={textWeight(s)} style={face} />
+            <RichText text={shapeText(s)} x={p.mid.x} y={p.mid.y - 6} anchor={s.align ?? defaultAlign(s)} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={textWeight(s)} style={face} />
           )}
         </g>
       );
@@ -762,7 +762,8 @@ export function Scene({ doc, data, palette, highlight, frames = false }: { doc: 
   const stack = items.filter((i): i is WireItem | ComponentItem | ShapeItem => i.type !== 'junction').sort(byOrder);
   const shapeEl = (s: ShapeItem) => {
     const a = s.kind === 'callout' ? calloutAnchor(doc, s) : null;
-    return <ShapeView key={s.id} s={s} palette={palette} ax={a?.x} ay={a?.y} />;
+    // lines and arrows are drawn along their resolved path (glued ends follow their targets)
+    return <ShapeView key={s.id} s={s} palette={palette} ax={a?.x} ay={a?.y} path={isConnector(s) ? resolveConnector(doc, s) : undefined} />;
   };
   const dots: { x: number; y: number; color: string; key: string }[] = [];
   const js = doc.settings.junctionSize;

@@ -6,6 +6,7 @@ import type { CircuitDoc, ComponentItem, Point, Prim, ShapeItem, SymbolDef } fro
 import { wirePolyline, wireStyleFor } from './wires';
 import { inkPoints } from './ink';
 import { polyPoints } from './polygon';
+import { resolveConnector } from './connectors';
 import { fromShapeFrame, rotatedCorners, shapeBox, shapeRot } from './rotation';
 
 /*
@@ -43,7 +44,7 @@ export function selectionToDrawing(doc: CircuitDoc, ids: string[]): SelectionDra
     } else if (it.type === 'junction') {
       const c = at(it);
       prims.push({ t: 'circle', cx: c.x, cy: c.y, r: doc.settings.junctionSize, fill: 'solid' });
-    } else prims.push(...shapePrims(it, at));
+    } else prims.push(...shapePrims(it, at, doc));
   }
   return {
     prims,
@@ -132,7 +133,7 @@ function mapPath(d: string, T: (x: number, y: number) => Point): string | null {
   return out.join(' ');
 }
 
-function shapePrims(s: ShapeItem, at: (p: Point) => Point): Prim[] {
+function shapePrims(s: ShapeItem, at: (p: Point) => Point, doc: CircuitDoc): Prim[] {
   if (shapeRot(s) && s.kind !== 'text') {
     // a turned box becomes its turned outline (a title inside it is dropped)
     const b = shapeBox(s);
@@ -175,7 +176,10 @@ function shapePrims(s: ShapeItem, at: (p: Point) => Point): Prim[] {
       return s.strokeWidth > 0 ? [{ t: 'rect', x, y, w, h, fill: 'none', sw: s.strokeWidth }] : [];
     case 'line':
     case 'arrow': {
-      const out: Prim[] = [{ t: 'line', pts: [a.x, a.y, z.x, z.y], w: s.strokeWidth, ...(s.dash !== 'solid' ? { dash: true } : {}) }];
+      // the drawn path (bends, glued ends, curves flattened); heads along its first / last stretch
+      const path = resolveConnector(doc, s);
+      const flat = path.flat.map(at);
+      const out: Prim[] = [{ t: 'line', pts: flat.flatMap((p) => [r(p.x), r(p.y)]), w: s.strokeWidth, ...(s.dash !== 'solid' ? { dash: true } : {}) }];
       const head = (from: Point, to: Point) => {
         const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
         const ux = (to.x - from.x) / len;
@@ -186,8 +190,10 @@ function shapePrims(s: ShapeItem, at: (p: Point) => Point): Prim[] {
         out.push({ t: 'poly', pts: [to.x, to.y, r(bx - uy * size * 0.45), r(by + ux * size * 0.45), r(bx + uy * size * 0.45), r(by - ux * size * 0.45)], fill: 'solid' });
       };
       const end = s.headEnd ?? (s.kind === 'arrow' ? 'filled' : 'none');
-      if (end !== 'none') head(a, z);
-      if ((s.headStart ?? 'none') !== 'none') head(z, a);
+      const tipA = at(path.start);
+      const tipZ = at(path.end);
+      if (end !== 'none') head({ x: tipZ.x - path.endDir.x, y: tipZ.y - path.endDir.y }, tipZ);
+      if ((s.headStart ?? 'none') !== 'none') head({ x: tipA.x - path.startDir.x, y: tipA.y - path.startDir.y }, tipA);
       return out;
     }
     case 'text':
