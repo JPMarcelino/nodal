@@ -85,7 +85,7 @@ describe('copyAsPng', () => {
     // let the blob promise settle through the write stub
     await new Promise((r) => setTimeout(r, 0));
     expect(exportPng).toHaveBeenCalledTimes(1);
-    const opts = exportPng.mock.calls[0][1] as Record<string, unknown>;
+    const opts = exportPng.mock.calls[0][1] as unknown as Record<string, unknown>;
     expect(opts.ids).toEqual(['a', 'b']);
     expect(opts.background).toBe(true);
     expect(opts.scale).toBe(2);
@@ -106,7 +106,7 @@ describe('copyAsPng', () => {
     await copyAsPng();
     await new Promise((r) => setTimeout(r, 0));
     expect(exportPng).toHaveBeenCalledTimes(1);
-    expect((exportPng.mock.calls[0][1] as Record<string, unknown>).ids).toBeUndefined();
+    expect((exportPng.mock.calls[0][1] as unknown as Record<string, unknown>).ids).toBeUndefined();
     expect(lastToast(S)?.kind).toBe('success');
   });
 
