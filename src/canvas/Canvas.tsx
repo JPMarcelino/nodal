@@ -34,6 +34,7 @@ import { marqueeHits } from '../model/marquee';
 import { gestureSlots, hitSlop, useTouchInput } from './touch';
 import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
+import { attachSpots, bendSlots, findGlue, isConnector, isFixed, resolveConnector, type GlueHit } from '../model/connectors';
 
 /* ------------------------------------------------------------------ */
 /* Targets                                                             */
@@ -72,7 +73,10 @@ type Gesture =
   | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean; pick?: string }
   | { kind: 'endpoint'; wire: string; end: 'a' | 'b'; cur: Target; moved: boolean }
   | { kind: 'node'; wire: string; idx: number; base: Point[]; cur: Point; free: boolean; moved: boolean }
-  | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point; preset?: string }
+  /** Lines and arrows: `glueA` / `glueB` are what the start / end would be glued to. */
+  | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point; preset?: string; glueA?: GlueHit | null; glueB?: GlueHit | null }
+  /** Dragging a selected connector's end (re-gluing it to what it is dropped on) or bend `idx`. */
+  | { kind: 'conn'; id: string; part: 'start' | 'end' | 'bend'; idx: number; moved: boolean; glue: GlueHit | null }
   /** Edit points on a polygon: dragging corner `idx`, or with `edge` the edge from corner `idx` to the next one. */
   | { kind: 'polyPart'; id: string; base: Point[]; idx: number; edge: boolean; start: Point; moved: boolean }
   /** Polygon being clicked out corner by corner; it closes when a click lands back on the first corner. */
@@ -412,7 +416,13 @@ export function Canvas() {
         const r = turned ? shapeBox(s) : itemBounds(d, s)!;
         if (hasMovableTitle(s) && pointInRect(p, shapeTitle(s).box, 3)) return 'strong';
         if (s.kind === 'frame' && pointInRect(p, frameTag(s), 2)) return 'strong';
-        if (s.kind === 'line' || s.kind === 'arrow') return projectOnSegment(p, { x: s.x, y: s.y }, { x: s.x + s.w, y: s.y + s.h }).d < t + s.strokeWidth && 'strong';
+        if (s.kind === 'line' || s.kind === 'arrow') {
+          // along the drawn path: bends, elbows and curves, glued ends where their targets are
+          const f = resolveConnector(d, s).flat;
+          let best = Infinity;
+          for (let i = 0; i < f.length - 1; i++) best = Math.min(best, projectOnSegment(p, f[i], f[i + 1]).d);
+          return best < t + s.strokeWidth && 'strong';
+        }
         if (s.kind === 'text' || s.kind === 'image' || s.kind === 'callout') return pointInRect(p, r, 4) && 'strong';
         if (s.kind === 'ink') return inkHit(s, p, t) && (s.highlighter ? 'weak' : 'strong');
         const seeThrough = s.fillOpacity < 0.5;
@@ -555,11 +565,13 @@ export function Canvas() {
   };
 
   const shapeHandles = (s: ShapeItem): { h: Handle; p: Point }[] => {
-    if (s.kind === 'line' || s.kind === 'arrow')
+    if (s.kind === 'line' || s.kind === 'arrow') {
+      const r = resolveConnector(S().doc, s);
       return [
-        { h: 'p1', p: { x: s.x, y: s.y } },
-        { h: 'p2', p: { x: s.x + s.w, y: s.y + s.h } },
+        { h: 'p1', p: r.start },
+        { h: 'p2', p: r.end },
       ];
+    }
     // free text: one handle on the right edge sets the width it wraps at
     if (s.kind === 'text') {
       const b = shapeBox(s);
@@ -588,6 +600,38 @@ export function Canvas() {
     const foot = { x: b.x + b.w / 2, y: b.y };
     return { foot: fromShapeFrame(s, foot), at: fromShapeFrame(s, { x: foot.x, y: b.y - 22 / view.zoom }) };
   };
+
+  /**
+   * A selected connector's handles: its ends (drag to glue or unglue), its bends
+   * (drag; double-click removes) and a "+" in the middle of each stretch (drag
+   * to add a bend there).
+   */
+  const connHandles = (s: ShapeItem) => {
+    const r = resolveConnector(S().doc, s);
+    return {
+      ends: [
+        { part: 'start' as const, p: r.start, glued: !!s.from },
+        { part: 'end' as const, p: r.end, glued: !!s.to },
+      ],
+      bends: (s.pts ?? []).map((p, idx) => ({ idx, p })),
+      mids: bendSlots(r),
+    };
+  };
+
+  /** Connector handle under the pointer (ends first, then bends, then the "+" knobs). */
+  const connHandleAt = (s: ShapeItem, w: Point): { part: 'start' | 'end' | 'bend' | 'mid'; idx: number; p: Point } | null => {
+    const tol = (7 / S().view.zoom) * hitSlop();
+    const h = connHandles(s);
+    const end = h.ends.find((e) => dist(e.p, w) < tol);
+    if (end) return { part: end.part, idx: 0, p: end.p };
+    const bend = h.bends.find((b) => dist(b.p, w) < tol);
+    if (bend) return { part: 'bend', idx: bend.idx, p: bend.p };
+    const mid = h.mids.find((m) => dist(m.pt, w) < tol * 0.8);
+    return mid ? { part: 'mid', idx: mid.idx, p: mid.pt } : null;
+  };
+
+  /** What a connector end dropped at `w` would glue to (Alt: nothing). */
+  const glueAt = (w: Point, alt: boolean, exclude?: string): GlueHit | null => (alt ? null : findGlue(S().doc, w, (8 / S().view.zoom) * hitSlop(), exclude));
 
   /* -------------------------- edit points -------------------------- */
 
@@ -943,7 +987,7 @@ export function Canvas() {
         }
       }
       if (g && combo === 'Escape') {
-        if (g.kind === 'move' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'rotate' || g.kind === 'scale' || g.kind === 'groupScale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
+        if (g.kind === 'move' || g.kind === 'conn' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'rotate' || g.kind === 'scale' || g.kind === 'groupScale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
         setGesture(null);
         // a cancelled copy takes its staged items with it
         if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => S().doc.items[id]) });
@@ -1119,6 +1163,13 @@ export function Canvas() {
       setGesture({ kind: 'polygon', pts: [p], cur: p });
       return;
     }
+    if (tool === 'line' || tool === 'arrow') {
+      // pressing on a shape or part glues the start to it (Alt: don't)
+      const glueA = glueAt(w, e.altKey);
+      const p = glueA && isFixed(glueA.attach) ? glueA.pt : e.altKey ? w : sp(w);
+      setGesture({ kind: 'shape', shape: tool, start: p, cur: p, glueA, glueB: null });
+      return;
+    }
     if (tool !== 'select') {
       const p = sp(w);
       setGesture({ kind: 'shape', shape: tool as ShapeKind, start: p, cur: p, preset: tool === 'rect' ? S().shapePreset ?? undefined : undefined });
@@ -1154,6 +1205,31 @@ export function Canvas() {
     if (singleShape && !singleShape.locked && hasMovableTitle(singleShape) && pointInRect(toShapeFrame(singleShape, w), shapeTitle(singleShape).box, 3)) {
       beginGesture();
       setGesture({ kind: 'shapeTitle', id: singleShape.id, start: w, base: { dx: singleShape.textDx ?? 0, dy: singleShape.textDy ?? 0 } });
+      return;
+    }
+    const ch = singleShape && !singleShape.locked && isConnector(singleShape) ? connHandleAt(singleShape, w) : null;
+    if (singleShape && ch) {
+      const id = singleShape.id;
+      if (ch.part === 'bend' && isDouble) {
+        // double-click a bend removes it
+        mutate((d) => {
+          const s = d.items[id] as ShapeItem;
+          s.pts?.splice(ch.idx, 1);
+          if (!s.pts?.length) delete s.pts;
+        });
+        return;
+      }
+      beginGesture();
+      if (ch.part === 'mid') {
+        // a new bend in the middle of the stretch, dragged straight away
+        gestureUpdate((d) => {
+          const s = d.items[id] as ShapeItem;
+          s.pts = [...(s.pts ?? []).slice(0, ch.idx), { x: Math.round(ch.p.x), y: Math.round(ch.p.y) }, ...(s.pts ?? []).slice(ch.idx)];
+        });
+        setGesture({ kind: 'conn', id, part: 'bend', idx: ch.idx, moved: true, glue: null });
+        return;
+      }
+      setGesture({ kind: 'conn', id, part: ch.part, idx: ch.idx, moved: false, glue: null });
       return;
     }
     if (singleShape && !singleShape.locked) {
@@ -1410,9 +1486,16 @@ export function Canvas() {
         break;
       }
       case 'shape': {
+        if (g.shape === 'line' || g.shape === 'arrow') {
+          // over a shape or part the end glues to it: onto a connection point, or floating on its outline
+          const glueB = glueAt(w, e.altKey);
+          const cur = glueB && isFixed(glueB.attach) ? glueB.pt : e.altKey ? w : sp(w);
+          setGesture({ ...g, cur, glueB });
+          break;
+        }
         let cur = e.altKey ? w : sp(w);
         // Shift keeps the box square (a circle, a square)
-        if (e.shiftKey && g.shape !== 'line' && g.shape !== 'arrow') {
+        if (e.shiftKey) {
           const side = Math.max(Math.abs(cur.x - g.start.x), Math.abs(cur.y - g.start.y));
           cur = { x: g.start.x + side * (cur.x < g.start.x ? -1 : 1), y: g.start.y + side * (cur.y < g.start.y ? -1 : 1) };
         }
@@ -1422,6 +1505,37 @@ export function Canvas() {
       case 'polygon':
         setGesture({ ...g, cur: polygonPoint(g, w, e.shiftKey) });
         break;
+      case 'conn': {
+        // Alt: off the grid and without gluing
+        const p = e.altKey ? w : sp(w);
+        if (g.part === 'bend') {
+          gestureUpdate((d) => {
+            const s = d.items[g.id] as ShapeItem;
+            if (s.pts?.[g.idx]) s.pts[g.idx] = p;
+          });
+          if (!g.moved) setGesture({ ...g, moved: true });
+          break;
+        }
+        const glue = glueAt(w, e.altKey, g.id);
+        const at = glue && isFixed(glue.attach) ? glue.pt : p;
+        gestureUpdate((d, base) => {
+          const s = d.items[g.id] as ShapeItem;
+          const b = base.items[g.id] as ShapeItem;
+          if (g.part === 'start') {
+            // the end stays where it is
+            Object.assign(s, { x: at.x, y: at.y, w: b.x + b.w - at.x, h: b.y + b.h - at.y });
+            if (glue) s.from = glue.attach;
+            else delete s.from;
+          } else {
+            s.w = at.x - b.x;
+            s.h = at.y - b.y;
+            if (glue) s.to = glue.attach;
+            else delete s.to;
+          }
+        });
+        setGesture({ ...g, moved: true, glue });
+        break;
+      }
       case 'polyPart': {
         // corners land on the grid (Alt: anywhere); edges move by whole grid steps
         let d: Point;
@@ -1605,6 +1719,7 @@ export function Canvas() {
         setGesture(null);
         break;
       case 'polyPart':
+      case 'conn':
         endGesture(g.moved);
         setGesture(null);
         break;
@@ -1648,10 +1763,14 @@ export function Canvas() {
       case 'shape': {
         const r = rectFromPoints(g.start, g.cur);
         if (g.shape === 'line' || g.shape === 'arrow') {
-          if (dist(g.start, g.cur) >= grid) {
+          // both ends floating on the same target would have nowhere to go
+          const glueB = g.glueB && !(g.glueA && g.glueB.attach.id === g.glueA.attach.id && !isFixed(g.glueA.attach) && !isFixed(g.glueB.attach)) ? g.glueB : null;
+          if (dist(g.start, g.cur) >= grid || (glueB && g.glueA && glueB.attach.id !== g.glueA.attach.id)) {
             let id = '';
             mutate((d) => {
               const s = makeShape(d as CircuitDoc, g.shape, g.start.x, g.start.y, g.cur.x - g.start.x, g.cur.y - g.start.y);
+              if (g.glueA) s.from = g.glueA.attach;
+              if (glueB) s.to = glueB.attach;
               s.group = S().scope;
               d.items[s.id] = s;
               id = s.id;
@@ -1957,9 +2076,36 @@ export function Canvas() {
             !singleShape.locked &&
             !(singleShape.id === editingText && singleShape.kind === 'text') &&
             !(tool === 'node' && singleShape.kind === 'polygon') &&
+            !(tool === 'select' && isConnector(singleShape)) &&
             shapeHandles(singleShape).map((h) => (
               <rect key={h.h} x={h.p.x - 4 / z} y={h.p.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className="handle" strokeWidth={1.5 / z} />
             ))}
+          {singleShape &&
+            !singleShape.locked &&
+            tool === 'select' &&
+            isConnector(singleShape) &&
+            (() => {
+              const h = connHandles(singleShape);
+              const busy = g?.kind === 'conn';
+              return (
+                <g className="conn-handles">
+                  {!busy &&
+                    h.mids.map((m) => (
+                      <g key={`m${m.idx}`}>
+                        <circle cx={m.pt.x} cy={m.pt.y} r={4.5 / z} className="conn-mid" strokeWidth={1.2 / z} />
+                        <path d={`M${m.pt.x - 2.5 / z} ${m.pt.y}h${5 / z}M${m.pt.x} ${m.pt.y - 2.5 / z}v${5 / z}`} className="conn-mid-plus" strokeWidth={1.2 / z} />
+                      </g>
+                    ))}
+                  {h.bends.map((b) => {
+                    const r = 3.75 / z;
+                    return <rect key={`b${b.idx}`} x={b.p.x - r} y={b.p.y - r} width={2 * r} height={2 * r} rx={1 / z} className="handle node" strokeWidth={1.5 / z} />;
+                  })}
+                  {h.ends.map((e) => (
+                    <circle key={e.part} cx={e.p.x} cy={e.p.y} r={4.5 / z} className={e.glued ? 'handle glued' : 'handle'} strokeWidth={1.5 / z} />
+                  ))}
+                </g>
+              );
+            })()}
           {singleShape &&
             !(singleShape.id === editingText && singleShape.kind === 'text') &&
             (() => {
@@ -2105,6 +2251,14 @@ export function Canvas() {
           })()}
           {g?.kind === 'endpoint' && <TargetMarker t={g.cur} z={z} />}
           {g?.kind === 'shape' && <ShapePreview g={g} />}
+          {/* what a connector end would glue to: its outline and connection points */}
+          {g?.kind === 'shape' && g.glueA && <GlueMarkers doc={doc} glue={g.glueA} z={z} />}
+          {g?.kind === 'shape' && g.glueB && <GlueMarkers doc={doc} glue={g.glueB} z={z} />}
+          {g?.kind === 'conn' && g.glue && <GlueMarkers doc={doc} glue={g.glue} z={z} />}
+          {(tool === 'line' || tool === 'arrow') && !g && (() => {
+            const glue = glueAt(cursor, false);
+            return glue && <GlueMarkers doc={doc} glue={glue} z={z} />;
+          })()}
           {g?.kind === 'polygon' && <PolygonPreview g={g} z={z} closing={closesPolygon(g, g.cur) && g.pts.length >= 3} />}
           {tool === 'wire' && !g && <TargetMarker t={findTarget(cursor)} z={z} subtle />}
           {ghost && (
@@ -2166,6 +2320,11 @@ export function Canvas() {
       {g?.kind === 'wire' && (
         <div className="canvas-hint">
           Click to add bends · click a pin, wire or junction to connect · <kbd>Space</kbd> flip elbow · <kbd>⌫</kbd> undo bend · <kbd>Enter</kbd>/double-click to finish · <kbd>Esc</kbd> cancel
+        </div>
+      )}
+      {g?.kind === 'shape' && (g.shape === 'line' || g.shape === 'arrow') && (
+        <div className="canvas-hint">
+          Release on a shape or part to attach — on a dot to pin the end there, anywhere else on it to let it float round the outline · <kbd>Alt</kbd> don't attach
         </div>
       )}
       {placing && !g && (
@@ -2248,9 +2407,31 @@ function ShapePreview({ g }: { g: Extract<Gesture, { kind: 'shape' }> }) {
   return <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={g.shape === 'zone' ? 8 : 6} className={g.shape === 'zone' ? 'shape-preview zone' : 'shape-preview'} />;
 }
 
+/** What a connector end would glue to: the target's outline and its connection points (the one in use filled). */
+function GlueMarkers({ doc, glue, z }: { doc: CircuitDoc; glue: GlueHit; z: number }) {
+  const it = doc.items[glue.attach.id];
+  if (!it) return null;
+  const turned = it.type === 'shape' && shapeRot(it) ? it : null;
+  const b = turned ? shapeBox(turned) : itemBounds(doc, it);
+  const a = glue.attach;
+  return (
+    <g pointerEvents="none">
+      {b && <rect x={b.x - 3} y={b.y - 3} width={b.w + 6} height={b.h + 6} rx={4} className="glue-outline" strokeWidth={1.5 / z} transform={turned ? shapeTransform(turned) : undefined} />}
+      {attachSpots(doc, it).map((s, i) => {
+        const on = isFixed(a) && Math.abs(s.fx - a.fx!) < 1e-3 && Math.abs(s.fy - a.fy!) < 1e-3;
+        return <circle key={i} cx={s.pt.x} cy={s.pt.y} r={(on ? 4.5 : 3) / z} className={on ? 'glue-spot active' : 'glue-spot'} strokeWidth={1.2 / z} />;
+      })}
+    </g>
+  );
+}
+
+/** Lines and arrows are outlined along their drawn path. */
+const connectorOutline = (doc: CircuitDoc, s: ShapeItem) => buildWirePath(resolveConnector(doc, s).flat, 0);
+
 function HoverOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; polys: Map<string, Point[]>; z: number }) {
   const it = doc.items[id];
   if (!it) return null;
+  if (isConnector(it)) return <path d={connectorOutline(doc, it)} className="hover-wire" strokeWidth={8 / z} fill="none" />;
   if (it.type === 'wire') {
     const pts = polys.get(id) ?? [];
     return <path d={buildWirePath(pts, 0)} className="hover-wire" strokeWidth={8 / z} fill="none" />;
@@ -2294,8 +2475,8 @@ function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; 
   const turned = it.type === 'shape' && shapeRot(it) ? it : null;
   const b = turned ? shapeBox(turned) : itemBounds(doc, it);
   if (!b) return null;
-  if (it.type === 'shape' && (it.kind === 'line' || it.kind === 'arrow')) {
-    return <line x1={it.x} y1={it.y} x2={it.x + it.w} y2={it.y + it.h} className={it.locked ? 'sel-wire locked' : 'sel-wire'} strokeWidth={Math.max(6 / z, 4)} />;
+  if (isConnector(it)) {
+    return <path d={connectorOutline(doc, it)} className={it.locked ? 'sel-wire locked' : 'sel-wire'} strokeWidth={Math.max(6 / z, 4)} fill="none" />;
   }
   const pad = it.type === 'junction' ? 3 : 4;
   return (

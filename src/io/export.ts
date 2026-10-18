@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import { resolveConnector } from '../model/connectors';
 import { createElement } from 'react';
 import { Scene, computeSceneData, type Palette } from '../canvas/Scene';
 import { docBounds, drawOrder, itemBounds, uid } from '../model/doc';
@@ -378,7 +379,8 @@ export function exportDxf(doc: CircuitDoc): string {
       } else if (it.kind === 'polygon') {
         poly(layer, polyPoints(it), true, aciColor(it.stroke));
       } else if (it.kind === 'line' || it.kind === 'arrow') {
-        poly(layer, [{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y + it.h }], false, aciColor(it.stroke));
+        // the drawn path: bends, elbows and glued ends in, curves flattened
+        poly(layer, resolveConnector(doc, it).flat, false, aciColor(it.stroke));
       } else if (it.kind === 'text' && it.text) {
         shapeText(it).split('\n').forEach((l, i) => {
           const at = W({ x: it.x, y: it.y + (it.fontSize ?? 16) * (i + 1) * 1.3 });

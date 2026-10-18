@@ -37,11 +37,12 @@ import { measureTextShape } from '../model/shapeText';
 import { DNP, PART_FIELDS, customFieldKeys, hasPartFields, isDnp } from '../model/partFields';
 import { getSymbol, stateSymbol } from '../model/registry';
 import { gridScale } from '../model/symbols/scale';
-import type { CircuitDoc, ComponentItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
+import type { CircuitDoc, ConnectorRoute, ComponentItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { docBounds, selectedGroup } from '../model/doc';
 import { scaleItems, selectionPivot } from '../model/ops';
 import { normDeg, ROT_KINDS, shapeRot } from '../model/rotation';
+import { detachConnector } from '../model/connectors';
 import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
@@ -868,6 +869,8 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
   );
 }
 
+const SHAPE_NAMES: Record<ShapeItem['kind'], string> = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', polygon: 'Polygon', line: 'Line', arrow: 'Arrow', text: 'Text', image: 'Image', ink: 'Ink', callout: 'Callout', frame: 'Frame' };
+
 function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   const first = shapes[0];
   const ids = shapes.map((s) => s.id);
@@ -890,7 +893,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
       if (r) s.rot = r;
       else delete s.rot;
     });
-  const title = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', polygon: 'Polygon', line: 'Line', arrow: 'Arrow', text: 'Text', image: 'Image', ink: 'Ink', callout: 'Callout', frame: 'Frame' }[first.kind];
+  const title = SHAPE_NAMES[first.kind];
   return (
     <>
       <div className="panel-title">{shapes.length > 1 ? `${shapes.length} shapes` : title}</div>
@@ -931,6 +934,18 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
               <Field label="Head size">
                 <NumberInput value={first.headSize ?? defaultHeadSize(first.strokeWidth)} min={2} max={80} suffix="px" onChange={(v) => upd((s) => (s.headSize = v))} />
               </Field>
+              <Field label="Route" hint="Elbow: square corners, routed round the ends' sides. Drag the + on a stretch to add a bend; double-click a bend to remove it">
+                <Segmented
+                  value={first.route ?? 'straight'}
+                  options={ROUTE_OPTIONS}
+                  onChange={(v) =>
+                    upd((s) => {
+                      if (v === 'straight') delete s.route;
+                      else s.route = v;
+                    })
+                  }
+                />
+              </Field>
             </>
           ) : undefined,
         }}
@@ -945,6 +960,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
               </span>
             </Field>
           )}
+          {isLine && <AttachFields s={first} />}
           {(first.kind === 'rect' || first.kind === 'zone') && (
             <>
               <Field label="Container" hint="Moves what's inside with it">
@@ -999,6 +1015,49 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
 }
 
 const SIZES = [0.5, 0.75, 1, 1.5, 2];
+
+const ROUTE_OPTIONS: { value: ConnectorRoute; label: string }[] = [
+  { value: 'straight', label: 'Straight' },
+  { value: 'elbow', label: 'Elbow' },
+  { value: 'curved', label: 'Curved' },
+];
+
+/** What a connector's ends are glued to, each with a button to let go (the end stays where it is). */
+function AttachFields({ s }: { s: ShapeItem }) {
+  const doc = useStore((st) => st.doc);
+  const name = (id: string) => {
+    const it = doc.items[id];
+    if (it?.type === 'component') return it.ref || it.value || 'Part';
+    if (it?.type === 'shape') return it.text?.split('\n')[0].trim() || SHAPE_NAMES[it.kind];
+    return '';
+  };
+  const detach = (end: 'from' | 'to') =>
+    mutate((d) => {
+      const c = d.items[s.id] as ShapeItem | undefined;
+      if (c) detachConnector(d as CircuitDoc, c, { [end]: true });
+    });
+  return (
+    <>
+      {(['from', 'to'] as const).map((end) => {
+        const a = s[end];
+        return (
+          <Field key={end} label={end === 'from' ? 'Start' : 'End'} hint="Drag an end onto a shape or part to attach it; hold Alt to drop it without attaching">
+            {a && doc.items[a.id] ? (
+              <span className="row-gap">
+                <span className="muted">Attached to {name(a.id)}</span>
+                <button className="secondary-btn" onClick={() => detach(end)}>
+                  Detach
+                </button>
+              </span>
+            ) : (
+              <span className="muted">Not attached</span>
+            )}
+          </Field>
+        );
+      })}
+    </>
+  );
+}
 
 /** Size of parts: the drawing, pins and text scale together, line widths don't. */
 function SizeField({ ids }: { ids: string[] }) {

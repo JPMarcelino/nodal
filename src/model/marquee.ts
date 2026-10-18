@@ -1,3 +1,4 @@
+import { resolveConnector } from './connectors';
 import { itemBounds } from './doc';
 import { pointInRect, rectContains, rectsIntersect, segmentIntersectsRect } from './geometry';
 import { pointInPolygon } from './polygon';
@@ -22,7 +23,7 @@ export function marqueeHits(doc: CircuitDoc, polys: Map<string, Point[]>, r: Rec
       return crossing ? crossesRect(pts, r) : pts.length > 0 && pts.every((p) => pointInRect(p, r));
     }
     if (crossing && it.type === 'shape' && (it.kind === 'line' || it.kind === 'arrow')) {
-      return segmentIntersectsRect({ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y + it.h }, r);
+      return crossesRect(resolveConnector(doc, it).flat, r);
     }
     if (crossing && it.type === 'shape' && shapeRot(it)) {
       // a turned box is touched where its outline runs, or when it holds the rectangle

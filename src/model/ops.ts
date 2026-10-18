@@ -1,4 +1,5 @@
 import { current, isDraft } from 'immer';
+import { connectorsOf, detachConnector, isConnector, resolveConnector } from './connectors';
 import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
 import { eq, projectOnSegment, rectsIntersect, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
@@ -277,6 +278,10 @@ function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: strin
 /** Deletes items; wires attached to deleted components keep their shape and become free. */
 export function deleteItems(doc: CircuitDoc, ids: Iterable<string>) {
   const del = new Set(ids);
+  // connectors glued to what goes let go of it, staying where they are
+  for (const s of connectorsOf(doc, del)) {
+    if (!del.has(s.id)) detachConnector(doc, s, { from: !!s.from && del.has(s.from.id), to: !!s.to && del.has(s.to.id) });
+  }
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'wire' || del.has(it.id)) continue;
     const touches = [it.a, it.b].some((ep) => del.has(endpointOwner(ep) ?? ''));
@@ -486,10 +491,12 @@ function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
           else it.flipX = true;
         }
       } else if (b.kind === 'line' || b.kind === 'arrow') {
+        // free ends and bends go with the map; glued ends stay on their targets (resolved on use)
         it.x = p1.x;
         it.y = p1.y;
         it.w = p2.x - p1.x;
         it.h = p2.y - p1.y;
+        if (b.pts) it.pts = b.pts.map(map);
       } else if (b.kind === 'callout') {
         it.x = p1.x;
         it.y = p1.y;
@@ -575,6 +582,32 @@ export function translateItems(base: CircuitDoc, doc: CircuitDoc, ids: Set<strin
 export function translateDetached(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, dx: number, dy: number) {
   const map = (p: Point) => ({ x: p.x + dx, y: p.y + dy });
   transformNonWires(base, doc, ids, map);
+  // connectors are cut loose the same way: glued to something that moves while they stay, or the other way round
+  for (const b of Object.values(base.items)) {
+    if (!isConnector(b) || b.locked || (!b.from && !b.to)) continue;
+    const s = doc.items[b.id] as ShapeItem | undefined;
+    if (!s) continue;
+    const moves = ids.has(b.id);
+    const cut = (a: typeof b.from) => !!a && ids.has(a.id) !== moves;
+    const from = cut(b.from);
+    const to = cut(b.to);
+    if (!from && !to) continue;
+    // where the ends are at the start of the move, carried along when the connector moves
+    const p = resolveConnector(base, b);
+    const at = (q: Point) => (moves ? map(q) : q);
+    if (from) {
+      const a = at(p.start);
+      const e = { x: s.x + s.w, y: s.y + s.h };
+      Object.assign(s, { x: a.x, y: a.y, w: e.x - a.x, h: e.y - a.y });
+      delete s.from;
+    }
+    if (to) {
+      const e = at(p.end);
+      s.w = e.x - s.x;
+      s.h = e.y - s.y;
+      delete s.to;
+    }
+  }
   for (const b of Object.values(base.items)) {
     if (b.type !== 'wire' || b.locked) continue;
     const w = doc.items[b.id] as WireItem | undefined;
@@ -749,6 +782,9 @@ export function extractFragment(doc: CircuitDoc, ids: Set<string>): Fragment {
       }
       // freeze routing so the copy looks identical
       c.pts = wirePolyline(doc, it as WireItem).slice(1, -1);
+    } else if (isConnector(c)) {
+      // a connector keeps its ends glued only to things copied with it
+      detachConnector(doc, c, { from: !!c.from && !all.has(c.from.id), to: !!c.to && !all.has(c.to.id) });
     }
     items.push(c);
   }
@@ -793,6 +829,16 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
     } else if (it.type === 'junction' || it.type === 'shape') {
       it.x += dx;
       it.y += dy;
+      if (it.type === 'shape' && it.pts) it.pts = it.pts.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+      if (it.type === 'shape') {
+        // glued ends follow the copies of their targets; a target left behind lets go
+        for (const end of ['from', 'to'] as const) {
+          const a = it[end];
+          if (!a) continue;
+          if (idMap.has(a.id)) it[end] = { ...a, id: idMap.get(a.id)! };
+          else delete it[end];
+        }
+      }
       if (it.type === 'shape' && it.anchor) {
         if (it.anchor.id && idMap.has(it.anchor.id)) it.anchor.id = idMap.get(it.anchor.id)!;
         it.anchor.x += dx;

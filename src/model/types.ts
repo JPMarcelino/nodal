@@ -220,6 +220,22 @@ export type ShapeKind = 'rect' | 'zone' | 'ellipse' | 'polygon' | 'line' | 'arro
 
 export type HeadKind = 'none' | 'open' | 'filled' | 'circle' | 'bar';
 
+/**
+ * What a line or arrow end is glued to (a shape or a part). With `fx` / `fy`
+ * the end is pinned to that spot of the target's own unrotated box (0–1 across
+ * and down: 0.5 / 0 is the middle of the top side; a part's box is its symbol's,
+ * before turning and mirroring). Without them the end floats: it sits where the
+ * path, heading for the target's centre, meets its outline. See model/connectors.ts.
+ */
+export interface Attach {
+  id: string;
+  fx?: number;
+  fy?: number;
+}
+
+/** How a line or arrow runs through its bends: as drawn, in square elbows, or as a smooth curve. */
+export type ConnectorRoute = 'straight' | 'elbow' | 'curved';
+
 export interface ShapeItem extends ItemBase {
   type: 'shape';
   kind: ShapeKind;
@@ -244,6 +260,17 @@ export interface ShapeItem extends ItemBase {
   headEnd?: HeadKind;
   /** Arrowhead length in px; undefined = auto (stroke width based). */
   headSize?: number;
+  /**
+   * Lines and arrows (connectors): bend points between the ends, absolute. x / y
+   * stays the start and x + w / y + h the end; for glued ends they are kept in
+   * step with the target (see model/connectors.ts).
+   */
+  pts?: Point[];
+  /** Lines and arrows: what the start / end is glued to. */
+  from?: Attach;
+  to?: Attach;
+  /** Lines and arrows: path style (unset = straight). */
+  route?: ConnectorRoute;
   text?: string;
   /** Image shapes: the picture as a data URL (PNG / JPEG). */
   src?: string;
