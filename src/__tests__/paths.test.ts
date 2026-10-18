@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createDoc, makeShape, normalizeDoc } from '../model/doc';
 import { flipItems, rotateShapeBy } from '../model/ops';
 import {
+  canConvertToPath,
   convertToPath,
+  isPathShape,
   cubicAt,
   dragHandle,
   ellipseNodes,
@@ -274,7 +276,7 @@ describe('curved presets', () => {
   });
 });
 
-const polyPathOk = (s: ShapeItem) => /^M[-\d.]+ [-\d.]+([LC][-\d. ]+)+Z$/.test(pathD(pathNodes(s), s.open));
+const polyPathOk = (s: ShapeItem) => /^M[-\d.]+ [-\d.]+([LC][-\d. ]+)+Z?$/.test(pathD(pathNodes(s), s.open));
 
 describe('loading and import', () => {
   it('drops broken curve lists', () => {
@@ -298,5 +300,22 @@ describe('loading and import', () => {
     expect(c.nodes).toHaveLength(3);
     expect(c.nodes[0].out).toEqual({ x: 10, y: -10 });
     expect(c.nodes[1].in).toEqual({ x: 20, y: -10 });
+  });
+});
+
+describe('path naming and conversion rules', () => {
+  it('calls curved or open polygons paths', () => {
+    expect(isPathShape({})).toBe(false);
+    expect(isPathShape({ open: true })).toBe(true);
+    expect(isPathShape({ curve: [0, 0, 0, 0] })).toBe(false);
+    expect(isPathShape({ curve: [0, 0, 0.1, 0] })).toBe(true);
+  });
+
+  it('does not offer converting a line that has arrowheads', () => {
+    const doc = createDoc();
+    expect(canConvertToPath(makeShape(doc, 'line', 0, 0, 50, 0))).toBe(true);
+    expect(canConvertToPath(makeShape(doc, 'arrow', 0, 0, 50, 0))).toBe(false);
+    expect(canConvertToPath(Object.assign(makeShape(doc, 'line', 0, 0, 50, 0), { headStart: 'filled' as const }))).toBe(false);
+    expect(canConvertToPath(Object.assign(makeShape(doc, 'arrow', 0, 0, 50, 0), { headEnd: 'none' as const }))).toBe(true);
   });
 });

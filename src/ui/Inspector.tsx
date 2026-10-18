@@ -42,9 +42,9 @@ import type { CircuitDoc, ConnectorRoute, ComponentItem, LabelSide, LabelSpotNam
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { docBounds, selectedGroup } from '../model/doc';
 import { scaleItems, selectionPivot } from '../model/ops';
-import { normDeg, ROT_KINDS, shapeRot } from '../model/rotation';
+import { normDeg, ROT_KINDS, setShapeSize, shapeRot } from '../model/rotation';
 import { detachConnector } from '../model/connectors';
-import { isSmooth, pathNodes } from '../model/path';
+import { isPathShape, isSmooth, pathNodes } from '../model/path';
 import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
@@ -901,7 +901,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
       if (r) s.rot = r;
       else delete s.rot;
     });
-  const title = SHAPE_NAMES[first.kind];
+  const title = first.kind === 'polygon' && isPathShape(first) ? 'Path' : SHAPE_NAMES[first.kind];
   return (
     <>
       <div className="panel-title">{shapes.length > 1 ? `${shapes.length} shapes` : title}</div>
@@ -1011,8 +1011,8 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
               </Field>
               <Field label="Size">
                 <span className="row-gap">
-                  <NumberInput value={first.w} suffix="w" onChange={(v) => upd((s) => (s.w = v))} />
-                  <NumberInput value={first.h} suffix="h" onChange={(v) => upd((s) => (s.h = v))} />
+                  <NumberInput value={first.w} suffix="w" onChange={(v) => upd((s) => setShapeSize(s, { w: v }))} />
+                  <NumberInput value={first.h} suffix="h" onChange={(v) => upd((s) => setShapeSize(s, { h: v }))} />
                 </span>
               </Field>
             </>

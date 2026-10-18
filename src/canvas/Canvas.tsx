@@ -1729,7 +1729,7 @@ export function Canvas() {
         break;
       }
       case 'resize': {
-        // a turned shape resizes in its own frame, where the grid doesn't line up
+        // a turned shape snaps in its own frame (inside resizeInFrame), where the world grid doesn't line up
         const turned = shapeRot(g.base);
         const p = snapOn && !turned ? sp(w) : w;
         gestureUpdate((d) => {
@@ -1762,7 +1762,7 @@ export function Canvas() {
             return;
           }
           // the side or corner opposite the handle stays put, turned or not
-          Object.assign(s, resizeInFrame({ x: b.x, y: b.y, w: b.w, h: b.h }, turned, g.handle, p, grid));
+          Object.assign(s, resizeInFrame({ x: b.x, y: b.y, w: b.w, h: b.h }, turned, g.handle, p, grid, snapOn && turned ? grid : 0));
         });
         break;
       }
@@ -1949,7 +1949,7 @@ export function Canvas() {
           let id = '';
           const preset = getPreset(g.preset);
           mutate((d) => {
-            const s = preset ? makePresetShape(d as CircuitDoc, preset, r.x, r.y, r.w, r.h) : makeShape(d as CircuitDoc, g.shape, r.x, r.y, r.w, r.h);
+            const s = preset ? makePresetShape(d as CircuitDoc, preset, r.x, r.y, r.w, r.h, S().prefs.theme) : makeShape(d as CircuitDoc, g.shape, r.x, r.y, r.w, r.h);
             s.group = S().scope;
             d.items[s.id] = s;
             id = s.id;

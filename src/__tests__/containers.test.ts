@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { withContents } from '../model/containers';
 import { createDoc, makeShape } from '../model/doc';
-import { translateItems } from '../model/ops';
+import { alignItems, distributeItems, translateItems } from '../model/ops';
 import { pathBounds, pathNodes } from '../model/path';
 import { SHAPE_PRESETS, getPreset, makePresetShape, searchPresets } from '../model/shapePresets';
 import type { CircuitDoc, ShapeItem } from '../model/types';
@@ -129,5 +129,52 @@ describe('containers', () => {
     const lockedBox = add(doc, 500, 0, 200, 200, { container: true, locked: true });
     const child = add(doc, 520, 20, 30, 30);
     expect(withContents(doc, [lockedBox]).has(child)).toBe(false);
+  });
+});
+
+describe('library presets', () => {
+  it('fills basic and flowchart shapes with the page colour, but not arrows', () => {
+    const doc = createDoc();
+    doc.settings.background = '#112233';
+    const box = makePresetShape(doc, getPreset('flow-process')!, 0, 0, 80, 60);
+    expect(box.fill).toBe('#112233');
+    expect(box.fillOpacity).toBe(1);
+    expect(makePresetShape(doc, getPreset('arrow-block')!, 0, 0, 80, 60).fillOpacity).toBe(0);
+    doc.settings.background = '';
+    expect(makePresetShape(doc, getPreset('triangle')!, 0, 0, 80, 60, 'light').fill).toBe('#fffdf9');
+  });
+
+  it('draws the database as an open path with no stretch twice', () => {
+    const s = makePresetShape(createDoc(), getPreset('flow-database')!, 0, 0, 80, 60);
+    expect(s.open).toBe(true);
+    const b = pathBounds(pathNodes(s), true);
+    expect(b.w).toBeCloseTo(80, 1);
+    expect(b.h).toBeCloseTo(60, 1);
+  });
+});
+
+describe('align and distribute with containers', () => {
+  it('carry a container\'s contents, and let selected contents ride along', () => {
+    const doc = createDoc();
+    const box = add(doc, 0, 0, 100, 100, { container: true });
+    const inner = add(doc, 10, 10, 20, 20);
+    const other = add(doc, 300, 200, 100, 100);
+    alignItems(doc, [box, inner, other], 'bottom');
+    // the box dropped to the other's bottom edge and took the inner shape with it
+    expect((doc.items[box] as ShapeItem).y).toBe(200);
+    expect((doc.items[inner] as ShapeItem).y).toBe(210);
+    expect((doc.items[other] as ShapeItem).y).toBe(200);
+  });
+
+  it('distributes containers with their contents', () => {
+    const doc = createDoc();
+    const a = add(doc, 0, 0, 100, 100, { container: true });
+    const ai = add(doc, 10, 10, 20, 20);
+    const b = add(doc, 150, 0, 100, 100);
+    const c = add(doc, 600, 0, 100, 100);
+    distributeItems(doc, [a, b, c], 'x');
+    expect((doc.items[b] as ShapeItem).x).toBe(300);
+    expect((doc.items[a] as ShapeItem).x).toBe(0);
+    expect((doc.items[ai] as ShapeItem).x).toBe(10);
   });
 });

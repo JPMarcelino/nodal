@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { isDesktop } from '../io/files';
 import { createDoc } from '../model/doc';
+import { resolvePage } from '../model/pages';
 import type { CircuitDoc, Point } from '../model/types';
 import * as A from '../store/actions';
 import { X, useExplain } from '../store/explain';
@@ -39,6 +40,8 @@ export interface Peer {
   cursor?: Point;
   selection: string[];
   view?: PeerView;
+  /** Page they have open (unset: an older client, taken to be on the first page). */
+  page?: string;
   /** Laser pointer: 1 = laser tool on, 2 = button held (draws a trail). */
   laser?: number;
   /** Can change the circuit (the person who shared it), rather than only watch. */
@@ -416,6 +419,7 @@ async function handle(msg: ServerMsg) {
         cursor: p.cursor,
         selection: Array.isArray(p.selection) ? p.selection : [],
         view: p.view,
+        page: typeof p.page === 'string' ? p.page.slice(0, 80) : undefined,
         laser: p.laser === 1 || p.laser === 2 ? p.laser : 0,
         edit: C().peers[msg.from]?.edit,
       };
@@ -488,7 +492,7 @@ useStore.subscribe((s, prev) => {
   if (s.doc !== prev.doc && s.viewOnly && !awaitingRoom) revertViewerEdit();
   else if (s.doc !== prev.doc && !flushTimer) flushTimer = setTimeout(flushLocal, 50);
   if (s.view !== prev.view && !followApplying && C().following) setC({ following: null });
-  if (s.cursor !== prev.cursor || s.selection !== prev.selection || s.view !== prev.view || s.canvasSize !== prev.canvasSize || s.tool !== prev.tool) schedulePresence();
+  if (s.cursor !== prev.cursor || s.selection !== prev.selection || s.view !== prev.view || s.canvasSize !== prev.canvasSize || s.tool !== prev.tool || s.page !== prev.page) schedulePresence();
 });
 
 useExplain.subscribe((s, prev) => {
@@ -527,6 +531,7 @@ function sendPresence() {
     cursor,
     laser: S().tool === 'laser' ? (X().laserDown ? 2 : 1) : 0,
     selection: selection.slice(0, 500),
+    page: resolvePage(S().doc, S().page),
     view: { cx: (canvasSize.w / 2 - view.x) / view.zoom, cy: (canvasSize.h / 2 - view.y) / view.zoom, zoom: view.zoom },
   });
 }

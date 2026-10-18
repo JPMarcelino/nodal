@@ -18,7 +18,8 @@ import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
 import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
 import { polyPath } from '../model/path';
 import { connectorD, isConnector, resolveConnector, type ConnectorPath } from '../model/connectors';
-import { shapeTransform } from '../model/rotation';
+import { shapeBox, shapeTransform } from '../model/rotation';
+import { gradientLine } from '../model/style';
 
 export interface Palette {
   sym: string;
@@ -558,12 +559,10 @@ function ShapeDefs({ shapes, palette }: { shapes: ShapeItem[]; palette: Palette 
         </filter>
       )}
       {grads.map((s) => {
-        // objectBoundingBox units: the blend runs through the centre at the chosen angle
-        const a = (s.gradient!.angle * Math.PI) / 180;
-        const c = Math.cos(a) / 2;
-        const n = Math.sin(a) / 2;
+        // user-space endpoints (in the shape's own, unturned frame): the angle stays true on a box that is not square
+        const g = gradientLine(shapeBox(s), s.gradient!.angle);
         return (
-          <linearGradient key={s.id} id={gradId(s.id)} x1={0.5 - c} y1={0.5 - n} x2={0.5 + c} y2={0.5 + n}>
+          <linearGradient key={s.id} id={gradId(s.id)} gradientUnits="userSpaceOnUse" x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2}>
             <stop offset="0" stopColor={inkColor(s.fill, palette)} />
             <stop offset="1" stopColor={inkColor(s.gradient!.to, palette)} />
           </linearGradient>

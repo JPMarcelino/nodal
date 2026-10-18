@@ -94,9 +94,14 @@ export type BoxHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
  * point `p`. The drag works in the box's own frame, and the result is placed so
  * the side or corner opposite the handle stays where it was on screen.
  */
-export function resizeInFrame(b: Rect, rot: number, handle: BoxHandle, p: Point, min: number): Rect {
+export function resizeInFrame(b: Rect, rot: number, handle: BoxHandle, p: Point, min: number, snap = 0): Rect {
   const c = rectCentre(b);
   const q = rotateDeg(p, -rot, c);
+  // the dragged edges snap to the grid in the shape's own frame, where a turned shape's edges run
+  if (snap) {
+    if (handle.includes('w') || handle.includes('e')) q.x = Math.round(q.x / snap) * snap;
+    if (handle.includes('n') || handle.includes('s')) q.y = Math.round(q.y / snap) * snap;
+  }
   let x1 = b.x,
     y1 = b.y,
     x2 = b.x + b.w,
@@ -111,6 +116,17 @@ export function resizeInFrame(b: Rect, rot: number, handle: BoxHandle, p: Point,
   // the box's centre moved within the old frame: carry that move into the world
   const at = rotateDeg(local, rot, c);
   return { x: at.x - w / 2, y: at.y - h / 2, w, h };
+}
+
+/** Gives a shape a new width and / or height; a turned one keeps its centre (its pivot) where it is, an upright one its top left. */
+export function setShapeSize(s: ShapeItem, size: { w?: number; h?: number }) {
+  const c = rectCentre(shapeBox(s));
+  if (size.w !== undefined) s.w = size.w;
+  if (size.h !== undefined) s.h = size.h;
+  if (!shapeRot(s)) return;
+  const b = shapeBox(s);
+  s.x += c.x - (b.x + b.w / 2);
+  s.y += c.y - (b.y + b.h / 2);
 }
 
 /**

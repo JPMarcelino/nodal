@@ -26,7 +26,7 @@ import {
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
 import { deletePolyCorner } from '../model/polygon';
-import { canConvertToPath, convertToPath, pathNodes, setNodeKind, setPathNodes } from '../model/path';
+import { canConvertToPath, convertToPath, hasHeads, pathNodes, setNodeKind, setPathNodes } from '../model/path';
 import { resolveConnector } from '../model/connectors';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
@@ -93,7 +93,7 @@ export function addPresetShape(id: string, at: Point, size: { w: number; h: numb
   const box = preset.square ? { w: side, h: side } : size;
   let out = '';
   mutate((d) => {
-    const s = makePresetShape(d as CircuitDoc, preset, snap(at.x - box.w / 2, g), snap(at.y - box.h / 2, g), box.w, box.h);
+    const s = makePresetShape(d as CircuitDoc, preset, snap(at.x - box.w / 2, g), snap(at.y - box.h / 2, g), box.w, box.h, S().prefs.theme);
     s.group = S().scope;
     d.items[s.id] = s;
     out = s.id;
@@ -156,7 +156,11 @@ export function convertSelectionToPath() {
     return it.type === 'shape' && canConvertToPath(it);
   });
   if (!ids.length) {
-    toast('Select a rectangle, ellipse or unattached line to convert');
+    const headed = editable().some((id) => {
+      const it = vdoc().items[id];
+      return it.type === 'shape' && hasHeads(it);
+    });
+    toast(headed ? 'Remove the arrowheads first: a path can’t draw them' : 'Select a rectangle, ellipse or unattached line to convert');
     return;
   }
   mutate((d) => {

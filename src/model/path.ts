@@ -46,6 +46,9 @@ const r5 = (v: number) => Math.round(v * 1e5) / 1e5;
 const pt = (p: Point): Point => ({ x: p.x, y: p.y });
 const same = (a: Point, b: Point, eps = 1e-6) => Math.abs(a.x - b.x) < eps && Math.abs(a.y - b.y) < eps;
 
+/** A polygon that is a "path": it has curves or is open (a plain corner list stays a polygon). */
+export const isPathShape = (s: Pick<ShapeItem, 'curve' | 'open'>): boolean => !!s.open || !!s.curve?.some((v) => v);
+
 /** Fewest nodes an outline keeps (two for an open path, three for a closed one). */
 export const minNodes = (open: boolean | undefined) => (open ? 2 : 3);
 
@@ -474,15 +477,19 @@ export function unitPath(nodes: PathNode[], open?: boolean): Pick<ShapeItem, 'po
 
 /* ------------------------------ convert to path ------------------------------ */
 
-/** Kinds "Convert to path" handles: boxes, ellipses, and lines / arrows not glued to anything. */
+/** Whether a line / arrow has an arrowhead at either end (an open path can't draw one). */
+export const hasHeads = (s: ShapeItem): boolean =>
+  (s.kind === 'line' || s.kind === 'arrow') && ((s.headStart ?? 'none') !== 'none' || (s.headEnd ?? (s.kind === 'arrow' ? 'open' : 'none')) !== 'none');
+
+/** Kinds "Convert to path" handles: boxes, ellipses, and lines / arrows with no arrowheads, not glued to anything. */
 export const canConvertToPath = (s: ShapeItem): boolean =>
-  s.kind === 'rect' || s.kind === 'zone' || s.kind === 'ellipse' || ((s.kind === 'line' || s.kind === 'arrow') && !s.from && !s.to);
+  s.kind === 'rect' || s.kind === 'zone' || s.kind === 'ellipse' || ((s.kind === 'line' || s.kind === 'arrow') && !s.from && !s.to && !hasHeads(s));
 
 /**
  * Turns a shape into an editable polygon outline that draws the same: a
  * rectangle (rounded corners as quarter ellipses), an ellipse (four cubic
  * arcs) or a loose line / arrow (`conn`: its drawn path, bends and curves
- * kept; the heads are dropped). A turn is baked into the nodes. The id stays,
+ * kept; not offered when it has arrowheads, which a path can't draw). A turn is baked into the nodes. The id stays,
  * so connectors glued to it stay glued. Returns whether it changed.
  */
 export function convertToPath(s: ShapeItem, conn?: { start: Point; segs: { to: Point; c1?: Point; c2?: Point }[] }): boolean {
