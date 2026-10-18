@@ -1,7 +1,8 @@
 import { Clapperboard, Eye, Film, Play } from 'lucide-react';
 import { EXPLAIN_COLORS } from '../model/ink';
 import { DEFAULT_HOLD, DEFAULT_TRANSITION, normRect, presentationSteps } from '../model/presentation';
-import type { ShapeItem } from '../model/types';
+import { restackItems } from '../model/ops';
+import type { CircuitDoc, ShapeItem } from '../model/types';
 import * as A from '../store/actions';
 import { X, setX } from '../store/explain';
 import { S, mutate, set } from '../store/store';
@@ -54,13 +55,13 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
             <Field label="Width">
               <NumberInput value={first.strokeWidth} min={0.5} max={80} step={0.5} suffix="px" onChange={(v) => upd((s) => (s.strokeWidth = v))} />
             </Field>
-            <Field label="Highlighter" hint="Drawn under the circuit">
+            <Field label="Highlighter" hint="Sends it behind everything (pen ink comes to the front)">
               <Toggle
                 checked={!!first.highlighter}
                 onChange={(v) =>
-                  upd((s) => {
-                    s.highlighter = v || undefined;
-                    s.layer = v ? 'below' : 'above';
+                  mutate((d) => {
+                    ids.forEach((id) => ((d.items[id] as ShapeItem).highlighter = v || undefined));
+                    restackItems(d as CircuitDoc, ids, v ? 'back' : 'front');
                   })
                 }
               />

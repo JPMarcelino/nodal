@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { Scene, computeSceneData, type Palette } from '../canvas/Scene';
-import { docBounds, itemBounds, uid } from '../model/doc';
+import { docBounds, drawOrder, itemBounds, uid } from '../model/doc';
 import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
 import { instanceSymbol } from '../model/registry';
 import { PX_PER_MM, sheetRect } from '../model/sheet';
@@ -322,7 +322,9 @@ export function exportDxf(doc: CircuitDoc): string {
   g(2, 'ENTITIES');
 
   const data = computeSceneData(doc);
-  for (const it of Object.values(doc.items)) {
+  // entities in the drawing's stacking order (back first), like the SVG export
+  const rank = drawOrder(doc);
+  for (const it of Object.values(doc.items).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)) {
     if (it.hidden || (it.type === 'shape' && it.kind === 'frame')) continue;
     if (it.type === 'wire') {
       poly('WIRES', data.polys.get(it.id) ?? [], false, aciColor(wireStyle(doc, it).color));

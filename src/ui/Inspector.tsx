@@ -9,6 +9,8 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalDistributeCenter,
+  ArrowDownToLine,
+  ArrowUpToLine,
   BringToFront,
   FlipHorizontal2,
   FlipVertical2,
@@ -85,20 +87,37 @@ function HeadIcon({ kind, flip }: { kind: HeadKind; flip?: boolean }) {
 const headOptions = (flip: boolean) =>
   (Object.keys(HEAD_TITLES) as HeadKind[]).map((k) => ({ value: k, label: <HeadIcon kind={k} flip={flip} />, title: HEAD_TITLES[k] }));
 
-function ArrangeBar({ count }: { count: number }) {
+function ArrangeBar({ count, transform = true }: { count: number; transform?: boolean }) {
   return (
     <div className="arrange-bar">
-      <button title="Rotate counter-clockwise (Alt+R)" onClick={() => A.rotateSelection(-90)}>
-        <RotateCcw size={15} />
+      {transform && (
+        <>
+          <button title="Rotate counter-clockwise (Alt+R)" onClick={() => A.rotateSelection(-90)}>
+            <RotateCcw size={15} />
+          </button>
+          <button title="Rotate clockwise (R)" onClick={() => A.rotateSelection(90)}>
+            <RotateCw size={15} />
+          </button>
+          <button title="Flip horizontally (X)" onClick={() => A.flipSelection('x')}>
+            <FlipHorizontal2 size={15} />
+          </button>
+          <button title="Flip vertically (Y)" onClick={() => A.flipSelection('y')}>
+            <FlipVertical2 size={15} />
+          </button>
+          <span className="sep" />
+        </>
+      )}
+      <button title="Bring to front (Ctrl+Shift+])" onClick={() => A.reorder('front')}>
+        <BringToFront size={15} />
       </button>
-      <button title="Rotate clockwise (R)" onClick={() => A.rotateSelection(90)}>
-        <RotateCw size={15} />
+      <button title="Bring forward (Ctrl+])" onClick={() => A.reorder('forward')}>
+        <ArrowUpToLine size={15} />
       </button>
-      <button title="Flip horizontally (X)" onClick={() => A.flipSelection('x')}>
-        <FlipHorizontal2 size={15} />
+      <button title="Send backward (Ctrl+[)" onClick={() => A.reorder('backward')}>
+        <ArrowDownToLine size={15} />
       </button>
-      <button title="Flip vertically (Y)" onClick={() => A.flipSelection('y')}>
-        <FlipVertical2 size={15} />
+      <button title="Send to back (Ctrl+Shift+[)" onClick={() => A.reorder('back')}>
+        <SendToBack size={15} />
       </button>
       <span className="sep" />
       <button title="Group (Ctrl+G)" disabled={count < 2} onClick={A.groupSelection}>
@@ -868,6 +887,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   return (
     <>
       <div className="panel-title">{shapes.length > 1 ? `${shapes.length} shapes` : title}</div>
+      <ArrangeBar count={shapes.length} transform={false} />
       {!isImage && (
         <Section title={isText ? 'Text' : 'Label'}>
           <Field label={isText ? 'Content' : 'Title'} wide hint="Supports maths: $…$ inline, $$…$$ display, \$ for a dollar sign">
@@ -944,29 +964,6 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
           </Field>
         </Section>
       )}
-      <Section title="Layer" summary={first.layer === 'below' ? 'behind' : 'on top'}>
-        <Field label="Draw">
-          <Segmented
-            value={first.layer}
-            options={[
-              { value: 'below', label: 'Behind', title: 'Behind wires and components' },
-              { value: 'above', label: 'On top', title: 'Above everything' },
-            ]}
-            onChange={(v) => upd((s) => (s.layer = v))}
-          />
-        </Field>
-        <div className="arrange-bar">
-          <button title="Bring to front (Ctrl+Shift+])" onClick={() => A.reorder('front')}>
-            <BringToFront size={15} />
-          </button>
-          <button title="Send to back (Ctrl+Shift+[)" onClick={() => A.reorder('back')}>
-            <SendToBack size={15} />
-          </button>
-          <button title="Lock (Ctrl+Shift+L) — locked zones let clicks pass through" onClick={A.toggleLock}>
-            <Lock size={15} />
-          </button>
-        </div>
-      </Section>
       {shapes.length === 1 && !isText && (
         <Section title="Geometry">
           <Field label="Position">

@@ -1663,6 +1663,8 @@ select.input {
 
 .arrange-bar button {
   flex: 1;
+  min-width: 0;
+  padding: 0;
   height: 28px;
   display: flex;
   align-items: center;

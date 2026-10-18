@@ -40,9 +40,8 @@ export function createDoc(name = 'Untitled circuit'): CircuitDoc {
   };
 }
 
-/** Makes loaded documents safe to use (fills in settings added in later versions). */
-/** Upgrades older item fields in place (hopOver true/false → hopLayer +1/-1). */
-function migrateItems(items: Record<string, Item>): Record<string, Item> {
+/** Upgrades older item fields in place (hopOver true/false → hopLayer +1/-1; shape layers → z). */
+export function migrateItems(items: Record<string, Item>): Record<string, Item> {
   for (const it of Object.values(items)) {
     const legacy = it as Item & { hopOver?: boolean };
     if (legacy.type === 'wire' && typeof legacy.hopOver === 'boolean') {
@@ -50,8 +49,34 @@ function migrateItems(items: Record<string, Item>): Record<string, Item> {
       delete legacy.hopOver;
     }
   }
+  return migrateShapeLayers(items);
+}
+
+/**
+ * Older documents drew shapes in two bands ('below' behind the circuit,
+ * 'above' over it) with z only ordering shapes within a band. Folds that into
+ * the one shared order without changing the picture: below shapes (by their
+ * old z), then everything else in its current draw order, then above shapes.
+ * Every item's z becomes its rank and `layer` is dropped. Items without a
+ * `layer` stay in the middle band, so a legacy fragment pasted into a new
+ * document lands behind / in front of the circuit as it used to. Idempotent:
+ * once no shape carries `layer`, nothing changes.
+ */
+export function migrateShapeLayers(items: Record<string, Item>): Record<string, Item> {
+  const layerOf = (it: Item) => (it.type === 'shape' ? (it as ShapeItem & { layer?: unknown }).layer : undefined);
+  const all = Object.values(items);
+  if (!all.some((it) => layerOf(it) !== undefined)) return items;
+  const rank = drawOrder({ items } as CircuitDoc);
+  all.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  const band = (it: Item) => (layerOf(it) === undefined ? 1 : layerOf(it) === 'above' ? 2 : 0);
+  [...all.filter((it) => band(it) === 0), ...all.filter((it) => band(it) === 1), ...all.filter((it) => band(it) === 2)].forEach((it, i) => {
+    it.z = i;
+    delete (it as ShapeItem & { layer?: unknown }).layer;
+  });
   return items;
 }
+
+/** Makes loaded documents safe to use (fills in settings added in later versions). */
 
 export function normalizeDoc(raw: unknown): CircuitDoc {
   const d = raw as Partial<CircuitDoc>;
@@ -126,18 +151,18 @@ export function makeComponent(doc: CircuitDoc, symbolId: string, x: number, y: n
 }
 
 export const SHAPE_DEFAULTS: Record<ShapeKind, Partial<ShapeItem>> = {
-  rect: { stroke: '#7aa2f7', strokeWidth: 2, fill: '#7aa2f7', fillOpacity: 0, dash: 'dashed', radius: 6, layer: 'below' },
-  zone: { stroke: '#7aa2f7', strokeWidth: 1, fill: '#7aa2f7', fillOpacity: 0.12, dash: 'solid', radius: 8, layer: 'below' },
-  ellipse: { stroke: '#000000', strokeWidth: 2, fill: '#000000', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
-  polygon: { stroke: '#000000', strokeWidth: 2, fill: '#000000', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
-  line: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'none', layer: 'above' },
-  arrow: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'open', layer: 'above' },
-  image: { stroke: '#000000', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'below' },
-  ink: { stroke: '#000000', strokeWidth: 3, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above' },
-  callout: { stroke: '#f03e3e', strokeWidth: 1.5, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above', fontSize: 14, text: '' },
-  text: { stroke: 'none', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, layer: 'above', fontSize: 16, text: 'Text' },
+  rect: { stroke: '#7aa2f7', strokeWidth: 2, fill: '#7aa2f7', fillOpacity: 0, dash: 'dashed', radius: 6 },
+  zone: { stroke: '#7aa2f7', strokeWidth: 1, fill: '#7aa2f7', fillOpacity: 0.12, dash: 'solid', radius: 8 },
+  ellipse: { stroke: '#000000', strokeWidth: 2, fill: '#000000', fillOpacity: 0, dash: 'solid', radius: 0 },
+  polygon: { stroke: '#000000', strokeWidth: 2, fill: '#000000', fillOpacity: 0, dash: 'solid', radius: 0 },
+  line: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'none' },
+  arrow: { stroke: '#000000', strokeWidth: 2, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, headStart: 'none', headEnd: 'open' },
+  image: { stroke: '#000000', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0 },
+  ink: { stroke: '#000000', strokeWidth: 3, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0 },
+  callout: { stroke: '#f03e3e', strokeWidth: 1.5, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, fontSize: 14, text: '' },
+  text: { stroke: 'none', strokeWidth: 0, fill: 'none', fillOpacity: 0, dash: 'solid', radius: 0, fontSize: 16, text: 'Text' },
   // presentation frame: an editor-only outline (never drawn when presenting or exporting)
-  frame: { stroke: '#a855f7', strokeWidth: 1.5, fill: 'none', fillOpacity: 0, dash: 'dashed', radius: 0, layer: 'above', fontSize: 13, text: '' },
+  frame: { stroke: '#a855f7', strokeWidth: 1.5, fill: 'none', fillOpacity: 0, dash: 'dashed', radius: 0, fontSize: 13, text: '' },
 };
 
 /** Colours new zones cycle through, so neighbouring zones stand apart. */
@@ -154,8 +179,20 @@ export function nextZoneColour(doc: CircuitDoc): string {
   return ZONE_COLOURS.find((c) => used.get(c) === least)!;
 }
 
+/** Kinds that start behind everything (areas and pictures); the rest start in front. */
+export const BACK_KINDS: ReadonlySet<ShapeKind> = new Set(['rect', 'zone', 'ellipse', 'polygon', 'image']);
+
+/** A z that puts an item behind everything currently in the document. */
+export function backZ(doc: Pick<CircuitDoc, 'items'>): number {
+  return Math.min(0, ...Object.values(doc.items).map((i) => i.z ?? 0)) - 1;
+}
+
+/**
+ * New shape. Area kinds (and highlighter ink, see the explain tools) start at
+ * the back of the single stacking order; the rest leave z unset, which puts
+ * them in front of everything, newest on top (see drawOrder).
+ */
 export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number, w: number, h: number): ShapeItem {
-  const z = Math.max(0, ...Object.values(doc.items).map((i) => i.z ?? 0)) + 1;
   const shape = {
     id: uid('s'),
     type: 'shape',
@@ -170,10 +207,9 @@ export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number
     fillOpacity: 0,
     dash: 'solid',
     radius: 0,
-    layer: 'below',
-    z,
     ...SHAPE_DEFAULTS[kind],
   } as ShapeItem;
+  if (BACK_KINDS.has(kind)) shape.z = backZ(doc);
   if (kind === 'zone') shape.stroke = shape.fill = nextZoneColour(doc);
   return shape;
 }

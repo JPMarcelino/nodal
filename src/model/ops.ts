@@ -1,6 +1,6 @@
 import { current, isDraft } from 'immer';
-import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, nextRef, refersTo, uid } from './doc';
-import { eq, projectOnSegment, rotate, simplify, snap, unionRects } from './geometry';
+import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
+import { eq, projectOnSegment, rectsIntersect, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
 import { packPoly, polyPoints } from './polygon';
 import { touchingPins } from './netlist';
@@ -744,6 +744,8 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
     doc.items[it.id] = it;
     out.push(it.id);
   }
+  // fragments copied / saved by older versions still carry shape layers
+  migrateShapeLayers(doc.items);
   return out;
 }
 
@@ -889,5 +891,59 @@ export function reorderItem(doc: CircuitDoc, id: string, targetId: string, place
   moved.splice(at, 0, it);
   moved.forEach((s, i) => rank.set(s.id, slots[i]));
   for (const [iid, r] of rank) if (doc.items[iid].z !== r) doc.items[iid].z = r;
+  return true;
+}
+
+export type StackMove = 'forward' | 'backward' | 'front' | 'back';
+
+/**
+ * Moves items within the one stacking order shared by shapes, wires and
+ * parts. Front / back move the whole selection to an end (keeping its
+ * internal order); forward / backward step each selected item past the next
+ * unselected item it overlaps (or simply the next one when nothing overlaps).
+ * Every item's z is rewritten to its rank. Returns false when nothing moved.
+ */
+export function restackItems(doc: CircuitDoc, ids: Iterable<string>, dir: StackMove): boolean {
+  const sel = new Set([...ids].filter((id) => doc.items[id] && doc.items[id].type !== 'junction'));
+  if (!sel.size) return false;
+  const rank = drawOrder(doc);
+  let order = Object.values(doc.items)
+    .filter((i) => i.type !== 'junction')
+    .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
+    .map((i) => i.id);
+  const before = order.join();
+  if (dir === 'front') order = [...order.filter((id) => !sel.has(id)), ...order.filter((id) => sel.has(id))];
+  else if (dir === 'back') order = [...order.filter((id) => sel.has(id)), ...order.filter((id) => !sel.has(id))];
+  else {
+    // work on the list front-to-back for 'backward' so both directions are "step towards the end"
+    if (dir === 'backward') order.reverse();
+    const box = new Map<string, Rect | null>();
+    const bounds = (id: string) => (box.has(id) ? box.get(id)! : (box.set(id, itemBounds(doc, doc.items[id])), box.get(id)!));
+    for (let i = order.length - 2; i >= 0; i--) {
+      const id = order[i];
+      if (!sel.has(id)) continue;
+      const b = bounds(id);
+      let next = -1;
+      let target = -1;
+      for (let j = i + 1; j < order.length; j++) {
+        if (sel.has(order[j])) continue;
+        if (next < 0) next = j;
+        const o = bounds(order[j]);
+        if (b && o && rectsIntersect(b, o)) {
+          target = j;
+          break;
+        }
+      }
+      if (target < 0) target = next;
+      if (target < 0) continue;
+      order.splice(i, 1);
+      order.splice(target, 0, id);
+    }
+    if (dir === 'backward') order.reverse();
+  }
+  if (order.join() === before) return false;
+  order.forEach((id, i) => {
+    if (doc.items[id].z !== i) doc.items[id].z = i;
+  });
   return true;
 }

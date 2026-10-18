@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useCollab } from '../collab/session';
 import { calloutAnchor, calloutLayout, makeAnchor, nextStep } from '../model/callout';
-import { itemBounds, makeShape } from '../model/doc';
+import { backZ, drawOrderCached, itemBounds, makeShape } from '../model/doc';
 import { pointInRect } from '../model/geometry';
 import { EXPLAIN_COLORS, inkHit, inkOutline, inkCenterPath, packInk, recognizeInk, type InkPoint, type InkShape } from '../model/ink';
 import { computeNets, type Net } from '../model/netlist';
@@ -182,7 +182,8 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
 
   const hitCallout = (p: Point, d: CircuitDoc): ShapeItem | null => {
     const list = Object.values(d.items).filter((i): i is ShapeItem => i.type === 'shape' && i.kind === 'callout' && !i.hidden && !i.locked);
-    list.sort((a, b) => b.z - a.z);
+    const rank = drawOrderCached(d);
+    list.sort((a, b) => rank.get(b.id)! - rank.get(a.id)!);
     return list.find((c) => pointInRect(p, calloutLayout(c).box, 3)) ?? null;
   };
 
@@ -424,9 +425,10 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
             stroke: cur.color,
             strokeWidth: Math.round(cur.width * 100) / 100,
             highlighter: cur.highlighter || undefined,
-            layer: cur.highlighter ? 'below' : 'above',
             group: S().scope,
           });
+          // highlighter goes under everything, like a marker on paper; pen ink on top
+          if (cur.highlighter) s.z = backZ(d as CircuitDoc);
           d.items[s.id] = s;
         });
         return;

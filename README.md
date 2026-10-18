@@ -73,7 +73,7 @@ You can also share without a live session. Open **File → Share & collaborate�
 - Unconnected pins are marked, so dangling connections are easy to spot
 
 ### Zones, shapes and annotation
-- Outline **rectangles** (**B**) and **filled zones** (**Z**) for highlighting areas, each with an optional title (ellipses and polygons can have one too). New zones cycle through a palette of colours, so neighbouring zones stand apart. They sit **behind wires** by default; switch one to *Above all* (**Ctrl+Alt+L**) if needed.
+- Outline **rectangles** (**B**) and **filled zones** (**Z**) for highlighting areas, each with an optional title (ellipses and polygons can have one too). New zones cycle through a palette of colours, so neighbouring zones stand apart. Shapes, wires and parts share one stacking order (the layers panel): areas start at the back, annotations in front, and **Ctrl+]** / **Ctrl+[** (or the inspector's order buttons) move anything forward or back.
 - Ellipses, lines, arrows and free text
 - Stroke, fill, opacity, corner radius and dash settings; z-ordering within each layer
 - Locking a zone lets clicks pass through it
@@ -163,7 +163,7 @@ Press **?** in the app for the full list. You can rebind any shortcut in Setting
 | Place last used part | `P` | Search library | `/` |
 | Zoom in / out / fit / 100% | `=` / `-` / `F` / `Ctrl+0` | Zoom to selection | `Shift+2` |
 | Grid / Snap | `G` / `Ctrl+'` | Minimap | `M` |
-| Zone above/behind wires | `Ctrl+Alt+L` | Bring forward / back | `Ctrl+]` / `Ctrl+[` |
+| Bring to front / send to back | `Ctrl+Shift+]` / `Ctrl+Shift+[` | Bring forward / back | `Ctrl+]` / `Ctrl+[` |
 | Align left/right/top/bottom | `Alt+←/→/↑/↓` | Distribute H / V | `Alt+Shift+H` / `Alt+Shift+V` |
 | Highlight net | `N` | Re-route wire | `Shift+W` |
 | Command palette | `Ctrl+K` | Save / Open / Export | `Ctrl+S` / `Ctrl+O` / `Ctrl+E` |
