@@ -279,7 +279,8 @@ function SheetSection() {
 
 function DocumentPanel() {
   const settings = useStore((s) => s.doc.settings);
-  const items = useStore((s) => s.doc.items);
+  // counts describe the page on screen, like the canvas
+  const items = useStore((s) => viewDoc(s.doc, s.page).items);
   const name = useStore((s) => s.doc.name);
   const upd = (fn: (s: DocSettings) => void) => mutate((d) => fn(d.settings));
   const brush = useStore((s) => s.wireBrush);
@@ -625,7 +626,7 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
           />
         </Field>
         <Field label="Rotation">
-          <span className="row-gap">
+          <span className="stack">
             <Segmented value={rot} options={[0, 90, -90].map((r) => ({ value: r, label: `${r}°` }))} onChange={(r) => setStyle({ rotate: r || undefined })} />
             <NumberInput value={rot} min={-360} max={360} step={15} suffix="°" onChange={(r) => setStyle({ rotate: r || undefined })} />
           </span>
@@ -962,7 +963,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
         <Section title="Geometry">
           {turnable && (
             <Field label="Rotation" hint="Clockwise, about the centre. Drag the round handle above the shape too (Shift snaps to 15°)">
-              <span className="row-gap">
+              <span className="stack">
                 <Segmented value={rot} options={[0, 90, 180, 270].map((r) => ({ value: r, label: `${r}°` }))} onChange={setRot} />
                 <NumberInput value={rot} min={-360} max={360} step={15} suffix="°" onChange={setRot} />
               </span>
