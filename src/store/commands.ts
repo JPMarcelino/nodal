@@ -70,7 +70,7 @@ export const COMMANDS: Command[] = [
   { id: 'edit.find', label: 'Find part, net or text…', category: 'Edit', keys: ['Mod+F', 'F3'], run: () => set({ dialog: 'find' }) },
   { id: 'edit.selectAll', label: 'Select all', category: 'Edit', keys: ['Mod+A'], run: A.selectAll },
   { id: 'edit.deselect', label: 'Deselect / cancel', category: 'Edit', keys: ['Escape'], cadence: ['Escape', 'Mod+D'], run: () => cancel() },
-  { id: 'edit.annotate', label: 'Renumber reference designators', category: 'Edit', keys: ['Mod+Shift+A'], run: A.annotateAll },
+  { id: 'edit.annotate', label: 'Renumber part names', category: 'Edit', keys: ['Mod+Shift+A'], run: A.annotateAll },
   { id: 'edit.lock', label: 'Lock / unlock selection', category: 'Edit', keys: ['Mod+Shift+L'], run: A.toggleLock, when: hasSel },
   { id: 'edit.hide', label: 'Hide / show selection', category: 'Edit', keys: ['Mod+Shift+H'], run: () => A.toggleHidden(S().selection), when: hasSel },
   { id: 'edit.properties', label: 'Edit value of selection', category: 'Edit', keys: ['F2', 'Enter'], cadence: ['Q', 'F2', 'Enter'], run: focusValue },
@@ -156,7 +156,7 @@ export const COMMANDS: Command[] = [
   { id: 'wire.angle', label: 'Cycle wire angle: 90° / 45° / any (Tab while drawing)', category: 'Wire', keys: ['Shift+A'], run: () => A.setWireAngle() },
   { id: 'wire.reroute', label: 'Re-route selected wires', category: 'Wire', keys: ['Shift+W'], run: A.rerouteWires },
   { id: 'wire.highlightNet', label: 'Highlight net of selected wire', category: 'Wire', keys: ['N'], run: highlightNet },
-  { id: 'wire.hops', label: 'Cycle wire crossing style (arc / gap / none)', category: 'Wire', keys: ['Mod+Shift+J'], run: cycleHops },
+  { id: 'wire.hops', label: 'Cycle wire crossing style (hop / gap / none)', category: 'Wire', keys: ['Mod+Shift+J'], run: cycleHops },
   { id: 'wire.corners', label: 'Toggle rounded wire corners', category: 'Wire', keys: ['Mod+Shift+K'], run: toggleCorners },
 
   // View
@@ -165,9 +165,9 @@ export const COMMANDS: Command[] = [
   { id: 'view.fit', label: 'Zoom to fit', category: 'View', keys: ['Shift+1', 'F'], run: () => A.fitView() },
   { id: 'view.fitSel', label: 'Zoom to selection', category: 'View', keys: ['Shift+2'], run: () => A.fitView(S().selection) },
   { id: 'view.100', label: 'Zoom to 100%', category: 'View', keys: ['Mod+0', 'Shift+0'], run: () => A.zoomTo(1) },
-  { id: 'view.refs', label: 'Show / hide all instance names', category: 'View', keys: ['Alt+N'], run: () => toggleSetting('hideRefs', 'Instance names') },
-  { id: 'view.values', label: 'Show / hide all instance values', category: 'View', keys: ['Alt+U'], run: () => toggleSetting('hideValues', 'Instance values') },
-  { id: 'view.wireLabels', label: 'Show / hide all wire names', category: 'View', keys: ['Alt+W'], run: () => toggleSetting('hideWireLabels', 'Wire names') },
+  { id: 'view.refs', label: 'Show part names', category: 'View', keys: ['Alt+N'], run: () => toggleSetting('hideRefs', 'Part names') },
+  { id: 'view.values', label: 'Show part values', category: 'View', keys: ['Alt+U'], run: () => toggleSetting('hideValues', 'Part values') },
+  { id: 'view.wireLabels', label: 'Show wire names', category: 'View', keys: ['Alt+W'], run: () => toggleSetting('hideWireLabels', 'Wire names') },
   { id: 'view.alignGuides', label: 'Alignment guides while moving', category: 'View', keys: ['Alt+G'], run: () => { setPrefs({ alignGuides: !S().prefs.alignGuides }); toast(S().prefs.alignGuides ? 'Alignment guides on' : 'Alignment guides off'); } },
   { id: 'view.grid', label: 'Toggle grid', category: 'View', keys: ['G'], run: () => mutateSettings((s) => (s.showGrid = !s.showGrid)) },
   { id: 'view.snap', label: 'Toggle snap to grid', category: 'View', keys: ["Mod+'"], run: () => mutateSettings((s) => (s.snap = !s.snap)) },
@@ -232,13 +232,13 @@ function cycleHops() {
   const order = ['arc', 'gap', 'none'] as const;
   const next = order[(order.indexOf(S().doc.settings.hops) + 1) % 3];
   mutateSettings((s) => (s.hops = next));
-  toast(`Wire crossings: ${next === 'arc' ? 'hop arcs' : next === 'gap' ? 'gaps' : 'plain'}`);
+  toast(`Crossing style: ${next === 'arc' ? 'Hop' : next === 'gap' ? 'Gap' : 'None'}`);
 }
 
 function toggleCorners() {
   const r = S().doc.settings.wire.radius > 0 ? 0 : 8;
   mutateSettings((s) => (s.wire.radius = r));
-  toast(r ? 'Rounded wire corners' : 'Sharp wire corners');
+  toast(r ? 'Wire corners: rounded' : 'Wire corners: sharp');
 }
 
 function highlightNet() {
@@ -365,7 +365,7 @@ export function findCommand(combo: string): Command | undefined {
 function toggleScheme() {
   const next = S().prefs.shortcuts === 'cadence' ? 'nodal' : 'cadence';
   setPrefs({ shortcuts: next });
-  toast(next === 'cadence' ? 'Cadence shortcuts: W wire, I instance, M move, C copy, L label, N note, Q properties, U undo' : 'Nodal shortcuts');
+  toast(next === 'cadence' ? 'Cadence shortcuts: W wire, I part, M move, C copy, L label, N note, Q properties, U undo' : 'Nodal shortcuts');
 }
 
 function checkAndSave() {

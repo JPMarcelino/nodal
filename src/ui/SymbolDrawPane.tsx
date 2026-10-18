@@ -712,35 +712,31 @@ export function SymbolDrawPane({
           onChange={setSelFill}
         />
         <span className="se-style" title="Line colour (empty: follows the theme)">
-          <span className="se-props-label">Line</span>
+          <span className="se-props-label">Line colour</span>
           <ColorInput value={shown.color ?? ''} onChange={setSelColor} allowNone />
         </span>
         {shown.fill === 'solid' && (
           <span className="se-style" title="Fill colour (empty: same as the line)">
-            <span className="se-props-label">Fill</span>
+            <span className="se-props-label">Fill colour</span>
             <ColorInput value={shown.fc ?? ''} onChange={setSelFillColor} allowNone />
           </span>
         )}
-        <Segmented
-          value={[1, 2, 3].includes(shown.w) ? shown.w : -1}
-          options={[
-            { value: 1, label: 'Thin', title: 'Line width 1' },
-            { value: 2, label: 'Normal', title: 'Line width 2' },
-            { value: 3, label: 'Thick', title: 'Line width 3' },
-          ]}
-          onChange={setSelWidth}
-        />
-        <span className="se-num" title="Line width">
-          <NumberInput value={shown.w} min={0.5} max={10} step={0.5} suffix="px" onChange={setSelWidth} />
+        <span className="se-style" title="Line width">
+          <span className="se-props-label">Line width</span>
+          <span className="se-num">
+            <NumberInput value={shown.w} min={0.5} max={10} step={0.5} suffix="px" onChange={setSelWidth} />
+          </span>
         </span>
-        <Segmented
-          value={shown.dash ? 'dash' : 'solid'}
-          options={[
-            { value: 'solid', label: 'Solid', title: 'Solid lines' },
-            { value: 'dash', label: 'Dashed', title: 'Dashed lines' },
-          ]}
-          onChange={(v) => setSelDash(v === 'dash')}
-        />
+        <span className="se-style" title="Line style">
+          <Segmented
+            value={shown.dash ? 'dash' : 'solid'}
+            options={[
+              { value: 'solid', label: 'Solid', title: 'Solid lines' },
+              { value: 'dash', label: 'Dashed', title: 'Dashed lines' },
+            ]}
+            onChange={(v) => setSelDash(v === 'dash')}
+          />
+        </span>
         {valid.length > 0 && (
           <>
             {single?.t === 'text' && (

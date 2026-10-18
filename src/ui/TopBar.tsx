@@ -9,7 +9,6 @@ import {
   Hand,
   Keyboard,
   Minus,
-  Moon,
   MousePointer2,
   PanelLeft,
   PanelRight,
@@ -18,7 +17,6 @@ import {
   Search,
   Spline,
   Square,
-  Sun,
   Type,
   Undo2,
   Presentation,
@@ -30,7 +28,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Tool } from '../model/types';
 import * as A from '../store/actions';
 import { COMMANDS, COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
-import { S, mutate, redo, set, setPrefs, undo, useStore } from '../store/store';
+import { S, mutate, redo, set, undo, useStore } from '../store/store';
 import { CollabBar } from './CollabBar';
 import { Logo } from './Logo';
 import { toggleTimeline } from './Timeline';
@@ -152,11 +150,6 @@ function DocName() {
 export function TopBar() {
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
-  const theme = useStore((s) => s.prefs.theme);
-  const scheme = useStore((s) => s.prefs.shortcuts);
-  const guides = useStore((s) => s.prefs.alignGuides);
-  const hideRefs = useStore((s) => !!s.doc.settings.hideRefs);
-  const hideValues = useStore((s) => !!s.doc.settings.hideValues);
   const zoom = useStore((s) => s.view.zoom);
   const left = useStore((s) => s.leftPanel);
   const right = useStore((s) => s.rightPanel);
@@ -198,25 +191,6 @@ export function TopBar() {
           <Keyboard size={16} />
         </button>
         <span className="divider" />
-        <button className={hideRefs ? 'zoom-chip' : 'zoom-chip active'} onClick={() => COMMAND_MAP.get('view.refs')!.run()} title={`${hideRefs ? 'Show' : 'Hide'} all instance names (${prettyKey(keysFor('view.refs')[0] ?? '')})`}>
-          Names
-        </button>
-        <button className={hideValues ? 'zoom-chip' : 'zoom-chip active'} onClick={() => COMMAND_MAP.get('view.values')!.run()} title={`${hideValues ? 'Show' : 'Hide'} all instance values (${prettyKey(keysFor('view.values')[0] ?? '')})`}>
-          Values
-        </button>
-        <button className={guides ? 'zoom-chip active' : 'zoom-chip'} onClick={() => COMMAND_MAP.get('view.alignGuides')!.run()} title={`Alignment guides while moving: ${guides ? 'on' : 'off'} (${prettyKey(keysFor('view.alignGuides')[0] ?? '')})`}>
-          Guides
-        </button>
-        <button
-          className={scheme === 'cadence' ? 'zoom-chip active' : 'zoom-chip'}
-          onClick={() => setPrefs({ shortcuts: scheme === 'cadence' ? 'nodal' : 'cadence' })}
-          title={scheme === 'cadence' ? 'Cadence shortcuts are on (W wire, I instance, M move, C copy, L label, N note, Q properties, U undo). Click for Nodal shortcuts.' : 'Switch to Cadence Virtuoso shortcuts'}
-        >
-          {scheme === 'cadence' ? 'Cadence keys' : 'Nodal keys'}
-        </button>
-        <button className="icon-btn" onClick={() => setPrefs({ theme: theme === 'dark' ? 'light' : 'dark' })} title="Toggle theme">
-          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
         <CollabBar />
         <button className="primary-btn" onClick={() => set({ dialog: 'export' })}>
           <Download size={15} /> Export

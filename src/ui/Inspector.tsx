@@ -147,40 +147,27 @@ function AlignBar() {
 }
 
 /** `corners`: only the corner settings (colour, width and dash come from the Style section). */
-function WireStyleEditor({ style, onChange, showBrush, corners }: { style: WireStyle; onChange: (p: Partial<WireStyle>) => void; showBrush?: boolean; corners?: boolean }) {
+function WireStyleEditor({ style, onChange, corners }: { style: WireStyle; onChange: (p: Partial<WireStyle>) => void; corners?: boolean }) {
   return (
     <>
       {!corners && (
         <>
-          <Field label="Colour">
+          <Field label="Line colour">
             <ColorInput value={style.color} onChange={(color) => onChange({ color })} />
           </Field>
-          <Field label="Thickness">
+          <Field label="Line width">
             <NumberInput value={style.width} min={0.5} max={20} step={0.5} suffix="px" onChange={(width) => onChange({ width })} />
           </Field>
         </>
       )}
-      <Field label="Corners">
-        <Segmented
-          value={style.radius > 0 ? 'round' : 'sharp'}
-          options={[
-            { value: 'sharp', label: 'Sharp' },
-            { value: 'round', label: 'Rounded' },
-          ]}
-          onChange={(v) => onChange({ radius: v === 'round' ? Math.max(style.radius, 8) : 0 })}
-        />
+      <Field label="Corner radius" hint="0 for sharp corners">
+        <NumberInput value={style.radius} min={0} max={60} suffix="px" onChange={(radius) => onChange({ radius })} />
       </Field>
-      {style.radius > 0 && (
-        <Field label="Radius">
-          <NumberInput value={style.radius} min={1} max={60} suffix="px" onChange={(radius) => onChange({ radius })} />
-        </Field>
-      )}
       {!corners && (
-        <Field label="Line">
+        <Field label="Line style">
           <Segmented value={style.dash} options={DASHES} onChange={(dash) => onChange({ dash })} />
         </Field>
       )}
-      {showBrush && null}
     </>
   );
 }
@@ -268,6 +255,7 @@ function DocumentPanel() {
   const items = useStore((s) => s.doc.items);
   const name = useStore((s) => s.doc.name);
   const upd = (fn: (s: DocSettings) => void) => mutate((d) => fn(d.settings));
+  const brush = useStore((s) => s.wireBrush);
   const counts = useMemo(() => {
     const c = { component: 0, wire: 0, shape: 0, junction: 0 };
     for (const i of Object.values(items)) c[i.type]++;
@@ -300,15 +288,23 @@ function DocumentPanel() {
           </span>
         </div>
       </Section>
-      <Section title="Default wire style" defaultOpen={false} summary={`${settings.wire.width}px · ${settings.hops === 'arc' ? 'hops' : settings.hops === 'gap' ? 'gaps' : 'plain'}`}>
+      <Section title="Default wire style" defaultOpen={false} summary={`${settings.wire.width}px · ${settings.hops === 'arc' ? 'hops' : settings.hops === 'gap' ? 'gaps' : 'no crossings'}`}>
+        {brush && (
+          <div className="btn-row">
+            <span className="small">New wires use a picked style</span>
+            <button className="secondary-btn" onClick={() => set({ wireBrush: null })}>
+              Stop
+            </button>
+          </div>
+        )}
         <WireStyleEditor style={settings.wire} onChange={(p) => upd((s) => Object.assign(s.wire, p))} />
-        <Field label="Crossings">
+        <Field label="Crossing style">
           <Segmented
             value={settings.hops}
             options={[
               { value: 'arc', label: 'Hop', title: 'Draw a small arc where wires cross' },
               { value: 'gap', label: 'Gap', title: 'Break the wire where it crosses' },
-              { value: 'none', label: 'Plain' },
+              { value: 'none', label: 'None', title: 'Wires cross with no marking' },
             ]}
             onChange={(hops) => upd((s) => (s.hops = hops))}
           />
@@ -318,7 +314,7 @@ function DocumentPanel() {
             <NumberInput value={settings.hopSize} min={2} max={20} suffix="px" onChange={(v) => upd((s) => (s.hopSize = v))} />
           </Field>
         )}
-        <Field label="Junction dot">
+        <Field label="Junction dot size">
           <NumberInput value={settings.junctionSize} min={1} max={12} step={0.5} suffix="px" onChange={(v) => upd((s) => (s.junctionSize = v))} />
         </Field>
         <button
@@ -331,8 +327,19 @@ function DocumentPanel() {
           Reset all wires to default style
         </button>
       </Section>
+      <Section title="Show">
+        <Field label="Part names">
+          <Toggle checked={!settings.hideRefs} onChange={(v) => upd((s) => (s.hideRefs = !v))} />
+        </Field>
+        <Field label="Part values">
+          <Toggle checked={!settings.hideValues} onChange={(v) => upd((s) => (s.hideValues = !v))} />
+        </Field>
+        <Field label="Wire names">
+          <Toggle checked={!settings.hideWireLabels} onChange={(v) => upd((s) => (s.hideWireLabels = !v))} />
+        </Field>
+      </Section>
       <SheetSection />
-      <Section title="Canvas">
+      <Section title="Canvas (saved with this drawing)">
         <Field label="Grid">
           <NumberInput value={settings.grid} min={2} max={100} suffix="px" onChange={(v) => upd((s) => (s.grid = v))} />
         </Field>
@@ -427,7 +434,7 @@ function PartDetails({ c }: { c: ComponentItem }) {
 
 const SPOTS: { value: LabelSpotName | ''; label: string }[] = [
   { value: '', label: 'Automatic' },
-  { value: 'split', label: 'Reference above, value below' },
+  { value: 'split', label: 'Name above, value below' },
   { value: 'above', label: 'Both above' },
   { value: 'below', label: 'Both below' },
   { value: 'right', label: 'Both right' },
@@ -438,6 +445,8 @@ const SPOTS: { value: LabelSpotName | ''; label: string }[] = [
   { value: 'bottomLeft', label: 'Bottom left corner' },
 ];
 
+const HIDDEN_HINT = 'Hidden for the whole drawing — turn on in View';
+
 /** Placement and per-label text styling of a part's reference and value. */
 function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
   const [tab, setTab] = useState<'ref' | 'value'>('ref');
@@ -446,6 +455,9 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
   const st: LabelStyle = c[key] ?? {};
   const look = labelLook(c, which, def);
   const upd = (fn: (c: ComponentItem) => void) => mutate((d) => fn(d.items[c.id] as ComponentItem));
+  const docSettings = useStore((s) => s.doc.settings);
+  const refOff = !!docSettings.hideRefs;
+  const valueOff = !!docSettings.hideValues && !def.valueIsLabel;
   const setStyle = (patch: Partial<LabelStyle>) =>
     upd((x) => {
       const next: LabelStyle = { ...x[key], ...patch };
@@ -492,13 +504,14 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
         </Field>
       ) : (
         <>
-          <Field label="Show">
+          <Field label="Show" hint={refOff || valueOff ? HIDDEN_HINT : undefined}>
             <span className="row-gap wrap">
-              <Toggle checked={c.showRef} onChange={(v) => upd((x) => (x.showRef = v))} label="Name" />
-              <Toggle checked={c.showValue} onChange={(v) => upd((x) => (x.showValue = v))} label="Value" />
+              <Toggle checked={c.showRef} disabled={refOff} onChange={(v) => upd((x) => (x.showRef = v))} label="Name" />
+              <Toggle checked={c.showValue} disabled={valueOff} onChange={(v) => upd((x) => (x.showValue = v))} label="Value" />
             </span>
+            {(refOff || valueOff) && <span className="muted small">{HIDDEN_HINT}</span>}
           </Field>
-          <Field label="Placement" hint="Where the reference and value sit around the part; dragging a label fine-tunes it">
+          <Field label="Placement" hint="Where the name and value sit around the part; dragging a label fine-tunes it">
             <select
               className="input"
               value={c.labelSpot ?? ''}
@@ -524,7 +537,7 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
           <div className="label-tabs" role="tablist" aria-label="Label to style">
             {(['ref', 'value'] as const).map((w) => (
               <button key={w} type="button" role="tab" aria-selected={tab === w} className={tab === w ? 'active' : ''} onClick={() => setTab(w)}>
-                <span className="label-tab-name">{w === 'ref' ? 'Reference' : 'Value'}</span>
+                <span className="label-tab-name">{w === 'ref' ? 'Name' : 'Value'}</span>
                 <span className="label-tab-text">{(w === 'ref' ? c.ref : c.value) || '—'}</span>
               </button>
             ))}
@@ -639,7 +652,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
       <ArrangeBar count={1} />
       <Section title="Properties" summary={[!def.valueIsLabel && c.ref, c.value].filter(Boolean).join(' · ')}>
         {!def.valueIsLabel && (
-          <Field label="Reference">
+          <Field label="Name">
             <TextInput value={c.ref} onChange={(v) => upd((x) => (x.ref = v))} />
           </Field>
         )}
@@ -658,7 +671,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
         )}
       </Section>
       <LabelSection c={c} def={def} />
-      <Section title="Transform" summary={`${c.rot}°${c.flipX ? ' · mirrored' : ''}${c.scale && c.scale !== 1 ? ` · ×${c.scale}` : ''}`}>
+      <Section title="Transform" summary={`${c.rot}°${c.flipX ? ' · flipped' : ''}${c.scale && c.scale !== 1 ? ` · ×${c.scale}` : ''}`}>
         <Field label="Rotation">
           <Segmented
             value={c.rot}
@@ -666,7 +679,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
             onChange={(rot) => upd((x) => (x.rot = rot))}
           />
         </Field>
-        <Field label="Mirrored">
+        <Field label="Flipped">
           <Toggle checked={!!c.flipX} onChange={(v) => upd((x) => (x.flipX = v))} />
         </Field>
         <SizeField ids={[c.id]} />
@@ -707,6 +720,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
 function WirePanel({ wires }: { wires: WireItem[] }) {
   const doc = useStore((s) => s.doc);
   const brush = useStore((s) => s.wireBrush);
+  const wireLabelsOff = useStore((s) => !!s.doc.settings.hideWireLabels);
   const first = wires[0];
   const style = wireStyleFor(doc.settings, first);
   const ids = wires.map((w) => w.id);
@@ -721,13 +735,13 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
       </div>
       <Section title="Style">
         <WireStyleEditor style={style} onChange={upd} />
-        <Field label="Crossings" hint="Which wire hops over at crossings. For a single crossing, rest the pointer on it to choose, or to solder it">
+        <Field label="At crossings" hint="Which wire hops over at crossings. For a single crossing, rest the pointer on it to choose, or to solder it">
           <Segmented
             value={!first.hopLayer ? 0 : first.hopLayer > 0 ? 1 : -1}
             options={[
-              { value: 1, label: 'Over', title: 'Hop over every other wire' },
+              { value: 1, label: 'Hop over', title: 'Hop over every other wire' },
               { value: 0, label: 'Auto', title: 'Horizontal segments hop over vertical ones' },
-              { value: -1, label: 'Under', title: 'Let every other wire hop over' },
+              { value: -1, label: 'Go under', title: 'Let every other wire hop over' },
             ]}
             onChange={(v) =>
               mutate((d) => {
@@ -775,8 +789,9 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           </Field>
           {first.label && (
             <>
-              <Field label="Show on canvas" hint="A hidden label still names the net in Find and in the lists">
-                <Toggle checked={!first.labelHidden} onChange={(v) => updLabel((x) => (v ? delete x.labelHidden : (x.labelHidden = true)))} />
+              <Field label="Show on canvas" hint={wireLabelsOff ? HIDDEN_HINT : 'A hidden label still names the net in Find and in the lists'}>
+                <Toggle checked={!first.labelHidden} disabled={wireLabelsOff} onChange={(v) => updLabel((x) => (v ? delete x.labelHidden : (x.labelHidden = true)))} />
+                {wireLabelsOff && <span className="muted small">{HIDDEN_HINT}</span>}
               </Field>
               {!first.labelHidden && (
                 <>
@@ -886,14 +901,14 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
         </Section>
       )}
       {!isText && (
-        <Section title={isImage ? 'Border' : 'Stroke'}>
-          <Field label="Colour">
+        <Section title={isImage ? 'Border' : 'Line'}>
+          <Field label="Line colour">
             <ColorInput value={first.stroke} onChange={(v) => upd((s) => (s.stroke = v))} />
           </Field>
-          <Field label="Width">
+          <Field label="Line width">
             <NumberInput value={first.strokeWidth} min={0} max={30} step={0.5} suffix="px" onChange={(v) => upd((s) => (s.strokeWidth = v))} />
           </Field>
-          <Field label="Line">
+          <Field label="Line style">
             <Segmented value={first.dash} options={DASHES} onChange={(v) => upd((s) => (s.dash = v))} />
           </Field>
           {isLine && (
@@ -918,10 +933,10 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
       )}
       {!isLine && !isImage && (
         <Section title="Fill">
-          <Field label="Colour">
+          <Field label="Fill colour">
             <ColorInput value={first.fill === 'none' ? '' : first.fill} allowNone onChange={(v) => upd((s) => ((s.fill = v || 'none'), v && s.fillOpacity === 0 && (s.fillOpacity = 0.15)))} />
           </Field>
-          <Field label="Opacity">
+          <Field label="Fill opacity">
             <span className="row-gap">
               <Slider value={first.fillOpacity} min={0} max={1} onChange={(v) => upd((s) => (s.fillOpacity = v))} />
               <span className="mono small">{Math.round(first.fillOpacity * 100)}%</span>

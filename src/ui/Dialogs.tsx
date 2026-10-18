@@ -328,7 +328,7 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
               ['Box select', 'Drag right → fully inside · drag left ← touching'],
               ['Constrain move', 'Shift while dragging'],
               ['Enter a group', 'Double-click a grouped item'],
-              ['Move labels', 'Select a part, then drag its reference label'],
+              ['Move labels', 'Select a part, then drag its name label'],
             ].map(([a, b]) => (
               <div key={a} className="shortcut-row">
                 <span>{a}</span>
@@ -425,6 +425,9 @@ export function SettingsDialog() {
           </Field>
           <Field label="Wires route around parts and stay off other pins">
             <Toggle checked={prefs.wireAvoid} onChange={(wireAvoid) => setPrefs({ wireAvoid })} />
+          </Field>
+          <Field label="Alignment guides">
+            <Toggle checked={prefs.alignGuides} onChange={(alignGuides) => setPrefs({ alignGuides })} />
           </Field>
           <Field label="Unconnected pin markers">
             <Toggle checked={prefs.showPortMarkers} onChange={(showPortMarkers) => setPrefs({ showPortMarkers })} />
