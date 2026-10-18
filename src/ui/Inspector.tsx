@@ -33,11 +33,11 @@ import { defaultHeadSize, frozenLabelOffsets, labelLook } from '../canvas/Scene'
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { wireStyleFor } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
-import { measureRich } from '../model/richText';
+import { measureTextShape } from '../model/shapeText';
 import { DNP, PART_FIELDS, customFieldKeys, hasPartFields, isDnp } from '../model/partFields';
 import { getSymbol, stateSymbol } from '../model/registry';
 import { gridScale } from '../model/symbols/scale';
-import type { CircuitDoc, ComponentItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, Dash, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
+import type { CircuitDoc, ComponentItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { docBounds, selectedGroup } from '../model/doc';
 import { scaleItems, selectionPivot } from '../model/ops';
@@ -46,23 +46,8 @@ import * as A from '../store/actions';
 import { S, mutate, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
 import { ExplainShapePanel, FramePanel } from './ExplainInspector';
-import { Row, StyleSection } from './StyleSection';
+import { DashSelect, Row, StyleSection } from './StyleSection';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
-
-/** Small sample of a line style (fits narrow panels better than words). */
-function DashIcon({ dash }: { dash: Dash }) {
-  return (
-    <svg width={28} height={10} viewBox="0 0 28 10" style={{ display: 'block', margin: '0 auto' }}>
-      <line x1={2} y1={5} x2={26} y2={5} stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeDasharray={dash === 'dashed' ? '6 4' : dash === 'dotted' ? '0.01 4' : undefined} />
-    </svg>
-  );
-}
-
-const DASHES: { value: Dash; label: JSX.Element; title: string }[] = [
-  { value: 'solid', label: <DashIcon dash="solid" />, title: 'Solid' },
-  { value: 'dashed', label: <DashIcon dash="dashed" />, title: 'Dashed' },
-  { value: 'dotted', label: <DashIcon dash="dotted" />, title: 'Dotted' },
-];
 
 const HEAD_TITLES: Record<HeadKind, string> = {
   none: 'None — plain end',
@@ -198,7 +183,7 @@ function WireStyleEditor({ style, onChange, corners }: { style: WireStyle; onCha
       </Field>
       {!corners && (
         <Field label="Line style">
-          <Segmented value={style.dash} options={DASHES} onChange={(dash) => onChange({ dash })} />
+          <DashSelect value={style.dash} onChange={(dash) => onChange({ dash })} />
         </Field>
       )}
     </>
@@ -891,12 +876,11 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
       ids.forEach((id) => {
         const s = d.items[id] as ShapeItem;
         fn(s);
-        if (s.kind === 'text') Object.assign(s, measureRich(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400));
+        if (s.kind === 'text') Object.assign(s, measureTextShape(s));
       }),
     );
   const isText = first.kind === 'text';
   const isLine = first.kind === 'line' || first.kind === 'arrow';
-  const isImage = first.kind === 'image';
   // boxy shapes store a free rotation (0–360°, like a part's); point-based ones are turned by rewriting their points
   const turnable = ROT_KINDS.has(first.kind);
   const rot = shapeRot(first);
@@ -911,50 +895,32 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
     <>
       <div className="panel-title">{shapes.length > 1 ? `${shapes.length} shapes` : title}</div>
       <ArrangeBar count={shapes.length} transform={false} />
-      {!isImage && (
-        <Section title={isText ? 'Text' : 'Label'}>
-          <Field label={isText ? 'Content' : 'Title'} wide hint="Supports maths: $…$ inline, $$…$$ display, \$ for a dollar sign">
-            <TextInput value={first.text ?? ''} multiline={isText} focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder={isText ? '' : 'Optional title'} />
-          </Field>
-          <Field label="Font size">
-            <NumberInput value={first.fontSize ?? (isText ? 16 : 13)} min={6} max={120} suffix="px" onChange={(v) => upd((s) => (s.fontSize = v))} />
-          </Field>
-          <Field label="Bold">
-            <Toggle checked={first.bold ?? !(isText || isLine)} onChange={(v) => upd((s) => (s.bold = v))} />
-          </Field>
-          <Field label="Text colour">
-            <ColorInput value={first.textColor ?? ''} allowNone onChange={(v) => upd((s) => (s.textColor = v || undefined))} />
-          </Field>
-          {!isText && first.kind !== 'line' && first.kind !== 'arrow' && (
-            <Field label="Position" hint="Select the shape, then drag its title — inside it or just outside the edge">
-              <button
-                className="secondary-btn"
-                disabled={!first.textDx && !first.textDy}
-                onClick={() =>
-                  upd((s) => {
-                    delete s.textDx;
-                    delete s.textDy;
-                  })
-                }
-              >
-                Reset
-              </button>
+      <StyleSection
+        ids={ids}
+        extras={{
+          textTop: (
+            <Field label={isText ? 'Content' : 'Title'} wide hint="Supports maths: $…$ inline, $$…$$ display, \$ for a dollar sign">
+              <TextInput value={first.text ?? ''} multiline={isText} focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder={isText ? '' : 'Optional title'} />
             </Field>
-          )}
-        </Section>
-      )}
-      {!isText && (
-        <Section title={isImage ? 'Border' : 'Line'}>
-          <Field label="Line colour">
-            <ColorInput value={first.stroke} onChange={(v) => upd((s) => (s.stroke = v))} />
-          </Field>
-          <Field label="Line width">
-            <NumberInput value={first.strokeWidth} min={0} max={30} step={0.5} suffix="px" onChange={(v) => upd((s) => (s.strokeWidth = v))} />
-          </Field>
-          <Field label="Line style">
-            <Segmented value={first.dash} options={DASHES} onChange={(v) => upd((s) => (s.dash = v))} />
-          </Field>
-          {isLine && (
+          ),
+          text:
+            !isText && !isLine ? (
+              <Field label="Position" hint="Select the shape, then drag its title — inside it or just outside the edge">
+                <button
+                  className="secondary-btn"
+                  disabled={!first.textDx && !first.textDy}
+                  onClick={() =>
+                    upd((s) => {
+                      delete s.textDx;
+                      delete s.textDy;
+                    })
+                  }
+                >
+                  Reset
+                </button>
+              </Field>
+            ) : undefined,
+          line: isLine ? (
             <>
               <Field label="Start">
                 <Segmented value={first.headStart ?? 'none'} options={headOptions(true)} onChange={(v) => upd((s) => (s.headStart = v))} />
@@ -966,27 +932,9 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
                 <NumberInput value={first.headSize ?? defaultHeadSize(first.strokeWidth)} min={2} max={80} suffix="px" onChange={(v) => upd((s) => (s.headSize = v))} />
               </Field>
             </>
-          )}
-          {(first.kind === 'rect' || first.kind === 'zone') && (
-            <Field label="Corner radius">
-              <NumberInput value={first.radius} min={0} max={200} suffix="px" onChange={(v) => upd((s) => (s.radius = v))} />
-            </Field>
-          )}
-        </Section>
-      )}
-      {!isLine && !isImage && (
-        <Section title="Fill">
-          <Field label="Fill colour">
-            <ColorInput value={first.fill === 'none' ? '' : first.fill} allowNone onChange={(v) => upd((s) => ((s.fill = v || 'none'), v && s.fillOpacity === 0 && (s.fillOpacity = 0.15)))} />
-          </Field>
-          <Field label="Fill opacity">
-            <span className="row-gap">
-              <Slider value={first.fillOpacity} min={0} max={1} onChange={(v) => upd((s) => (s.fillOpacity = v))} />
-              <span className="mono small">{Math.round(first.fillOpacity * 100)}%</span>
-            </span>
-          </Field>
-        </Section>
-      )}
+          ) : undefined,
+        }}
+      />
       {shapes.length === 1 && (!isText || turnable) && (
         <Section title="Geometry">
           {turnable && (

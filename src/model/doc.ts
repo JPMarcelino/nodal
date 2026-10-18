@@ -1,6 +1,6 @@
 import { calloutLayout } from './callout';
 import { componentBounds, polylineBounds, unionRects } from './geometry';
-import { measureRich } from './richText';
+import { measureTextShape } from './shapeText';
 import { rotatedBounds, shapeBox, shapeRot } from './rotation';
 import { getSymbol, instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, Item, Rect, ShapeItem, ShapeKind, SymbolDef } from './types';
@@ -105,7 +105,7 @@ export function itemBounds(doc: CircuitDoc, it: Item): Rect | null {
       // free text is sized by its content, so the outline always follows the text
       // turned shapes take the bounds of their turned box
       if (shapeRot(it)) return rotatedBounds(shapeBox(it), shapeRot(it));
-      if (it.kind === 'text') return { x: it.x, y: it.y, ...measureRich(it.text ?? '', it.fontSize ?? 16, it.bold ? 700 : 400) };
+      if (it.kind === 'text') return { x: it.x, y: it.y, ...measureTextShape(it) };
       if (it.kind === 'callout') return calloutLayout(it).box;
       if (it.kind === 'ink') {
         const pad = it.strokeWidth / 2;

@@ -93,7 +93,7 @@ export interface SymbolDef {
 /* Document items                                                      */
 /* ------------------------------------------------------------------ */
 
-export type Dash = 'solid' | 'dashed' | 'dotted';
+export type Dash = 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash';
 
 export interface WireStyle {
   color: string;
@@ -250,6 +250,29 @@ export interface ShapeItem extends ItemBase {
   fontSize?: number;
   textColor?: string;
   bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  /** Font family; unset = sans. */
+  font?: 'serif' | 'mono';
+  /** Horizontal text alignment; unset = left for rectangles and zones, centred for ellipses and polygons. */
+  align?: 'start' | 'middle' | 'end';
+  /** Where a title sits in its box (rect, zone, ellipse, polygon); unset = top for rectangles and zones, middle otherwise. */
+  valign?: 'top' | 'middle' | 'bottom';
+  /** Free text: fixed width the text wraps at; unset = one line per paragraph. */
+  wrapW?: number;
+  /** Opacity of the whole shape, 0…1 (default 1). */
+  opacity?: number;
+  /** Opacity of the outline, 0…1 (default 1). */
+  strokeOpacity?: number;
+  /** Line ends and corners (default: round for lines, miter for boxes). */
+  cap?: 'butt' | 'round' | 'square';
+  join?: 'miter' | 'round' | 'bevel';
+  /** Soft drop shadow. */
+  shadow?: boolean;
+  /** Fills with a linear blend from `fill` to `to` instead of a flat colour; `angle` in degrees (0 = left to right, clockwise). */
+  gradient?: { to: string; angle: number };
+  /** Images: mirrored left-to-right (before rotation). */
+  flipX?: boolean;
   /** Title offset from its default spot (rect / zone / ellipse / polygon); dragged with the shape selected. */
   textDx?: number;
   textDy?: number;

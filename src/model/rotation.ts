@@ -1,4 +1,4 @@
-import { measureRich } from './richText';
+import { measureTextShape } from './shapeText';
 import type { Point, Rect, ShapeItem, ShapeKind } from './types';
 
 /**
@@ -39,7 +39,7 @@ export function rotateDeg(p: Point, deg: number, o: Point = { x: 0, y: 0 }): Poi
 
 /** A shape's unrotated box; free text is sized by its content. */
 export function shapeBox(s: ShapeItem): Rect {
-  if (s.kind === 'text') return { x: s.x, y: s.y, ...measureRich(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400) };
+  if (s.kind === 'text') return { x: s.x, y: s.y, ...measureTextShape(s) };
   return { x: Math.min(s.x, s.x + s.w), y: Math.min(s.y, s.y + s.h), w: Math.abs(s.w), h: Math.abs(s.h) };
 }
 

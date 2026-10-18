@@ -1,3 +1,4 @@
+import { FONT_STACKS, type FontName } from './fonts';
 import type { ComponentItem, Point, Rect, Side, SymbolDef } from './types';
 
 export const snap = (v: number, g: number) => Math.round(v / g) * g;
@@ -198,7 +199,7 @@ let measureFamily = '';
  * Size of a (possibly multi-line) text block as the canvas renders it. Uses the
  * real UI font when a DOM is available, else a width estimate.
  */
-export function measureText(text: string, fontSize: number, weight = 400): { w: number; h: number } {
+export function measureText(text: string, fontSize: number, weight = 400, font?: FontName): { w: number; h: number } {
   const lines = text.split('\n');
   const h = Math.ceil(lines.length * fontSize * 1.3);
   if (measureCtx === undefined) {
@@ -207,9 +208,9 @@ export function measureText(text: string, fontSize: number, weight = 400): { w: 
   }
   if (!measureCtx) {
     const longest = Math.max(1, ...lines.map((l) => l.length));
-    return { w: Math.ceil(longest * fontSize * (weight >= 600 ? 0.62 : 0.58)), h };
+    return { w: Math.ceil(longest * fontSize * (font === 'mono' ? 0.6 : weight >= 600 ? 0.62 : 0.58)), h };
   }
-  measureCtx.font = `${weight} ${fontSize}px ${measureFamily}`;
+  measureCtx.font = `${weight} ${fontSize}px ${font ? FONT_STACKS[font] : measureFamily}`;
   const w = Math.max(fontSize * 0.5, ...lines.map((l) => measureCtx!.measureText(l).width));
   return { w: Math.ceil(w), h };
 }

@@ -4,7 +4,7 @@ import { createDoc, groupMembers, normalizeDoc, topGroup } from '../model/doc';
 import { setUserLibrary, usedSymbols } from '../model/registry';
 import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
-import type { CircuitDoc, Point, SymbolDef, Tool, WireAngle } from '../model/types';
+import type { CircuitDoc, Dash, Point, SymbolDef, Tool, WireAngle } from '../model/types';
 import { settleEdit } from '../model/settle';
 
 export interface View {
@@ -115,7 +115,7 @@ export interface AppState {
   pointerOnCanvas: boolean;
   canvasSize: { w: number; h: number };
   /** Wire style applied to newly drawn wires. */
-  wireBrush: { color?: string; width?: number; radius?: number; dash?: 'solid' | 'dashed' | 'dotted' } | null;
+  wireBrush: { color?: string; width?: number; radius?: number; dash?: Dash } | null;
   /** When set, the next drag on the canvas defines an export rectangle. */
   exportArea: ExportAreaJob | null;
   /** Viewing someone else's live session: the circuit can't be changed. */

@@ -4,12 +4,15 @@ import { drawOrderCached, labelsShown } from '../model/doc';
 import { refreshTouching, touchingCells, touchingFromCells } from '../model/netlist';
 import { isDnp } from '../model/partFields';
 import { instanceSymbol } from '../model/registry';
-import type { CircuitDoc, ComponentItem, Dash, DocSettings, HeadKind, LabelSpotName, LabelStyle, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
+import type { CircuitDoc, ComponentItem, DocSettings, HeadKind, LabelSpotName, LabelStyle, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
 import { buildWirePath, wireLabelSpot, endpointInfo, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wireCrossingsChanged, wirePolyline, wireStyle, wireStyleFor, type Crossing, type Hop } from '../model/wires';
 import { SheetFrame } from './SheetFrame';
 import { RichText } from './RichText';
 import { hasMath } from '../model/latex';
 import { layoutRich, measureRich } from '../model/richText';
+import { dashArray } from '../model/dash';
+import { FONT_STACKS } from '../model/fonts';
+import { defaultAlign, defaultValign, lineCap, lineJoin, measureTextShape, shapeText, textFaceStyle, textSize, textWeight, titleWidth } from '../model/shapeText';
 import { SymbolBody } from './SymbolGraphic';
 import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
 import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
@@ -40,7 +43,7 @@ export const EDITOR_PALETTE: Palette = {
 /** Maps pure black to the palette's ink colour; every other colour is left as chosen. */
 export const inkColor = (c: string, p: Palette) => (/^#(000|000000)$/i.test(c) ? p.ink : c);
 
-export const dashArray = (d: Dash, w: number) => (d === 'dashed' ? `${w * 4} ${w * 3}` : d === 'dotted' ? `0.01 ${w * 2.5}` : undefined);
+export { dashArray };
 
 const LABEL_SYMBOLS = /^$/;
 
@@ -319,7 +322,6 @@ export function labelBox(at: LabelPos, look: LabelLook): Rect {
   return { x, y: at.y - look.size, w: m.w, h: Math.max(look.size * 1.3, m.h) };
 }
 
-const LABEL_FONTS = { serif: 'Georgia, "Times New Roman", serif', mono: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace' };
 
 function PartLabel({ at, look, fill, bg, className, children }: { at: LabelPos; look: LabelLook; fill: string; bg: string; className: string; children?: ReactNode }) {
   const { st, text, size, weight } = look;
@@ -341,7 +343,7 @@ function PartLabel({ at, look, fill, bg, className, children }: { at: LabelPos; 
           fontWeight: weight,
           fontStyle: st.italic ? 'italic' : undefined,
           textDecoration: st.underline ? 'underline' : undefined,
-          fontFamily: st.font ? LABEL_FONTS[st.font] : undefined,
+          fontFamily: st.font ? FONT_STACKS[st.font] : undefined,
         }}
       >
         {children}
@@ -374,7 +376,7 @@ export const ComponentView = memo(function ComponentView({
   const dnp = isDnp(c);
   return (
     <g className={`comp${ghost ? ' ghost' : ''}${dnp ? ' dnp' : ''}`} data-id={c.id} style={{ color, ['--sym-bg' as string]: palette.symBg }}>
-      <g transform={tf} strokeDasharray={c.dash === 'dashed' ? `${3 * lw} ${2 * lw}` : c.dash === 'dotted' ? `0.01 ${2 * lw}` : undefined}>
+      <g transform={tf} strokeDasharray={dashArray(c.dash, lw, true)}>
         <SymbolBody def={def} look={look} />
       </g>
       {def.prims.map((p, i) => {
@@ -494,20 +496,25 @@ function shapeHeads(s: ShapeItem) {
 /** Shapes whose title can be dragged around. */
 export const hasMovableTitle = (s: ShapeItem) => !!s.text && (s.kind === 'rect' || s.kind === 'zone' || s.kind === 'ellipse' || s.kind === 'polygon');
 
-/** Where a shape's title text sits: anchor point (baseline) and its box. */
-export function shapeTitle(s: ShapeItem): { x: number; y: number; anchor: 'start' | 'middle'; box: { x: number; y: number; w: number; h: number } } {
+/** Where a shape's title text sits: anchor point (baseline of the first line), its alignment and its box. */
+export function shapeTitle(s: ShapeItem): { x: number; y: number; anchor: 'start' | 'middle' | 'end'; box: { x: number; y: number; w: number; h: number } } {
   const fs = s.fontSize ?? 13;
-  const dx = s.textDx ?? 0;
-  const dy = s.textDy ?? 0;
-  const m = measureRich(s.text ?? '', fs, s.bold === false ? 400 : 600);
-  if (s.kind === 'ellipse' || s.kind === 'polygon') {
-    const x = s.x + s.w / 2 + dx;
-    const y = s.y + s.h / 2 + 5 + dy;
-    return { x, y, anchor: 'middle', box: { x: x - m.w / 2, y: y - fs, w: m.w, h: fs * 1.3 } };
-  }
-  const x = s.x + 10 + dx;
-  const y = s.y + fs + 6 + dy;
-  return { x, y, anchor: 'start', box: { x, y: y - fs, w: m.w, h: fs * 1.3 } };
+  const m = measureRich(shapeText(s), fs, textWeight(s), s.font);
+  const round = s.kind === 'ellipse' || s.kind === 'polygon';
+  const anchor = s.align ?? defaultAlign(s);
+  const valign = s.valign ?? defaultValign(s);
+  const bx = Math.min(s.x, s.x + s.w);
+  const by = Math.min(s.y, s.y + s.h);
+  const bw = Math.abs(s.w);
+  const bh = Math.abs(s.h);
+  // the room for the text: the padded box, or the part of a round shape that fits inside
+  const left = round ? bx + bw / 2 - titleWidth(s) / 2 : bx + 10;
+  const right = round ? bx + bw / 2 + titleWidth(s) / 2 : bx + bw - 10;
+  const h = Math.max(fs * 1.3, m.h);
+  const top = valign === 'top' ? by + 6 : valign === 'bottom' ? by + bh - 6 - h : by + bh / 2 - h / 2;
+  const x = (anchor === 'start' ? left : anchor === 'end' ? right : (left + right) / 2) + (s.textDx ?? 0);
+  const y = top + fs + (s.textDy ?? 0);
+  return { x, y, anchor, box: { x: anchor === 'start' ? x : anchor === 'end' ? x - m.w : x - m.w / 2, y: y - fs, w: m.w, h } };
 }
 
 /**
@@ -535,27 +542,77 @@ export function frameTag(s: ShapeItem): { x: number; y: number; w: number; h: nu
   return { x: Math.min(s.x, s.x + s.w), y: Math.min(s.y, s.y + s.h) - h - 4, w: m.w + 16, h, label, fs };
 }
 
+/** Kinds the shadow applies to (it needs an area or a stroke to cast from). */
+export const SHADOW_KINDS: ReadonlySet<ShapeItem['kind']> = new Set(['rect', 'zone', 'ellipse', 'polygon', 'line', 'arrow', 'text', 'image']);
+
+const SHADOW_ID = 'nodal-shadow';
+const gradId = (id: string) => `nodal-grad-${id.replace(/[^\w-]/g, '_')}`;
+const hasGradient = (s: ShapeItem) => !!s.gradient && s.fill !== 'none' && s.fillOpacity > 0 && (s.kind === 'rect' || s.kind === 'zone' || s.kind === 'ellipse' || s.kind === 'polygon');
+const hasShadow = (s: ShapeItem) => !!s.shadow && SHADOW_KINDS.has(s.kind);
+
+/** `<defs>` for the gradients and the shadow filter the shapes use (ids derive from the shape's id). */
+function ShapeDefs({ shapes, palette }: { shapes: ShapeItem[]; palette: Palette }) {
+  const grads = shapes.filter(hasGradient);
+  const shadow = shapes.some(hasShadow);
+  if (!grads.length && !shadow) return null;
+  return (
+    <defs>
+      {shadow && (
+        <filter id={SHADOW_ID} x="-30%" y="-30%" width="170%" height="180%">
+          <feDropShadow dx={2} dy={3} stdDeviation={3} floodColor="#000000" floodOpacity={0.35} />
+        </filter>
+      )}
+      {grads.map((s) => {
+        // objectBoundingBox units: the blend runs through the centre at the chosen angle
+        const a = (s.gradient!.angle * Math.PI) / 180;
+        const c = Math.cos(a) / 2;
+        const n = Math.sin(a) / 2;
+        return (
+          <linearGradient key={s.id} id={gradId(s.id)} x1={0.5 - c} y1={0.5 - n} x2={0.5 + c} y2={0.5 + n}>
+            <stop offset="0" stopColor={inkColor(s.fill, palette)} />
+            <stop offset="1" stopColor={inkColor(s.gradient!.to, palette)} />
+          </linearGradient>
+        );
+      })}
+    </defs>
+  );
+}
+
 export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: ShapeItem; palette: Palette; ax?: number; ay?: number }) {
   // a turned shape is drawn in its own frame, title and all
   const tf = shapeTransform(s);
   const body = shapeBody(s, palette, ax, ay);
-  return tf ? <g transform={tf}>{body}</g> : body;
+  const turned = tf ? <g transform={tf}>{body}</g> : body;
+  const shadow = hasShadow(s);
+  if (!shadow && (s.opacity === undefined || s.opacity >= 1)) return turned;
+  // opacity and shadow act on the finished shape, outside its turn (so the shadow keeps falling the same way)
+  const flat = shadow && (s.kind === 'line' || s.kind === 'arrow');
+  return (
+    <g opacity={s.opacity} filter={shadow ? `url(#${SHADOW_ID})` : undefined}>
+      {/* a straight line has no area to size the filter by */}
+      {flat && <rect x={Math.min(s.x, s.x + s.w) - 10} y={Math.min(s.y, s.y + s.h) - 10} width={Math.abs(s.w) + 20} height={Math.abs(s.h) + 20} fill="none" stroke="none" />}
+      {turned}
+    </g>
+  );
 });
 
 function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number) {
   const da = dashArray(s.dash, s.strokeWidth || 1);
   const ink = inkColor(s.stroke, palette);
   const stroke = s.strokeWidth > 0 ? ink : 'none';
-  const fill = s.fillOpacity > 0 ? inkColor(s.fill, palette) : 'none';
+  const fill = s.fillOpacity > 0 ? (hasGradient(s) ? `url(#${gradId(s.id)})` : inkColor(s.fill, palette)) : 'none';
+  // outline details; unset keeps each kind's own default
+  const line = { strokeOpacity: s.strokeOpacity, strokeLinecap: lineCap(s), strokeLinejoin: lineJoin(s) };
+  const face = textFaceStyle(s);
   const textColor = s.textColor ? inkColor(s.textColor, palette) : s.kind === 'text' ? palette.label : ink;
   switch (s.kind) {
     case 'rect':
     case 'zone':
       return (
         <g className="shape" data-id={s.id}>
-          <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={s.radius} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} />
+          <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={s.radius} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />
           {s.text && (
-            <RichText text={s.text} x={shapeTitle(s).x} y={shapeTitle(s).y} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold === false ? 400 : 600} className="shape-title" />
+            <RichText text={shapeText(s)} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor={shapeTitle(s).anchor} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={textWeight(s)} style={face} className="shape-title" />
           )}
         </g>
       );
@@ -574,26 +631,28 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number) {
     case 'ellipse':
       return (
         <g className="shape" data-id={s.id}>
-          <ellipse cx={s.x + s.w / 2} cy={s.y + s.h / 2} rx={Math.abs(s.w / 2)} ry={Math.abs(s.h / 2)} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} />
+          <ellipse cx={s.x + s.w / 2} cy={s.y + s.h / 2} rx={Math.abs(s.w / 2)} ry={Math.abs(s.h / 2)} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />
           {s.text && (
-            <RichText text={s.text} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold === false ? 400 : 600} />
+            <RichText text={shapeText(s)} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor={shapeTitle(s).anchor} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={textWeight(s)} style={face} />
           )}
         </g>
       );
     case 'polygon':
       return (
         <g className="shape" data-id={s.id}>
-          <polygon points={polyPoints(s).map((p) => `${p.x},${p.y}`).join(' ')} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinejoin="round" />
+          <polygon points={polyPoints(s).map((p) => `${p.x},${p.y}`).join(' ')} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />
           {s.text && (
-            <RichText text={s.text} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold === false ? 400 : 600} />
+            <RichText text={shapeText(s)} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor={shapeTitle(s).anchor} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={textWeight(s)} style={face} />
           )}
         </g>
       );
     case 'image':
       return (
         <g className="shape" data-id={s.id}>
-          <image href={s.src} x={Math.min(s.x, s.x + s.w)} y={Math.min(s.y, s.y + s.h)} width={Math.abs(s.w)} height={Math.abs(s.h)} preserveAspectRatio="none" />
-          {s.strokeWidth > 0 && <rect x={s.x} y={s.y} width={s.w} height={s.h} fill="none" stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} />}
+          <g transform={s.flipX ? `translate(${2 * s.x + s.w} 0) scale(-1 1)` : undefined}>
+            <image href={s.src} x={Math.min(s.x, s.x + s.w)} y={Math.min(s.y, s.y + s.h)} width={Math.abs(s.w)} height={Math.abs(s.h)} preserveAspectRatio="none" />
+          </g>
+          {s.strokeWidth > 0 && <rect x={s.x} y={s.y} width={s.w} height={s.h} fill="none" stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />}
         </g>
       );
     case 'line':
@@ -605,11 +664,11 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number) {
       const st = headInset(startKind, size);
       return (
         <g className="shape" data-id={s.id}>
-          <line x1={startTip.x + ux * st} y1={startTip.y + uy * st} x2={endTip.x - ux * e} y2={endTip.y - uy * e} stroke={ink} strokeWidth={s.strokeWidth} strokeDasharray={da} strokeLinecap="round" />
+          <line x1={startTip.x + ux * st} y1={startTip.y + uy * st} x2={endTip.x - ux * e} y2={endTip.y - uy * e} stroke={ink} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />
           <ArrowHeadEl tip={endTip} x={ux} y={uy} size={size} kind={endKind} color={ink} sw={s.strokeWidth} />
           <ArrowHeadEl tip={startTip} x={-ux} y={-uy} size={size} kind={startKind} color={ink} sw={s.strokeWidth} />
           {s.text && (
-            <RichText text={s.text} x={s.x + s.w / 2} y={s.y + s.h / 2 - 6} anchor="middle" fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={s.bold ? 600 : 400} />
+            <RichText text={shapeText(s)} x={s.x + s.w / 2} y={s.y + s.h / 2 - 6} anchor={s.align ?? defaultAlign(s)} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={textWeight(s)} style={face} />
           )}
         </g>
       );
@@ -657,13 +716,15 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number) {
       );
     }
     case 'text': {
-      const fs = s.fontSize ?? 16;
-      const m = measureRich(s.text ?? '', fs, s.bold ? 700 : 400);
-      const first = hasMath(s.text ?? '') ? layoutRich(s.text ?? '', fs, s.bold ? 700 : 400)[0].ascent : fs;
+      const fs = textSize(s);
+      const text = shapeText(s);
+      const m = measureTextShape(s);
+      const first = hasMath(text) ? layoutRich(text, fs, textWeight(s), s.font)[0].ascent : fs;
+      const anchor = s.align ?? 'start';
       return (
         <g className="shape" data-id={s.id}>
           {s.fillOpacity > 0 && <rect x={s.x - 6} y={s.y - 4} width={m.w + 12} height={m.h + 8} rx={4} fill={fill} fillOpacity={s.fillOpacity} />}
-          <RichText text={s.text ?? ''} x={s.x} y={s.y + Math.max(fs, first)} fontSize={fs} fill={textColor} fontWeight={s.bold ? 700 : 400} className="free-text" />
+          <RichText text={text} x={s.x + (anchor === 'middle' ? m.w / 2 : anchor === 'end' ? m.w : 0)} y={s.y + Math.max(fs, first)} anchor={anchor} fontSize={fs} fill={textColor} fontWeight={textWeight(s)} style={face} className="free-text" />
         </g>
       );
     }
@@ -718,6 +779,7 @@ export function Scene({ doc, data, palette, highlight, frames = false }: { doc: 
   }
   return (
     <>
+      <ShapeDefs shapes={items.filter((i): i is ShapeItem => i.type === 'shape')} palette={palette} />
       <SheetFrame doc={doc} ink={palette.sym} dim={palette.value} />
       {/* shapes, wires and parts share one stack, so the layers panel order is what you see */}
       <g className="layer-stack">

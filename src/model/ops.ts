@@ -3,7 +3,7 @@ import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateSha
 import { eq, projectOnSegment, rectsIntersect, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
 import { packPoly, polyPoints } from './polygon';
-import { mapShapeFrame, rectCentre, ROT_KINDS, rotateDeg, shapeBox, shapeRot } from './rotation';
+import { mapShapeFrame, normDeg, rectCentre, ROT_KINDS, rotateDeg, shapeBox, shapeRot } from './rotation';
 import { touchingPins } from './netlist';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, ShapeItem, WireItem } from './types';
@@ -476,8 +476,15 @@ function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
           it.w = f.w;
           it.h = f.h;
         }
-        if (f.rot) it.rot = f.rot;
+        // a mirror turns a picture inside out too (text can't, so it takes the turn that reads right)
+        const mirror = flip && b.kind === 'image';
+        const rot = mirror ? normDeg(f.rot - rotateBy) : f.rot;
+        if (rot) it.rot = rot;
         else delete it.rot;
+        if (mirror) {
+          if (b.flipX) delete it.flipX;
+          else it.flipX = true;
+        }
       } else if (b.kind === 'line' || b.kind === 'arrow') {
         it.x = p1.x;
         it.y = p1.y;
@@ -636,6 +643,7 @@ export function scaleItems(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
       it.fontSize = Math.round((b.fontSize ?? 16) * r * 100) / 100;
       it.w = b.w * r;
       it.h = b.h * r;
+      if (b.wrapW) it.wrapW = b.wrapW * r;
     }
   }
   return r;

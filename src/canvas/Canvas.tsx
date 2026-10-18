@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
+import { measureTextShape, textFaceStyle, textSize, textWeight } from '../model/shapeText';
 import { drawOrderCached, groupMembers, groupTags, itemBounds, labelsShown, makeShape, selectedGroup } from '../model/doc';
 import { componentBounds, dist, eq, measureText, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, rotateShapeBy, scaleItems, selectionPivot, translateDetached, translateItems } from '../model/ops';
@@ -556,7 +557,12 @@ export function Canvas() {
         { h: 'p1', p: { x: s.x, y: s.y } },
         { h: 'p2', p: { x: s.x + s.w, y: s.y + s.h } },
       ];
-    if (s.kind === 'text' || s.kind === 'callout') return [];
+    // free text: one handle on the right edge sets the width it wraps at
+    if (s.kind === 'text') {
+      const b = shapeBox(s);
+      return [{ h: 'e', p: fromShapeFrame(s, { x: b.x + b.w, y: b.y + b.h / 2 }) }];
+    }
+    if (s.kind === 'callout') return [];
     const { x, y, w, h } = s;
     const out: { h: Handle; p: Point }[] = [
       { h: 'nw', p: { x, y } },
@@ -1468,6 +1474,20 @@ export function Canvas() {
             s.h = p.y - b.y;
             return;
           }
+          if (b.kind === 'text') {
+            // the left edge stays put on screen while the wrap width follows the pointer
+            const bb = shapeBox(b);
+            const q = rotateDeg(p, -turned, rectCentre(bb));
+            s.wrapW = Math.max(30, Math.round(q.x - bb.x));
+            Object.assign(s, measureTextShape(s));
+            if (turned) {
+              const was = fromShapeFrame(b, { x: bb.x, y: bb.y });
+              const now = rotateDeg({ x: s.x, y: s.y }, turned, rectCentre(shapeBox(s)));
+              s.x += was.x - now.x;
+              s.y += was.y - now.y;
+            }
+            return;
+          }
           // the side or corner opposite the handle stays put, turned or not
           Object.assign(s, resizeInFrame({ x: b.x, y: b.y, w: b.w, h: b.h }, turned, g.handle, p, grid));
         });
@@ -2286,15 +2306,25 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
   }, []);
   if (!it) return null;
   const isText = it.kind === 'text';
-  const size = it.fontSize ?? (isText ? 16 : 13);
-  const weight = isText ? (it.bold ? 700 : 400) : it.bold !== false ? 600 : 400;
-  const m = measureRich(value, size, weight);
-  const width = Math.max(80, m.w * view.zoom + 20);
+  const size = textSize(it);
+  const weight = textWeight(it);
+  const m = measureRich(value, size, weight, it.font);
+  // a free text with a wrap width edits at that width
+  const width = it.wrapW && isText ? it.wrapW * view.zoom : Math.max(80, m.w * view.zoom + 20);
   let at = { x: it.x, y: it.y };
-  if (!isText) {
+  if (isText) {
+    const a = it.align ?? 'start';
+    if (a !== 'start') at = { x: it.x + (a === 'middle' ? measureTextShape(it).w / 2 - width / view.zoom / 2 : measureTextShape(it).w - width / view.zoom), y: it.y };
+  } else {
     const t = shapeTitle({ ...it, text: value || ' ' });
-    at = { x: t.anchor === 'middle' ? t.x - width / view.zoom / 2 : t.box.x, y: t.box.y };
+    const w = width / view.zoom;
+    at = { x: t.anchor === 'start' ? t.box.x : t.anchor === 'middle' ? t.x - w / 2 : t.x - w, y: t.box.y };
   }
+  // a turned shape is edited turned too, about the shape's centre
+  const rot = shapeRot(it);
+  const ctr = rectCentre(shapeBox(it));
+  const left = at.x * view.zoom + view.x - 4;
+  const top = at.y * view.zoom + view.y - 2;
   const commit = () => {
     if (done.current) return;
     done.current = true;
@@ -2308,7 +2338,7 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
         return;
       }
       s.text = text;
-      if (s.kind === 'text') Object.assign(s, measureRich(text, s.fontSize ?? 16, s.bold ? 700 : 400));
+      if (s.kind === 'text') Object.assign(s, measureTextShape(s));
     });
     onDone();
   };
@@ -2336,14 +2366,18 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       style={{
-        left: at.x * view.zoom + view.x - 4,
-        top: at.y * view.zoom + view.y - 2,
+        left,
+        top,
         fontSize: size * view.zoom,
         lineHeight: 1.3,
         minWidth: width,
         height: m.h * view.zoom + 12,
         fontWeight: weight,
         color: it.textColor || undefined,
+        ...textFaceStyle(it),
+        textAlign: it.align === 'middle' ? 'center' : it.align === 'end' ? 'right' : it.align === 'start' ? 'left' : !isText && (it.kind === 'ellipse' || it.kind === 'polygon') ? 'center' : undefined,
+        transform: rot ? `rotate(${rot}deg)` : undefined,
+        transformOrigin: rot ? `${ctr.x * view.zoom + view.x - left}px ${ctr.y * view.zoom + view.y - top}px` : undefined,
       }}
     />
   );
