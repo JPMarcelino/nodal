@@ -281,7 +281,7 @@ export function SymbolEditor() {
       for (const it of Object.values(d.items)) {
         if (it.type === 'component' && it.symbol === vid) it.symbol = baseId;
       }
-    });
+    }, undefined, { allPages: true });
     toast(`Removed that type of ${base.name}`, 'success');
   };
 

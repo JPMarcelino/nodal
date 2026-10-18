@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Eye, EyeOff, Oc
 import { useEffect, useMemo, useState } from 'react';
 import { ERC_RULES, runErc, splitIgnored, type ErcIssue, type ErcRule } from '../model/erc';
 import * as A from '../store/actions';
-import { mutate, select, set, useStore } from '../store/store';
+import { goToItems, mutate, select, set, useStore } from '../store/store';
 
 /** Rule-check findings for the current circuit, re-run once edits pause (not on every drag frame). */
 export function useErcResult(enabled = true): { active: ErcIssue[]; ignored: ErcIssue[] } {
@@ -57,7 +57,8 @@ export function CheckPanel() {
   const warnings = issues.length - errors;
 
   const reveal = (i: ErcIssue) => {
-    const ids = i.items.filter((id) => doc.items[id]);
+    // a finding on another page switches to it
+    const ids = goToItems(i.items.filter((id) => doc.items[id]));
     select(ids);
     A.revealItems(ids, i.at);
   };

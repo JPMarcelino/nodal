@@ -9,14 +9,15 @@ import { clearExplainOverlays } from './explain';
 import { startPresenting } from '../ui/Presenter';
 import { renumberCallouts } from '../ui/ExplainDock';
 import { toggleTimeline } from '../ui/Timeline';
-import { S, redo, set, setPrefs, toast, undo, mutate } from './store';
+import { S, activePage, redo, set, setPrefs, toast, undo, mutate, vdoc } from './store';
+import { docPages, pageIndex } from '../model/pages';
 import { canvasActions } from './canvasActions';
 import { copyStyle, pasteStyle } from '../ui/StyleSection';
 
 export interface Command {
   id: string;
   label: string;
-  category: 'File' | 'Edit' | 'Tools' | 'Arrange' | 'View' | 'Wire' | 'Symbols' | 'Help';
+  category: 'File' | 'Edit' | 'Tools' | 'Arrange' | 'Page' | 'View' | 'Wire' | 'Symbols' | 'Help';
   keys: string[];
   /** Keys in the Cadence (Virtuoso schematic) scheme; when absent the Nodal keys apply minus any Cadence uses. */
   cadence?: string[];
@@ -26,7 +27,7 @@ export interface Command {
 }
 
 const hasSel = () => S().selection.length > 0;
-const g = () => S().doc.settings.grid;
+const g = () => vdoc().settings.grid;
 
 export const COMMANDS: Command[] = [
   // File
@@ -135,7 +136,7 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.flipH', label: 'Flip horizontally', category: 'Arrange', keys: ['X'], cadence: ['Shift+R'], run: () => A.flipSelection('x') },
   { id: 'arrange.flipV', label: 'Flip vertically', category: 'Arrange', keys: ['Y'], run: () => A.flipSelection('y') },
   { id: 'arrange.group', label: 'Group', category: 'Arrange', keys: ['Mod+G'], run: A.groupSelection },
-  { id: 'arrange.renameGroup', label: 'Rename group', category: 'Arrange', keys: [], run: renameGroupCmd, when: () => !!(selectedGroup(S().doc, S().selection, S().scope) ?? S().scope) },
+  { id: 'arrange.renameGroup', label: 'Rename group', category: 'Arrange', keys: [], run: renameGroupCmd, when: () => !!(selectedGroup(vdoc(), S().selection, S().scope) ?? S().scope) },
   { id: 'arrange.ungroup', label: 'Ungroup', category: 'Arrange', keys: ['Mod+Shift+G'], run: A.ungroupSelection },
   { id: 'arrange.forward', label: 'Bring forward', category: 'Arrange', keys: ['Mod+]'], run: () => A.reorder('forward') },
   { id: 'arrange.backward', label: 'Send backward', category: 'Arrange', keys: ['Mod+['], run: () => A.reorder('backward') },
@@ -155,6 +156,16 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.toPath', label: 'Convert to path', category: 'Arrange', keys: [], run: A.convertSelectionToPath, when: hasSel },
   { id: 'arrange.enterGroup', label: 'Enter group', category: 'Arrange', keys: ['Mod+Enter'], cadence: ['E', 'Shift+E', 'Mod+Enter'], run: () => S().selection[0] && A.enterGroup(S().selection[0]) },
   { id: 'arrange.exitGroup', label: 'Return from group', category: 'Arrange', keys: [], cadence: ['Shift+B'], run: () => void A.exitGroup() },
+
+  // Page
+  { id: 'page.new', label: 'New page', category: 'Page', keys: ['Mod+Alt+Shift+N'], run: A.newPage },
+  { id: 'page.next', label: 'Next page', category: 'Page', keys: ['Mod+PageDown', 'Alt+PageDown'], run: () => A.stepPage(1) },
+  { id: 'page.prev', label: 'Previous page', category: 'Page', keys: ['Mod+PageUp', 'Alt+PageUp'], run: () => A.stepPage(-1) },
+  { id: 'page.rename', label: 'Rename page…', category: 'Page', keys: [], run: () => A.pageBar.rename?.(activePage()) },
+  { id: 'page.duplicate', label: 'Duplicate page', category: 'Page', keys: [], run: () => A.duplicatePageCmd() },
+  { id: 'page.delete', label: 'Delete page', category: 'Page', keys: [], run: () => void A.deletePageCmd(), when: () => docPages(S().doc).length > 1 },
+  { id: 'page.moveLeft', label: 'Move page left', category: 'Page', keys: [], run: () => A.movePageBy(activePage(), -1), when: () => pageIndex(S().doc, S().page) > 0 },
+  { id: 'page.moveRight', label: 'Move page right', category: 'Page', keys: [], run: () => A.movePageBy(activePage(), 1), when: () => pageIndex(S().doc, S().page) < docPages(S().doc).length - 1 },
 
   // Wire
   { id: 'wire.angle', label: 'Cycle wire angle: 90° / 45° / any (Tab while drawing)', category: 'Wire', keys: ['Shift+A'], run: () => A.setWireAngle() },
@@ -206,7 +217,7 @@ export const COMMANDS: Command[] = [
     keys: ['Mod+Alt+K'],
     run: () => {
       const ids = S().selection;
-      const drawing = ids.length ? selectionToDrawing(S().doc, ids) : null;
+      const drawing = ids.length ? selectionToDrawing(vdoc(), ids) : null;
       if (!drawing) return toast('Select the parts, wires or shapes to turn into a symbol');
       set({ dialog: 'symbol-editor', editingSymbol: null, symbolSeed: { ...drawing, ids: [...ids] } });
     },
@@ -227,20 +238,20 @@ function mutateSettings(fn: (s: import('../model/types').DocSettings) => void) {
 }
 
 function toggleSetting(key: 'hideRefs' | 'hideValues' | 'hideWireLabels', what: string) {
-  const hide = !S().doc.settings[key];
+  const hide = !vdoc().settings[key];
   mutateSettings((s) => (s[key] = hide));
   toast(`${what} ${hide ? 'hidden' : 'shown'}`);
 }
 
 function cycleHops() {
   const order = ['arc', 'gap', 'none'] as const;
-  const next = order[(order.indexOf(S().doc.settings.hops) + 1) % 3];
+  const next = order[(order.indexOf(vdoc().settings.hops) + 1) % 3];
   mutateSettings((s) => (s.hops = next));
   toast(`Crossing style: ${next === 'arc' ? 'Hop' : next === 'gap' ? 'Gap' : 'None'}`);
 }
 
 function toggleCorners() {
-  const r = S().doc.settings.wire.radius > 0 ? 0 : 8;
+  const r = vdoc().settings.wire.radius > 0 ? 0 : 8;
   mutateSettings((s) => (s.wire.radius = r));
   toast(r ? 'Wire corners: rounded' : 'Wire corners: sharp');
 }
@@ -275,7 +286,7 @@ function focusSearch() {
 
 /** Renames the selected group (or the one being edited) in place on the canvas. */
 function renameGroupCmd() {
-  const gid = selectedGroup(S().doc, S().selection, S().scope) ?? S().scope;
+  const gid = selectedGroup(vdoc(), S().selection, S().scope) ?? S().scope;
   if (gid) canvasActions.renameGroup?.(gid);
 }
 

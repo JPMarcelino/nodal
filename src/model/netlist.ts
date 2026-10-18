@@ -1,5 +1,6 @@
 import { toWorld } from './geometry';
 import { stripMath } from './latex';
+import { itemPage, multiPage } from './pages';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint } from './types';
 
@@ -21,9 +22,10 @@ export function touchingPins(doc: CircuitDoc): string[][] {
   for (const c of Object.values(doc.items)) {
     if (c.type !== 'component') continue;
     const def = instanceSymbol(doc, c);
+    const page = pageKey(doc, c);
     for (const p of def.ports) {
       const w = toWorld(c, def, p.x, p.y);
-      const k = `${Math.round(w.x * 2)},${Math.round(w.y * 2)}`;
+      const k = `${page}${Math.round(w.x * 2)},${Math.round(w.y * 2)}`;
       const list = at.get(k);
       if (list) list.push(`${c.id}:${p.id}`);
       else at.set(k, [`${c.id}:${p.id}`]);
@@ -32,11 +34,15 @@ export function touchingPins(doc: CircuitDoc): string[][] {
   return [...at.values()].filter((g) => new Set(g.map((k) => k.split(':')[0])).size > 1);
 }
 
+/** Pins only touch on the same page: with several pages, cell keys carry the page id. */
+const pageKey = (doc: CircuitDoc, c: ComponentItem) => (multiPage(doc) ? `${itemPage(doc, c)}|` : '');
+
 function componentPinCells(doc: CircuitDoc, c: ComponentItem): Array<[string, string]> {
   const def = instanceSymbol(doc, c);
+  const page = pageKey(doc, c);
   return def.ports.map((p) => {
     const w = toWorld(c, def, p.x, p.y);
-    return [`${Math.round(w.x * 2)},${Math.round(w.y * 2)}`, `${c.id}:${p.id}`] as [string, string];
+    return [`${page}${Math.round(w.x * 2)},${Math.round(w.y * 2)}`, `${c.id}:${p.id}`] as [string, string];
   });
 }
 

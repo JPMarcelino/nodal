@@ -9,6 +9,7 @@ import { instanceSymbol } from '../model/registry';
 import { shapeText } from '../model/shapeText';
 import { PX_PER_MM, sheetRect } from '../model/sheet';
 import { stripMath } from '../model/latex';
+import { docPages, viewDoc } from '../model/pages';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 import { withoutFrames } from '../model/presentation';
@@ -399,13 +400,16 @@ export function exportDxf(doc: CircuitDoc): string {
 /* Print                                                               */
 /* ------------------------------------------------------------------ */
 
+/** Prints every page, one per sheet of paper (empty pages are skipped unless all are empty). */
 export function printDoc(doc: CircuitDoc) {
-  const { svg } = exportSvg(doc, { theme: 'light', background: false, padding: 20 });
+  const views = docPages(doc).map((p) => viewDoc(doc, p.id));
+  const pages = views.filter((v) => Object.keys(v.items).length);
   const host = document.createElement('div');
   host.id = 'print-host';
-  host.innerHTML = svg.replace(/^<\?xml[^>]*>/, '');
-  const el = host.querySelector('svg');
-  if (el) {
+  host.innerHTML = (pages.length ? pages : views.slice(0, 1))
+    .map((v) => exportSvg(v, { theme: 'light', background: false, padding: 20 }).svg.replace(/^<\?xml[^>]*>/, ''))
+    .join('');
+  for (const el of host.querySelectorAll('svg')) {
     el.removeAttribute('width');
     el.removeAttribute('height');
   }

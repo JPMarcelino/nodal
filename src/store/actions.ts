@@ -1,4 +1,3 @@
-import { produce } from 'immer';
 import { docBounds, makeComponent, makeShape, topGroup } from '../model/doc';
 import { withContents } from '../model/containers';
 import { PRESET_SIZE, getPreset, makePresetShape } from '../model/shapePresets';
@@ -32,11 +31,14 @@ import { resolveConnector } from '../model/connectors';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { viewCentre } from '../io/importFiles';
-import { S, mutate, pushRecent, select, set, setPrefs, toast } from './store';
+import { S, activePage, mutate, pushRecent, select, set, setPage, setPrefs, toast, vdoc } from './store';
+import { addPage, docPages, editPage, movePage, pageIndex, pageItemIds, renamePage } from '../model/pages';
+import { deletePage, duplicatePage, moveItemsToPage } from '../model/pageOps';
+import { confirmDelete } from '../ui/Ask';
 import { X, isExplainTool, setX } from './explain';
 
 const sel = () => new Set(S().selection);
-const editable = () => S().selection.filter((id) => S().doc.items[id] && !S().doc.items[id].locked);
+const editable = () => S().selection.filter((id) => vdoc().items[id] && !vdoc().items[id].locked);
 
 /* ------------------------------------------------------------------ */
 /* Tools & placement                                                   */
@@ -73,7 +75,7 @@ export function setWireAngle(to?: WireAngle) {
 
 export function renameGroup(gid: string, name: string) {
   const v = name.trim();
-  if (!v || !S().doc.groups[gid] || S().doc.groups[gid].name === v) return;
+  if (!v || !vdoc().groups[gid] || vdoc().groups[gid].name === v) return;
   mutate((d) => void (d.groups[gid].name = v));
 }
 
@@ -86,7 +88,7 @@ export function armShape(id: string) {
 export function addPresetShape(id: string, at: Point, size: { w: number; h: number } = PRESET_SIZE): string | null {
   const preset = getPreset(id);
   if (!preset) return null;
-  const g = S().doc.settings.grid;
+  const g = vdoc().settings.grid;
   const side = Math.min(size.w, size.h);
   const box = preset.square ? { w: side, h: side } : size;
   let out = '';
@@ -143,14 +145,14 @@ export function placeAtCenter(symbol: string) {
 
 const selectedPolygons = () =>
   editable().filter((id) => {
-    const it = S().doc.items[id];
+    const it = vdoc().items[id];
     return it.type === 'shape' && it.kind === 'polygon';
   });
 
 /** Convert to path: boxes, ellipses and loose lines / arrows in the selection become editable outlines that look the same. */
 export function convertSelectionToPath() {
   const ids = editable().filter((id) => {
-    const it = S().doc.items[id];
+    const it = vdoc().items[id];
     return it.type === 'shape' && canConvertToPath(it);
   });
   if (!ids.length) {
@@ -198,9 +200,9 @@ export function setPathNodeKind(kind: 'corner' | 'smooth') {
 export function deleteSelection() {
   // a selected wire node/segment deletes just that part
   const wp = S().wirePart;
-  if (wp && S().selection.length === 1 && S().selection[0] === wp.wire && S().doc.items[wp.wire]) {
+  if (wp && S().selection.length === 1 && S().selection[0] === wp.wire && vdoc().items[wp.wire]) {
     // a polygon corner picked in the edit points tool: remove it (a polygon keeps three); elsewhere Del removes the polygon
-    if (S().doc.items[wp.wire].type === 'shape') {
+    if (vdoc().items[wp.wire].type === 'shape') {
       set({ wirePart: null });
       if (S().tool === 'node') {
         if (wp.kind === 'node') mutate((d) => void deletePolyCorner(d.items[wp.wire] as ShapeItem, wp.index));
@@ -222,7 +224,7 @@ let pasteCount = 0;
 
 export function copySelection() {
   if (!S().selection.length) return;
-  clipboard = extractFragment(S().doc, sel());
+  clipboard = extractFragment(vdoc(), sel());
   pasteCount = 0;
   const text = JSON.stringify(clipboard);
   navigator.clipboard?.writeText(text).catch(() => undefined);
@@ -285,9 +287,9 @@ export async function paste(at?: { x: number; y: number }) {
 export const pastePoint = () => (S().pointerOnCanvas ? S().cursor : viewCentre());
 
 export function pasteFragment(frag: Fragment, at?: { x: number; y: number }) {
-  const g = S().doc.settings.grid;
+  const g = vdoc().settings.grid;
   let dx: number, dy: number;
-  const tmp = { ...S().doc, items: Object.fromEntries(frag.items.map((i) => [i.id, i])) } as CircuitDoc;
+  const tmp = { ...vdoc(), items: Object.fromEntries(frag.items.map((i) => [i.id, i])) } as CircuitDoc;
   const b = docBounds(tmp);
   if (at && b) {
     dx = snap(at.x - (b.x + b.w / 2), g);
@@ -305,8 +307,8 @@ export function pasteFragment(frag: Fragment, at?: { x: number; y: number }) {
 
 export function duplicateSelection() {
   if (!S().selection.length) return;
-  const frag = extractFragment(S().doc, sel());
-  const g = S().doc.settings.grid * 2;
+  const frag = extractFragment(vdoc(), sel());
+  const g = vdoc().settings.grid * 2;
   let ids: string[] = [];
   mutate((d) => {
     ids = insertFragment(d as CircuitDoc, frag, g, g, S().scope);
@@ -317,9 +319,9 @@ export function duplicateSelection() {
 /** Stages an exact copy of the selection on top of the original (no undo step) and selects it; for placing with the pointer. */
 export function copyInPlace(): string[] {
   if (!S().selection.length) return [];
-  const frag = extractFragment(S().doc, sel());
+  const frag = extractFragment(vdoc(), sel());
   let ids: string[] = [];
-  const next = produce(S().doc, (d) => {
+  const next = editPage(S().doc, S().page, (d) => {
     ids = insertFragment(d as CircuitDoc, frag, 0, 0, S().scope);
   });
   set({ doc: next, selection: ids });
@@ -327,7 +329,8 @@ export function copyInPlace(): string[] {
 }
 
 export function selectAll() {
-  const { doc, scope } = S();
+  const { scope } = S();
+  const doc = vdoc();
   const ids = Object.values(doc.items)
     .filter((i) => !i.hidden && !i.locked && (!scope || topGroup(doc, i, undefined) !== undefined))
     .map((i) => i.id);
@@ -340,7 +343,7 @@ export function nudge(dx: number, dy: number) {
     set((s) => ({ view: { ...s.view, x: s.view.x - dx * 4, y: s.view.y - dy * 4 } }));
     return;
   }
-  const base = S().doc;
+  const base = vdoc();
   const ids = withContents(base, sel);
   mutate((d) => translateItems(base, d as CircuitDoc, ids, dx, dy));
 }
@@ -393,7 +396,8 @@ export function ungroupSelection() {
 }
 
 export function enterGroup(itemId: string) {
-  const { doc, scope } = S();
+  const { scope } = S();
+  const doc = vdoc();
   const it = doc.items[itemId];
   if (!it) return;
   const g = topGroup(doc, it, scope);
@@ -403,7 +407,8 @@ export function enterGroup(itemId: string) {
 }
 
 export function exitGroup() {
-  const { doc, scope } = S();
+  const { scope } = S();
+  const doc = vdoc();
   if (!scope) return false;
   const parent = doc.groups[scope]?.group;
   set({ scope: parent });
@@ -425,13 +430,13 @@ export function distribute(axis: 'x' | 'y') {
 /** Make same width / height / size: the selected shapes take the first one's size. */
 export function matchSize(mode: SizeMode) {
   const ids = editable();
-  const shapes = ids.filter((id) => S().doc.items[id].type === 'shape');
+  const shapes = ids.filter((id) => vdoc().items[id].type === 'shape');
   if (shapes.length < 2) return toast('Select at least two shapes to match sizes');
   mutate((d) => void matchSizes(d as CircuitDoc, ids, mode));
 }
 
 export function reorder(dir: StackMove) {
-  const ids = S().selection.filter((id) => S().doc.items[id] && S().doc.items[id].type !== 'junction');
+  const ids = S().selection.filter((id) => vdoc().items[id] && vdoc().items[id].type !== 'junction');
   if (!ids.length) return toast('Select something to move it forward or back');
   mutate((d) => void restackItems(d as CircuitDoc, ids, dir));
 }
@@ -439,24 +444,24 @@ export function reorder(dir: StackMove) {
 export function toggleLock() {
   const ids = S().selection;
   if (!ids.length) return;
-  const lock = !ids.every((id) => S().doc.items[id]?.locked);
+  const lock = !ids.every((id) => vdoc().items[id]?.locked);
   mutate((d) => ids.forEach((id) => d.items[id] && (d.items[id].locked = lock)));
   toast(lock ? 'Locked' : 'Unlocked');
 }
 
 export function toggleHidden(ids: string[]) {
-  const hide = !ids.every((id) => S().doc.items[id]?.hidden);
+  const hide = !ids.every((id) => vdoc().items[id]?.hidden);
   mutate((d) => ids.forEach((id) => d.items[id] && (d.items[id].hidden = hide)));
 }
 
 export function rerouteWires() {
-  const ids = S().selection.filter((id) => S().doc.items[id]?.type === 'wire');
+  const ids = S().selection.filter((id) => vdoc().items[id]?.type === 'wire');
   if (!ids.length) return toast('Select wires to re-route');
   mutate((d) => ids.forEach((id) => d.items[id].type === 'wire' && ((d.items[id] as Extract<Item, { type: 'wire' }>).pts = [])));
 }
 
 export function annotateAll() {
-  mutate((d) => annotate(d as CircuitDoc));
+  mutate((d) => annotate(d as CircuitDoc), undefined, { allPages: true });
   toast('Reference designators renumbered', 'success');
 }
 
@@ -482,7 +487,8 @@ export function zoomTo(zoom: number) {
 }
 
 export function fitView(ids?: string[]) {
-  const { doc, canvasSize } = S();
+  const { canvasSize } = S();
+  const doc = vdoc();
   const whole = !ids || !ids.length;
   const b = whole ? unionRects([docBounds(doc), sheetRect(doc.settings)].filter((r): r is Rect => !!r)) : docBounds(doc, ids);
   if (!b) {
@@ -502,7 +508,8 @@ export function fitView(ids?: string[]) {
 
 /** Brings items (or a point) into view at a readable zoom, without zooming in further than needed. */
 export function revealItems(ids: string[], at?: Point | null) {
-  const { doc, canvasSize, view } = S();
+  const { canvasSize, view } = S();
+  const doc = vdoc();
   const b = ids.length ? docBounds(doc, ids) : null;
   const box = b ?? (at ? { x: at.x - 40, y: at.y - 40, w: 80, h: 80 } : null);
   if (!box) return;
@@ -514,8 +521,8 @@ export function revealItems(ids: string[], at?: Point | null) {
 }
 
 export function symbolOfSelection() {
-  const c = S().selection.map((id) => S().doc.items[id]).find((i) => i?.type === 'component');
-  return c && c.type === 'component' ? getSymbol(S().doc, c.symbol) : null;
+  const c = S().selection.map((id) => vdoc().items[id]).find((i) => i?.type === 'component');
+  return c && c.type === 'component' ? getSymbol(vdoc(), c.symbol) : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -542,4 +549,85 @@ export function addFrame(r: Rect): string {
     id = s.id;
   });
   return id;
+}
+
+/* ------------------------------------------------------------------ */
+/* Pages                                                               */
+/* ------------------------------------------------------------------ */
+
+/** Hooks into the page bar (inline renaming lives there). */
+export const pageBar: { rename: ((id: string) => void) | null } = { rename: null };
+
+/** Shows a page; one not seen yet this session is zoomed to fit. */
+export function showPage(id: string) {
+  if (!setPage(id)) setTimeout(() => fitView(), 0);
+}
+
+/** Shows the next (+1) or previous (-1) page. */
+export function stepPage(by: 1 | -1) {
+  const pages = docPages(S().doc);
+  const i = pageIndex(S().doc, S().page) + by;
+  if (i >= 0 && i < pages.length) showPage(pages[i].id);
+}
+
+/** Adds an empty page at the end and shows it. */
+export function newPage() {
+  let id = '';
+  mutate((d) => void (id = addPage(d as CircuitDoc)), undefined, { allPages: true });
+  if (id) showPage(id);
+}
+
+export function renamePageTo(id: string, name: string) {
+  const v = name.trim();
+  if (!v || docPages(S().doc).find((p) => p.id === id)?.name === v) return;
+  mutate((d) => renamePage(d as CircuitDoc, id, v), undefined, { allPages: true });
+}
+
+export function duplicatePageCmd(id = activePage()) {
+  let copy = '';
+  mutate((d) => void (copy = duplicatePage(d as CircuitDoc, id)), undefined, { allPages: true });
+  if (copy) showPage(copy);
+}
+
+/** Deletes a page, asking first when something is on it; the last page can't go. */
+export async function deletePageCmd(id = activePage()) {
+  const doc = S().doc;
+  const pages = docPages(doc);
+  if (pages.length < 2) return toast('A circuit needs at least one page');
+  const page = pages.find((p) => p.id === id);
+  if (!page) return;
+  const n = pageItemIds(doc, id).length;
+  if (n && !(await confirmDelete(`Delete “${page.name}”?`, `Everything on it (${n} item${n === 1 ? '' : 's'}) is deleted too. Undo brings it back.`))) return;
+  const i = pages.indexOf(page);
+  if (id === activePage()) showPage(pages[i + 1]?.id ?? pages[i - 1].id);
+  mutate((d) => void deletePage(d as CircuitDoc, id), undefined, { allPages: true });
+}
+
+/** Moves a page along the tab row: by -1 / +1, or to an index with `to`. */
+export function movePageBy(id: string, by: number) {
+  const i = pageIndex(S().doc, id);
+  if (i < 0) return;
+  mutate((d) => movePage(d as CircuitDoc, id, i + by), undefined, { allPages: true });
+}
+
+export function movePageTo(id: string, to: number) {
+  mutate((d) => movePage(d as CircuitDoc, id, to), undefined, { allPages: true });
+}
+
+/** Moves the selection to another page (a new one with `page` null); see moveItemsToPage for what happens to wires. */
+export function moveSelectionToPage(page: string | null) {
+  const ids = S().selection;
+  if (!ids.length) return toast('Select something to move first');
+  let target = page ?? '';
+  let moved: string[] = [];
+  mutate(
+    (d) => {
+      if (!target) target = addPage(d as CircuitDoc);
+      moved = moveItemsToPage(d as CircuitDoc, ids, target);
+    },
+    [],
+    { allPages: true },
+  );
+  const name = docPages(S().doc).find((p) => p.id === target)?.name ?? 'page';
+  if (moved.length) toast(`Moved ${moved.length} item${moved.length === 1 ? '' : 's'} to ${name}`, 'success');
 }

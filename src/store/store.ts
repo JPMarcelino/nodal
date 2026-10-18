@@ -4,8 +4,9 @@ import { createDoc, groupMembers, normalizeDoc, topGroup } from '../model/doc';
 import { setUserLibrary, usedSymbols } from '../model/registry';
 import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
-import type { CircuitDoc, Dash, Point, SymbolDef, Tool, WireAngle } from '../model/types';
+import type { CircuitDoc, Dash, Item, Point, SymbolDef, Tool, WireAngle } from '../model/types';
 import { settleEdit } from '../model/settle';
+import { editPage, itemPage, mergeView, multiPage, resolvePage, viewDoc } from '../model/pages';
 
 export interface View {
   x: number;
@@ -80,6 +81,8 @@ export interface Toast {
 
 export interface AppState {
   doc: CircuitDoc;
+  /** Page shown on the canvas (view state: not undoable, not saved in the file); unset = the first page. */
+  page?: string;
   selection: string[];
   /** A node or segment of the selected wire, for part-level deletion. */
   wirePart: WirePartSel | null;
@@ -130,6 +133,8 @@ const LS = {
   lib: 'nodal.library',
   fav: 'nodal.favorites',
   recent: 'nodal.recent',
+  /** Last page open per document id. */
+  pages: 'nodal.pages',
 };
 
 function load<T>(key: string, fallback: T): T {
@@ -172,8 +177,17 @@ function initialDoc(): CircuitDoc {
 const userLibrary = load<Record<string, SymbolDef>>(LS.lib, {});
 setUserLibrary(userLibrary);
 
+/** The page last open in a document (restored when it is opened again). */
+function lastPage(doc: CircuitDoc): string | undefined {
+  const p = doc.id ? load<Record<string, string>>(LS.pages, {})[doc.id] : undefined;
+  return p && resolvePage(doc, p) === p ? p : undefined;
+}
+
+const startDoc = initialDoc();
+
 export const useStore = create<AppState>(() => ({
-  doc: initialDoc(),
+  doc: startDoc,
+  page: lastPage(startDoc),
   selection: [],
   wirePart: null,
   scope: undefined,
@@ -211,6 +225,57 @@ export const useStore = create<AppState>(() => ({
 export const S = () => useStore.getState();
 export const set = (p: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => useStore.setState(p);
 
+/** The document as the canvas sees it: only the active page's items (see model/pages). */
+export const vdoc = () => viewDoc(S().doc, S().page);
+/** Hook form of vdoc. */
+export const useViewDoc = () => useStore((s) => viewDoc(s.doc, s.page));
+/** The active page's id (always one that exists). */
+export const activePage = () => resolvePage(S().doc, S().page);
+
+/**
+ * Shows the page holding `ids` (staying on the active page when some of them
+ * are on it) and returns those of them on the page shown.
+ */
+export function goToItems(ids: string[]): string[] {
+  const doc = S().doc;
+  const here = activePage();
+  const known = ids.filter((id) => doc.items[id]);
+  const on = (p: string) => known.filter((id) => itemPage(doc, doc.items[id]) === p);
+  if (!known.length || on(here).length) return on(here);
+  const p = itemPage(doc, doc.items[known[0]]);
+  setPage(p);
+  return on(p);
+}
+
+/** Pan and zoom each page was last seen at (this session only), keyed by document and page. */
+const pageViews = new Map<string, View>();
+
+/**
+ * Shows another page; the selection and anything tied to the old page are
+ * dropped. Each page comes back where it was last seen; returns false when
+ * this page has not been shown yet (the view is left as it is).
+ */
+export function setPage(page: string): boolean {
+  const s = S();
+  const p = resolvePage(s.doc, page);
+  const cur = resolvePage(s.doc, s.page);
+  if (p === cur) return true;
+  pageViews.set(`${s.doc.id}:${cur}`, s.view);
+  const seen = pageViews.get(`${s.doc.id}:${p}`);
+  set({ page: p, selection: [], wirePart: null, highlight: null, layerHover: [], contextMenu: null, scope: undefined, placing: null, ...(seen ? { view: seen } : {}) });
+  if (!s.doc.id) return !!seen;
+  const all = load<Record<string, string>>(LS.pages, {});
+  delete all[s.doc.id];
+  // newest last; only the most recent documents are remembered
+  const kept = Object.entries({ ...all, [s.doc.id]: p }).slice(-50);
+  try {
+    localStorage.setItem(LS.pages, JSON.stringify(Object.fromEntries(kept)));
+  } catch {
+    /* ignore */
+  }
+  return !!seen;
+}
+
 /* ------------------------------------------------------------------ */
 /* History-aware mutation                                              */
 /* ------------------------------------------------------------------ */
@@ -218,7 +283,12 @@ export const set = (p: Partial<AppState> | ((s: AppState) => Partial<AppState>))
 const HISTORY_LIMIT = 300;
 let gestureBase: CircuitDoc | null = null;
 
-export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: string[]) {
+/**
+ * Records an edit as one undo step. It applies to the active page only (the
+ * draft holds just that page's items; anything added lands on it), unless
+ * `allPages` is set: page edits and document-wide changes such as renumbering.
+ */
+export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: string[], opts?: { allPages?: boolean }) {
   const s = S();
   if (s.viewOnly) {
     if (selection) set({ selection });
@@ -226,11 +296,12 @@ export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: strin
   }
   // the recipe's return value is ignored on purpose: Immer would otherwise use it as the new
   // document (e.g. `(d) => (d.settings.hops = 'arc')` returns 'arc' when nothing changed)
-  const changed = produce(s.doc, (d) => {
-    recipe(d);
-  });
-  // parts placed or moved onto wires connect to them (not mid-drag: only when the edit is committed)
-  const next = gestureBase ? changed : settleEdit(s.doc, changed);
+  const next = opts?.allPages
+    ? produce(s.doc, (d) => {
+        recipe(d);
+      })
+    : // parts placed or moved onto wires connect to them (not mid-drag: only when the edit is committed)
+      editPage(s.doc, s.page, (d) => recipe(d), gestureBase ? undefined : settleEdit);
   if (next === s.doc) {
     if (selection) set({ selection });
     return;
@@ -262,11 +333,14 @@ export function rebaseGesture() {
 export function gestureUpdate(recipe: (d: Draft<CircuitDoc>, base: CircuitDoc) => void) {
   if (!gestureBase || S().viewOnly) return;
   const base = gestureBase;
-  set({
-    doc: produce(base, (d) => {
-      recipe(d, base);
-    }),
-  });
+  set({ doc: editPage(base, S().page, recipe) });
+}
+
+/** Settles a committed gesture on the active page (see settleEdit). */
+function settlePage(base: CircuitDoc, doc: CircuitDoc): CircuitDoc {
+  const page = S().page;
+  const view = viewDoc(doc, page);
+  return mergeView(doc, view, settleEdit(viewDoc(base, page), view), page);
 }
 
 export function endGesture(commit = true) {
@@ -279,7 +353,7 @@ export function endGesture(commit = true) {
     set({ doc: base });
     return;
   }
-  if (s.doc !== base) set({ doc: settleEdit(base, s.doc), past: [...s.past.slice(-HISTORY_LIMIT), base], future: [], dirty: true });
+  if (s.doc !== base) set({ doc: settlePage(base, s.doc), past: [...s.past.slice(-HISTORY_LIMIT), base], future: [], dirty: true });
 }
 
 export const inGesture = () => gestureBase !== null;
@@ -287,11 +361,26 @@ export const inGesture = () => gestureBase !== null;
 /** Document the running gesture applies its updates to. */
 export const gestureBaseDoc = () => gestureBase;
 
+/** After undo / redo: shows the page the change was on when none of it is on the page in view. */
+function followChange(from: CircuitDoc, to: CircuitDoc) {
+  if (!multiPage(to) || from.items === to.items) return;
+  const pages = new Set<string>();
+  const note = (it: Item | undefined) => it && pages.add(itemPage(to, it));
+  for (const id in to.items) {
+    if (from.items[id] === to.items[id]) continue;
+    note(to.items[id]);
+    note(from.items[id]);
+  }
+  for (const id in from.items) if (!(id in to.items)) note(from.items[id]);
+  if (pages.size && !pages.has(activePage())) setPage([...pages][0]);
+}
+
 export function undo() {
   const s = S();
   if (!s.past.length || s.viewOnly) return;
   const prev = s.past[s.past.length - 1];
   set({ doc: prev, past: s.past.slice(0, -1), future: [s.doc, ...s.future], dirty: true, selection: s.selection.filter((id) => prev.items[id]), wirePart: null });
+  followChange(s.doc, prev);
 }
 
 export function redo() {
@@ -299,6 +388,7 @@ export function redo() {
   if (!s.future.length || s.viewOnly) return;
   const next = s.future[0];
   set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]), wirePart: null });
+  followChange(s.doc, next);
 }
 
 /**
@@ -326,7 +416,7 @@ export function pauseAutosave(paused: boolean) {
 }
 
 export function replaceDoc(doc: CircuitDoc, filePath: string | null = null) {
-  set({ doc, past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null });
+  set({ doc, page: lastPage(doc), past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null });
 }
 
 export function newDoc() {
@@ -339,7 +429,8 @@ export function newDoc() {
 
 /** Expands ids to whole groups relative to the current scope. */
 export function expandToGroups(ids: string[]): string[] {
-  const { doc, scope } = S();
+  const { scope } = S();
+  const doc = vdoc();
   const out = new Set<string>();
   for (const id of ids) {
     const it = doc.items[id];

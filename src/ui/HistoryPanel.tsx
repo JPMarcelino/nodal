@@ -1,6 +1,7 @@
 import { Bookmark, ChevronDown, ChevronRight, Download, FolderOpen, History, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { exportSvg } from '../io/export';
+import { viewDoc } from '../model/pages';
 import { NODAL_FILTER, openFromHistory } from '../io/fileActions';
 import { sanitizeName, saveFile } from '../io/files';
 import { defaultLabel, deleteVersion, listOtherCircuits, listVersions, onVersionsChanged, renameVersion, restoreVersion, saveNamedVersion } from '../io/versionStore';
@@ -85,7 +86,8 @@ function Preview({ v }: { v: Version }) {
   const doc = useStore((s) => s.doc);
   const src = useMemo(() => {
     try {
-      const { svg } = exportSvg(v.doc, { theme, background: false, padding: 20 });
+      // the version's first page (a version restores every page)
+      const { svg } = exportSvg(viewDoc(v.doc), { theme, background: false, padding: 20 });
       return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
     } catch {
       return null;

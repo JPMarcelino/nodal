@@ -116,6 +116,8 @@ interface ItemBase {
   hidden?: boolean;
   /** Stacking order shared by all items (higher = in front); unset = in front, by creation order. */
   z?: number;
+  /** Page the item is on (see CircuitDoc.pages); unset or unknown = the first page. */
+  page?: string;
 }
 
 export interface ComponentItem extends ItemBase {
@@ -394,6 +396,13 @@ export interface CircuitDoc {
   groups: Record<string, Group>;
   /** User symbols travel with the document so files stay self-contained. */
   symbols: Record<string, SymbolDef>;
+  /** Pages (sheets) in tab order; unset or empty = one implicit page. Nets join across pages by label name. */
+  pages?: Page[];
+}
+
+export interface Page {
+  id: string;
+  name: string;
 }
 
 export type Tool =

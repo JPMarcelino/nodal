@@ -4,7 +4,7 @@ import { DASH_OPTIONS } from '../model/dash';
 import { FONT_OPTIONS } from '../model/fonts';
 import { measureTextShape } from '../model/shapeText';
 import type { Dash, Item, ShapeItem } from '../model/types';
-import { S, mutate, toast, useStore } from '../store/store';
+import { S, mutate, toast, useViewDoc, vdoc } from '../store/store';
 import type { ReactNode } from 'react';
 import { NumberInput, SWATCHES, Section, Segmented, Slider, Toggle } from './controls';
 
@@ -26,7 +26,7 @@ export function restyle(ids: string[], p: Partial<Look>) {
 
 /** Copies the style of the first selected item that has one. */
 export function copyStyle() {
-  const d = S().doc;
+  const d = vdoc();
   const it = S().selection.map((id) => d.items[id]).find((i) => i && i.type !== 'junction');
   if (!it) return toast('Select something to copy its style from');
   copied = lookOf(d, it);
@@ -139,7 +139,7 @@ export interface StyleExtras {
  * get their text, line, fill and effect options in sections of their own.
  */
 export function StyleSection({ ids, title = 'Style', extras = {} }: { ids: string[]; title?: string; extras?: StyleExtras }) {
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const items = ids.map((id) => doc.items[id]).filter(Boolean);
   const { value, keys, mixed } = commonLook(doc, items);
   if (!keys.size) return null;

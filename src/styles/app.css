@@ -2719,6 +2719,10 @@ select.input {
     height: auto;
     max-height: 100vh;
   }
+  /* one page of the circuit per sheet of paper */
+  body.printing #print-host svg:not(:last-child) {
+    break-after: page;
+  }
   body {
     background: white;
     overflow: visible;
@@ -5243,4 +5247,122 @@ body {
   height: 100%;
   background: var(--accent);
   transition: width 0.15s;
+}
+
+/* ==================================================================== */
+/* Page bar                                                              */
+/* ==================================================================== */
+
+.stage {
+  --pb-h: 30px;
+}
+
+.stage .canvas-wrap {
+  bottom: var(--pb-h);
+}
+
+.stage.with-timeline .canvas-wrap {
+  bottom: calc(var(--tl-h) + var(--pb-h));
+}
+
+.stage .timeline {
+  bottom: var(--pb-h);
+}
+
+.page-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--pb-h);
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 6px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  font-size: 0.86em;
+  z-index: 4;
+}
+
+.page-tabs {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.page-tab {
+  flex: none;
+  max-width: 180px;
+  padding: 0 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  border-top: 2px solid transparent;
+  margin-top: -1px;
+}
+
+.page-tab:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.page-tab.active {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--panel-2);
+  border-top-color: var(--accent);
+}
+
+.page-tab.drop-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.page-tab.drop-after {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
+input.page-rename {
+  width: 140px;
+  margin: 3px 0;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+}
+
+.page-add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  color: var(--text-dim);
+}
+
+.page-add:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.page-menu.dropdown {
+  position: fixed;
+  top: auto;
+  min-width: 170px;
+}
+
+.page-menu .dropdown-item:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+body.is-presenting .page-bar {
+  display: none;
+}
+
+body.is-presenting .stage .canvas-wrap {
+  bottom: 0;
 }

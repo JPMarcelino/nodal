@@ -18,7 +18,8 @@ import { routeObstacles } from '../model/route';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
-import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, rebaseGesture, select, set, toast, useStore } from '../store/store';
+import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, rebaseGesture, select, set, toast, useStore, useViewDoc, vdoc } from '../store/store';
+import { viewDoc } from '../model/pages';
 import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, shapeTitle, useSceneData } from './Scene';
@@ -172,7 +173,7 @@ export function badgeCursor(t: Tool | 'plus' | 'area', theme: 'light' | 'dark'):
 }
 
 export function Canvas() {
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const view = useStore((s) => s.view);
   const selection = useStore((s) => s.selection);
   const wirePart = useStore((s) => s.wirePart);
@@ -290,7 +291,7 @@ export function Canvas() {
 
   /** "Continue wire" from a loose end: click-to-click wiring starting at that end. */
   const continueWire = (wire: string, end: 'a' | 'b') => {
-    const w = S().doc.items[wire];
+    const w = vdoc().items[wire];
     if (!w || w.type !== 'wire' || w[end].kind !== 'free') return;
     const ep = w[end] as Extract<Endpoint, { kind: 'free' }>;
     const pts = data.polys.get(wire) ?? [];
@@ -365,14 +366,14 @@ export function Canvas() {
   );
 
   const portDir = (pi: PortInfo): Point => {
-    const c = S().doc.items[pi.comp] as ComponentItem;
-    const info = endpointInfo(S().doc, { kind: 'port', comp: c.id, port: pi.port });
+    const c = vdoc().items[pi.comp] as ComponentItem;
+    const info = endpointInfo(vdoc(), { kind: 'port', comp: c.id, port: pi.port });
     return info?.dir ?? { x: 0, y: 0 };
   };
 
   const findTarget = useCallback(
     (raw: Point, excludeWire?: string): Target => {
-      const d = S().doc;
+      const d = vdoc();
       const z = S().view.zoom;
       const pi = findPort(raw);
       if (pi) return { kind: 'port', comp: pi.comp, port: pi.port, pt: pi.pt, dir: portDir(pi) };
@@ -410,7 +411,7 @@ export function Canvas() {
   const hitItems = useCallback(
     (p: Point): string[] => {
       const pw = p;
-      const d = S().doc;
+      const d = vdoc();
       const z = S().view.zoom;
       const t = (6 / z) * hitSlop();
       // locked items stay selectable (to inspect or unlock them); they just don't move or edit
@@ -477,7 +478,7 @@ export function Canvas() {
 
   /** Selected component label (reference or value *text*) under the pointer; dragging it moves just that label. `any` looks at every part. */
   const hitLabel = useCallback((p: Point, any = false): { id: string; which: 'ref' | 'value' } | null => {
-    const d = S().doc;
+    const d = vdoc();
     const ids = any ? Object.keys(d.items).reverse() : S().selection;
     for (const id of ids) {
       const c = d.items[id];
@@ -501,7 +502,7 @@ export function Canvas() {
   /** Wire whose (visible) net label text is under the pointer. */
   const hitWireLabel = useCallback(
     (p: Point): string | null => {
-      const d = S().doc;
+      const d = vdoc();
       for (const it of Object.values(d.items)) {
         if (it.type !== 'wire' || !it.label || it.labelHidden || it.hidden || it.locked || d.settings.hideWireLabels) continue;
         const spot = wireLabelSpot(it, data.polys.get(it.id) ?? [], wireStyle(d, it).width);
@@ -553,7 +554,7 @@ export function Canvas() {
   /** Corner handles of a multi-selection holding parts (a group): dragging one resizes it all. */
   const groupHandles = (): Point[] => {
     const sel = S().selection;
-    const d = S().doc;
+    const d = vdoc();
     if (S().tool !== 'select' || S().placing || sel.length < 2 || !sel.some((id) => d.items[id]?.type === 'component' && !d.items[id].locked)) return [];
     const b = unionBounds(d, sel);
     if (!b) return [];
@@ -579,7 +580,7 @@ export function Canvas() {
 
   const shapeHandles = (s: ShapeItem): { h: Handle; p: Point }[] => {
     if (s.kind === 'line' || s.kind === 'arrow') {
-      const r = resolveConnector(S().doc, s);
+      const r = resolveConnector(vdoc(), s);
       return [
         { h: 'p1', p: r.start },
         { h: 'p2', p: r.end },
@@ -620,7 +621,7 @@ export function Canvas() {
    * to add a bend there).
    */
   const connHandles = (s: ShapeItem) => {
-    const r = resolveConnector(S().doc, s);
+    const r = resolveConnector(vdoc(), s);
     return {
       ends: [
         { part: 'start' as const, p: r.start, glued: !!s.from },
@@ -644,13 +645,13 @@ export function Canvas() {
   };
 
   /** What a connector end dropped at `w` would glue to (Alt: nothing). */
-  const glueAt = (w: Point, alt: boolean, exclude?: string): GlueHit | null => (alt ? null : findGlue(S().doc, w, (8 / S().view.zoom) * hitSlop(), exclude));
+  const glueAt = (w: Point, alt: boolean, exclude?: string): GlueHit | null => (alt ? null : findGlue(vdoc(), w, (8 / S().view.zoom) * hitSlop(), exclude));
 
   /* -------------------------- edit points -------------------------- */
 
   /** Wire vertex (end or bend) under the pointer; selected wires win over the rest. */
   const nodeAt = (p: Point): { wire: string; idx: number; pts: Point[] } | null => {
-    const d = S().doc;
+    const d = vdoc();
     const tol = (7 / S().view.zoom) * hitSlop();
     const sel = new Set(S().selection);
     let best: { wire: string; idx: number; pts: Point[] } | null = null;
@@ -676,7 +677,7 @@ export function Canvas() {
    * node) or anywhere along a stretch. Selected outlines win over the rest.
    */
   const polyPartAt = (p: Point): { id: string; idx: number; part: 'in' | 'out' | 'corner' | 'mid' | 'edge'; nodes: PathNode[]; t: number } | null => {
-    const d = S().doc;
+    const d = vdoc();
     const tol = (7 / S().view.zoom) * hitSlop();
     const sel = new Set(S().selection);
     const polys = Object.values(d.items).filter((i): i is ShapeItem => i.type === 'shape' && i.kind === 'polygon' && !i.hidden && !i.locked);
@@ -750,13 +751,13 @@ export function Canvas() {
         // a new node on the stretch, dragged straight away
         beginGesture();
         let idx = -1;
-        const straight = pathSegs(pp.nodes, (S().doc.items[pp.id] as ShapeItem).open)[pp.idx]?.line;
+        const straight = pathSegs(pp.nodes, (vdoc().items[pp.id] as ShapeItem).open)[pp.idx]?.line;
         gestureUpdate((d) => void (idx = insertPathNode(d as CircuitDoc, pp.id, pp.idx, pp.t, straight ? sp(w) : undefined)));
         if (idx < 0) {
           endGesture(false);
           return;
         }
-        const base = pathNodes(S().doc.items[pp.id] as ShapeItem);
+        const base = pathNodes(vdoc().items[pp.id] as ShapeItem);
         set({ wirePart: { wire: pp.id, kind: 'node', index: idx } });
         setGesture({ kind: 'polyPart', id: pp.id, base, idx, part: 'node', start: base[idx] ?? w, moved: true });
         return;
@@ -797,7 +798,7 @@ export function Canvas() {
       return;
     }
     const hit = hitItem(w);
-    const item = hit ? S().doc.items[hit] : null;
+    const item = hit ? vdoc().items[hit] : null;
     if (item?.type === 'wire' && item.routing === 'straight' && !item.locked) {
       // straight wires: grabbing a segment drops a new bend there and drags it
       const pts = data.polys.get(item.id) ?? [];
@@ -832,7 +833,7 @@ export function Canvas() {
   const wirePreview = (g: Extract<Gesture, { kind: 'wire' }>): Point[] => {
     const angle = S().prefs.wireAngle;
     if (angle !== 'ortho') return buildAngledPreview(g.start.pt, g.pts, g.cur.pt, angle, g.hFirst);
-    return buildWirePreview(g.start.pt, g.pts, g.hFirst, g.cur.pt, routeObs ? wireRouter(S().doc, g.start, g.cur, grid, routeObs) : undefined);
+    return buildWirePreview(g.start.pt, g.pts, g.hFirst, g.cur.pt, routeObs ? wireRouter(vdoc(), g.start, g.cur, grid, routeObs) : undefined);
   };
 
   /* ------------------------------ polygon ------------------------------ */
@@ -907,7 +908,7 @@ export function Canvas() {
         ...(brush ? { style: { ...brush } } : {}),
       });
     });
-    if (newId && S().doc.items[newId]) set({ selection: [] });
+    if (newId && vdoc().items[newId]) set({ selection: [] });
     return newId !== null;
   };
 
@@ -954,9 +955,9 @@ export function Canvas() {
       if (!hit) return false;
       select([hit]);
     }
-    const before = S().doc;
+    const before = S().doc; // the whole document: the undo point
     if (copy) A.copyInPlace();
-    const ids = new Set(S().selection.filter((id) => !S().doc.items[id]?.locked));
+    const ids = new Set(S().selection.filter((id) => !vdoc().items[id]?.locked));
     if (!ids.size) {
       setGesture(null);
       toast('The selection is locked');
@@ -983,7 +984,7 @@ export function Canvas() {
       const joins: { wire: string; end: 'a' | 'b'; t: Target }[] = [];
       if (g.rejoin) {
         for (const id of g.ids) {
-          const wi = S().doc.items[id];
+          const wi = vdoc().items[id];
           if (wi?.type !== 'wire') continue;
           for (const end of ['a', 'b'] as const) {
             const ep = wi[end];
@@ -1083,7 +1084,7 @@ export function Canvas() {
         if (g.kind === 'move' || g.kind === 'conn' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'rotate' || g.kind === 'scale' || g.kind === 'groupScale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
         setGesture(null);
         // a cancelled copy takes its staged items with it
-        if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => S().doc.items[id]) });
+        if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => vdoc().items[id]) });
         set({ wirePart: null });
         return true;
       }
@@ -1119,7 +1120,7 @@ export function Canvas() {
 
   /** The selected locked item whose lock badge is under the pointer. */
   const lockBadgeAt = (p: Point): string | null => {
-    const d = S().doc;
+    const d = vdoc();
     const z = S().view.zoom;
     for (const id of S().selection) {
       const r = lockBadge(d, id, z);
@@ -1296,12 +1297,12 @@ export function Canvas() {
     const tag = groupTagAt(w);
     if (tag) {
       if (isDouble) setRenamingGroup(tag.id);
-      else select(groupMembers(S().doc, tag.id), e.shiftKey ? 'toggle' : 'replace');
+      else select(groupMembers(vdoc(), tag.id), e.shiftKey ? 'toggle' : 'replace');
       return;
     }
     if (groupHandles().some((h) => dist(h, w) < 7 / v.zoom)) {
       const ids = new Set(S().selection);
-      const pivot = selectionPivot(S().doc, ids);
+      const pivot = selectionPivot(vdoc(), ids);
       beginGesture();
       setGesture({ kind: 'groupScale', ids, pivot, d0: Math.max(1, dist(w, pivot)) });
       return;
@@ -1369,7 +1370,7 @@ export function Canvas() {
     // drag from a port starts a wire
     const pi = findPort(w);
     if (pi && !e.shiftKey) {
-      const portItem = S().doc.items[pi.comp];
+      const portItem = vdoc().items[pi.comp];
       if (portItem && !portItem.locked) {
         startWire({ kind: 'port', comp: pi.comp, port: pi.port, pt: pi.pt, dir: portDir(pi) }, true, client);
         return;
@@ -1379,7 +1380,7 @@ export function Canvas() {
     if (wireLabel) {
       // other wires of the net that carry a label of their own are not landing spots; only
       // physically connected wires qualify (same-label wires elsewhere join the net by name)
-      const d0 = S().doc;
+      const d0 = vdoc();
       const net = (netOfWire(computeNets(d0, { ignoreLabels: true }), wireLabel)?.wires ?? [wireLabel]).filter((id) => id === wireLabel || !(d0.items[id] as WireItem | undefined)?.label);
       select([wireLabel]);
       beginGesture();
@@ -1387,7 +1388,7 @@ export function Canvas() {
       return;
     }
     const labelEdit = isDouble ? hitLabel(w, true) : null;
-    if (labelEdit && !S().doc.items[labelEdit.id]?.locked) {
+    if (labelEdit && !vdoc().items[labelEdit.id]?.locked) {
       select([labelEdit.id]);
       setEditingLabel(labelEdit);
       return;
@@ -1395,16 +1396,16 @@ export function Canvas() {
     const labelOf = hitLabel(w);
     const stack = hitItems(w);
     let hit: string | null = stack[0] ?? null;
-    if (labelOf && (!hit || hit === labelOf.id || S().doc.items[hit]?.type !== 'component')) {
-      const c = S().doc.items[labelOf.id] as ComponentItem;
-      const frozen = frozenLabelOffsets(c, instanceSymbol(S().doc, c));
+    if (labelOf && (!hit || hit === labelOf.id || vdoc().items[hit]?.type !== 'component')) {
+      const c = vdoc().items[labelOf.id] as ComponentItem;
+      const frozen = frozenLabelOffsets(c, instanceSymbol(vdoc(), c));
       const base = labelOf.which === 'ref' ? { dx: frozen.labelDx, dy: frozen.labelDy } : { dx: frozen.valueDx, dy: frozen.valueDy };
       beginGesture();
       setGesture({ kind: 'label', id: labelOf.id, which: labelOf.which, start: w, base, frozen });
       return;
     }
     if (hit) {
-      const item = S().doc.items[hit];
+      const item = vdoc().items[hit];
       if (isDouble) {
         onDoubleClick(hit, w);
         return;
@@ -1429,12 +1430,12 @@ export function Canvas() {
       if (!wasSelected) select([hit]);
       const cur = S().selection;
       // a locked item is only selected; dragging from it still draws a marquee
-      if (S().doc.items[hit].locked && !next && cur.length === 1) {
+      if (vdoc().items[hit].locked && !next && cur.length === 1) {
         set({ wirePart: null });
         setGesture({ kind: 'marquee', start: w, cur: w, additive: false, keep: true });
         return;
       }
-      if (!S().doc.items[hit].locked && S().doc.items[hit].type === 'wire' && cur.length === 1 && cur[0] === hit) {
+      if (!vdoc().items[hit].locked && vdoc().items[hit].type === 'wire' && cur.length === 1 && cur[0] === hit) {
         const pts = data.polys.get(hit) ?? [];
         const h = hitWire(new Map([[hit, pts]]), w, Infinity);
         if (wasSoleWire && h && !next) set({ wirePart: { wire: hit, kind: 'segment', index: h.seg } });
@@ -1447,7 +1448,7 @@ export function Canvas() {
       return;
     }
     // pressing inside the selection's box (not on another item) moves the whole selection, keeping its shape
-    const inBox = isDouble || e.altKey ? null : unionBounds(S().doc, S().selection.filter((id) => !S().doc.items[id]?.locked));
+    const inBox = isDouble || e.altKey ? null : unionBounds(vdoc(), S().selection.filter((id) => !vdoc().items[id]?.locked));
     if (inBox && pointInRect(w, inBox, 4 / v.zoom)) {
       beginGesture();
       setGesture(moveGesture(S().selection, w, client));
@@ -1466,7 +1467,7 @@ export function Canvas() {
    * they were attached to; together with parts they stretch to stay connected, as before.
    */
   const moveGesture = (sel: string[], w: Point, client: Point, pick?: string): Gesture => {
-    const d = S().doc;
+    const d = vdoc();
     const picked = new Set(sel.filter((id) => d.items[id] && !d.items[id].locked));
     const wiresOnly = picked.size > 0 && [...picked].every((id) => d.items[id].type === 'wire');
     // a container carries what lies inside it as it was when the drag began
@@ -1475,7 +1476,7 @@ export function Canvas() {
   };
 
   const onDoubleClick = (id: string, at?: Point) => {
-    const d = S().doc;
+    const d = vdoc();
     const it = d.items[id];
     if (!it) return;
     const scope = S().scope;
@@ -1542,7 +1543,7 @@ export function Canvas() {
         dx = snap(dx, step);
         dy = snap(dy, step);
         if (S().prefs.alignGuides) {
-          if (alignRef.current?.ids !== g.ids) alignRef.current = { ids: g.ids, ...alignAnchors(gestureBaseDoc() ?? S().doc, g.ids) };
+          if (alignRef.current?.ids !== g.ids) alignRef.current = { ids: g.ids, ...alignAnchors(viewDoc(gestureBaseDoc() ?? S().doc, S().page), g.ids) };
           // off the grid, guides also pull the selection onto them; on it they just show what lines up
           const a = alignMove(alignRef.current.moving, alignRef.current.index, dx, dy, 6 / S().view.zoom, !snapOn);
           if (!e.shiftKey || dx) dx = a.dx;
@@ -1704,11 +1705,11 @@ export function Canvas() {
         setGesture({ ...g, cur: sp(w) });
         break;
       case 'scale': {
-        const c = S().doc.items[g.id] as ComponentItem | undefined;
+        const c = vdoc().items[g.id] as ComponentItem | undefined;
         if (!c) return;
         const raw = Math.min(10, Math.max(0.1, (g.base * dist(w, c)) / g.d0));
         // only sizes that keep every pin on the grid (quarter steps for single-pin parts)
-        const def = getSymbol(S().doc, c.symbol);
+        const def = getSymbol(vdoc(), c.symbol);
         const k = scaleStep(def) ? gridScale(def, raw) : Math.max(0.25, Math.round(raw * 4) / 4);
         gestureUpdate((d) => {
           (d.items[g.id] as ComponentItem).scale = k === 1 ? undefined : k;
@@ -1779,7 +1780,7 @@ export function Canvas() {
       case 'wireLabel': {
         // nearest spot on any wire of the net; the pointer's side of the wire picks the label side
         let best: { wire: string; t: number; d: number; pt: Point; horiz: boolean } | null = null;
-        const d0 = S().doc;
+        const d0 = vdoc();
         for (const id of g.net) {
           const o = d0.items[id];
           if (!o || o.type !== 'wire' || o.hidden) continue;
@@ -1842,7 +1843,7 @@ export function Canvas() {
           if (!g.additive && !g.keep) set({ selection: [] });
         } else {
           const crossing = w.x < g.start.x;
-          const ids = marqueeHits(S().doc, data.polys, r, crossing);
+          const ids = marqueeHits(vdoc(), data.polys, r, crossing);
           select(ids, g.additive ? 'add' : 'replace');
         }
         setGesture(null);
@@ -1871,7 +1872,7 @@ export function Canvas() {
       case 'polyPart':
         endGesture(g.moved);
         setGesture(null);
-        if (!g.moved && g.click && S().doc.items[g.id]) {
+        if (!g.moved && g.click && vdoc().items[g.id]) {
           // a click on a stretch adds a node there (picked, ready to drag or switch)
           const c = g.click;
           let idx = -1;
@@ -2103,7 +2104,9 @@ export function Canvas() {
   const scopeBounds = scope ? groupBounds(doc, scope) : null;
   const connectedPorts = data.portDegree;
   const showErc = useStore((s) => s.leftPanel && s.leftTab === 'check');
-  const ercIssues = useErcIssues(showErc);
+  const ercAll = useErcIssues(showErc);
+  // markers only for findings about this page's items
+  const ercIssues = useMemo(() => ercAll.filter((i) => !i.items.length || i.items.some((id) => doc.items[id])), [ercAll, doc]);
 
   return (
     <div
@@ -2712,7 +2715,7 @@ function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; 
 
 /** Inline editor for free text and for rectangle / zone / ellipse titles. */
 function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const view = useStore((s) => s.view);
   const it = doc.items[id] as ShapeItem | undefined;
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -2807,7 +2810,7 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
 
 /** In-place editor for a group's name, over its tag. */
 function GroupNameEditor({ gid, onDone }: { gid: string; onDone: () => void }) {
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const view = useStore((s) => s.view);
   const scope = useStore((s) => s.scope);
   const g = doc.groups[gid];
@@ -2854,7 +2857,7 @@ function GroupNameEditor({ gid, onDone }: { gid: string; onDone: () => void }) {
 
 /** In-place editor for a part's reference or value, opened by double-clicking the label. */
 function LabelEditor({ id, which, onDone }: { id: string; which: 'ref' | 'value'; onDone: () => void }) {
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const view = useStore((s) => s.view);
   const c = doc.items[id] as ComponentItem | undefined;
   const ref = useRef<HTMLTextAreaElement>(null);

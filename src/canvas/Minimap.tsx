@@ -4,14 +4,14 @@ import { shapeTransform } from '../model/rotation';
 import { unionRects } from '../model/geometry';
 import { sheetRect } from '../model/sheet';
 import type { Rect } from '../model/types';
-import { S, set, useStore } from '../store/store';
+import { S, set, useStore, useViewDoc } from '../store/store';
 import type { SceneData } from './Scene';
 
 const W = 200;
 const H = 130;
 
 export function Minimap({ data }: { data: SceneData }) {
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const view = useStore((s) => s.view);
   const size = useStore((s) => s.canvasSize);
   const ref = useRef<SVGSVGElement>(null);

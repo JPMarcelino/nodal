@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import { sanitizeName, saveFile } from '../io/files';
 import { renderVideo, videoSupported } from '../io/video';
 import { timeline } from '../model/presentation';
-import { S, set, toast, useStore } from '../store/store';
+import { set, toast, useStore, useViewDoc, vdoc } from '../store/store';
 import { Field, Segmented, Toggle } from './controls';
 import { Modal } from './Dialogs';
 import { fmtTime } from './Timeline';
@@ -12,7 +12,7 @@ const SIZES = { 720: [1280, 720], 1080: [1920, 1080], 1440: [2560, 1440] } as co
 
 /** Renders the presentation timeline to an MP4 / WebM file. */
 export function VideoDialog() {
-  const doc = useStore((s) => s.doc);
+  const doc = useViewDoc();
   const dark = useStore((s) => s.prefs.theme === 'dark');
   const [size, setSize] = useState<keyof typeof SIZES>(1080);
   const [fps, setFps] = useState(30);
@@ -35,8 +35,8 @@ export function VideoDialog() {
     try {
       const [width, height] = SIZES[size];
       const t0 = performance.now();
-      const { blob, ext } = await renderVideo(S().doc, { width, height, fps, theme, captions, signal: ctl.signal, onProgress: setProgress });
-      const name = `${sanitizeName(S().doc.name)}.${ext}`;
+      const { blob, ext } = await renderVideo(vdoc(), { width, height, fps, theme, captions, signal: ctl.signal, onProgress: setProgress });
+      const name = `${sanitizeName(vdoc().name)}.${ext}`;
       const res = await saveFile(blob, name, [{ name: ext === 'mp4' ? 'MP4 video' : 'WebM video', extensions: [ext] }]);
       if (res !== false) toast(`Video saved (${(blob.size / 1e6).toFixed(1)} MB, rendered in ${((performance.now() - t0) / 1000).toFixed(0)}s)`, 'success');
       set({ dialog: null });

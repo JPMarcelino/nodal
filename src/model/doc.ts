@@ -3,6 +3,7 @@ import { connectorBounds } from './connectors';
 import { componentBounds, polylineBounds, unionRects } from './geometry';
 import { measureTextShape } from './shapeText';
 import { rotatedBounds, shapeBox, shapeRot } from './rotation';
+import { normalizePages } from './pages';
 import { getSymbol, instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, Item, Rect, ShapeItem, ShapeKind, SymbolDef } from './types';
 import { wirePolyline } from './wires';
@@ -95,7 +96,7 @@ export function normalizeDoc(raw: unknown): CircuitDoc {
   if (!d || typeof d !== 'object' || d.format !== 'nodal' || typeof d.items !== 'object') {
     throw new Error('This file is not a Nodal circuit.');
   }
-  return {
+  return normalizePages({
     format: 'nodal',
     version: 1,
     id: typeof d.id === 'string' && d.id ? d.id : uid('d'),
@@ -104,7 +105,8 @@ export function normalizeDoc(raw: unknown): CircuitDoc {
     items: migrateItems(d.items ?? {}),
     groups: d.groups ?? {},
     symbols: d.symbols ?? {},
-  };
+    pages: d.pages,
+  });
 }
 
 export function itemBounds(doc: CircuitDoc, it: Item): Rect | null {
@@ -138,8 +140,29 @@ export function docBounds(doc: CircuitDoc, ids?: Iterable<string>): Rect | null 
   return unionRects(list.filter((i) => !i.hidden).map((i) => itemBounds(doc, i)).filter((r): r is Rect => !!r));
 }
 
+/** Items on the other pages while an edit is confined to one page (see model/pages editPage). */
+let outside: (() => Iterable<Item>) | null = null;
+
+/** Runs `fn` with the items of the other pages known, so new references stay unique across the whole circuit. */
+export function withOutsideItems<T>(items: () => Iterable<Item>, fn: () => T): T {
+  const prev = outside;
+  outside = items;
+  try {
+    return fn();
+  } finally {
+    outside = prev;
+  }
+}
+
+/** References already used on the other pages (empty outside a page edit). */
+export function outsideRefs(): string[] {
+  return outside ? [...outside()].flatMap((i) => (i.type === 'component' ? [i.ref] : [])) : [];
+}
+
 export function nextRef(doc: CircuitDoc, prefix: string, taken?: Set<string>): string {
-  const used = taken ?? new Set(Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])));
+  const own = taken ?? new Set(Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])));
+  const elsewhere = outsideRefs();
+  const used = elsewhere.length ? new Set([...own, ...elsewhere]) : own;
   let n = 1;
   while (used.has(`${prefix}${n}`)) n++;
   return `${prefix}${n}`;

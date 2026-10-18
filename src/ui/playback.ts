@@ -16,7 +16,7 @@ import {
 } from '../model/presentation';
 import type { CircuitDoc, ShapeItem } from '../model/types';
 import { TRACE_COLORS, X, setX, type Trace } from '../store/explain';
-import { S, set, type View } from '../store/store';
+import { S, set, type View, vdoc } from '../store/store';
 
 /* ------------------------------------------------------------------ */
 /* Camera                                                              */
@@ -88,7 +88,7 @@ interface Plan {
   overview: Shot;
 }
 let plan: Plan | null = null;
-export function playPlan(doc = S().doc): Plan {
+export function playPlan(doc = vdoc()): Plan {
   if (plan?.doc === doc) return plan;
   const steps = presentationSteps(doc);
   const { entries, total } = timeline(doc, steps);

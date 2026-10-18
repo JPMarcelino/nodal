@@ -8,7 +8,7 @@ import type { NetFlow } from '../model/trace';
 import * as A from '../store/actions';
 import { keysFor, prettyKey } from '../store/commands';
 import { clearExplainOverlays, isExplainTool, setX, useExplain, type ExplainTool, type Trace } from '../store/explain';
-import { S, mutate, select, set, toast, useStore } from '../store/store';
+import { S, mutate, select, set, toast, useStore, vdoc } from '../store/store';
 import { startPresenting } from './Presenter';
 
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
@@ -160,7 +160,7 @@ export function ExplainDock() {
 }
 
 function clearShapes(kind: 'ink' | 'callout') {
-  const ids = Object.values(S().doc.items)
+  const ids = Object.values(vdoc().items)
     .filter((i) => i.type === 'shape' && i.kind === kind && !i.locked)
     .map((i) => i.id);
   if (!ids.length) return toast(kind === 'ink' ? 'No ink to erase' : 'No callouts yet');
@@ -170,7 +170,7 @@ function clearShapes(kind: 'ink' | 'callout') {
 
 /** Renumbers the walkthrough (callouts and presentation frames) 1, 2, 3… in its current order. */
 export function renumberCallouts() {
-  const order = presentationSteps(S().doc).map((s) => s.id);
+  const order = presentationSteps(vdoc()).map((s) => s.id);
   mutate((d) => renumberSteps(d as CircuitDoc, order));
 }
 

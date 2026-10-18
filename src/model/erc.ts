@@ -1,6 +1,7 @@
 import { computeHotSpots } from './hotspots';
 import { toWorld } from './geometry';
 import { computeNets, touchingPins } from './netlist';
+import { docPages, viewDoc } from './pages';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Point, SymbolDef } from './types';
 import { wirePolyline } from './wires';
@@ -166,10 +167,15 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
   }
 
   /* ----------------------------- wires ------------------------------ */
-  const polys = new Map<string, Point[]>();
-  for (const it of Object.values(doc.items)) if (it.type === 'wire' && !it.hidden) polys.set(it.id, wirePolyline(doc, it));
   const unfinished = new Set<string>();
-  for (const h of computeHotSpots(doc, polys, [])) {
+  // wire ends only meet things on their own page
+  const hotSpots = docPages(doc).flatMap((p) => {
+    const page = viewDoc(doc, p.id);
+    const polys = new Map<string, Point[]>();
+    for (const it of Object.values(page.items)) if (it.type === 'wire' && !it.hidden) polys.set(it.id, wirePolyline(page, it));
+    return computeHotSpots(page, polys, []);
+  });
+  for (const h of hotSpots) {
     if (h.kind === 'end' || h.kind === 'touch' || h.kind === 'pinTouch') unfinished.add(h.wire);
     if (h.kind === 'end') {
       issues.push({ key: `loose-end:${h.wire}:${h.end}`, rule: 'loose-end', severity: 'warning', message: 'Wire end is not connected to anything', items: [h.wire], at: h.pt });

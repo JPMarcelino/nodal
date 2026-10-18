@@ -1,11 +1,12 @@
 import { current, isDraft } from 'immer';
 import { connectorsOf, detachConnector, isConnector, resolveConnector } from './connectors';
-import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
+import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, outsideRefs, refersTo, uid } from './doc';
 import { eq, projectOnSegment, rectsIntersect, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
 import { mapNodes, pathNodes, setPathNodes } from './path';
 import { mapShapeFrame, normDeg, rectCentre, ROT_KINDS, rotateDeg, shapeBox, shapeRot } from './rotation';
 import { touchingPins } from './netlist';
+import { docPages, itemPage } from './pages';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, ShapeItem, WireItem } from './types';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
@@ -807,7 +808,7 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
     doc.groups[gMap.get(g.id)!] = { id: gMap.get(g.id)!, name: g.name, group: parent || scope };
   }
   Object.assign(doc.symbols, frag.symbols);
-  const refs = new Set(Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])));
+  const refs = new Set([...Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])), ...outsideRefs()]);
   const out: string[] = [];
   const remapEp = (ep: Endpoint): Endpoint => {
     if (ep.kind === 'port') return idMap.has(ep.comp) ? { ...ep, comp: idMap.get(ep.comp)! } : { kind: 'free', x: 0, y: 0 };
@@ -966,7 +967,10 @@ export function distributeItems(doc: CircuitDoc, ids: string[], axis: 'x' | 'y')
 /** Renumbers reference designators left-to-right, top-to-bottom. */
 export function annotate(doc: CircuitDoc) {
   const comps = Object.values(doc.items).filter((i): i is ComponentItem => i.type === 'component');
-  comps.sort((a, b) => (Math.abs(a.y - b.y) > 40 ? a.y - b.y : a.x - b.x));
+  // page by page, then top to bottom, left to right
+  const sheet = new Map(docPages(doc).map((p, i) => [p.id, i]));
+  const at = (c: ComponentItem) => sheet.get(itemPage(doc, c)) ?? 0;
+  comps.sort((a, b) => at(a) - at(b) || (Math.abs(a.y - b.y) > 40 ? a.y - b.y : a.x - b.x));
   const counters = new Map<string, number>();
   for (const c of comps) {
     const prefix = instanceSymbol(doc, c).prefix;

@@ -1,5 +1,6 @@
 import { measureText } from '../model/geometry';
 import { SHEET_BAND, SHEET_MARGIN, SHEET_SIZES, TITLE_BLOCK, sheetOf, sheetRect, sheetZones, todayText } from '../model/sheet';
+import { sheetNumber } from '../model/pages';
 import type { CircuitDoc } from '../model/types';
 
 /** Shortens text with an ellipsis so it fits `max` px at the given size. */
@@ -47,7 +48,8 @@ export function SheetFrame({ doc, ink, dim }: { doc: CircuitDoc; ink: string; di
     { label: 'Date', value: s.date || todayText(), w: 100 },
     { label: 'Size', value: size, w: 70 },
     { label: 'Rev', value: doc.settings.revision || '—', w: 50 },
-    { label: 'Sheet', value: s.sheetNo || '1 / 1', w: 80 },
+    // with several pages, the sheet number follows the page
+    { label: 'Sheet', value: sheetNumber(doc) ?? (s.sheetNo || '1 / 1'), w: 80 },
   ];
   let bx = tb.x;
   return (
