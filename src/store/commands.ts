@@ -148,6 +148,9 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.alignVCenter', label: 'Align centres vertically', category: 'Arrange', keys: ['Alt+V'], run: () => A.align('vcenter') },
   { id: 'arrange.distH', label: 'Distribute horizontally', category: 'Arrange', keys: ['Alt+Shift+H'], run: () => A.distribute('x') },
   { id: 'arrange.distV', label: 'Distribute vertically', category: 'Arrange', keys: ['Alt+Shift+V'], run: () => A.distribute('y') },
+  { id: 'arrange.sameWidth', label: 'Make same width', category: 'Arrange', keys: [], run: () => A.matchSize('width') },
+  { id: 'arrange.sameHeight', label: 'Make same height', category: 'Arrange', keys: [], run: () => A.matchSize('height') },
+  { id: 'arrange.sameSize', label: 'Make same size', category: 'Arrange', keys: [], run: () => A.matchSize('both') },
   { id: 'arrange.enterGroup', label: 'Enter group', category: 'Arrange', keys: ['Mod+Enter'], cadence: ['E', 'Shift+E', 'Mod+Enter'], run: () => S().selection[0] && A.enterGroup(S().selection[0]) },
   { id: 'arrange.exitGroup', label: 'Return from group', category: 'Arrange', keys: [], cadence: ['Shift+B'], run: () => void A.exitGroup() },
 

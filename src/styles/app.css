@@ -1874,6 +1874,11 @@ select.input {
   stroke: var(--panel);
 }
 
+/* stalk from a shape's top edge to its rotation handle */
+.rot-stalk {
+  stroke: var(--accent);
+}
+
 
 .port-marker {
   fill: none;

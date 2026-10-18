@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { Scene, computeSceneData, type Palette } from '../canvas/Scene';
 import { docBounds, drawOrder, itemBounds, uid } from '../model/doc';
 import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
+import { fromShapeFrame, normDeg, shapeRot } from '../model/rotation';
 import { instanceSymbol } from '../model/registry';
 import { PX_PER_MM, sheetRect } from '../model/sheet';
 import { stripMath } from '../model/latex';
@@ -285,13 +286,15 @@ export function exportDxf(doc: CircuitDoc): string {
       g(20, Y(p.y));
     }
   };
-  const text = (layer: string, x: number, y: number, h: number, s: string, align: 'start' | 'middle' | 'end' = 'start') => {
+  /** `rot`: degrees clockwise on screen (DXF angles run counter-clockwise, with y flipped). */
+  const text = (layer: string, x: number, y: number, h: number, s: string, align: 'start' | 'middle' | 'end' = 'start', rot = 0) => {
     g(0, 'TEXT');
     g(8, layer);
     g(10, x);
     g(20, Y(y));
     g(40, h);
     g(1, stripMath(s));
+    if (rot) g(50, normDeg(-rot));
     if (align !== 'start') {
       g(72, align === 'middle' ? 1 : 2);
       g(11, x);
@@ -355,22 +358,31 @@ export function exportDxf(doc: CircuitDoc): string {
       }
     } else if (it.type === 'shape') {
       const layer = it.kind === 'zone' || it.kind === 'rect' ? 'ZONES' : 'ANNOTATIONS';
+      // turned shapes: points of their own frame are turned into the world
+      const rot = shapeRot(it);
+      const W = (p: Point) => fromShapeFrame(it, p);
       if (it.kind === 'rect' || it.kind === 'zone') {
-        poly(layer, [{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y }, { x: it.x + it.w, y: it.y + it.h }, { x: it.x, y: it.y + it.h }], true, aciColor(it.stroke));
-        if (it.text) text(layer, it.x + 10, it.y + 18, 10, it.text);
+        poly(layer, [{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y }, { x: it.x + it.w, y: it.y + it.h }, { x: it.x, y: it.y + it.h }].map(W), true, aciColor(it.stroke));
+        if (it.text) {
+          const at = W({ x: it.x + 10, y: it.y + 18 });
+          text(layer, at.x, at.y, 10, it.text, 'start', rot);
+        }
       } else if (it.kind === 'ellipse') {
         const pts: Point[] = [];
         for (let i = 0; i < 48; i++) {
           const a = (i / 48) * Math.PI * 2;
           pts.push({ x: it.x + it.w / 2 + (it.w / 2) * Math.cos(a), y: it.y + it.h / 2 + (it.h / 2) * Math.sin(a) });
         }
-        poly(layer, pts, true, aciColor(it.stroke));
+        poly(layer, pts.map(W), true, aciColor(it.stroke));
       } else if (it.kind === 'polygon') {
         poly(layer, polyPoints(it), true, aciColor(it.stroke));
       } else if (it.kind === 'line' || it.kind === 'arrow') {
         poly(layer, [{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y + it.h }], false, aciColor(it.stroke));
       } else if (it.kind === 'text' && it.text) {
-        it.text.split('\n').forEach((l, i) => text(layer, it.x, it.y + (it.fontSize ?? 16) * (i + 1) * 1.3, (it.fontSize ?? 16) * 0.75, l));
+        it.text.split('\n').forEach((l, i) => {
+          const at = W({ x: it.x, y: it.y + (it.fontSize ?? 16) * (i + 1) * 1.3 });
+          text(layer, at.x, at.y, (it.fontSize ?? 16) * 0.75, l, 'start', rot);
+        });
       }
     }
   }

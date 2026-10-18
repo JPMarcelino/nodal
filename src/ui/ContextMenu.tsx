@@ -58,6 +58,9 @@ import {
   Pencil,
   Ungroup,
   Waypoints,
+  Scaling,
+  StretchHorizontal,
+  StretchVertical,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { copyAsPng, copyAsSvg, doExport, filePrint, startAreaExport, type ExportKind } from '../io/fileActions';
@@ -200,6 +203,10 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
           '-',
           cmd('arrange.distH', 'Distribute horizontally', <AlignHorizontalDistributeCenter size={I} />),
           cmd('arrange.distV', 'Distribute vertically', <AlignVerticalDistributeCenter size={I} />),
+          '-',
+          cmd('arrange.sameWidth', 'Make same width', <StretchHorizontal size={I} />),
+          cmd('arrange.sameHeight', 'Make same height', <StretchVertical size={I} />),
+          cmd('arrange.sameSize', 'Make same size', <Scaling size={I} />),
         ),
       },
       {

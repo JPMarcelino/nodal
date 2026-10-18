@@ -1,4 +1,5 @@
 import { instanceSymbol } from './registry';
+import { rotatedBounds, shapeBox, shapeRot } from './rotation';
 import type { CircuitDoc, Item, Point } from './types';
 import { endpointInfo, wirePolyline } from './wires';
 
@@ -38,6 +39,15 @@ function itemPoints(doc: CircuitDoc, it: Item): Point[] {
     case 'wire':
       return wirePolyline(doc, it);
     case 'shape': {
+      if (shapeRot(it)) {
+        // a turned shape lines up by the box around it
+        const b = rotatedBounds(shapeBox(it), shapeRot(it));
+        return [
+          { x: b.x, y: b.y },
+          { x: b.x + b.w, y: b.y + b.h },
+          { x: b.x + b.w / 2, y: b.y + b.h / 2 },
+        ];
+      }
       const s = it as Item & { x: number; y: number; w?: number; h?: number };
       if (typeof s.x !== 'number' || typeof s.y !== 'number') return [];
       const w = s.w ?? 0;

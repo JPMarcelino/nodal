@@ -9,6 +9,7 @@ import {
   deleteItems,
   deleteWirePart,
   distributeItems,
+  matchSizes,
   extractFragment,
   flipItems,
   groupItems,
@@ -18,6 +19,7 @@ import {
   translateItems,
   ungroupItems,
   type AlignMode,
+  type SizeMode,
   type Fragment,
   type StackMove,
 } from '../model/ops';
@@ -334,6 +336,14 @@ export function distribute(axis: 'x' | 'y') {
   const ids = editable();
   if (ids.length < 3) return toast('Select at least three items to distribute');
   mutate((d) => distributeItems(d as CircuitDoc, ids, axis));
+}
+
+/** Make same width / height / size: the selected shapes take the first one's size. */
+export function matchSize(mode: SizeMode) {
+  const ids = editable();
+  const shapes = ids.filter((id) => S().doc.items[id].type === 'shape');
+  if (shapes.length < 2) return toast('Select at least two shapes to match sizes');
+  mutate((d) => void matchSizes(d as CircuitDoc, ids, mode));
 }
 
 export function reorder(dir: StackMove) {

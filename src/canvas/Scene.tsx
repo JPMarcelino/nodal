@@ -14,6 +14,7 @@ import { SymbolBody } from './SymbolGraphic';
 import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
 import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
 import { polyPoints } from '../model/polygon';
+import { shapeTransform } from '../model/rotation';
 
 export interface Palette {
   sym: string;
@@ -535,6 +536,13 @@ export function frameTag(s: ShapeItem): { x: number; y: number; w: number; h: nu
 }
 
 export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: ShapeItem; palette: Palette; ax?: number; ay?: number }) {
+  // a turned shape is drawn in its own frame, title and all
+  const tf = shapeTransform(s);
+  const body = shapeBody(s, palette, ax, ay);
+  return tf ? <g transform={tf}>{body}</g> : body;
+});
+
+function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number) {
   const da = dashArray(s.dash, s.strokeWidth || 1);
   const ink = inkColor(s.stroke, palette);
   const stroke = s.strokeWidth > 0 ? ink : 'none';
@@ -660,7 +668,7 @@ export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: Sh
       );
     }
   }
-});
+}
 
 export { measureText };
 
