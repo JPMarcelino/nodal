@@ -309,8 +309,16 @@ export interface ShapeItem extends ItemBase {
   header?: boolean;
   /** Ink strokes: flat [x, y, pressure, …] list, x / y as fractions (0–1) of the box. */
   ink?: number[];
-  /** Polygon corners: flat [x, y, …] list as fractions (0–1) of the box. */
+  /** Polygon corners (path nodes): flat [x, y, …] list as fractions (0–1) of the box. */
   poly?: number[];
+  /**
+   * Polygons: Bézier handles, four numbers per node parallel to `poly`
+   * ([inDx, inDy, outDx, outDy], offsets from the node as box fractions; 0, 0 =
+   * no handle). Unset = all corners. See model/path.ts.
+   */
+  curve?: number[];
+  /** Polygons: an open path (no stretch from the last node back to the first). */
+  open?: boolean;
   /** Ink drawn with the highlighter (wide, translucent, under the circuit). */
   highlighter?: boolean;
   /** Callouts and frames: step number shown in the badge (walkthrough order). */
@@ -389,6 +397,6 @@ export interface CircuitDoc {
 }
 
 export type Tool =
-  | 'select' | 'node' | 'wire' | 'solder' | 'rect' | 'zone' | 'ellipse' | 'polygon' | 'line' | 'arrow' | 'text' | 'pan' | 'frame'
+  | 'select' | 'node' | 'wire' | 'solder' | 'rect' | 'zone' | 'ellipse' | 'polygon' | 'path' | 'line' | 'arrow' | 'text' | 'pan' | 'frame'
   // explain tools: annotate and talk through a circuit
   | 'pen' | 'highlighter' | 'laser' | 'eraser' | 'trace' | 'callout';

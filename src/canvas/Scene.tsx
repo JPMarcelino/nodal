@@ -16,7 +16,7 @@ import { defaultAlign, defaultValign, hasHeader, headerHeight, lineCap, lineJoin
 import { SymbolBody } from './SymbolGraphic';
 import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
 import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
-import { polyPoints } from '../model/polygon';
+import { polyPath } from '../model/path';
 import { connectorD, isConnector, resolveConnector, type ConnectorPath } from '../model/connectors';
 import { shapeTransform } from '../model/rotation';
 
@@ -655,7 +655,7 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number, con
     case 'polygon':
       return (
         <g className="shape" data-id={s.id}>
-          <polygon points={polyPoints(s).map((p) => `${p.x},${p.y}`).join(' ')} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />
+          <path d={polyPath(s)} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />
           {s.text && (
             <RichText text={shapeText(s)} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor={shapeTitle(s).anchor} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={textWeight(s)} style={face} />
           )}

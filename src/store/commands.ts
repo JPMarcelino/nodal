@@ -94,13 +94,14 @@ export const COMMANDS: Command[] = [
   // Tools
   { id: 'tool.select', label: 'Move / select tool (wires stay connected)', category: 'Tools', keys: ['M'], run: () => A.setTool('select') },
   { id: 'tool.altMove', label: 'Alt move (only the selection moves; wires to it are left behind)', category: 'Tools', keys: ['Shift+M'], run: () => A.setAltMove() },
-  { id: 'tool.node', label: 'Edit points tool (drag wire bends & ends)', category: 'Tools', keys: ['E'], run: () => A.setTool('node') },
+  { id: 'tool.node', label: 'Edit points tool (drag wire bends & ends, shape nodes & handles)', category: 'Tools', keys: ['E'], run: () => A.setTool('node') },
   { id: 'tool.solder', label: 'Solder tool (click crossings / pins to solder, junctions to unsolder)', category: 'Tools', keys: ['S'], run: () => A.setTool('solder') },
   { id: 'tool.wire', label: 'Wire tool (again: cycle 90° / 45° / any)', category: 'Tools', keys: ['W'], cadence: ['W', 'Shift+W'], run: () => (S().tool === 'wire' ? A.setWireAngle() : A.setTool('wire')) },
   { id: 'tool.rect', label: 'Rectangle (outline)', category: 'Tools', keys: ['B'], run: () => A.setTool('rect') },
   { id: 'tool.zone', label: 'Filled zone', category: 'Tools', keys: ['Z'], run: () => A.setTool('zone') },
   { id: 'tool.ellipse', label: 'Ellipse', category: 'Tools', keys: ['O'], run: () => A.setTool('ellipse') },
   { id: 'tool.polygon', label: 'Polygon (click the corners; click the first one again to close)', category: 'Tools', keys: ['V'], run: () => A.setTool('polygon') },
+  { id: 'tool.path', label: 'Path (click for corners, drag for curves; click the first node to close)', category: 'Tools', keys: ['J'], run: () => A.setTool('path') },
   { id: 'tool.line', label: 'Line', category: 'Tools', keys: ['L'], run: () => A.setTool('line') },
   { id: 'tool.arrow', label: 'Arrow', category: 'Tools', keys: ['A'], run: () => A.setTool('arrow') },
   { id: 'tool.text', label: 'Text', category: 'Tools', keys: ['T'], cadence: ['N', 'T'], run: () => A.setTool('text') },
@@ -151,6 +152,7 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.sameWidth', label: 'Make same width', category: 'Arrange', keys: [], run: () => A.matchSize('width') },
   { id: 'arrange.sameHeight', label: 'Make same height', category: 'Arrange', keys: [], run: () => A.matchSize('height') },
   { id: 'arrange.sameSize', label: 'Make same size', category: 'Arrange', keys: [], run: () => A.matchSize('both') },
+  { id: 'arrange.toPath', label: 'Convert to path', category: 'Arrange', keys: [], run: A.convertSelectionToPath, when: hasSel },
   { id: 'arrange.enterGroup', label: 'Enter group', category: 'Arrange', keys: ['Mod+Enter'], cadence: ['E', 'Shift+E', 'Mod+Enter'], run: () => S().selection[0] && A.enterGroup(S().selection[0]) },
   { id: 'arrange.exitGroup', label: 'Return from group', category: 'Arrange', keys: [], cadence: ['Shift+B'], run: () => void A.exitGroup() },
 

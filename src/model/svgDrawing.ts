@@ -2,6 +2,7 @@ import type { SvgDrawing, SvgPolyline } from '../io/svgImport';
 import { makeComponent, makeShape, uid } from './doc';
 import { measureText, projectOnSegment } from './geometry';
 import { groupItems } from './ops';
+import { mapNodes, packPath } from './path';
 import { packPoly } from './polygon';
 import { boxPath, pathPolys, recognizeSymbols } from './svgSymbols';
 import type { CircuitDoc, Endpoint, JunctionItem, Point, WireItem } from './types';
@@ -236,7 +237,8 @@ export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point
   for (const l of polygons) {
     const s = makeShape(doc, 'polygon', 0, 0, 1, 1);
     const fill = l.fill && l.fill !== 'none' ? ink(l.fill) : 'none';
-    Object.assign(s, packPoly(l.pts.map(move)), {
+    // curved outlines keep their Béziers; straight ones their corners
+    Object.assign(s, l.nodes ? packPath(mapNodes(l.nodes, move)) : packPoly(l.pts.map(move)), {
       stroke: ink(l.color),
       strokeWidth: l.stroked === false ? 0 : l.width,
       fill: fill === 'none' ? ink(l.color) : fill,

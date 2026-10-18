@@ -68,6 +68,7 @@ import { exportTemplateFile } from '../io/sharing';
 import * as A from '../store/actions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { S, set, useStore, type ContextMenuState } from '../store/store';
+import { canConvertToPath } from '../model/path';
 import type { CircuitDoc } from '../model/types';
 
 interface Entry {
@@ -170,6 +171,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
   const t = doc.items[target];
   const transformable = types.has('component') || types.has('shape');
   const locked = items.length > 0 && items.every((i) => i.locked);
+  const convertible = items.some((i) => i.type === 'shape' && !i.locked && canConvertToPath(i));
   return {
     strip: [
       cmd('edit.cut', 'Cut', <Scissors size={15} />)!,
@@ -187,6 +189,8 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
           '-',
           cmd('arrange.flipH', 'Flip horizontally', <FlipHorizontal2 size={I} />),
           cmd('arrange.flipV', 'Flip vertically', <FlipVertical2 size={I} />),
+          convertible && '-',
+          convertible && cmd('arrange.toPath', 'Convert to path', <Route size={I} />),
         ),
       },
       multi && {

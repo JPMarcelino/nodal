@@ -5,6 +5,7 @@ import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Point, Prim, ShapeItem, SymbolDef } from './types';
 import { wirePolyline, wireStyleFor } from './wires';
 import { inkPoints } from './ink';
+import { isCurved, mapNodes, pathD, pathNodes } from './path';
 import { polyPoints } from './polygon';
 import { resolveConnector } from './connectors';
 import { fromShapeFrame, rotatedCorners, shapeBox, shapeRot } from './rotation';
@@ -167,6 +168,8 @@ function shapePrims(s: ShapeItem, at: (p: Point) => Point, doc: CircuitDoc): Pri
     case 'ellipse':
       return [{ t: 'ellipse', cx: r(x + w / 2), cy: r(y + h / 2), rx: r(w / 2), ry: r(h / 2), fill: 'none', w: s.strokeWidth }];
     case 'polygon':
+      // curved outlines stay curves (a path primitive); plain corners stay a polygon
+      if (isCurved(s) || s.open) return [{ t: 'path', d: pathD(mapNodes(pathNodes(s), at), s.open), fill: 'none', w: s.strokeWidth }];
       return [{ t: 'poly', pts: polyPoints(s).flatMap((p) => {
         const q = at(p);
         return [r(q.x), r(q.y)];

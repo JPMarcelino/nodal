@@ -50,8 +50,19 @@ export function migrateItems(items: Record<string, Item>): Record<string, Item> 
       if (legacy.hopLayer === undefined) legacy.hopLayer = legacy.hopOver ? 1 : -1;
       delete legacy.hopOver;
     }
+    if (it.type === 'shape' && it.kind === 'polygon') normalizePath(it);
   }
   return migrateShapeLayers(items);
+}
+
+const finiteList = (v: unknown): v is number[] => Array.isArray(v) && v.every((n) => typeof n === 'number' && Number.isFinite(n));
+
+/** Polygon outlines from a file or a peer: odd or broken lists are trimmed or dropped, so drawing never trips on them. */
+function normalizePath(s: ShapeItem) {
+  if (!finiteList(s.poly)) s.poly = [];
+  else if (s.poly.length % 2) s.poly = s.poly.slice(0, -1);
+  if (s.curve !== undefined && (!finiteList(s.curve) || s.curve.length !== s.poly.length * 2)) delete s.curve;
+  if (s.open !== undefined && s.open !== true) delete s.open;
 }
 
 /**

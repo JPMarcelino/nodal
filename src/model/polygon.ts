@@ -1,7 +1,7 @@
-import { projectOnSegment } from './geometry';
+import { deletePathNode, pathHit } from './path';
 import type { Point, ShapeItem } from './types';
 
-/* Polygon shapes keep their corners as fractions (0–1) of the shape box, like ink, so resizing the box reshapes them. */
+/* Polygon shapes keep their corners as fractions (0–1) of the shape box, like ink, so resizing the box reshapes them. Curved stretches and open paths: see model/path.ts. */
 
 /** Box + normalized corner list of a polygon through `pts`. */
 export function packPoly(pts: Point[]): Pick<ShapeItem, 'x' | 'y' | 'w' | 'h' | 'poly'> {
@@ -24,25 +24,10 @@ export function polyPoints(s: Pick<ShapeItem, 'x' | 'y' | 'w' | 'h' | 'poly'>): 
   return out;
 }
 
-export function pointInPolygon(p: Point, pts: Point[]): boolean {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const a = pts[i];
-    const b = pts[j];
-    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
-}
+export { pointInPolygon } from './path';
 
-/** Whether `p` touches a polygon shape: its outline, or anywhere inside when it is filled. */
-export function polyHit(s: ShapeItem, p: Point, tol: number): boolean {
-  const pts = polyPoints(s);
-  if (pts.length < 2) return false;
-  if (s.fillOpacity > 0 && pointInPolygon(p, pts)) return true;
-  const reach = tol + s.strokeWidth / 2;
-  for (let i = 0; i < pts.length; i++) if (projectOnSegment(p, pts[i], pts[(i + 1) % pts.length]).d < reach) return true;
-  return false;
-}
+/** Whether `p` touches a polygon shape: its outline (curves included), or anywhere inside when it is filled. */
+export const polyHit = (s: ShapeItem, p: Point, tol: number): boolean => pathHit(s, p, tol);
 
 /** `p` pulled onto the nearest 45° direction from `from` (Shift while drawing). */
 export function constrain45(from: Point, p: Point): Point {
@@ -64,14 +49,8 @@ export function setPolyPoints(s: ShapeItem, pts: Point[]) {
   Object.assign(s, packPoly(pts));
 }
 
-/** Removes one corner; a polygon keeps at least three. Returns whether it changed. */
-export function deletePolyCorner(s: ShapeItem, index: number): boolean {
-  const pts = polyPoints(s);
-  if (pts.length <= 3 || index < 0 || index >= pts.length) return false;
-  pts.splice(index, 1);
-  setPolyPoints(s, pts);
-  return true;
-}
+/** Removes one corner (node); a polygon keeps at least three, an open path two. Returns whether it changed. */
+export const deletePolyCorner = (s: ShapeItem, index: number): boolean => deletePathNode(s, index);
 
 /** Polygon corners after dragging corner `index` (or, with `edge`, the edge from `index` to the next corner) by `d`. */
 export function dragPolyPart(base: Point[], index: number, edge: boolean, d: Point): Point[] {
