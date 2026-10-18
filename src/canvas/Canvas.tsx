@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
 import { measureTextShape, textFaceStyle, textSize, textWeight } from '../model/shapeText';
 import { drawOrderCached, groupMembers, groupTags, itemBounds, labelsShown, makeShape, selectedGroup } from '../model/doc';
+import { withContents } from '../model/containers';
+import { getPreset, makePresetShape } from '../model/shapePresets';
+import { PresetShape } from './PresetShape';
 import { componentBounds, dist, eq, measureText, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, rotateShapeBy, scaleItems, selectionPivot, translateDetached, translateItems } from '../model/ops';
 import { dragRotation, fromShapeFrame, HANDLE_ROT_KINDS, rectCentre, resizeInFrame, rotateDeg, shapeBox, shapeRot, shapeTransform, toShapeFrame } from '../model/rotation';
@@ -69,7 +72,7 @@ type Gesture =
   | { kind: 'segment'; wire: string; seg: number; base: Point[]; start: Point; moved: boolean; pick?: string }
   | { kind: 'endpoint'; wire: string; end: 'a' | 'b'; cur: Target; moved: boolean }
   | { kind: 'node'; wire: string; idx: number; base: Point[]; cur: Point; free: boolean; moved: boolean }
-  | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point }
+  | { kind: 'shape'; shape: ShapeKind; start: Point; cur: Point; preset?: string }
   /** Edit points on a polygon: dragging corner `idx`, or with `edge` the edge from corner `idx` to the next one. */
   | { kind: 'polyPart'; id: string; base: Point[]; idx: number; edge: boolean; start: Point; moved: boolean }
   /** Polygon being clicked out corner by corner; it closes when a click lands back on the first corner. */
@@ -1118,7 +1121,7 @@ export function Canvas() {
     }
     if (tool !== 'select') {
       const p = sp(w);
-      setGesture({ kind: 'shape', shape: tool as ShapeKind, start: p, cur: p });
+      setGesture({ kind: 'shape', shape: tool as ShapeKind, start: p, cur: p, preset: tool === 'rect' ? S().shapePreset ?? undefined : undefined });
       return;
     }
 
@@ -1273,8 +1276,10 @@ export function Canvas() {
    */
   const moveGesture = (sel: string[], w: Point, client: Point, pick?: string): Gesture => {
     const d = S().doc;
-    const ids = new Set(sel.filter((id) => d.items[id] && !d.items[id].locked));
-    const wiresOnly = ids.size > 0 && [...ids].every((id) => d.items[id].type === 'wire');
+    const picked = new Set(sel.filter((id) => d.items[id] && !d.items[id].locked));
+    const wiresOnly = picked.size > 0 && [...picked].every((id) => d.items[id].type === 'wire');
+    // a container carries what lies inside it as it was when the drag began
+    const ids = wiresOnly ? picked : withContents(d, picked);
     return { kind: 'move', start: w, ids, moved: false, client, detach: S().altMove || wiresOnly, dx: 0, dy: 0, pick, rejoin: wiresOnly };
   };
 
@@ -1404,9 +1409,16 @@ export function Canvas() {
         setGesture(next);
         break;
       }
-      case 'shape':
-        setGesture({ ...g, cur: e.altKey ? w : sp(w) });
+      case 'shape': {
+        let cur = e.altKey ? w : sp(w);
+        // Shift keeps the box square (a circle, a square)
+        if (e.shiftKey && g.shape !== 'line' && g.shape !== 'arrow') {
+          const side = Math.max(Math.abs(cur.x - g.start.x), Math.abs(cur.y - g.start.y));
+          cur = { x: g.start.x + side * (cur.x < g.start.x ? -1 : 1), y: g.start.y + side * (cur.y < g.start.y ? -1 : 1) };
+        }
+        setGesture({ ...g, cur });
         break;
+      }
       case 'polygon':
         setGesture({ ...g, cur: polygonPoint(g, w, e.shiftKey) });
         break;
@@ -1650,10 +1662,14 @@ export function Canvas() {
           // a bare click frames what is on screen
           const fr = r.w >= grid && r.h >= grid ? r : A.visibleFrameRect();
           set({ selection: [A.addFrame(fr)] });
+        } else if (g.preset && (r.w < grid || r.h < grid)) {
+          // a bare click drops a library shape at its default size, centred on the click
+          set({ selection: [A.addPresetShape(g.preset, g.start) ?? ''].filter(Boolean) });
         } else if (r.w >= grid && r.h >= grid) {
           let id = '';
+          const preset = getPreset(g.preset);
           mutate((d) => {
-            const s = makeShape(d as CircuitDoc, g.shape, r.x, r.y, r.w, r.h);
+            const s = preset ? makePresetShape(d as CircuitDoc, preset, r.x, r.y, r.w, r.h) : makeShape(d as CircuitDoc, g.shape, r.x, r.y, r.w, r.h);
             s.group = S().scope;
             d.items[s.id] = s;
             id = s.id;
@@ -1722,6 +1738,12 @@ export function Canvas() {
     if (e.dataTransfer.files.length) {
       e.preventDefault();
       void importDroppedFiles(e.dataTransfer.files, toWorldPt(e.clientX, e.clientY));
+      return;
+    }
+    const shapeId = e.dataTransfer.getData('application/x-nodal-shape');
+    if (shapeId) {
+      e.preventDefault();
+      A.addPresetShape(shapeId, toWorldPt(e.clientX, e.clientY));
       return;
     }
     const sym = e.dataTransfer.getData('application/x-nodal-symbol');
@@ -1822,7 +1844,7 @@ export function Canvas() {
       onWheel={onWheel}
       onContextMenu={onContextMenu}
       onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('application/x-nodal-symbol')) {
+        if (e.dataTransfer.types.includes('application/x-nodal-symbol') || e.dataTransfer.types.includes('application/x-nodal-shape')) {
           e.preventDefault();
           setCursor(toWorldPt(e.clientX, e.clientY));
         } else if (e.dataTransfer.types.includes('Files')) {
@@ -2219,6 +2241,8 @@ function ShapePreview({ g }: { g: Extract<Gesture, { kind: 'shape' }> }) {
       </g>
     );
   }
+  const preset = getPreset(g.preset);
+  if (preset) return <PresetShape preset={preset} x={r.x} y={r.y} w={r.w} h={r.h} className="shape-preview" />;
   if (g.shape === 'ellipse') return <ellipse cx={r.x + r.w / 2} cy={r.y + r.h / 2} rx={r.w / 2} ry={r.h / 2} className="shape-preview" />;
   if (g.shape === 'frame') return <rect x={r.x} y={r.y} width={r.w} height={r.h} className="shape-preview frame" />;
   return <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={g.shape === 'zone' ? 8 : 6} className={g.shape === 'zone' ? 'shape-preview zone' : 'shape-preview'} />;

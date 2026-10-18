@@ -2,6 +2,12 @@ import { FONT_STACKS } from './fonts';
 import { measureRich, wrapRich } from './richText';
 import type { ShapeItem, ShapeKind } from './types';
 
+/** Whether a container shows its title in a header band (swimlane look). */
+export const hasHeader = (s: Pick<ShapeItem, 'kind' | 'container' | 'header'>): boolean => !!s.container && !!s.header && (s.kind === 'rect' || s.kind === 'zone');
+
+/** Height of a container's header band. */
+export const headerHeight = (s: Pick<ShapeItem, 'fontSize'>): number => Math.max(28, Math.round((s.fontSize ?? 13) * 2.1));
+
 /** Shapes whose title sits inside their box (and wraps to it). */
 export const BOX_TITLE_KINDS: ReadonlySet<ShapeKind> = new Set(['rect', 'zone', 'ellipse', 'polygon']);
 

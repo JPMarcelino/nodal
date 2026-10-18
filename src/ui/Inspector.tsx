@@ -945,6 +945,37 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
               </span>
             </Field>
           )}
+          {(first.kind === 'rect' || first.kind === 'zone') && (
+            <>
+              <Field label="Container" hint="Moves what's inside with it">
+                <Toggle
+                  checked={!!first.container}
+                  onChange={(v) =>
+                    upd((s) => {
+                      if (v) s.container = true;
+                      else {
+                        delete s.container;
+                        delete s.header;
+                      }
+                    })
+                  }
+                />
+              </Field>
+              {first.container && (
+                <Field label="Header" hint="Shows the title in a band along the top, swimlane style">
+                  <Toggle
+                    checked={!!first.header}
+                    onChange={(v) =>
+                      upd((s) => {
+                        if (v) s.header = true;
+                        else delete s.header;
+                      })
+                    }
+                  />
+                </Field>
+              )}
+            </>
+          )}
           {!isText && (
             <>
               <Field label="Position">

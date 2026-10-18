@@ -94,6 +94,8 @@ export interface AppState {
   dirty: boolean;
   filePath: string | null;
   placing: Placing | null;
+  /** Shape preset armed for drawing (id in model/shapePresets); the rect tool draws it. */
+  shapePreset: string | null;
   highlight: Set<string> | null;
   /** Items hovered in the layers panel (outlined on the canvas). */
   layerHover: string[];
@@ -183,6 +185,7 @@ export const useStore = create<AppState>(() => ({
   dirty: false,
   filePath: null,
   placing: null,
+  shapePreset: null,
   highlight: null,
   layerHover: [],
   contextMenu: null,

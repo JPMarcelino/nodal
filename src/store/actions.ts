@@ -1,5 +1,7 @@
 import { produce } from 'immer';
 import { docBounds, makeComponent, makeShape, topGroup } from '../model/doc';
+import { withContents } from '../model/containers';
+import { PRESET_SIZE, getPreset, makePresetShape } from '../model/shapePresets';
 import { nextPresentationStep } from '../model/presentation';
 import { snap, unionRects } from '../model/geometry';
 import { sheetRect } from '../model/sheet';
@@ -39,7 +41,7 @@ const editable = () => S().selection.filter((id) => S().doc.items[id] && !S().do
 /* ------------------------------------------------------------------ */
 
 export function setTool(tool: Tool) {
-  set({ tool, altMove: false, placing: null, contextMenu: null });
+  set({ tool, altMove: false, placing: null, shapePreset: null, contextMenu: null });
   if (isExplainTool(tool)) setX({ lastTool: tool });
 }
 
@@ -71,6 +73,29 @@ export function renameGroup(gid: string, name: string) {
   const v = name.trim();
   if (!v || !S().doc.groups[gid] || S().doc.groups[gid].name === v) return;
   mutate((d) => void (d.groups[gid].name = v));
+}
+
+/** Arms a library shape: click for the default size, drag for a box of your own. */
+export function armShape(id: string) {
+  set({ tool: 'rect', altMove: false, placing: null, shapePreset: id, contextMenu: null });
+}
+
+/** Adds a library shape centred on `at`, at `size` (default 80×60). Returns its id. */
+export function addPresetShape(id: string, at: Point, size: { w: number; h: number } = PRESET_SIZE): string | null {
+  const preset = getPreset(id);
+  if (!preset) return null;
+  const g = S().doc.settings.grid;
+  const side = Math.min(size.w, size.h);
+  const box = preset.square ? { w: side, h: side } : size;
+  let out = '';
+  mutate((d) => {
+    const s = makePresetShape(d as CircuitDoc, preset, snap(at.x - box.w / 2, g), snap(at.y - box.h / 2, g), box.w, box.h);
+    s.group = S().scope;
+    d.items[s.id] = s;
+    out = s.id;
+  });
+  set({ selection: [out] });
+  return out;
 }
 
 export function startPlacing(symbol: string) {
@@ -252,12 +277,13 @@ export function selectAll() {
 }
 
 export function nudge(dx: number, dy: number) {
-  const ids = new Set(editable());
-  if (!ids.size) {
+  const sel = editable();
+  if (!sel.length) {
     set((s) => ({ view: { ...s.view, x: s.view.x - dx * 4, y: s.view.y - dy * 4 } }));
     return;
   }
   const base = S().doc;
+  const ids = withContents(base, sel);
   mutate((d) => translateItems(base, d as CircuitDoc, ids, dx, dy));
 }
 
