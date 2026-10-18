@@ -5,6 +5,7 @@ import { docBounds, drawOrder, itemBounds, uid } from '../model/doc';
 import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
 import { fromShapeFrame, normDeg, shapeRot } from '../model/rotation';
 import { instanceSymbol } from '../model/registry';
+import { shapeText } from '../model/shapeText';
 import { PX_PER_MM, sheetRect } from '../model/sheet';
 import { stripMath } from '../model/latex';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
@@ -379,7 +380,7 @@ export function exportDxf(doc: CircuitDoc): string {
       } else if (it.kind === 'line' || it.kind === 'arrow') {
         poly(layer, [{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y + it.h }], false, aciColor(it.stroke));
       } else if (it.kind === 'text' && it.text) {
-        it.text.split('\n').forEach((l, i) => {
+        shapeText(it).split('\n').forEach((l, i) => {
           const at = W({ x: it.x, y: it.y + (it.fontSize ?? 16) * (i + 1) * 1.3 });
           text(layer, at.x, at.y, (it.fontSize ?? 16) * 0.75, l, 'start', rot);
         });
