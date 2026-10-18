@@ -276,6 +276,10 @@ export interface ShapeItem extends ItemBase {
   /** Title offset from its default spot (rect / zone / ellipse / polygon); dragged with the shape selected. */
   textDx?: number;
   textDy?: number;
+  /** Rectangles and zones: moving it carries everything fully inside it. */
+  container?: boolean;
+  /** Containers: the title sits in a header band along the top (swimlane look). */
+  header?: boolean;
   /** Ink strokes: flat [x, y, pressure, …] list, x / y as fractions (0–1) of the box. */
   ink?: number[];
   /** Polygon corners: flat [x, y, …] list as fractions (0–1) of the box. */

@@ -12,7 +12,7 @@ import { hasMath } from '../model/latex';
 import { layoutRich, measureRich } from '../model/richText';
 import { dashArray } from '../model/dash';
 import { FONT_STACKS } from '../model/fonts';
-import { defaultAlign, defaultValign, lineCap, lineJoin, measureTextShape, shapeText, textFaceStyle, textSize, textWeight, titleWidth } from '../model/shapeText';
+import { defaultAlign, defaultValign, hasHeader, headerHeight, lineCap, lineJoin, measureTextShape, shapeText, textFaceStyle, textSize, textWeight, titleWidth } from '../model/shapeText';
 import { SymbolBody } from './SymbolGraphic';
 import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
 import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
@@ -502,7 +502,7 @@ export function shapeTitle(s: ShapeItem): { x: number; y: number; anchor: 'start
   const m = measureRich(shapeText(s), fs, textWeight(s), s.font);
   const round = s.kind === 'ellipse' || s.kind === 'polygon';
   const anchor = s.align ?? defaultAlign(s);
-  const valign = s.valign ?? defaultValign(s);
+  const valign = hasHeader(s) ? 'top' : (s.valign ?? defaultValign(s));
   const bx = Math.min(s.x, s.x + s.w);
   const by = Math.min(s.y, s.y + s.h);
   const bw = Math.abs(s.w);
@@ -511,7 +511,8 @@ export function shapeTitle(s: ShapeItem): { x: number; y: number; anchor: 'start
   const left = round ? bx + bw / 2 - titleWidth(s) / 2 : bx + 10;
   const right = round ? bx + bw / 2 + titleWidth(s) / 2 : bx + bw - 10;
   const h = Math.max(fs * 1.3, m.h);
-  const top = valign === 'top' ? by + 6 : valign === 'bottom' ? by + bh - 6 - h : by + bh / 2 - h / 2;
+  // in a header band the title is centred vertically in the band
+  const top = hasHeader(s) ? by + (headerHeight(s) - h) / 2 : valign === 'top' ? by + 6 : valign === 'bottom' ? by + bh - 6 - h : by + bh / 2 - h / 2;
   const x = (anchor === 'start' ? left : anchor === 'end' ? right : (left + right) / 2) + (s.textDx ?? 0);
   const y = top + fs + (s.textDy ?? 0);
   return { x, y, anchor, box: { x: anchor === 'start' ? x : anchor === 'end' ? x - m.w : x - m.w / 2, y: y - fs, w: m.w, h } };
@@ -596,6 +597,19 @@ export const ShapeView = memo(function ShapeView({ s, palette, ax, ay }: { s: Sh
   );
 });
 
+/** A container's header strip: the line colour at low opacity under the title, with a rule below it. */
+function HeaderBand({ s, ink }: { s: ShapeItem; ink: string }) {
+  const hh = Math.min(headerHeight(s), s.h);
+  const r = Math.max(0, Math.min(s.radius, hh, s.w / 2));
+  const d = `M${s.x} ${s.y + hh}V${s.y + r}${r ? `A${r} ${r} 0 0 1 ${s.x + r} ${s.y}` : ''}H${s.x + s.w - r}${r ? `A${r} ${r} 0 0 1 ${s.x + s.w} ${s.y + r}` : ''}V${s.y + hh}Z`;
+  return (
+    <>
+      <path d={d} fill={ink} fillOpacity={0.16} stroke="none" />
+      <line x1={s.x} y1={s.y + hh} x2={s.x + s.w} y2={s.y + hh} stroke={ink} strokeWidth={Math.min(s.strokeWidth, 1.5) || 1} strokeOpacity={s.strokeOpacity} />
+    </>
+  );
+}
+
 function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number) {
   const da = dashArray(s.dash, s.strokeWidth || 1);
   const ink = inkColor(s.stroke, palette);
@@ -611,6 +625,7 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number) {
       return (
         <g className="shape" data-id={s.id}>
           <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={s.radius} fill={fill} fillOpacity={s.fillOpacity} stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />
+          {hasHeader(s) && <HeaderBand s={s} ink={ink} />}
           {s.text && (
             <RichText text={shapeText(s)} x={shapeTitle(s).x} y={shapeTitle(s).y} anchor={shapeTitle(s).anchor} fontSize={s.fontSize ?? 13} fill={textColor} fontWeight={textWeight(s)} style={face} className="shape-title" />
           )}

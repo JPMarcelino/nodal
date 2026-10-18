@@ -7,6 +7,8 @@ import { getSymbol, instanceSymbol, librarySymbols, variantDefs } from '../model
 import { CATEGORY_ORDER } from '../model/symbols';
 import type { CircuitDoc, Item, SymbolDef } from '../model/types';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
+import { PresetShape } from '../canvas/PresetShape';
+import { PRESET_CATEGORIES, SHAPE_PRESETS, searchPresets, type ShapePreset } from '../model/shapePresets';
 import * as A from '../store/actions';
 import { S, mutate, removeSymbolFromLibrary, select, set, toast, toggleFavorite, useStore } from '../store/store';
 import { CheckPanel, useErcIssues } from './CheckPanel';
@@ -136,6 +138,55 @@ function Tile({ def }: { def: SymbolDef }) {
   );
 }
 
+/** A library shape: click to arm it for drawing, drag onto the canvas, double-click to drop it in the view centre. */
+function ShapeTile({ preset }: { preset: ShapePreset }) {
+  const armed = useStore((s) => s.shapePreset === preset.id);
+  return (
+    <div
+      className={armed ? 'tile active' : 'tile'}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/x-nodal-shape', preset.id);
+        e.dataTransfer.effectAllowed = 'copy';
+      }}
+      onClick={() => A.armShape(preset.id)}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        A.setTool('select');
+        const { view, canvasSize } = S();
+        A.addPresetShape(preset.id, { x: (canvasSize.w / 2 - view.x) / view.zoom, y: (canvasSize.h / 2 - view.y) / view.zoom });
+      }}
+      title={`${preset.name}\nClick, then click or drag on the canvas (Shift keeps it square) · drag it over · double-click to drop in view centre`}
+    >
+      <svg width={44} height={44} viewBox="0 0 44 44" className="shape-glyph">
+        <PresetShape preset={preset} x={6} y={preset.square ? 6 : 10} w={32} h={preset.square ? 32 : 24} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" />
+      </svg>
+      <span className="tile-name">{preset.name}</span>
+    </div>
+  );
+}
+
+function ShapeCategory({ name, presets, defaultOpen = false }: { name: string; presets: ShapePreset[]; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (!presets.length) return null;
+  return (
+    <div className="lib-cat">
+      <button className="lib-cat-head" onClick={() => setOpen(!open)}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span>{name}</span>
+        <span className="count">{presets.length}</span>
+      </button>
+      {open && (
+        <div className="tiles">
+          {presets.map((p) => (
+            <ShapeTile key={p.id} preset={p} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Category({ name, defs, defaultOpen = true }: { name: string; defs: SymbolDef[]; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   if (!defs.length) return null;
@@ -201,6 +252,7 @@ function Library() {
       .sort((a, b) => b.s - a.s)
       .map((r) => r.d);
   }, [all, query, extras]);
+  const shapeResults = useMemo(() => searchPresets(query), [query]);
   const lookup = (id: string) => getSymbol(S().doc, id);
   const byCat = useMemo(() => {
     const m = new Map<string, SymbolDef[]>();
@@ -214,7 +266,7 @@ function Library() {
         <Search size={14} />
         <input
           id="library-search"
-          placeholder={`Search ${all.length} symbols…`}
+          placeholder={`Search ${all.length} symbols and ${SHAPE_PRESETS.length} shapes…`}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
@@ -222,8 +274,9 @@ function Library() {
               setQ('');
               (e.target as HTMLElement).blur();
             }
-            if (e.key === 'Enter' && results[0]) {
-              A.startPlacing(results[0].id);
+            if (e.key === 'Enter' && (results[0] || shapeResults[0])) {
+              if (results[0]) A.startPlacing(results[0].id);
+              else A.armShape(shapeResults[0].id);
               (e.target as HTMLElement).blur();
             }
           }}
@@ -236,15 +289,18 @@ function Library() {
       </div>
       <div className="lib-scroll">
         {query ? (
-          results.length ? (
+          results.length || shapeResults.length ? (
             <div className="tiles">
               {results.map((d) => (
                 <Tile key={d.id} def={d} />
               ))}
+              {shapeResults.map((p) => (
+                <ShapeTile key={p.id} preset={p} />
+              ))}
             </div>
           ) : (
             <div className="empty-note">
-              No symbol matches “{q}”.
+              No symbol or shape matches “{q}”.
               <button className="link-btn" onClick={() => set({ dialog: 'symbol-editor', editingSymbol: null })}>
                 Create one →
               </button>
@@ -272,6 +328,9 @@ function Library() {
                 <div className="empty-note small">Draw your own parts, or duplicate any built-in symbol and tweak it.</div>
               )}
             </div>
+            {PRESET_CATEGORIES.map((c, i) => (
+              <ShapeCategory key={c.id} name={c.label} presets={SHAPE_PRESETS.filter((p) => p.category === c.id)} defaultOpen={i === 0} />
+            ))}
             {CATEGORY_ORDER.map((c) => (
               <Category key={c} name={c} defs={byCat.get(c) ?? []} defaultOpen={c === 'Passive' || c === 'Semiconductors' || c === 'Power & Sources'} />
             ))}
@@ -302,7 +361,7 @@ function itemLabel(doc: CircuitDoc, it: Item, netName?: string): string {
   }
 }
 
-const kindName = (k: string) => ({ rect: 'Rectangle', zone: 'Zone', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', text: 'Text', ink: 'Ink', callout: 'Callout', frame: 'Frame' })[k] ?? k;
+const kindName = (k: string) => ({ rect: 'Rectangle', zone: 'Zone', ellipse: 'Ellipse', polygon: 'Polygon', line: 'Line', arrow: 'Arrow', text: 'Text', ink: 'Ink', callout: 'Callout', frame: 'Frame' })[k] ?? k;
 
 type VisFilter = 'any' | 'shown' | 'hidden';
 type LockFilter = 'any' | 'locked' | 'unlocked';
