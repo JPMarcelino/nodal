@@ -721,16 +721,6 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
       </div>
       <Section title="Style">
         <WireStyleEditor style={style} onChange={upd} />
-        <Field label="Routing">
-          <Segmented
-            value={first.routing ?? 'ortho'}
-            options={[
-              { value: 'ortho', label: 'Elbows', title: 'Right-angle elbows only' },
-              { value: 'straight', label: 'Direct', title: 'Allow diagonal segments' },
-            ]}
-            onChange={(v) => mutate((d) => ids.forEach((id) => ((d.items[id] as WireItem).routing = v)))}
-          />
-        </Field>
         <Field label="Crossings" hint="Which wire hops over at crossings. For a single crossing, rest the pointer on it to choose, or to solder it">
           <Segmented
             value={!first.hopLayer ? 0 : first.hopLayer > 0 ? 1 : -1}
