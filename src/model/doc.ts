@@ -77,7 +77,6 @@ export function migrateShapeLayers(items: Record<string, Item>): Record<string, 
 }
 
 /** Makes loaded documents safe to use (fills in settings added in later versions). */
-
 export function normalizeDoc(raw: unknown): CircuitDoc {
   const d = raw as Partial<CircuitDoc>;
   if (!d || typeof d !== 'object' || d.format !== 'nodal' || typeof d.items !== 'object') {
