@@ -8,7 +8,7 @@ import { applySolder } from './solder';
 import { instanceSymbol } from '../model/registry';
 import type { CircuitDoc, WireItem } from '../model/types';
 import { crossingStack, restack, wireStyle } from '../model/wires';
-import { S, mutate, set, toast } from '../store/store';
+import { S, goToItems, mutate, select, set, toast } from '../store/store';
 import { EDITOR_PALETTE, inkColor, type SceneData } from './Scene';
 
 /**
@@ -63,7 +63,8 @@ export function HotSpotMenu({
     const net = netOfWire(nets, wire);
     if (!net) return;
     prevHighlight.current = null;
-    set({ selection: net.wires, highlight: new Set(net.wires) });
+    select(goToItems(net.wires));
+    set({ highlight: new Set(net.wires) });
     onClose();
   };
 
