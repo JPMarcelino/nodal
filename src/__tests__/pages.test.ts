@@ -1,5 +1,5 @@
 import { produce } from 'immer';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { changedKeys, SyncState, writeEntries } from '../collab/sync';
 import { createDoc, makeComponent, makeShape, normalizeDoc, uid } from '../model/doc';
 import { computeNets } from '../model/netlist';
@@ -122,6 +122,84 @@ describe('store pages', () => {
     moveSelectionToPage(p2);
     expect(S().doc.items[r1.id].page).toBe(p2);
     expect(S().selection).toEqual([]);
+  });
+});
+
+describe('page switches during a gesture', () => {
+  afterEach(async () => {
+    const { endGesture, inGesture } = await import('../store/store');
+    if (inGesture()) endGesture(false);
+  });
+
+  /** A two-page doc with a lone shape on the first page (nothing for settle to touch). */
+  async function gestureDoc() {
+    const store = await import('../store/store');
+    const { createDoc, makeShape } = await import('../model/doc');
+    const { addPage, docPages } = await import('../model/pages');
+    const doc = createDoc('T');
+    const p2 = addPage(doc, 'Two');
+    const p1 = docPages(doc)[0].id;
+    const a = makeShape(doc, 'rect', 0, 0, 20, 20);
+    doc.items[a.id] = a;
+    store.set({ doc, page: undefined, past: [], future: [], selection: ['x'] });
+    return { store, p1, p2, aid: a.id };
+  }
+  const xOf = (doc: CircuitDoc, id: string) => (doc.items[id] as unknown as { x: number }).x;
+  const moveTo = (id: string, x: number) => (d: { items: Record<string, unknown> }) =>
+    void (((d.items[id] as unknown as { x: number }).x = x));
+
+  it('blocks setPage mid-drag: the page stays and later movement still applies', async () => {
+    const { store, p1, p2, aid } = await gestureDoc();
+    const { S, activePage, beginGesture, gestureUpdate, endGesture, setPage } = store;
+    const { stepPage } = await import('../store/actions');
+    expect(activePage()).toBe(p1);
+    beginGesture();
+    gestureUpdate(moveTo(aid, 50));
+    // Mod/Alt+PageDown mid-drag goes nowhere: no switch, no selection loss
+    expect(setPage(p2)).toBe(false);
+    stepPage(1);
+    expect(activePage()).toBe(p1);
+    expect(S().selection).toEqual(['x']);
+    // the drag is not discarded: further movement still lands on its page
+    gestureUpdate(moveTo(aid, 70));
+    endGesture(true);
+    expect(xOf(S().doc, aid)).toBe(70);
+    expect(S().past).toHaveLength(1);
+    // released: switching works again
+    setPage(p2);
+    expect(S().page).toBe(p2);
+  });
+
+  it('ignores undo and redo mid-drag', async () => {
+    const { store, aid } = await gestureDoc();
+    const { S, mutate, beginGesture, gestureUpdate, endGesture, undo, redo } = store;
+    mutate((d) => void (((d.items[aid] as unknown as { x: number }).x = 10)));
+    expect(S().past).toHaveLength(1);
+    beginGesture();
+    gestureUpdate(moveTo(aid, 50));
+    undo();
+    redo();
+    expect(xOf(S().doc, aid)).toBe(50);
+    expect(S().past).toHaveLength(1);
+    endGesture(true);
+    expect(xOf(S().doc, aid)).toBe(50);
+    expect(S().past).toHaveLength(2);
+  });
+
+  it('replaceDoc drops a running gesture instead of being clobbered by it', async () => {
+    const { store, aid } = await gestureDoc();
+    const { S, beginGesture, gestureUpdate, endGesture, replaceDoc, inGesture } = store;
+    const { createDoc } = await import('../model/doc');
+    beginGesture();
+    gestureUpdate(moveTo(aid, 50));
+    const other = createDoc('Other');
+    replaceDoc(other);
+    expect(inGesture()).toBe(false);
+    expect(S().doc).toBe(other);
+    // a late pointer move / pointer up must not resurrect the old document
+    gestureUpdate(moveTo(aid, 70));
+    endGesture(true);
+    expect(S().doc).toBe(other);
   });
 });
 

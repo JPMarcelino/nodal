@@ -31,7 +31,7 @@ import { resolveConnector } from '../model/connectors';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { viewCentre } from '../io/importFiles';
-import { S, activePage, mutate, pushRecent, select, set, setPage, setPrefs, toast, vdoc } from './store';
+import { S, activePage, inGesture, mutate, pushRecent, select, set, setPage, setPrefs, toast, vdoc } from './store';
 import { addPage, docPages, editPage, movePage, pageIndex, pageItemIds, renamePage } from '../model/pages';
 import { deletePage, duplicatePage, moveItemsToPage } from '../model/pageOps';
 import { confirmDelete } from '../ui/Ask';
@@ -562,8 +562,9 @@ export function addFrame(r: Rect): string {
 /** Hooks into the page bar (inline renaming lives there). */
 export const pageBar: { rename: ((id: string) => void) | null } = { rename: null };
 
-/** Shows a page; one not seen yet this session is zoomed to fit. */
+/** Shows a page; one not seen yet this session is zoomed to fit. Ignored mid-drag (setPage blocks it). */
 export function showPage(id: string) {
+  if (inGesture()) return;
   if (!setPage(id)) setTimeout(() => fitView(), 0);
 }
 
