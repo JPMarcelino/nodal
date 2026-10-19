@@ -1,5 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { computeSceneData, EDITOR_PALETTE, Scene } from '../canvas/Scene';
 import { exportSvg } from '../io/export';
@@ -77,13 +78,12 @@ describe('pageCrossRefs', () => {
 
   it('follows page order when pages move', () => {
     const { doc, p1, p3, l1, l3 } = threePages();
-    expect(pageCrossRefs(doc, p1).get(l1.id)).toBe('[2, 3]');
-    movePage(doc, p3, 0);
-    expect(docPages(doc).map((p) => p.id)).toEqual([p3, p1, expect.any(String)]);
+    const next = produce(doc, (d) => movePage(d as CircuitDoc, p3, 0));
+    expect(docPages(next).map((p) => p.id)).toEqual([p3, p1, expect.any(String)]);
     // l1 is now on page 2, l3 on page 1
-    expect(itemPage(doc, l1)).toBe(p1);
-    expect(pageCrossRefs(doc, p1).get(l1.id)).toBe('[1, 3]');
-    expect(pageCrossRefs(doc, p3).get(l3.id)).toBe('[2, 3]');
+    expect(itemPage(next, next.items[l1.id])).toBe(p1);
+    expect(pageCrossRefs(next, p1).get(l1.id)).toBe('[1, 3]');
+    expect(pageCrossRefs(next, p3).get(l3.id)).toBe('[2, 3]');
   });
 
   it('ignores hidden labels on other pages and empty names', () => {
@@ -93,9 +93,9 @@ describe('pageCrossRefs', () => {
     const l1 = place(doc, 'net-label', 0, 0, p1, 'SDA');
     const l2 = place(doc, 'net-label', 0, 0, p2, 'SDA');
     l2.hidden = true;
-    expect(pageCrossRefs(doc, p1).get(l1.id)).toBeUndefined();
     const empty = place(doc, 'net-label', 50, 0, p1, '  ');
     place(doc, 'net-label', 50, 0, p2, '  ');
+    expect(pageCrossRefs(doc, p1).get(l1.id)).toBeUndefined();
     expect(pageCrossRefs(doc, p1).get(empty.id)).toBeUndefined();
     expect(pageCrossRefs(doc, p1).size).toBe(0);
   });
