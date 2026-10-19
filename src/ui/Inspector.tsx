@@ -46,7 +46,7 @@ import { normDeg, ROT_KINDS, setShapeSize, shapeRot } from '../model/rotation';
 import { detachConnector } from '../model/connectors';
 import { isPathShape, isSmooth, pathNodes } from '../model/path';
 import * as A from '../store/actions';
-import { S, mutate, set, toast, useStore } from '../store/store';
+import { S, goToItems, mutate, select, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
 import { ExplainShapePanel, FramePanel } from './ExplainInspector';
 import { DashSelect, Row, StyleSection } from './StyleSection';
@@ -752,9 +752,19 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
   const first = wires[0];
   const style = wireStyleFor(doc.settings, first);
   const ids = wires.map((w) => w.id);
-  const upd = (p: Partial<WireStyle>) => mutate((d) => ids.forEach((id) => ((d.items[id] as WireItem).style = { ...(d.items[id] as WireItem).style, ...p })));
+  const upd = (p: Partial<WireStyle>) =>
+    mutate((d) =>
+      ids.forEach((id) => {
+        const w = d.items[id] as WireItem | undefined;
+        if (w?.type === 'wire') w.style = { ...w.style, ...p };
+      }),
+    );
   const net = useMemo(() => netOfWire(computeNets(doc), first.id), [doc, first.id]);
-  const updLabel = (fn: (w: WireItem) => void) => mutate((d) => fn(d.items[first.id] as WireItem));
+  const updLabel = (fn: (w: WireItem) => void) =>
+    mutate((d) => {
+      const w = d.items[first.id] as WireItem | undefined;
+      if (w?.type === 'wire') fn(w);
+    });
   return (
     <>
       <div className="panel-title">
@@ -776,7 +786,8 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
                 const layers = Object.values(d.items).flatMap((it) => (it.type === 'wire' && !ids.includes(it.id) && it.hopLayer ? [it.hopLayer] : []));
                 const layer = v > 0 ? Math.max(0, ...layers) + 1 : v < 0 ? Math.min(0, ...layers) - 1 : 0;
                 for (const id of ids) {
-                  const w = d.items[id] as WireItem;
+                  const w = d.items[id] as WireItem | undefined;
+                  if (w?.type !== 'wire') continue;
                   if (layer) w.hopLayer = layer;
                   else delete w.hopLayer;
                 }
@@ -785,7 +796,10 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           />
         </Field>
         <div className="btn-row">
-          <button className="secondary-btn" onClick={() => mutate((d) => ids.forEach((id) => delete (d.items[id] as WireItem).style))}>
+          <button className="secondary-btn" onClick={() => mutate((d) => ids.forEach((id) => {
+            const w = d.items[id] as WireItem | undefined;
+            if (w?.type === 'wire') delete w.style;
+          }))}>
             Use default
           </button>
           <button
@@ -813,7 +827,10 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
       {wires.length === 1 && (
         <Section title="Label">
           <Field label="Text" hint="Supports maths, e.g. $V_{CC}$">
-            <TextInput value={first.label ?? ''} focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => mutate((d) => void ((d.items[first.id] as WireItem).label = v || undefined))} />
+            <TextInput value={first.label ?? ''} focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => mutate((d) => {
+              const w = d.items[first.id] as WireItem | undefined;
+              if (w?.type === 'wire') w.label = v || undefined;
+            })} />
           </Field>
           {first.label && (
             <>
@@ -865,7 +882,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
             {!net.pins.length && <div className="empty-note small">No component pins on this net yet.</div>}
           </div>
           <div className="btn-row">
-            <button className="secondary-btn" onClick={() => set({ selection: net.wires })}>
+            <button className="secondary-btn" onClick={() => select(goToItems(net.wires))}>
               Select net
             </button>
             <button className="secondary-btn" onClick={() => set({ highlight: S().highlight ? null : new Set(net.wires) })}>
@@ -1199,7 +1216,10 @@ function MultiPanel({ ids }: { ids: string[] }) {
           <WireStyleEditor
             style={wireStyleFor(doc.settings, wires[0])}
             corners
-            onChange={(p) => mutate((d) => wires.forEach((w) => ((d.items[w.id] as WireItem).style = { ...(d.items[w.id] as WireItem).style, ...p })))}
+            onChange={(p) => mutate((d) => wires.forEach((w) => {
+              const it = d.items[w.id] as WireItem | undefined;
+              if (it?.type === 'wire') it.style = { ...it.style, ...p };
+            }))}
           />
         </Section>
       )}
