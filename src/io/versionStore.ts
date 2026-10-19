@@ -145,6 +145,8 @@ export function defaultLabel(t = Date.now()): string {
 
 /** Puts a version's content back into the open document; the current state is kept as a version first. */
 export async function restoreVersion(v: Version) {
+  // restoring under a running drag would be discarded by its next update
+  if (inGesture()) return toast('Finish the drag first, then restore the version', 'info');
   const cur = S().doc;
   try {
     await saveVersion(cur, `Before restoring “${v.label || 'autosave'}”`, true);

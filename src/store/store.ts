@@ -256,6 +256,9 @@ const pageViews = new Map<string, View>();
  * this page has not been shown yet (the view is left as it is).
  */
 export function setPage(page: string): boolean {
+  // a drag edits the page it started on (gestureUpdate folds into gestureBase);
+  // switching under it would discard the running drag or edit the wrong page
+  if (inGesture()) return false;
   const s = S();
   const p = resolvePage(s.doc, page);
   const cur = resolvePage(s.doc, s.page);
@@ -376,6 +379,7 @@ function followChange(from: CircuitDoc, to: CircuitDoc) {
 }
 
 export function undo() {
+  if (inGesture()) return;
   const s = S();
   if (!s.past.length || s.viewOnly) return;
   const prev = s.past[s.past.length - 1];
@@ -384,6 +388,7 @@ export function undo() {
 }
 
 export function redo() {
+  if (inGesture()) return;
   const s = S();
   if (!s.future.length || s.viewOnly) return;
   const next = s.future[0];
@@ -416,6 +421,9 @@ export function pauseAutosave(paused: boolean) {
 }
 
 export function replaceDoc(doc: CircuitDoc, filePath: string | null = null) {
+  // the incoming document has nothing to do with a running drag: drop the
+  // gesture instead of letting its next update clobber the new document
+  if (inGesture()) endGesture(false);
   set({ doc, page: lastPage(doc), past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null });
 }
 
