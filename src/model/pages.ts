@@ -46,9 +46,13 @@ export function pageItemIds(doc: CircuitDoc, page?: string | null): string[] {
 
 const views = new WeakMap<CircuitDoc, Map<string, CircuitDoc>>();
 const pageOfView = new WeakMap<CircuitDoc, string>();
+const viewSources = new WeakMap<CircuitDoc, CircuitDoc>();
 
 /** The page a view shows (a whole document: its first page). */
 export const viewPage = (doc: CircuitDoc) => pageOfView.get(doc) ?? firstPage(doc);
+
+/** The whole document a page view was made from (undefined for a document that is its own view). */
+export const viewSource = (view: CircuitDoc): CircuitDoc | undefined => viewSources.get(view);
 
 /** "Sheet n / m" text of the page a view shows; null for a one-page document (the sheet field is then typed in). */
 export function sheetNumber(doc: CircuitDoc): string | null {
@@ -80,6 +84,7 @@ export function viewDoc(doc: CircuitDoc, page?: string | null): CircuitDoc {
   for (const g of Object.values(doc.groups)) if (here.has(g.id) || !elsewhere.has(g.id)) groups[g.id] = g;
   const view: CircuitDoc = { ...doc, items, groups };
   pageOfView.set(view, p);
+  viewSources.set(view, doc);
   if (!byPage) views.set(doc, (byPage = new Map()));
   byPage.set(p, view);
   return view;

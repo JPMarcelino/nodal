@@ -9,7 +9,8 @@ import { instanceSymbol } from '../model/registry';
 import { shapeText } from '../model/shapeText';
 import { PX_PER_MM, sheetRect } from '../model/sheet';
 import { stripMath } from '../model/latex';
-import { docPages, viewDoc } from '../model/pages';
+import { docPages, viewDoc, viewPage, viewSource } from '../model/pages';
+import { pageCrossRefs } from '../model/pageRefs';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 import { withoutFrames } from '../model/presentation';
@@ -109,6 +110,8 @@ const FONT = `'Inter', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-s
 
 export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bounds: Rect } {
   const palette = EXPORT_THEMES[opts.theme];
+  // cross-page references come from the whole document, before any clip or selection narrowing
+  const xrefs = pageCrossRefs(viewSource(doc) ?? doc, viewPage(doc));
   // presentation frames are editor-only
   let d = withoutFrames(doc);
   if (opts.ids?.length) {
@@ -134,8 +137,8 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
     }
   }
   const data = computeSceneData(d);
-  const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette }));
-  const css = `text{font-family:${FONT}}.ref-label{font-size:11px;font-weight:600}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:#c4483c}.comp.dnp>g:first-child{opacity:.45}`;
+  const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette, xrefs }));
+  const css = `text{font-family:${FONT}}.ref-label{font-size:11px;font-weight:600}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:#c4483c}.page-ref{font-weight:400;font-size:0.85em;opacity:.7}.comp.dnp>g:first-child{opacity:.45}`;
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(box.w)}" height="${Math.ceil(box.h)}" viewBox="${box.x} ${box.y} ${box.w} ${box.h}">
 <title>${escapeXml(doc.name)}</title>
