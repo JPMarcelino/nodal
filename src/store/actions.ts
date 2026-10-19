@@ -303,9 +303,12 @@ export function pasteFragment(frag: Fragment, at?: { x: number; y: number }) {
     dx = dy = g * 2 * pasteCount;
   }
   let ids: string[] = [];
-  mutate((d) => {
-    ids = insertFragment(d as CircuitDoc, frag, dx, dy, S().scope);
-  });
+  if (
+    !mutate((d) => {
+      ids = insertFragment(d as CircuitDoc, frag, dx, dy, S().scope);
+    })
+  )
+    return;
   set({ selection: ids });
 }
 
@@ -314,9 +317,12 @@ export function duplicateSelection() {
   const frag = extractFragment(vdoc(), sel());
   const g = vdoc().settings.grid * 2;
   let ids: string[] = [];
-  mutate((d) => {
-    ids = insertFragment(d as CircuitDoc, frag, g, g, S().scope);
-  });
+  if (
+    !mutate((d) => {
+      ids = insertFragment(d as CircuitDoc, frag, g, g, S().scope);
+    })
+  )
+    return;
   set({ selection: ids });
 }
 

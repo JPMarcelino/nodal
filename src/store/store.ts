@@ -285,18 +285,39 @@ export function setPage(page: string): boolean {
 
 const HISTORY_LIMIT = 300;
 let gestureBase: CircuitDoc | null = null;
+let allowGestureMutate = false;
+
+/**
+ * Runs `fn` with doc edits allowed despite a running gesture. Only the
+ * gesture's own flows may use it (rotating a pointer-carried move); any other
+ * edit now would be discarded by the gesture's next update.
+ */
+export function withGestureMutate<T>(fn: () => T): T {
+  if (!gestureBase) return fn();
+  allowGestureMutate = true;
+  try {
+    return fn();
+  } finally {
+    allowGestureMutate = false;
+  }
+}
 
 /**
  * Records an edit as one undo step. It applies to the active page only (the
  * draft holds just that page's items; anything added lands on it), unless
  * `allPages` is set: page edits and document-wide changes such as renumbering.
+ * Returns false when the edit was refused (read-only session, running gesture).
  */
-export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: string[], opts?: { allPages?: boolean }) {
+export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: string[], opts?: { allPages?: boolean }): boolean {
   const s = S();
   if (s.viewOnly) {
     if (selection) set({ selection });
-    return;
+    return false;
   }
+  // A running drag rebuilds the doc from its base on every move; any other
+  // edit now would be discarded by the next update (or land in a stray undo
+  // step), so it is ignored. The gesture's own flows opt back in above.
+  if (gestureBase && !allowGestureMutate) return false;
   // the recipe's return value is ignored on purpose: Immer would otherwise use it as the new
   // document (e.g. `(d) => (d.settings.hops = 'arc')` returns 'arc' when nothing changed)
   const next = opts?.allPages
@@ -307,7 +328,7 @@ export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: strin
       editPage(s.doc, s.page, (d) => recipe(d), gestureBase ? undefined : settleEdit);
   if (next === s.doc) {
     if (selection) set({ selection });
-    return;
+    return true;
   }
   set({
     doc: next,
@@ -316,6 +337,7 @@ export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: strin
     dirty: true,
     ...(selection ? { selection } : {}),
   });
+  return true;
 }
 
 /** Starts a continuous edit (drag); intermediate states are not recorded. */

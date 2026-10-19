@@ -170,6 +170,44 @@ describe('page switches during a gesture', () => {
     expect(S().page).toBe(p2);
   });
 
+  it('ignores doc edits (delete, duplicate, paste, nudge) mid-drag', async () => {
+    const { store, aid } = await gestureDoc();
+    const { S, set, beginGesture, gestureUpdate, endGesture, vdoc } = store;
+    const { deleteSelection, duplicateSelection, nudge, pasteFragment } = await import('../store/actions');
+    const { extractFragment } = await import('../model/ops');
+    set({ selection: [aid] });
+    beginGesture();
+    gestureUpdate(moveTo(aid, 50));
+    deleteSelection();
+    expect(S().doc.items[aid]).toBeTruthy();
+    duplicateSelection();
+    expect(Object.keys(S().doc.items)).toHaveLength(1);
+    pasteFragment(extractFragment(vdoc(), new Set([aid])));
+    expect(Object.keys(S().doc.items)).toHaveLength(1);
+    nudge(100, 0);
+    expect(xOf(S().doc, aid)).toBe(50);
+    // nothing happened, so there is nothing to record or reselect
+    expect(S().past).toHaveLength(0);
+    expect(S().selection).toEqual([aid]);
+    gestureUpdate(moveTo(aid, 70));
+    endGesture(true);
+    expect(xOf(S().doc, aid)).toBe(70);
+    expect(S().past).toHaveLength(1);
+  });
+
+  it('withGestureMutate lets the gesture owner edit mid-drag', async () => {
+    const { store, aid } = await gestureDoc();
+    const { S, mutate, beginGesture, gestureUpdate, endGesture, withGestureMutate } = store;
+    beginGesture();
+    gestureUpdate(moveTo(aid, 50));
+    withGestureMutate(() => mutate((d) => void (((d.items[aid] as unknown as { x: number }).x = 90))));
+    expect(xOf(S().doc, aid)).toBe(90);
+    expect(S().past).toHaveLength(0);
+    endGesture(true);
+    expect(xOf(S().doc, aid)).toBe(90);
+    expect(S().past).toHaveLength(1);
+  });
+
   it('ignores undo and redo mid-drag', async () => {
     const { store, aid } = await gestureDoc();
     const { S, mutate, beginGesture, gestureUpdate, endGesture, undo, redo } = store;

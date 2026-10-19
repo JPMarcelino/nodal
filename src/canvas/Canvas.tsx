@@ -18,7 +18,7 @@ import { routeObstacles } from '../model/route';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
-import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, rebaseGesture, select, set, toast, useStore, useViewDoc, vdoc } from '../store/store';
+import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, rebaseGesture, select, set, toast, useStore, useViewDoc, vdoc, withGestureMutate } from '../store/store';
 import { viewDoc } from '../model/pages';
 import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
@@ -973,7 +973,7 @@ export function Canvas() {
   const rotateFloating = (g: Extract<Gesture, { kind: 'move' }>) => {
     alignRef.current = null;
     rebaseGesture();
-    A.rotateSelection(90);
+    withGestureMutate(() => A.rotateSelection(90));
     rebaseGesture();
     setGesture({ ...g, start: sp(S().cursor), dx: 0, dy: 0 });
   };
