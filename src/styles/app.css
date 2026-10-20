@@ -3804,6 +3804,12 @@ select.input {
   fill: var(--danger);
 }
 
+.page-ref {
+  font-weight: 400;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
 .comp.dnp > g:first-child {
   opacity: 0.45;
 }

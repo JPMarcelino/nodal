@@ -360,12 +360,15 @@ export const ComponentView = memo(function ComponentView({
   settings,
   palette,
   ghost,
+  xref,
 }: {
   c: ComponentItem;
   def: SymbolDef;
   settings: DocSettings;
   palette: Palette;
   ghost?: boolean;
+  /** Cross-page reference ("[2, 3]"), shown after the value when it is drawn. */
+  xref?: string;
 }) {
   const shown = labelsShown(settings, c, def);
   if (shown.ref !== c.showRef || shown.value !== c.showValue) c = { ...c, showRef: shown.ref, showValue: shown.value };
@@ -405,6 +408,7 @@ export const ComponentView = memo(function ComponentView({
           bg={palette.bg}
         >
           {dnp && <tspan className="dnp-tag"> DNP</tspan>}
+          {xref && <tspan className="page-ref"> {xref}</tspan>}
         </PartLabel>
       )}
     </g>
@@ -751,7 +755,7 @@ export { measureText };
 /* Whole scene                                                         */
 /* ------------------------------------------------------------------ */
 
-export function Scene({ doc, data, palette, highlight, frames = false }: { doc: CircuitDoc; data: SceneData; palette: Palette; highlight?: Set<string> | null; frames?: boolean }) {
+export function Scene({ doc, data, palette, highlight, frames = false, xrefs }: { doc: CircuitDoc; data: SceneData; palette: Palette; highlight?: Set<string> | null; frames?: boolean; xrefs?: ReadonlyMap<string, string> }) {
   // presentation frames are only drawn while editing
   const items = Object.values(doc.items).filter((i) => !i.hidden && (frames || !(i.type === 'shape' && i.kind === 'frame')));
   // one back-to-front stack for shapes, wires and parts (the layers panel order, z else creation order)
@@ -802,7 +806,7 @@ export function Scene({ doc, data, palette, highlight, frames = false }: { doc: 
           it.type === 'wire' ? (
             <WireView key={it.id} w={it} pts={data.polys.get(it.id) ?? []} hops={data.hops.get(it.id)} settings={doc.settings} palette={palette} dim={!!highlight && !highlight.has(it.id)} />
           ) : it.type === 'component' ? (
-            <ComponentView key={it.id} c={it} def={instanceSymbol(doc, it)} settings={doc.settings} palette={palette} />
+            <ComponentView key={it.id} c={it} def={instanceSymbol(doc, it)} settings={doc.settings} palette={palette} xref={xrefs?.get(it.id)} />
           ) : (
             shapeEl(it)
           ),
