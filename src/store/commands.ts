@@ -1,4 +1,4 @@
-import { copyAsPng, copyAsSvg, doExport, exportSelection, fileNew, fileOpen, filePrint, fileSave, startAreaExport } from '../io/fileActions';
+import { copyAsPng, copyAsSvg, doExport, exportSelection, fileNew, fileOpen, filePrint, fileSave, openExport, startAreaExport } from '../io/fileActions';
 import { importFile } from '../io/importFiles';
 import { exportLibraryFile, exportTemplateFile, importLibraryFile, importTemplateFile } from '../io/sharing';
 import { selectionToDrawing } from '../model/fromSelection';
@@ -40,17 +40,17 @@ export const COMMANDS: Command[] = [
   { id: 'file.history', label: 'Version history', category: 'File', keys: ['Mod+Alt+H'], run: () => set({ leftPanel: true, leftTab: 'history' }) },
   { id: 'edit.copyStyle', label: 'Copy style', category: 'Edit', keys: ['Mod+Shift+Alt+C'], run: () => copyStyle() },
   { id: 'edit.pasteStyle', label: 'Paste style onto the selection', category: 'Edit', keys: ['Mod+Shift+Alt+V'], run: () => pasteStyle() },
-  { id: 'file.export', label: 'Export…', category: 'File', keys: ['Mod+E'], run: () => set({ dialog: 'export' }) },
-  { id: 'file.exportSvg', label: 'Export as SVG', category: 'File', keys: [], run: () => doExport('svg') },
-  { id: 'file.exportPng', label: 'Export as PNG', category: 'File', keys: ['Mod+Shift+E'], run: () => doExport('png') },
+  { id: 'file.export', label: 'Export…', category: 'File', keys: ['Mod+E'], run: () => openExport() },
+  { id: 'file.exportSvg', label: 'Export as SVG…', category: 'File', keys: [], run: () => openExport() },
+  { id: 'file.exportPng', label: 'Export as PNG…', category: 'File', keys: ['Mod+Shift+E'], run: () => openExport() },
   { id: 'file.exportDxf', label: 'Export as DXF (CAD)', category: 'File', keys: [], run: () => doExport('dxf') },
   { id: 'file.exportSpice', label: 'Export SPICE netlist', category: 'File', keys: [], run: () => doExport('spice') },
   { id: 'file.exportKicad', label: 'Export KiCad netlist (PCB layout)', category: 'File', keys: [], run: () => doExport('kicad') },
   { id: 'file.exportBom', label: 'Export bill of materials (CSV)', category: 'File', keys: [], run: () => doExport('bom') },
   { id: 'file.copySvg', label: 'Copy selection as SVG', category: 'File', keys: ['Mod+Alt+C'], run: copyAsSvg },
   { id: 'file.copyPng', label: 'Copy selection as image (PNG)', category: 'File', keys: ['Mod+Alt+Shift+P'], run: copyAsPng },
-  { id: 'file.exportSelection', label: 'Export selection as PNG', category: 'File', keys: ['Mod+Alt+E'], run: () => exportSelection('png') },
-  { id: 'file.exportSelectionSvg', label: 'Export selection as SVG', category: 'File', keys: [], run: () => exportSelection('svg') },
+  { id: 'file.exportSelection', label: 'Export selection as PNG…', category: 'File', keys: ['Mod+Alt+E'], run: () => exportSelection() },
+  { id: 'file.exportSelectionSvg', label: 'Export selection as SVG…', category: 'File', keys: [], run: () => exportSelection() },
   { id: 'file.exportArea', label: 'Export canvas area…', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
   { id: 'file.print', label: 'Print…', category: 'File', keys: ['Mod+P'], run: filePrint },
   { id: 'collab.share', label: 'Share & collaborate…', category: 'File', keys: ['Mod+Alt+S'], run: () => set({ dialog: 'share' }) },

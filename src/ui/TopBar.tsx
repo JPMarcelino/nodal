@@ -28,6 +28,7 @@ import { isExplainTool, useExplain } from '../store/explain';
 import { useEffect, useRef, useState } from 'react';
 import type { Tool } from '../model/types';
 import * as A from '../store/actions';
+import { openExport } from '../io/fileActions';
 import { COMMANDS, COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { S, mutate, redo, set, undo, useStore } from '../store/store';
 import { CollabBar } from './CollabBar';
@@ -195,7 +196,7 @@ export function TopBar() {
         </button>
         <span className="divider" />
         <CollabBar />
-        <button className="primary-btn" onClick={() => set({ dialog: 'export' })}>
+        <button className="primary-btn" onClick={() => openExport()}>
           <Download size={15} /> Export
         </button>
       </div>
