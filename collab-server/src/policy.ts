@@ -11,9 +11,12 @@
  */
 
 export const MAX_PEERS = 32;
-export const MAX_MESSAGE = 4 * 1024 * 1024;
 // storage.put takes at most 128 keys at once: 12 MB in 100 kB chunks stays under that
 export const MAX_SNAPSHOT = 12 * 1024 * 1024;
+// Frames carry a small JSON envelope around the snapshot ({ t, d }), so this
+// pre-parse cap must clear the largest snapshot gateMessage allows —
+// otherwise saves between the two limits are silently dropped before gating.
+export const MAX_MESSAGE = MAX_SNAPSHOT + 64 * 1024;
 /** Rooms nobody has saved to for this long are deleted (and an ended room's marker is forgotten). */
 export const EXPIRE_MS = 24 * 3600 * 1000;
 

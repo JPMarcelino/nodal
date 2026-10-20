@@ -1,6 +1,6 @@
 import { produce } from 'immer';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { gateMessage, isRoomFull, isWellFormedToken, MAX_PEERS, resolveOwnership } from '../../collab-server/src/policy';
+import { gateMessage, isRoomFull, isWellFormedToken, MAX_MESSAGE, MAX_PEERS, resolveOwnership } from '../../collab-server/src/policy';
 import { createDoc, makeShape } from '../model/doc';
 import type { CircuitDoc } from '../model/types';
 
@@ -162,6 +162,8 @@ class FakeSocket {
   send(raw: string) {
     const r = rooms.get(this.room);
     if (!r || !r.sockets.has(this)) return;
+    // Mirrors Room.webSocketMessage's pre-parse cap: oversized frames never reach gating.
+    if (raw.length > MAX_MESSAGE) return;
     let msg: { t?: unknown; d?: unknown };
     try {
       msg = JSON.parse(raw);
