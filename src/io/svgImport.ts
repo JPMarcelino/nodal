@@ -276,14 +276,20 @@ function scrubSvgCss(css: string): string {
  */
 export function cleanSvgAttr(local: string, value: string): string | null {
   const name = local.toLowerCase();
-  if (name.startsWith('on')) return null; // event handlers (onload, onerror, onbegin, …)
-  if (name === 'href') return safeSvgRef(value) ? value : null; // javascript:/data:/remote refs
-  if (name === 'src' || name === 'srcdoc') return null;
-  if (name === 'style') return scrubSvgCss(value);
+  // localName may be 'href'/'base'/'src' while name is 'xlink:href'/'xml:base';
+  // normalise so prefixed variants can't smuggle past the checks below.
+  const base = name.includes(':') ? name.slice(name.lastIndexOf(':') + 1) : name;
+  if (name.startsWith('on') || base.startsWith('on')) return null; // event handlers (onload, onerror, onbegin, …)
+  // xml:base re-bases otherwise-safe url(#…) and href="#…" to the attacker
+  // origin, so internal refs would fetch/paint remotely once attached.
+  if (base === 'base') return null;
+  if (base === 'href') return safeSvgRef(value) ? value : null; // javascript:/data:/remote refs
+  if (base === 'src' || base === 'srcdoc' || base === 'srcset' || base === 'imagesrcset') return null;
+  if (name === 'style' || base === 'style') return scrubSvgCss(value);
   // presentation attributes (fill, stroke, filter, clip-path, mask,
   // marker-*, cursor, …) can all carry url(https://…) payloads, escapes included
   if (/url\(/i.test(normalizeCss(value))) return scrubSvgCss(value);
-  if (name === 'formaction' || name === 'action' || name === 'poster' || name === 'background' || name === 'cite' || name === 'data' || name === 'codebase' || name === 'classid' || name === 'usemap') return null;
+  if (base === 'formaction' || base === 'action' || base === 'poster' || base === 'background' || base === 'cite' || base === 'data' || base === 'codebase' || base === 'classid' || base === 'usemap' || base === 'profile' || base === 'longdesc' || base === 'archive' || base === 'code' || base === 'lowsrc' || base === 'dynsrc') return null;
   return value;
 }
 
