@@ -176,6 +176,16 @@ describe('SVG sanitising', () => {
     expect(cleanSvgAttr('style', 'fill:u\\\\52 l(https://evil/x)')).toBe('fill:none');
     // no backslash survives for the browser to re-decode at tokenisation
     expect(cleanSvgAttr('style', 'fill:red\\')).toBe('fill:red');
+    // deep nesting past the decode bound: stripping runs before the
+    // @import/url patterns, so it can't re-form a live token afterwards
+    const deepUrl = 'fill:u' + '\\'.repeat(1024) + 'rl(https://evil/x)';
+    const deepScrubbed = cleanSvgAttr('style', deepUrl);
+    expect(deepScrubbed).toBe('fill:none');
+    expect(deepScrubbed).not.toContain('url(');
+    expect(deepScrubbed).not.toContain('\\');
+    expect(cleanSvgAttr('fill', 'u' + '\\'.repeat(1024) + 'rl(https://evil/x)')).toBe('none');
+    const deepImport = cleanSvgAttr('style', '@' + '\\'.repeat(1024) + 'import url(https://evil/c);.a{fill:red}');
+    expect(deepImport).toBe('.a{fill:red}');
     // a ')' inside a quoted URL can't leave garbage behind
     expect(cleanSvgAttr('fill', 'url("https://evil/a)b")')).toBe('none');
   });
