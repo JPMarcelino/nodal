@@ -180,6 +180,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
       cmd('edit.cut', 'Cut', <Scissors size={15} />)!,
       cmd('edit.copy', 'Copy', <Copy size={15} />)!,
       cmd('edit.duplicate', 'Duplicate', <CopyPlus size={15} />)!,
+      cmd('edit.duplicateIncrement', 'Duplicate and increment', <CopyPlus size={15} />)!,
       cmd('edit.delete', 'Delete', <Trash2 size={15} />, { danger: true })!,
     ].filter(Boolean),
     list: rows(
