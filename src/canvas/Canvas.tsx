@@ -192,6 +192,9 @@ export function Canvas() {
   const wireAvoid = useStore((s) => s.prefs.wireAvoid);
   const wrapRef = useRef<HTMLDivElement>(null);
   const gRef = useRef<Gesture | null>(null);
+  /** Where the pointer last moved, and the move handler, so a modifier key can replay the move. */
+  const lastMove = useRef<{ clientX: number; clientY: number } | null>(null);
+  const moveRef = useRef<((e: React.PointerEvent) => void) | null>(null);
   const [gesture, setGestureState] = useState<Gesture | null>(null);
   const [hover, setHover] = useState<{ item: string | null; port: PortInfo | null }>({ item: null, port: null });
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 });
@@ -1101,14 +1104,22 @@ export function Canvas() {
     };
   });
 
+  // pressing or letting go of Shift / Ctrl mid-resize reshapes at once, without waiting for the pointer to move
   useEffect(() => {
+    const remod = (e: KeyboardEvent) => {
+      if (gRef.current?.kind !== 'resize' || !lastMove.current) return;
+      if (e.key !== 'Shift' && e.key !== 'Control' && e.key !== 'Meta') return;
+      moveRef.current?.({ ...lastMove.current, buttons: 1, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey } as unknown as React.PointerEvent);
+    };
     const down = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !isTyping(e) && !gRef.current) {
         setSpaceDown(true);
       }
+      remod(e);
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === 'Space') setSpaceDown(false);
+      remod(e);
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
@@ -1512,6 +1523,7 @@ export function Canvas() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    lastMove.current = { clientX: e.clientX, clientY: e.clientY };
     const w = toWorldPt(e.clientX, e.clientY);
     setCursor(w);
     set(S().pointerOnCanvas ? { cursor: w } : { cursor: w, pointerOnCanvas: true });
@@ -1763,8 +1775,9 @@ export function Canvas() {
             }
             return;
           }
-          // the side or corner opposite the handle stays put, turned or not
-          Object.assign(s, resizeInFrame({ x: b.x, y: b.y, w: b.w, h: b.h }, turned, g.handle, p, grid, snapOn && turned ? grid : 0));
+          // the side or corner opposite the handle stays put, turned or not; Shift keeps the proportions, Ctrl the centre
+          const opts = { aspect: e.shiftKey, centre: e.ctrlKey || e.metaKey };
+          Object.assign(s, resizeInFrame({ x: b.x, y: b.y, w: b.w, h: b.h }, turned, g.handle, p, grid, snapOn && turned ? grid : 0, opts));
         });
         break;
       }
@@ -1830,6 +1843,7 @@ export function Canvas() {
       }
     }
   };
+  moveRef.current = onPointerMove;
 
   const onPointerUp = (e: React.PointerEvent) => {
     const g = gRef.current;

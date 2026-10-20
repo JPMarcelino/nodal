@@ -1027,7 +1027,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
                   <NumberInput value={first.y} suffix="y" onChange={(v) => upd((s) => (s.y = v))} />
                 </span>
               </Field>
-              <Field label="Size">
+              <Field label="Size" hint="Drag a handle on the canvas too: Shift keeps the proportions, Ctrl keeps the centre">
                 <span className="row-gap">
                   <NumberInput value={first.w} suffix="w" onChange={(v) => upd((s) => setShapeSize(s, { w: v }))} />
                   <NumberInput value={first.h} suffix="h" onChange={(v) => upd((s) => setShapeSize(s, { h: v }))} />

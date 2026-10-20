@@ -93,8 +93,9 @@ export type BoxHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
  * Resizes a box turned `rot` about its centre by dragging `handle` to world
  * point `p`. The drag works in the box's own frame, and the result is placed so
  * the side or corner opposite the handle stays where it was on screen.
+ * `aspect` keeps the box's proportions; `centre` grows it about its centre.
  */
-export function resizeInFrame(b: Rect, rot: number, handle: BoxHandle, p: Point, min: number, snap = 0): Rect {
+export function resizeInFrame(b: Rect, rot: number, handle: BoxHandle, p: Point, min: number, snap = 0, opts: { aspect?: boolean; centre?: boolean } = {}): Rect {
   const c = rectCentre(b);
   const q = rotateDeg(p, -rot, c);
   // the dragged edges snap to the grid in the shape's own frame, where a turned shape's edges run
@@ -102,17 +103,28 @@ export function resizeInFrame(b: Rect, rot: number, handle: BoxHandle, p: Point,
     if (handle.includes('w') || handle.includes('e')) q.x = Math.round(q.x / snap) * snap;
     if (handle.includes('n') || handle.includes('s')) q.y = Math.round(q.y / snap) * snap;
   }
-  let x1 = b.x,
-    y1 = b.y,
-    x2 = b.x + b.w,
-    y2 = b.y + b.h;
-  if (handle.includes('w')) x1 = q.x;
-  if (handle.includes('e')) x2 = q.x;
-  if (handle.includes('n')) y1 = q.y;
-  if (handle.includes('s')) y2 = q.y;
-  const w = Math.max(min, Math.abs(x2 - x1));
-  const h = Math.max(min, Math.abs(y2 - y1));
-  const local = { x: Math.min(x1, x2) + w / 2, y: Math.min(y1, y2) + h / 2 };
+  const dx = handle.includes('w') ? -1 : handle.includes('e') ? 1 : 0;
+  const dy = handle.includes('n') ? -1 : handle.includes('s') ? 1 : 0;
+  // each dragged axis grows from its anchor: the opposite side, or the centre (Ctrl) where it grows both ways
+  const span = (dir: number, lo: number, len: number, mid: number, at: number) => {
+    if (!dir) return { anchor: mid, sign: 0, len };
+    if (opts.centre) return { anchor: mid, sign: 0, len: 2 * Math.abs(at - mid) };
+    const anchor = dir > 0 ? lo : lo + len;
+    return { anchor, sign: Math.sign(at - anchor) || dir, len: Math.abs(at - anchor) };
+  };
+  const sx = span(dx, b.x, b.w, c.x, q.x);
+  const sy = span(dy, b.y, b.h, c.y, q.y);
+  let w = Math.max(min, sx.len);
+  let h = Math.max(min, sy.len);
+  if (opts.aspect && b.w > 0 && b.h > 0) {
+    // Shift keeps the proportions: a corner follows whichever side moved further, an edge drags the other side along
+    const k = dx && dy ? Math.max(w / b.w, h / b.h) : dx ? w / b.w : h / b.h;
+    const kk = Math.max(k, min / b.w, min / b.h);
+    w = b.w * kk;
+    h = b.h * kk;
+  }
+  const at1 = (s: { anchor: number; sign: number }, len: number) => (s.sign ? (s.sign > 0 ? s.anchor : s.anchor - len) : s.anchor - len / 2);
+  const local = { x: at1(sx, w) + w / 2, y: at1(sy, h) + h / 2 };
   // the box's centre moved within the old frame: carry that move into the world
   const at = rotateDeg(local, rot, c);
   return { x: at.x - w / 2, y: at.y - h / 2, w, h };
