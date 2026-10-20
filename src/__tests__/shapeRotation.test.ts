@@ -206,3 +206,22 @@ describe('sizing a turned shape', () => {
     expect(r.h).toBeCloseTo(50, 6);
   });
 });
+
+describe('resize with Shift / Ctrl', () => {
+  const b = { x: 0, y: 0, w: 100, h: 50 };
+  it('Shift keeps the proportions from the opposite corner', () => {
+    expect(resizeInFrame(b, 0, 'se', { x: 200, y: 60 }, 10, 0, { aspect: true })).toEqual({ x: 0, y: 0, w: 200, h: 100 });
+  });
+  it('Shift on an edge drags the other side along about the middle', () => {
+    expect(resizeInFrame(b, 0, 'e', { x: 200, y: 25 }, 10, 0, { aspect: true })).toEqual({ x: 0, y: -25, w: 200, h: 100 });
+  });
+  it('Ctrl keeps the centre', () => {
+    expect(resizeInFrame(b, 0, 'se', { x: 110, y: 60 }, 10, 0, { centre: true })).toEqual({ x: -10, y: -10, w: 120, h: 70 });
+  });
+  it('Shift + Ctrl keeps both', () => {
+    expect(resizeInFrame(b, 0, 'nw', { x: -50, y: 20 }, 10, 0, { aspect: true, centre: true })).toEqual({ x: -50, y: -25, w: 200, h: 100 });
+  });
+  it('a corner dragged past its anchor flips', () => {
+    expect(resizeInFrame(b, 0, 'se', { x: -20, y: -30 }, 10)).toEqual({ x: -20, y: -30, w: 20, h: 30 });
+  });
+});
