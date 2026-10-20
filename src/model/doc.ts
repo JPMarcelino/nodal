@@ -221,9 +221,21 @@ export function nextZoneColour(doc: CircuitDoc): string {
 /** Kinds that start behind everything (areas and pictures); the rest start in front. */
 export const BACK_KINDS: ReadonlySet<ShapeKind> = new Set(['rect', 'zone', 'ellipse', 'polygon', 'image']);
 
-/** A z that puts an item behind everything currently in the document. */
-export function backZ(doc: Pick<CircuitDoc, 'items'>): number {
-  return Math.min(0, ...Object.values(doc.items).map((i) => i.z ?? 0)) - 1;
+/**
+ * A z that puts an item behind everything currently in the document, except
+ * pictures: a new picture goes under it all, while anything else drawn later
+ * (areas, highlighter) lands just in front of the topmost picture, so it shows
+ * over an image it is drawn on rather than vanishing behind it.
+ */
+export function backZ(doc: Pick<CircuitDoc, 'items'>, image = false): number {
+  const items = Object.values(doc.items);
+  const bottom = Math.min(0, ...items.map((i) => i.z ?? 0)) - 1;
+  // (a picture with no z is already in front of everything, so out of reach here)
+  const pics = items.filter((i) => i.type === 'shape' && i.kind === 'image' && i.z !== undefined);
+  if (image || !pics.length) return bottom;
+  const top = Math.max(...pics.map((i) => i.z!));
+  const above = items.filter((i) => i.z !== undefined && i.z > top).map((i) => i.z!);
+  return above.length ? (top + Math.min(...above)) / 2 : top + 1;
 }
 
 /**
@@ -248,7 +260,7 @@ export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number
     radius: 0,
     ...SHAPE_DEFAULTS[kind],
   } as ShapeItem;
-  if (BACK_KINDS.has(kind)) shape.z = backZ(doc);
+  if (BACK_KINDS.has(kind)) shape.z = backZ(doc, kind === 'image');
   if (kind === 'zone') shape.stroke = shape.fill = nextZoneColour(doc);
   return shape;
 }

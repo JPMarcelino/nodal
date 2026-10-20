@@ -200,8 +200,8 @@ export function findGlue(doc: CircuitDoc, p: Point, tol: number, exclude?: strin
         : f.outline === 'ellipse'
           ? (l.x / (1 + pa)) ** 2 + (l.y / (1 + pb)) ** 2 <= 1
           : pointInPolygon(l, f.outline);
-    // areas (zones, containers) hold things: only their edge takes an end, not their inside
-    const area = it.type === 'shape' && (it.kind === 'zone' || !!it.container);
+    // areas (zones, containers, pictures) hold things: only their edge takes an end, not their inside
+    const area = it.type === 'shape' && (it.kind === 'zone' || it.kind === 'image' || !!it.container);
     if (inside && area && Math.abs(l.x) < 1 - pa && Math.abs(l.y) < 1 - pb) continue;
     if (inside) return { attach: { id: it.id }, pt: p };
   }
