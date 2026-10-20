@@ -2,6 +2,7 @@ import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, normalizeDoc, uid } from '../model/doc';
 import { runErc, splitIgnored, type ErcIssue } from '../model/erc';
+import { addPage } from '../model/pages';
 import { hasMath, loadMath, mathLines, scrubMathSvg, splitMath, stripMath, texToSvg } from '../model/latex';
 import { computeNets } from '../model/netlist';
 import { measureRich } from '../model/richText';
@@ -63,6 +64,35 @@ describe('electrical rules check', () => {
     wire(doc, a, 'VCC', b, 'VCC');
     const short = runErc(doc).find((i) => i.rule === 'shorted-nets');
     expect(short?.severity).toBe('error');
+  });
+
+  it('only reports parts stacked on the same page, not the same spot on different pages', () => {
+    const doc = createDoc();
+    const p2 = addPage(doc, 'Two');
+    place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 0, 0);
+    expect(runErc(doc).filter((i) => i.rule === 'stacked-parts')).toHaveLength(1);
+    b.page = p2;
+    expect(runErc(doc).filter((i) => i.rule === 'stacked-parts')).toHaveLength(0);
+  });
+
+  it('keys touching-end findings per page, so ignoring one does not hide the other', () => {
+    const doc = createDoc();
+    const p2 = addPage(doc, 'Two');
+    const mkTouch = (page?: string) => {
+      const span: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: 0, y: 0 }, b: { kind: 'free', x: 100, y: 0 }, pts: [], ...(page ? { page } : {}) };
+      const prod: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: 50, y: 0 }, b: { kind: 'free', x: 50, y: 100 }, pts: [], ...(page ? { page } : {}) };
+      doc.items[span.id] = span;
+      doc.items[prod.id] = prod;
+    };
+    mkTouch();
+    mkTouch(p2);
+    const found = runErc(doc).filter((i) => i.rule === 'touching-end');
+    expect(found).toHaveLength(2);
+    expect(new Set(found.map((i) => i.key)).size).toBe(2);
+    const { active, ignored } = splitIgnored(found, [found[0].key]);
+    expect(ignored).toHaveLength(1);
+    expect(active).toHaveLength(1);
   });
 
   it('does not flag a net label joined by a wire label as single-use', () => {
