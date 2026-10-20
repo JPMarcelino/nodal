@@ -67,6 +67,7 @@ export const COMMANDS: Command[] = [
   { id: 'edit.paste', label: 'Paste (at the mouse pointer)', category: 'Edit', keys: ['Mod+V'], run: () => void A.paste(A.pastePoint()) },
   { id: 'edit.pasteHere', label: 'Paste in place (next to the original)', category: 'Edit', keys: ['Mod+Shift+V'], run: () => void A.paste() },
   { id: 'edit.duplicate', label: 'Duplicate', category: 'Edit', keys: ['Mod+D'], cadence: [], run: A.duplicateSelection, when: hasSel },
+  { id: 'edit.duplicateIncrement', label: 'Duplicate and increment', category: 'Edit', keys: ['Mod+Alt+D', 'Insert'], run: A.duplicateIncrementSelection, when: hasSel },
   { id: 'edit.delete', label: 'Delete', category: 'Edit', keys: ['Delete', 'Backspace'], run: A.deleteSelection, when: hasSel },
   { id: 'edit.find', label: 'Find part, net or text…', category: 'Edit', keys: ['Mod+F', 'F3'], run: () => set({ dialog: 'find' }) },
   { id: 'edit.selectAll', label: 'Select all', category: 'Edit', keys: ['Mod+A'], run: A.selectAll },
