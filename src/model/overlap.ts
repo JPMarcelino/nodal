@@ -44,10 +44,11 @@ function segOverlap(a1: Point, a2: Point, b1: Point, b2: Point): [Point, Point] 
 }
 
 function findOverlap(doc: CircuitDoc, changed: Set<string>): Overlap | null {
-  const wires = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire' && !i.hidden && !i.locked);
+  const wires = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire' && !i.hidden);
   const polys = new Map(wires.map((w) => [w.id, wirePolyline(doc, w)]));
   for (const w of wires) {
-    if (!changed.has(w.id)) continue;
+    // a locked wire is never cut up; it can still be the wire an unlocked one lies on (see connectionAt)
+    if (!changed.has(w.id) || w.locked) continue;
     const pw = polys.get(w.id)!;
     for (const o of wires) {
       if (o.id === w.id) continue;
@@ -55,8 +56,8 @@ function findOverlap(doc: CircuitDoc, changed: Set<string>): Overlap | null {
       for (let i = 0; i < pw.length - 1; i++) {
         for (let j = 0; j < po.length - 1; j++) {
           const hit = segOverlap(pw[i], pw[i + 1], po[j], po[j + 1]);
-          // when both changed, the later one gives way
-          if (hit) return changed.has(o.id) && o.id > w.id ? { wire: o.id, seg: j, ...orient(po[j], po[j + 1], hit), other: w.id } : { wire: w.id, seg: i, p: hit[0], q: hit[1], other: o.id };
+          // when both changed, the later one gives way (unless it is locked, which is never cut)
+          if (hit) return changed.has(o.id) && o.id > w.id && !o.locked ? { wire: o.id, seg: j, ...orient(po[j], po[j + 1], hit), other: w.id } : { wire: w.id, seg: i, p: hit[0], q: hit[1], other: o.id };
         }
       }
     }
@@ -84,11 +85,15 @@ function connectionAt(doc: CircuitDoc, pt: Point, onto: string[], prefer: Endpoi
       if (!eq(end === 'a' ? full[0] : full[full.length - 1], pt)) continue;
       const ep = w[end];
       if (ep.kind !== 'free') return ep;
+      // a locked wire keeps its ends: no reusing them here, no junction on them
+      if (w.locked) continue;
       if (prefer && prefer.kind !== 'free') return (w[end] = prefer);
       const jid = uid('j');
       doc.items[jid] = { id: jid, type: 'junction', x: pt.x, y: pt.y, group: w.group };
       return (w[end] = { kind: 'junction', id: jid });
     }
+    // a locked wire is never split to make a connection point
+    if (w.locked) continue;
     for (let i = 0; i < full.length - 1; i++) {
       if (!onSegment(pt, full[i], full[i + 1])) continue;
       const jid = prefer?.kind === 'junction' ? prefer.id : uid('j');
