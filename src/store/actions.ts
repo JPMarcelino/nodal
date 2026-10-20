@@ -25,6 +25,7 @@ import {
   type StackMove,
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
+import { incrementLabels } from '../model/increment';
 import { deletePolyCorner } from '../model/polygon';
 import { canConvertToPath, convertToPath, hasHeads, pathNodes, setNodeKind, setPathNodes } from '../model/path';
 import { resolveConnector } from '../model/connectors';
@@ -324,6 +325,24 @@ export function duplicateSelection() {
   )
     return;
   set({ selection: ids });
+}
+
+/** Duplicates the selection one row down, bumping trailing numbers (D0 → D1); one undo step. */
+export function duplicateIncrementSelection() {
+  if (!S().selection.length) return;
+  const frag = extractFragment(vdoc(), sel());
+  const g = vdoc().settings.grid * 2;
+  let ids: string[] = [];
+  let bumped = false;
+  if (
+    !mutate((d) => {
+      ids = insertFragment(d as CircuitDoc, frag, 0, g, S().scope);
+      bumped = incrementLabels(d, ids);
+    })
+  )
+    return;
+  set({ selection: ids });
+  if (!bumped) toast('No numbered labels to increment — duplicated as is');
 }
 
 /** Stages an exact copy of the selection on top of the original (no undo step) and selects it; for placing with the pointer. */
