@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arcToCubics, parsePathData } from '../io/svgImport';
+import { arcToCubics, blockedSvgTag, cleanSvgAttr, parsePathData, sanitizeSvg } from '../io/svgImport';
 import { parseDraw, primsToDsl } from '../model/symbols/dsl';
 
 describe('parsePathData', () => {
@@ -54,6 +54,122 @@ describe('imported drawings survive the symbol DSL', () => {
     const back = parseDraw(src);
     expect(back.map((p) => p.t)).toEqual(['poly', 'path', 'line']);
     expect(back.map((p) => ('w' in p ? p.w : undefined))).toEqual([0, 0.5, 1.25]);
+  });
+});
+
+describe('SVG sanitising', () => {
+  it('blocks executable and fetching tags, keeps drawable ones', () => {
+    for (const t of ['script', 'foreignObject', 'FOREIGNOBJECT', 'iframe', 'embed', 'object', 'image', 'video', 'audio', 'link', 'animate', 'animateTransform', 'set', 'feImage', 'cursor', 'handler']) {
+      expect(blockedSvgTag(t)).toBe(true);
+    }
+    for (const t of ['svg', 'g', 'path', 'rect', 'circle', 'text', 'use', 'a', 'style', 'defs', 'linearGradient', 'symbol']) {
+      expect(blockedSvgTag(t)).toBe(false);
+    }
+  });
+
+  it('strips handlers and dangerous refs but keeps fragments and paint', () => {
+    expect(cleanSvgAttr('onload', 'evil()')).toBeNull();
+    expect(cleanSvgAttr('ONERROR', 'evil()')).toBeNull();
+    expect(cleanSvgAttr('onbegin', 'evil()')).toBeNull();
+    expect(cleanSvgAttr('href', '#sym')).toBe('#sym');
+    expect(cleanSvgAttr('href', 'javascript:alert(1)')).toBeNull();
+    expect(cleanSvgAttr('href', 'data:image/svg+xml,<svg/>')).toBeNull();
+    expect(cleanSvgAttr('href', 'https://evil/x.svg')).toBeNull();
+    expect(cleanSvgAttr('src', 'x')).toBeNull();
+    expect(cleanSvgAttr('fill', '#ff0000')).toBe('#ff0000');
+    expect(cleanSvgAttr('data-x', '1')).toBe('1');
+    // external paint servers are dropped, internal ones survive
+    expect(cleanSvgAttr('style', 'fill:url(https://evil/x);stroke:#000')).toBe('fill:none;stroke:#000');
+    expect(cleanSvgAttr('style', 'fill:url(#grad)')).toBe('fill:url(#grad)');
+    expect(cleanSvgAttr('style', 'fill:url("#grad")')).toBe('fill:url("#grad")');
+  });
+
+  it('sanitizeSvg cleans a hostile tree while keeping drawable shapes', () => {
+    const SVG = 'http://www.w3.org/2000/svg';
+    const HTML = 'http://www.w3.org/1999/xhtml';
+    interface Attr { name: string; localName: string; value: string }
+    class El {
+      children: El[] = [];
+      attrs: Attr[] = [];
+      parent: El | null = null;
+      removed = false;
+      textContent: string | null = null;
+      constructor(public tagName: string, public localName: string, public namespaceURI: string) {}
+      get attributes() {
+        return this.attrs;
+      }
+      appendChild(c: El) {
+        c.parent = this;
+        this.children.push(c);
+        return c;
+      }
+      querySelectorAll(_sel: string): El[] {
+        const out: El[] = [];
+        const walk = (e: El) => {
+          for (const c of e.children) {
+            out.push(c);
+            walk(c);
+          }
+        };
+        walk(this);
+        return out;
+      }
+      remove() {
+        this.removed = true;
+        if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this);
+      }
+      removeAttribute(name: string) {
+        this.attrs = this.attrs.filter((a) => a.name !== name);
+      }
+      setAttribute(name: string, v: string) {
+        const f = this.attrs.find((a) => a.name === name);
+        if (f) f.value = v;
+        else this.attrs.push({ name, localName: name, value: v });
+      }
+      attr(name: string) {
+        return this.attrs.find((a) => a.name === name)?.value ?? null;
+      }
+    }
+    const el = (tag: string, ns = SVG, attrs: [string, string, string][] = []) => {
+      const e = new El(tag, tag.toLowerCase(), ns);
+      for (const [name, local, value] of attrs) e.attrs.push({ name, localName: local, value });
+      return e;
+    };
+    const root = el('svg', SVG, [['onload', 'onload', 'evil()'], ['width', 'width', '100']]);
+    const script = el('script');
+    script.textContent = 'evil()';
+    const g = el('g', SVG, [['onclick', 'onclick', 'evil()'], ['style', 'style', 'fill:url(https://evil/x)']]);
+    const path = el('path', SVG, [['d', 'd', 'M0 0L10 10']]);
+    g.appendChild(path);
+    const fo = el('foreignObject');
+    fo.appendChild(el('img', HTML, [['onerror', 'onerror', 'evil()']]));
+    const image = el('image', SVG, [['href', 'href', 'https://evil/x.png']]);
+    const useOk = el('use', SVG, [['href', 'href', '#sym']]);
+    const useEvil = el('use', SVG, [['xlink:href', 'href', 'https://evil/x.svg#y']]);
+    const style = el('style');
+    style.textContent = '@import url(https://evil/css); .a{fill:url(#grad)}';
+    const link = el('a', SVG, [['href', 'href', 'javascript:evil()']]);
+    const rect = el('rect', SVG, [['width', 'width', '10']]);
+    link.appendChild(rect);
+    for (const c of [script, g, fo, image, useOk, useEvil, style, link]) root.appendChild(c);
+
+    sanitizeSvg(root as unknown as Element);
+
+    expect(script.removed).toBe(true);
+    expect(fo.removed).toBe(true);
+    expect(image.removed).toBe(true);
+    expect(root.attr('onload')).toBeNull();
+    expect(root.attr('width')).toBe('100');
+    expect(g.removed).toBe(false);
+    expect(g.attr('onclick')).toBeNull();
+    expect(g.attr('style')).toBe('fill:none');
+    expect(path.removed).toBe(false);
+    expect(useOk.attr('href')).toBe('#sym');
+    expect(useEvil.attr('xlink:href')).toBeNull();
+    expect(style.textContent).toBe(' .a{fill:url(#grad)}');
+    // the link is defused but the shape inside still imports
+    expect(link.attr('href')).toBeNull();
+    expect(rect.removed).toBe(false);
   });
 });
 

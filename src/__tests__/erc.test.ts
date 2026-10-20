@@ -2,7 +2,7 @@ import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, normalizeDoc, uid } from '../model/doc';
 import { runErc, splitIgnored, type ErcIssue } from '../model/erc';
-import { hasMath, loadMath, mathLines, splitMath, stripMath, texToSvg } from '../model/latex';
+import { hasMath, loadMath, mathLines, scrubMathSvg, splitMath, stripMath, texToSvg } from '../model/latex';
 import { computeNets } from '../model/netlist';
 import { measureRich } from '../model/richText';
 import type { CircuitDoc, ComponentItem, WireItem } from '../model/types';
@@ -163,5 +163,15 @@ describe('latex', () => {
     expect(svg.body).toContain('<path');
     expect(svg.wEx).toBeGreaterThan(5);
     expect(measureRich('$\\frac{1}{2}$', 16).h).toBeGreaterThan(16);
+  });
+
+  it('scrubs handlers and dangerous links from math SVG (injected as HTML)', () => {
+    expect(scrubMathSvg('<a href="javascript:alert(1)"><path d="M0 0"/></a>')).toBe('<a><path d="M0 0"/></a>');
+    expect(scrubMathSvg("<a xlink:href='data:text/html,evil'>x</a>")).toBe('<a>x</a>');
+    expect(scrubMathSvg('<g onload="evil()">x</g>')).toBe('<g>x</g>');
+    // ordinary output and safe links pass through untouched
+    expect(scrubMathSvg('<path d="M0 0L10 10" fill="currentColor"/>')).toBe('<path d="M0 0L10 10" fill="currentColor"/>');
+    expect(scrubMathSvg('<a href="https://example.com">x</a>')).toContain('https://example.com');
+    expect(scrubMathSvg('<a href="#x">x</a>')).toContain('#x');
   });
 });

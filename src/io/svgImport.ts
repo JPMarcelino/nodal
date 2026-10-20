@@ -182,6 +182,88 @@ const SHAPES = 'path,line,polyline,polygon,rect,circle,ellipse,text';
 const HIDDEN_CONTAINERS = 'defs,clipPath,mask,symbol,marker,pattern,title,desc,metadata';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
+const HTML_NS = 'http://www.w3.org/1999/xhtml';
+
+/* ------------------------------------------------------------------ */
+/* Sanitising untrusted SVG before it touches the live document        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Elements that can never contribute drawable geometry (only SHAPES are
+ * collected) but can run code or fetch remote resources once attached to
+ * the app document. Removed with their whole subtree while still inert.
+ *
+ * `use` is deliberately kept: expandUses() only follows `#fragment` refs
+ * and external refs are stripped below, so it cannot fetch either. `a`
+ * is kept for the same reason (shapes inside links still import); its
+ * href is stripped unless it is a fragment.
+ */
+const BLOCKED_SVG_TAGS = new Set([
+  'script', 'foreignobject',
+  'iframe', 'embed', 'object', 'frame', 'frameset',
+  'image', 'video', 'audio', 'source', 'track', 'canvas',
+  'link', 'meta', 'base',
+  'form', 'input', 'button', 'select', 'textarea',
+  'animate', 'animatemotion', 'animatetransform', 'set', 'mpath', 'discard',
+  'handler', 'listener',
+  'feimage', 'cursor',
+]);
+
+/** Internal `#fragment` refs (paint servers, use targets) are safe; anything else can load code or phone home. */
+const safeSvgRef = (value: string) => value.trimStart().startsWith('#');
+
+/** CSS with @import rules and external url() targets removed; internal url(#…) paint servers are kept. */
+function scrubSvgCss(css: string): string {
+  return css
+    .replace(/@import[^;]*;?/gi, '')
+    .replace(/url\(\s*(?!(["']?)\s*#)[^)]*\)/gi, 'none');
+}
+
+/**
+ * What to do with one attribute on an untrusted SVG element: null removes
+ * it, a string replaces its value. Pure (no DOM) so it can be unit-tested.
+ */
+export function cleanSvgAttr(local: string, value: string): string | null {
+  const name = local.toLowerCase();
+  if (name.startsWith('on')) return null; // event handlers (onload, onerror, onbegin, …)
+  if (name === 'href') return safeSvgRef(value) ? value : null; // javascript:/data:/remote refs
+  if (name === 'src' || name === 'srcdoc') return null;
+  if (name === 'style') return scrubSvgCss(value);
+  if (name === 'formaction' || name === 'action' || name === 'poster' || name === 'background' || name === 'cite' || name === 'data' || name === 'codebase' || name === 'classid' || name === 'usemap') return null;
+  return value;
+}
+
+/** True for element tags dropped with their whole subtree (case-insensitive). */
+export function blockedSvgTag(tag: string): boolean {
+  return BLOCKED_SVG_TAGS.has(tag.toLowerCase());
+}
+
+/**
+ * Strips everything that could run or fetch once attached to the app
+ * document: blocked elements (script, foreignObject, image, …),
+ * non-SVG-namespaced elements, event-handler attributes, external
+ * references and embedded stylesheets' imports. Runs on the inert parsed
+ * document, before importNode into the live DOM.
+ */
+export function sanitizeSvg(svg: Element): void {
+  const els = [svg, ...Array.from(svg.querySelectorAll('*'))];
+  for (const el of els) {
+    const tag = (el.localName ?? el.tagName).toLowerCase();
+    if (el !== svg && (blockedSvgTag(tag) || el.namespaceURI === HTML_NS)) {
+      el.remove();
+      continue;
+    }
+    for (const a of Array.from(el.attributes)) {
+      const v = cleanSvgAttr(a.localName ?? a.name, a.value);
+      if (v === null) el.removeAttribute(a.name);
+      else if (v !== a.value) el.setAttribute(a.name, v);
+    }
+    if (tag === 'style' && el.textContent) {
+      const clean = scrubSvgCss(el.textContent);
+      if (clean !== el.textContent) el.textContent = clean;
+    }
+  }
+}
 
 const len = (v: SVGAnimatedLength) => v.baseVal.value;
 
@@ -449,6 +531,9 @@ function readSvg(text: string): { shapes: RawShape[]; texts: RawText[]; b: { min
   if (parsed.querySelector('parsererror')) throw new Error('The SVG could not be parsed');
   const svg = parsed.querySelector('svg');
   if (!svg) throw new Error('No <svg> element found');
+  // untrusted markup: strip scripts, foreign content, handlers and remote
+  // refs while still inert, before it is attached to the app document
+  sanitizeSvg(svg);
   const host = document.createElement('div');
   // off-screen but not visibility:hidden, which every shape would inherit (and be skipped)
   host.style.cssText = 'position:absolute;left:-99999px;top:0;opacity:0;pointer-events:none';
