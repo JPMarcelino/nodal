@@ -213,8 +213,9 @@ const BLOCKED_SVG_TAGS = new Set([
 const safeSvgRef = (value: string) => value.trimStart().startsWith('#');
 
 /**
- * CSS `\69` escapes decoded, so `@\69 mport` or `u\52 l(` can't smuggle
- * tokens past the scrub below.
+ * CSS `\69` escapes decoded repeatedly, so `@\69 mport`, `@\5c 69mport`
+ * (double-escaped) or `u\52 l(` can't smuggle tokens past the scrub below.
+ * Bounded so a pathological run of backslashes can't hang the import.
  */
 function decodeCssEscapes(css: string): string {
   return css.replace(/\\([0-9a-fA-F]{1,6}\s?|[\s\S])/g, (_m, esc: string) => {
@@ -229,15 +230,33 @@ function decodeCssEscapes(css: string): string {
 }
 
 /**
+ * Decode until no escapes remain (the browser decodes again at
+ * tokenisation, so a single pass leaves `@\\69 mport` → `@\69 mport`
+ * looking innocent). The trailing backslash strip neutralises any
+ * nesting deeper than the bound: without a `\` the browser cannot
+ * re-form `@import` or `url(`.
+ */
+function decodeCssEscapesFully(css: string): string {
+  let out = css;
+  for (let i = 0; i < 10; i++) {
+    const next = decodeCssEscapes(out);
+    if (next === out) return out;
+    out = next;
+  }
+  return out;
+}
+
+/**
  * CSS with comments, @import rules and external url() targets removed;
  * internal url(#…) paint servers are kept. The url() pattern is
  * quote-aware so a ')' inside a quoted URL can't leave garbage behind.
  */
 function scrubSvgCss(css: string): string {
-  return decodeCssEscapes(css)
+  return decodeCssEscapesFully(css)
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/@import[^;]*;?/gi, '')
-    .replace(/url\(\s*(?!(["']?)\s*#)("([^"]*)"|'([^']*)'|[^)]*)\)/gi, 'none');
+    .replace(/url\(\s*(?!(["']?)\s*#)("([^"]*)"|'([^']*)'|[^)]*)\)/gi, 'none')
+    .replace(/\\/g, '');
 }
 
 /**
@@ -252,7 +271,7 @@ export function cleanSvgAttr(local: string, value: string): string | null {
   if (name === 'style') return scrubSvgCss(value);
   // presentation attributes (fill, stroke, filter, clip-path, mask,
   // marker-*, cursor, …) can all carry url(https://…) payloads, escapes included
-  if (/url\(/i.test(decodeCssEscapes(value))) return scrubSvgCss(value);
+  if (/url\(/i.test(decodeCssEscapesFully(value))) return scrubSvgCss(value);
   if (name === 'formaction' || name === 'action' || name === 'poster' || name === 'background' || name === 'cite' || name === 'data' || name === 'codebase' || name === 'classid' || name === 'usemap') return null;
   return value;
 }
