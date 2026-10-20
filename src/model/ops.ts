@@ -794,7 +794,14 @@ export function extractFragment(doc: CircuitDoc, ids: Set<string>): Fragment {
   const groupIds = new Set<string>();
   for (const it of items) for (const g of groupChain(doc, it.group)) groupIds.add(g);
   const symbols: CircuitDoc['symbols'] = {};
-  for (const it of items) if (it.type === 'component' && doc.symbols[it.symbol]) symbols[it.symbol] = doc.symbols[it.symbol];
+  for (const it of items) {
+    if (it.type !== 'component') continue;
+    const def = doc.symbols[it.symbol];
+    if (!def) continue;
+    symbols[it.symbol] = def;
+    // a user-defined "type" brings its base along, so its type picker works where the fragment lands
+    if (def.variantOf && doc.symbols[def.variantOf]) symbols[def.variantOf] = doc.symbols[def.variantOf];
+  }
   return { format: 'nodal-fragment', items, groups: [...groupIds].map((g) => clone(doc.groups[g])), symbols };
 }
 
