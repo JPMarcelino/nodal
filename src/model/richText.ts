@@ -2,6 +2,9 @@ import type { FontName } from './fonts';
 import { measureText } from './geometry';
 import { exPx, hasMath, mathLines, splitMath, texToSvg, unescapeDollars, type MathSvg } from './latex';
 
+/** Upper-cases plain text but leaves `$…$` maths alone. */
+export const upperText = (t: string) => t.split(/(\$[^$]*\$)/).map((s, i) => (i % 2 ? s : s.toUpperCase())).join('');
+
 export type LaidRun =
   | { math: false; text: string; x: number; w: number }
   | { math: true; svg: MathSvg | null; tex: string; x: number; w: number; h: number; depth: number; error?: string };

@@ -49,7 +49,8 @@ import * as A from '../store/actions';
 import { S, goToItems, mutate, select, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
 import { ExplainShapePanel, FramePanel } from './ExplainInspector';
-import { DashSelect, Row, StyleSection } from './StyleSection';
+import { DashSelect, Row, StyleSection, TextFormatRows, restyle, type TextFormat } from './StyleSection';
+import { TEXT_KEYS, commonLook, mergeLabelStyle } from '../model/style';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
 
 const HEAD_TITLES: Record<HeadKind, string> = {
@@ -473,6 +474,20 @@ const SPOTS: { value: LabelSpotName | ''; label: string }[] = [
   { value: 'bottomLeft', label: 'Bottom left corner' },
 ];
 
+/** Text formatting from the shared rows as label style changes ('' and false clear a key). */
+function labelStylePatch(p: Partial<TextFormat>): Partial<LabelStyle> {
+  const out: Partial<LabelStyle> = {};
+  if ('font' in p) out.font = p.font || undefined;
+  if ('size' in p) out.size = p.size;
+  if ('bold' in p) out.bold = p.bold;
+  if ('italic' in p) out.italic = p.italic || undefined;
+  if ('underline' in p) out.underline = p.underline || undefined;
+  if ('allCaps' in p) out.allCaps = p.allCaps || undefined;
+  if ('text' in p) out.color = p.text || undefined;
+  if ('align' in p) out.align = p.align || undefined;
+  return out;
+}
+
 const HIDDEN_HINT = 'Hidden for the whole drawing — turn on in View';
 
 /** Placement and per-label text styling of a part's reference and value. */
@@ -488,9 +503,8 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
   const valueOff = !!docSettings.hideValues && !def.valueIsLabel;
   const setStyle = (patch: Partial<LabelStyle>) =>
     upd((x) => {
-      const next: LabelStyle = { ...x[key], ...patch };
-      for (const k of Object.keys(next) as (keyof LabelStyle)[]) if (next[k] === undefined || next[k] === '') delete next[k];
-      if (Object.keys(next).length) x[key] = next;
+      const next = mergeLabelStyle(x[key], patch);
+      if (next) x[key] = next;
       else delete x[key];
     });
   const moved = c.labelDx != null || c.labelDy != null || c.valueDx != null || c.valueDy != null;
@@ -503,7 +517,7 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
       else x[axis === 'x' ? 'valueDx' : 'valueDy'] = v;
     });
   const rot = st.rotate ?? 0;
-  const advanced = [st.font, st.opacity, st.align, st.rotate, st.backdrop, st.prefix, st.suffix, off.x || undefined, off.y || undefined].filter((v) => v !== undefined).length;
+  const advanced = [st.opacity, st.rotate, st.backdrop, st.prefix, st.suffix, off.x || undefined, off.y || undefined].filter((v) => v !== undefined).length;
   const spotName = SPOTS.find((o) => o.value === (c.labelSpot ?? ''))!.label;
   const shownNames = def.valueIsLabel ? (c.showValue ? 'shown' : 'hidden') : [c.showRef && 'name', c.showValue && 'value'].filter(Boolean).join(' + ') || 'hidden';
   return (
@@ -572,59 +586,11 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
           </div>
         </>
       )}
-      <Field label="Size, colour">
-        <span className="row-gap">
-          <NumberInput value={look.size} min={4} max={96} step={0.5} suffix="pt" onChange={(size) => setStyle({ size })} />
-          <ColorInput value={st.color ?? ''} allowNone onChange={(color) => setStyle({ color: color || undefined })} />
-        </span>
-      </Field>
-      <Field label="Emphasis">
-        <span className="type-buttons">
-          {(
-            [
-              ['bold', 'B', 'Bold', look.weight >= 600],
-              ['italic', 'I', 'Italic', !!st.italic],
-              ['underline', 'U', 'Underline', !!st.underline],
-              ['allCaps', 'AA', 'All caps', !!st.allCaps],
-            ] as const
-          ).map(([k, glyph, name, on]) => (
-            <button
-              key={k}
-              type="button"
-              className={`type-btn ${k}${on ? ' active' : ''}`}
-              title={name}
-              aria-pressed={on}
-              onClick={() => setStyle({ [k]: k === 'bold' ? !on : !on || undefined })}
-            >
-              {glyph}
-            </button>
-          ))}
-        </span>
-      </Field>
+      <TextFormatRows
+        value={{ font: st.font ?? '', size: look.size, bold: look.weight >= 600, italic: !!st.italic, underline: !!st.underline, allCaps: !!st.allCaps, text: st.color ?? '', align: st.align ?? '' }}
+        onChange={(p) => setStyle(labelStylePatch(p))}
+      />
       <More id="labels" count={advanced}>
-        <Field label="Font">
-          <Segmented
-            value={st.font ?? ''}
-            options={[
-              { value: '', label: 'Sans' },
-              { value: 'serif', label: 'Serif' },
-              { value: 'mono', label: 'Mono' },
-            ]}
-            onChange={(v) => setStyle({ font: v || undefined })}
-          />
-        </Field>
-        <Field label="Align">
-          <Segmented
-            value={st.align ?? ''}
-            options={[
-              { value: '', label: 'Auto' },
-              { value: 'start', label: 'Left' },
-              { value: 'middle', label: 'Centre' },
-              { value: 'end', label: 'Right' },
-            ]}
-            onChange={(v) => setStyle({ align: v || undefined })}
-          />
-        </Field>
         <Field label="Rotation">
           <span className="stack">
             <Segmented value={rot} options={[0, 90, -90].map((r) => ({ value: r, label: `${r}°` }))} onChange={(r) => setStyle({ rotate: r || undefined })} />
@@ -718,7 +684,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
           </span>
         </Field>
       </Section>
-      <StyleSection ids={[c.id]} />
+      <StyleSection ids={[c.id]} noText />
       {hasPartFields(def) && <PartDetails c={c} />}
       {def.ports.length > 0 && (
         <Section
@@ -840,6 +806,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
               </Field>
               {!first.labelHidden && (
                 <>
+                  <LabelTextRows ids={[first.id]} />
                   <Field label="Side">
                     <Segmented
                       value={first.labelSide ?? 'auto'}
@@ -867,6 +834,11 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
               )}
             </>
           )}
+        </Section>
+      )}
+      {wires.length > 1 && wires.some((w) => w.label) && (
+        <Section title="Labels">
+          <LabelTextRows ids={wires.filter((w) => w.label).map((w) => w.id)} />
         </Section>
       )}
       {net && (
@@ -927,7 +899,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
       <StyleSection
         ids={ids}
         extras={{
-          textTop: (
+          textTop: shapes.some((s) => (s.text ?? '') !== (first.text ?? '')) ? undefined : (
             <Field label={isText ? 'Content' : 'Title'} wide hint="Supports maths: $…$ inline, $$…$$ display, \$ for a dollar sign">
               <TextInput value={first.text ?? ''} multiline={isText} focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder={isText ? '' : 'Optional title'} />
             </Field>
@@ -1152,6 +1124,81 @@ function SizeField({ ids }: { ids: string[] }) {
   );
 }
 
+/** Text formatting of the labels of the given parts and wires, all at once. */
+function LabelTextRows({ ids }: { ids: string[] }) {
+  const doc = useStore((s) => s.doc);
+  const { value, keys, mixed } = commonLook(doc, ids.map((id) => doc.items[id]).filter(Boolean));
+  for (const k of [...keys]) if (!TEXT_KEYS.includes(k)) keys.delete(k);
+  if (!keys.size) return null;
+  return <TextFormatRows value={value} mixed={mixed} keys={keys} onChange={(p) => restyle(ids, p)} />;
+}
+
+/** Which labels several parts show, and where, set for all of them at once. */
+function PartLabelsFields({ comps }: { comps: ComponentItem[] }) {
+  const doc = useStore((s) => s.doc);
+  const ids = comps.map((c) => c.id);
+  const defs = comps.map((c) => getSymbol(doc, c.symbol));
+  // net labels show their net name only (their value); other parts a name and a value
+  const named = comps.filter((_, i) => !defs[i].valueIsLabel);
+  const upd = (fn: (c: ComponentItem) => void) =>
+    mutate((d) =>
+      ids.forEach((id) => {
+        const c = d.items[id] as ComponentItem | undefined;
+        if (c?.type === 'component' && !c.locked) fn(c);
+      }),
+    );
+  const all = (list: ComponentItem[], k: 'showRef' | 'showValue') => list.length > 0 && list.every((c) => c[k]);
+  const some = (list: ComponentItem[], k: 'showRef' | 'showValue') => list.some((c) => c[k]) && !all(list, k);
+  const spot = comps.every((c) => (c.labelSpot ?? '') === (comps[0].labelSpot ?? '')) ? (comps[0].labelSpot ?? '') : null;
+  return (
+    <>
+      <Field label="Show" hint="Turns the labels of every selected part on or off">
+        <span className="row-gap wrap">
+          {named.length > 0 && (
+            <Toggle checked={all(named, 'showRef')} onChange={(v) => upd((c) => !getSymbol(doc, c.symbol).valueIsLabel && (c.showRef = v))} label={some(named, 'showRef') ? 'Name (mixed)' : 'Name'} />
+          )}
+          <Toggle
+            checked={all(comps, 'showValue')}
+            onChange={(v) => upd((c) => (c.showValue = v))}
+            label={`${named.length === comps.length ? 'Value' : named.length ? 'Value / net name' : 'Net name'}${some(comps, 'showValue') ? ' (mixed)' : ''}`}
+          />
+        </span>
+      </Field>
+      {named.length > 0 && (
+        <Field label="Placement" hint="Where the name and value sit around each part">
+          <select
+            className="input"
+            value={spot ?? '*'}
+            onChange={(e) =>
+              upd((x) => {
+                if (getSymbol(doc, x.symbol).valueIsLabel) return;
+                const v = e.target.value as LabelSpotName | '';
+                if (v) x.labelSpot = v;
+                else delete x.labelSpot;
+                delete x.labelDx;
+                delete x.labelDy;
+                delete x.valueDx;
+                delete x.valueDy;
+              })
+            }
+          >
+            {spot === null && (
+              <option value="*" disabled>
+                Mixed
+              </option>
+            )}
+            {SPOTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+    </>
+  );
+}
+
 function MultiPanel({ ids }: { ids: string[] }) {
   const doc = useStore((s) => s.doc);
   const scope = useStore((s) => s.scope);
@@ -1209,6 +1256,7 @@ function MultiPanel({ ids }: { ids: string[] }) {
       {comps.length > 0 && (
         <Section title="Parts">
           <SizeField ids={ids} />
+          <PartLabelsFields comps={comps} />
         </Section>
       )}
       {wires.length > 0 && (

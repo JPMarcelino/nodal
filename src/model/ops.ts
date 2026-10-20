@@ -269,7 +269,7 @@ function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: strin
   w1.a = a1;
   w1.b = b2;
   // the joined wire keeps a name either half had
-  if (!w1.label && w2.label) for (const k of ['label', 'labelAt', 'labelSide', 'labelHidden'] as const) (w1 as unknown as Record<string, unknown>)[k] = w2[k];
+  if (!w1.label && w2.label) for (const k of ['label', 'labelAt', 'labelSide', 'labelHidden', 'labelStyle'] as const) (w1 as unknown as Record<string, unknown>)[k] = w2[k];
   setFullPolyline(w1, [...p1, ...p2.slice(1)]);
   // the polylines are already as drawn: joining a 45° / free wire must not square off its diagonals
   if (w1.routing === 'straight' || w2.routing === 'straight') w1.routing = 'straight';

@@ -38,7 +38,7 @@ import { WireAngleButton } from './WireAngleButton';
 const MENUS: { label: string; items: (string | '-')[] }[] = [
   {
     label: 'File',
-    items: ['file.new', 'file.open', 'file.import', '-', 'file.save', 'file.saveAs', '-', 'file.export', 'file.exportSvg', 'file.exportPng', 'file.exportDxf', 'file.exportSpice', 'file.exportKicad', 'file.exportBom', 'file.copySvg', 'file.copyPng', 'present.video', '-', 'file.print', '-', 'collab.share', 'collab.exportLib', 'collab.importLib', 'collab.exportTemplate', 'collab.importTemplate'],
+    items: ['file.new', 'file.open', 'file.import', '-', 'file.save', 'file.saveAs', '-', 'file.export', 'file.copySvg', 'file.copyPng', 'present.video', '-', 'file.print', '-', 'collab.share', 'collab.exportLib', 'collab.importLib', 'collab.exportTemplate', 'collab.importTemplate'],
   },
   {
     label: 'Edit',

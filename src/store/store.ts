@@ -70,6 +70,9 @@ export interface Prefs {
   rightWidth: number;
   /** Angles new wires are drawn at. */
   wireAngle: WireAngle;
+  /** Image exports: paint the canvas colour behind the drawing (unset = yes), and the PNG resolution (unset = 3×). */
+  exportBackground?: boolean;
+  exportScale?: number;
 }
 
 

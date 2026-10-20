@@ -205,6 +205,8 @@ export interface WireItem extends ItemBase {
   labelSide?: LabelSide;
   /** Keep the label (it still names the net in lists and search) but don't draw it. */
   labelHidden?: boolean;
+  /** Text look of the label (size, emphasis, font, colour); missing keys use the defaults. */
+  labelStyle?: LabelStyle;
 }
 
 export type LabelSide = 'above' | 'below' | 'left' | 'right';
@@ -281,6 +283,7 @@ export interface ShapeItem extends ItemBase {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  allCaps?: boolean;
   /** Font family; unset = sans. */
   font?: 'serif' | 'mono';
   /** Horizontal text alignment; unset = left for rectangles and zones, centred for ellipses and polygons. */

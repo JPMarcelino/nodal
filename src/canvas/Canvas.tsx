@@ -11,7 +11,7 @@ import { dragRotation, fromShapeFrame, HANDLE_ROT_KINDS, rectCentre, resizeInFra
 import { getSymbol, instanceSymbol } from '../model/registry';
 import { gridScale, scaleStep } from '../model/symbols/scale';
 import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
-import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireLabelSpot, wireStyle, wireStyleFor } from '../model/wires';
+import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireStyle, wireStyleFor } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
 import { buildAngledPreview, buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd, wireRouter } from '../model/wireCommit';
 import { routeObstacles } from '../model/route';
@@ -23,7 +23,7 @@ import { viewDoc } from '../model/pages';
 import { pageCrossRefs } from '../model/pageRefs';
 import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, shapeTitle, useSceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, shapeTitle, useSceneData, wireLabelAt, wireLabelLook } from './Scene';
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
@@ -510,11 +510,12 @@ export function Canvas() {
       const d = vdoc();
       for (const it of Object.values(d.items)) {
         if (it.type !== 'wire' || !it.label || it.labelHidden || it.hidden || it.locked || d.settings.hideWireLabels) continue;
-        const spot = wireLabelSpot(it, data.polys.get(it.id) ?? [], wireStyle(d, it).width);
+        const spot = wireLabelAt(it, data.polys.get(it.id) ?? [], wireStyle(d, it).width);
         if (!spot) continue;
-        const m = measureRich(it.label, 10, 600);
+        const look = wireLabelLook(it);
+        const m = measureRich(look.text, look.size, look.weight, look.st.font);
         const x = spot.anchor === 'start' ? spot.x : spot.anchor === 'middle' ? spot.x - m.w / 2 : spot.x - m.w;
-        if (pointInRect(p, { x, y: spot.y - 10, w: m.w, h: 13 }, 2)) return it.id;
+        if (pointInRect(p, { x, y: spot.y - look.size, w: m.w, h: look.size * 1.3 }, 2)) return it.id;
       }
       return null;
     },
@@ -1810,7 +1811,10 @@ export function Canvas() {
           const to = d.items[b.wire] as WireItem;
           if (to.id !== from.id) {
             to.label = from.label;
+            if (from.labelStyle) to.labelStyle = from.labelStyle;
+            else delete to.labelStyle;
             delete from.label;
+            delete from.labelStyle;
             delete from.labelAt;
             delete from.labelSide;
             delete from.labelHidden;

@@ -111,9 +111,20 @@ export async function fileSave(saveAs = false): Promise<boolean> {
   }
 }
 
+/**
+ * Theme, background and PNG resolution of every image export (dialog, menus,
+ * shortcuts, right-click, area, clipboard): the app's current theme, so the
+ * picture looks like the canvas, and the background / resolution last chosen
+ * in the Export dialog.
+ */
+export function imageExportOptions(): { theme: 'light' | 'dark'; background: boolean; scale: number } {
+  const p = S().prefs;
+  return { theme: p.theme, background: p.exportBackground ?? true, scale: p.exportScale ?? 3 };
+}
+
 export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'kicad' | 'bom' | 'json';
 
-/** Exports the circuit, or with `opts.ids` only those items (and the wires between them), in any format. Images are transparent unless asked otherwise. */
+/** Exports the circuit, or with `opts.ids` only those items (and the wires between them), in any format. Images use imageExportOptions unless told otherwise. */
 export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { scale?: number } = {}) {
   const full = S().doc;
   const part = !!opts.ids?.length;
@@ -123,7 +134,8 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
   // images crop to the ids themselves; data formats get the reduced circuit
   const doc = part && kind !== 'svg' && kind !== 'png' ? selectionDoc(src, opts.ids!) : src;
   const base = sanitizeName(full.name) + (part ? '-selection' : '');
-  const svgOpts: SvgOptions = { theme: 'light', background: false, padding: 20, ...opts };
+  const img = imageExportOptions();
+  const svgOpts: SvgOptions = { theme: img.theme, background: img.background, padding: 20, ...opts };
   try {
     await prepareMath(doc);
     let res: string | null | false = null;
@@ -132,7 +144,7 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
         res = await saveFile(exportSvg(doc, svgOpts).svg, `${base}.svg`, [{ name: 'SVG image', extensions: ['svg'] }]);
         break;
       case 'png':
-        res = await saveFile(await exportPng(doc, { ...svgOpts, scale: opts.scale ?? 3 }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
+        res = await saveFile(await exportPng(doc, { ...svgOpts, scale: opts.scale ?? img.scale }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
         break;
       case 'dxf':
         res = await saveFile(exportDxf(doc), `${base}.dxf`, [{ name: 'AutoCAD DXF', extensions: ['dxf'] }]);
@@ -164,14 +176,15 @@ export async function filePrint() {
 /** Exports an arbitrary world-space window; wires are cut at the boundary. */
 export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partial<SvgOptions> & { scale?: number }) {
   const base = `${sanitizeName(S().doc.name)}-area`;
-  const svgOpts: SvgOptions = { theme: 'light', background: false, padding: 8, ...opts, clip: rect };
+  const img = imageExportOptions();
+  const svgOpts: SvgOptions = { theme: img.theme, background: img.background, padding: 8, ...opts, clip: rect };
   const doc = vdoc();
   try {
     await prepareMath(doc);
     const res =
       kind === 'svg'
         ? await saveFile(exportSvg(doc, svgOpts).svg, `${base}.svg`, [{ name: 'SVG image', extensions: ['svg'] }])
-        : await saveFile(await exportPng(doc, { ...svgOpts, scale: opts.scale ?? 3 }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
+        : await saveFile(await exportPng(doc, { ...svgOpts, scale: opts.scale ?? img.scale }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
     if (res !== false) toast(`Exported ${kind.toUpperCase()} of selected area`, 'success');
   } catch (e) {
     toast(`Export failed: ${(e as Error).message}`, 'error');
@@ -180,13 +193,14 @@ export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partia
 
 /** Arms "export area" mode: the next rectangle drawn on the canvas is exported. */
 export function startAreaExport(kind: 'png' | 'svg', opts: Partial<SvgOptions> & { scale?: number } = {}) {
+  const img = imageExportOptions();
   set({
     dialog: null,
     exportArea: {
       kind,
-      theme: opts.theme ?? 'light',
-      background: opts.background ?? false,
-      scale: opts.scale ?? 3,
+      theme: opts.theme ?? img.theme,
+      background: opts.background ?? img.background,
+      scale: opts.scale ?? img.scale,
     },
   });
 }
@@ -210,7 +224,8 @@ export async function copyAsSvg() {
   const { selection } = S();
   const doc = vdoc();
   await prepareMath(doc).catch(() => undefined);
-  const { svg } = exportSvg(doc, { theme: 'light', background: false, padding: 10, ids: selection.length ? selection : undefined });
+  const { theme, background } = imageExportOptions();
+  const { svg } = exportSvg(doc, { theme, background, padding: 10, ids: selection.length ? selection : undefined });
   try {
     await navigator.clipboard.writeText(svg);
     toast('SVG copied to clipboard', 'success');
@@ -230,7 +245,8 @@ export async function copyAsPng() {
     // Pass the promise (not an awaited blob) so Safari keeps the user activation.
     const blobPromise = (async () => {
       await prepareMath(doc).catch(() => undefined);
-      return exportPng(doc, { theme: 'light', background: true, padding: 10, ids, scale: 2 });
+      // pasted images get the canvas behind them: most apps show transparency as white or black
+      return exportPng(doc, { theme: imageExportOptions().theme, background: true, padding: 10, ids, scale: 2 });
     })();
     const item = new Ctor({ 'image/png': blobPromise } as unknown as Record<string, Promise<Blob>>);
     await navigator.clipboard.write([item]);
