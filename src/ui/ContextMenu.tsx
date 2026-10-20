@@ -19,11 +19,6 @@ import {
   Crosshair,
   Download,
   Eye,
-  FileCode2,
-  FileImage,
-  FileJson,
-  FileSpreadsheet,
-  FileText,
   File as PageIcon,
   Files as PagesIcon,
   FlipHorizontal2,
@@ -32,7 +27,6 @@ import {
   Grid3x3,
   Group,
   Layers3,
-  LayoutTemplate,
   Lock,
   LogIn,
   Magnet,
@@ -42,7 +36,6 @@ import {
   Pentagon,
   PenTool,
   Plus,
-  Printer,
   Redo2,
   RotateCcw,
   RotateCw,
@@ -65,8 +58,7 @@ import {
   StretchVertical,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { copyAsPng, copyAsSvg, doExport, filePrint, openExport, startAreaExport, type ExportKind } from '../io/fileActions';
-import { exportTemplateFile } from '../io/sharing';
+import { openExport } from '../io/fileActions';
 import * as A from '../store/actions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { S, activePage, set, useStore, type ContextMenuState, useViewDoc } from '../store/store';
@@ -98,29 +90,6 @@ const rows = (...r: (Row | null | false | '' | undefined)[]): Row[] => {
   // no leading, trailing or doubled separators
   return out.filter((x, i) => x !== '-' || (i > 0 && i < out.length - 1 && out[i - 1] !== '-'));
 };
-
-/** Every export format, for the whole circuit or (with ids) just those items. */
-function exportRows(ids?: string[]): Row[] {
-  const x = (kind: ExportKind) => () => void doExport(kind, { ids });
-  return rows(
-    // images open the Export dialog, which previews them first
-    { label: 'PNG image…', icon: <FileImage size={I} />, run: () => openExport({ ids }) },
-    { label: 'SVG vector…', icon: <FileCode2 size={I} />, run: () => openExport({ ids }) },
-    { label: 'Copy as SVG', icon: <Copy size={I} />, run: () => void copyAsSvg(), key: keysFor('file.copySvg')[0] },
-    { label: 'Copy as image', icon: <Copy size={I} />, run: () => void copyAsPng(), key: keysFor('file.copyPng')[0] },
-    '-',
-    { label: 'DXF (CAD)', icon: <Layers3 size={I} />, run: x('dxf') },
-    { label: 'SPICE netlist', icon: <FileText size={I} />, run: x('spice') },
-    { label: 'KiCad netlist', icon: <FileText size={I} />, run: x('kicad') },
-    { label: 'Bill of materials (CSV)', icon: <FileSpreadsheet size={I} />, run: x('bom') },
-    { label: 'JSON data', icon: <FileJson size={I} />, run: x('json') },
-    ids ? { label: 'Nodal template', icon: <LayoutTemplate size={I} />, run: () => void exportTemplateFile(ids) } : null,
-    '-',
-    !ids && { label: 'Area…', icon: <Scan size={I} />, run: () => startAreaExport('png'), key: keysFor('file.exportArea')[0] },
-    !ids && { label: 'Print / PDF…', icon: <Printer size={I} />, run: () => void filePrint(), key: keysFor('file.print')[0] },
-    { label: 'More options…', icon: <Download size={I} />, run: () => openExport({ ids }), key: keysFor('file.export')[0] },
-  );
-}
 
 function canvasMenu(menu: ContextMenuState): { strip: Entry[]; list: Row[] } {
   return {
@@ -160,7 +129,8 @@ function canvasMenu(menu: ContextMenuState): { strip: Entry[]; list: Row[] } {
           cmd('view.minimap', 'Minimap', <Scan size={I} />),
         ),
       },
-      { label: 'Export', icon: <Download size={I} />, sub: exportRows() },
+      // the same Export dialog (with its preview) as the top-right button
+      { label: 'Export…', icon: <Download size={I} />, run: () => openExport(), key: keysFor('file.export')[0] },
       '-',
       cmd('help.palette', 'Command palette…', <Command size={I} />),
     ),
@@ -271,7 +241,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
       cmd('edit.hide', 'Hide', <Eye size={I} />),
       { label: 'Zoom to selection', icon: <Move3d size={I} />, run: () => A.fitView(selection), key: keysFor('view.fitSel')[0] },
       '-',
-      { label: multi ? `Export ${selection.length} items` : 'Export selection', icon: <Download size={I} />, sub: exportRows(selection) },
+      { label: multi ? `Export ${selection.length} items…` : 'Export selection…', icon: <Download size={I} />, run: () => openExport({ ids: selection }), key: keysFor('file.exportSelection')[0] },
     ),
   };
 }

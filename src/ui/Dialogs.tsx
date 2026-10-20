@@ -1,7 +1,8 @@
-import { ClipboardPaste, Copy, FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, FolderUp, Layers3, Printer, RotateCcw, Scan, Share2, Users, X } from 'lucide-react';
+import { ClipboardPaste, Copy, FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, Film, FolderUp, Layers3, LayoutTemplate, Printer, RotateCcw, Scan, Shapes, Share2, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
-import { doClipExport, doExport, filePrint, scopeSvgOptions, startAreaExport } from '../io/fileActions';
+import { importFile } from '../io/importFiles';
+import { copyScope, doClipExport, doExport, filePrint, scopeSvgOptions, startAreaExport } from '../io/fileActions';
 import { exportSvg } from '../io/export';
 import { prepareMath } from '../model/latex';
 import {
@@ -10,9 +11,7 @@ import {
   copyToClipboard,
   exportLibraryFile,
   exportTemplateFile,
-  importLibraryFile,
   importLibraryText,
-  importTemplateFile,
   importTemplateText,
   libraryToText,
   pasteLibraryFromClipboard,
@@ -108,7 +107,7 @@ export function CommandPalette() {
     const cmds = COMMANDS.filter((c) => !c.when || c.when());
     const match = (s: string) => query.split(/\s+/).every((w) => s.toLowerCase().includes(w));
     const out: PaletteEntry[] = [];
-    for (const c of cmds) if (!query || match(`${c.category} ${c.label}`)) out.push({ kind: 'cmd', cmd: c });
+    for (const c of cmds) if (!query || match(`${c.category} ${c.label} ${c.keywords ?? ''}`)) out.push({ kind: 'cmd', cmd: c });
     if (query) {
       for (const s of syms) {
         // one row per part; its types are offered by the picker, not as duplicate rows
@@ -571,21 +570,32 @@ export function ExportDialog() {
           Images follow the app's {appTheme} theme. Background and resolution set here also apply to copying and to exports from the menus, shortcuts and right-click.
         </p>
       </div>
+      <div className="export-group">Image</div>
       <div className="export-grid">
         <Card icon={<FileImage size={20} />} title="PNG image" desc="High-resolution bitmap for documents & chat" onClick={image('png')} />
         <Card icon={<FileCode2 size={20} />} title="SVG vector" desc="Crisp, editable in Inkscape / Illustrator / Figma" onClick={image('svg')} />
-        {!clip && (
-          <>
-            <Card icon={<Scan size={20} />} title="Area…" desc="Drag a rectangle on the canvas, then preview it here; wires crossing its edge are cut" onClick={() => startAreaExport('png')} />
-            <Card icon={<Printer size={20} />} title="Print / PDF" desc="Use “Save as PDF” in the print dialog (always light, for paper)" onClick={filePrint} />
+        <Card icon={<Copy size={20} />} title="Copy to clipboard" desc="The picture above, to paste into any app (or back into Nodal)" onClick={() => copyScope(scope, { theme, background: bg, scale })} />
+        {!clip && <Card icon={<Scan size={20} />} title="Area…" desc="Drag a rectangle on the canvas, then preview it here; wires crossing its edge are cut" onClick={() => startAreaExport('png')} />}
+        {!clip && !ids && <Card icon={<Printer size={20} />} title="Print / PDF" desc="Every page; use “Save as PDF” in the print dialog (always light, for paper)" onClick={filePrint} />}
+        {!clip && !ids && <Card icon={<Film size={20} />} title="Presentation video" desc="Your presentation frames as an MP4 / WebM" onClick={() => set({ dialog: 'video' })} />}
+      </div>
+      {!clip && (
+        <>
+          <div className="export-group">Data{ids ? ' · selected items only' : ''}</div>
+          <div className="export-grid">
             <Card icon={<Layers3 size={20} />} title="DXF (CAD)" desc="AutoCAD, LibreCAD, BricsCAD — layered" onClick={() => doExport('dxf', { ids })} />
             <Card icon={<FileText size={20} />} title="SPICE netlist" desc="Simulate in LTspice / ngspice" onClick={() => doExport('spice', { ids })} />
             <Card icon={<FileText size={20} />} title="KiCad netlist" desc="Parts, footprints and nets for PCB layout" onClick={() => doExport('kicad', { ids })} />
             <Card icon={<FileSpreadsheet size={20} />} title="Bill of materials" desc="CSV with footprints, part numbers and DNP" onClick={() => doExport('bom', { ids })} />
             <Card icon={<FileJson size={20} />} title="JSON" desc="Full circuit data for scripts & tools" onClick={() => doExport('json', { ids })} />
-          </>
-        )}
-      </div>
+          </div>
+          <div className="export-group">Share with other Nodal users</div>
+          <div className="export-grid">
+            {ids && <Card icon={<LayoutTemplate size={20} />} title="Template" desc="The selected items as a reusable block; Import inserts it" onClick={() => exportTemplateFile(ids)} />}
+            <Card icon={<Shapes size={20} />} title="Symbol library" desc="Your own symbols (My symbols); Import adds them to another library" onClick={exportLibraryFile} />
+          </div>
+        </>
+      )}
     </Modal>
   );
 }
@@ -630,14 +640,24 @@ export function ShareDialog() {
               <button className="secondary-btn" onClick={pasteLibraryFromClipboard}>
                 <ClipboardPaste size={14} /> Paste & import
               </button>
-              <button className="secondary-btn" onClick={importLibraryFile}>
+              <button className="secondary-btn" onClick={importFile}>
                 <FolderUp size={14} /> Import file
               </button>
             </div>
             <textarea className="input mono share-text" readOnly value={libText} onFocus={(e) => e.currentTarget.select()} />
           </>
         ) : (
-          <div className="empty-note">You haven't saved any symbols yet. Draw one with the symbol editor (Ctrl+Shift+N), then share it here.</div>
+          <>
+            <div className="empty-note">You haven't saved any symbols yet. Draw one with the symbol editor (Ctrl+Shift+N), then share it here — or bring in someone else's library.</div>
+            <div className="btn-row wrap">
+              <button className="secondary-btn" onClick={pasteLibraryFromClipboard}>
+                <ClipboardPaste size={14} /> Paste & import
+              </button>
+              <button className="secondary-btn" onClick={importFile}>
+                <FolderUp size={14} /> Import file
+              </button>
+            </div>
+          </>
         )
       ) : selection.length ? (
         <>
@@ -651,7 +671,7 @@ export function ShareDialog() {
             <button className="secondary-btn" onClick={pasteTemplateFromClipboard}>
               <ClipboardPaste size={14} /> Paste & insert
             </button>
-            <button className="secondary-btn" onClick={importTemplateFile}>
+            <button className="secondary-btn" onClick={importFile}>
               <FolderUp size={14} /> Import file
             </button>
           </div>
@@ -659,7 +679,17 @@ export function ShareDialog() {
           <p className="muted small">The template carries the parts, wiring and any custom symbols it uses, so it lands correctly on another machine.</p>
         </>
       ) : (
-        <div className="empty-note">Select some parts and wires on the canvas to share them as a reusable template.</div>
+        <>
+          <div className="empty-note">Select some parts and wires on the canvas to share them as a reusable template — or insert one you were sent.</div>
+          <div className="btn-row wrap">
+            <button className="secondary-btn" onClick={pasteTemplateFromClipboard}>
+              <ClipboardPaste size={14} /> Paste & insert
+            </button>
+            <button className="secondary-btn" onClick={importFile}>
+              <FolderUp size={14} /> Import file
+            </button>
+          </div>
+        </>
       )}
       <div className="share-paste">
         <Field label="…or paste share text here" wide>

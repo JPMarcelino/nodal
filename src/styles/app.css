@@ -2451,7 +2451,7 @@ select.input {
 
 .export-preview {
   width: 100%;
-  height: 240px;
+  height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2481,6 +2481,19 @@ select.input {
   padding: 4px 0 16px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 16px;
+}
+
+.export-group {
+  margin: 14px 0 8px;
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.export-group:first-of-type {
+  margin-top: 0;
 }
 
 .export-grid {

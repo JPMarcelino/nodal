@@ -31,7 +31,7 @@ import { canConvertToPath, convertToPath, hasHeads, pathNodes, setNodeKind, setP
 import { resolveConnector } from '../model/connectors';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
-import { fragmentFromText, writeSelectionClipboard } from '../io/clipboardCopy';
+import { fragmentFromText, writePictureClipboard } from '../io/clipboardCopy';
 import { viewCentre } from '../io/importFiles';
 import { S, activePage, inGesture, mutate, pushRecent, select, set, setPage, setPrefs, toast, vdoc, imageExportOptions } from './store';
 import { addPage, docPages, editPage, movePage, pageIndex, pageItemIds, renamePage } from '../model/pages';
@@ -233,7 +233,8 @@ export function copySelection() {
   clipboard = extractFragment(vdoc(), sel());
   pasteCount = 0;
   // other apps get a picture of the selection; pasting back here restores the items
-  void writeSelectionClipboard(vdoc(), S().selection, clipboard, imageExportOptions());
+  const { theme, background } = imageExportOptions();
+  void writePictureClipboard(vdoc(), { theme, background, padding: 10, ids: S().selection, scale: 2 }, clipboard);
   toast(`Copied ${S().selection.length} item${S().selection.length > 1 ? 's' : ''}`);
 }
 

@@ -1,7 +1,7 @@
 import { prepareMath } from '../model/latex';
 import type { Fragment } from '../model/ops';
 import type { CircuitDoc } from '../model/types';
-import { exportPng, exportSvg } from './export';
+import { exportPng, exportSvg, type SvgOptions } from './export';
 
 /**
  * Copied items travel as an SVG picture that carries the items themselves in a
@@ -31,25 +31,24 @@ export function fragmentFromText(text: string | null | undefined): Fragment | nu
 }
 
 /**
- * Puts the selection on the system clipboard as a PNG, as an SVG image where
- * the browser allows it, and as SVG text (with the items inside, see above).
- * Falls back to the SVG text alone. `look` is the export theme and background.
- * Must be called from the key or click that copies: the write starts before
- * anything is awaited.
+ * Puts a picture on the system clipboard: a PNG, an SVG image where the
+ * browser allows it, and SVG text (carrying `frag`, the copied items, when
+ * given). Falls back to the SVG text alone. Both pictures use `opts`, exactly
+ * as an export would. Must be called from the key or click that copies: the
+ * write starts before anything is awaited.
  */
-export async function writeSelectionClipboard(doc: CircuitDoc, ids: string[], frag: Fragment, look: { theme: 'light' | 'dark'; background: boolean }): Promise<boolean> {
-  const { theme, background } = look;
+export async function writePictureClipboard(doc: CircuitDoc, opts: SvgOptions & { scale: number }, frag?: Fragment): Promise<boolean> {
   const svg = (async () => {
     await prepareMath(doc).catch(() => undefined);
-    return svgWithFragment(exportSvg(doc, { theme, background, padding: 10, ids }).svg, frag);
+    const out = exportSvg(doc, opts).svg;
+    return frag ? svgWithFragment(out, frag) : out;
   })();
   const cb = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
   const Item = globalThis.ClipboardItem as (typeof ClipboardItem & { supports?: (type: string) => boolean }) | undefined;
   if (Item && typeof cb?.write === 'function') {
     const data: Record<string, Promise<Blob>> = {
       'text/plain': svg.then((s) => new Blob([s], { type: 'text/plain' })),
-      // pasted pictures get the canvas behind them: most apps show transparency as white or black
-      'image/png': svg.then(() => exportPng(doc, { theme, background: true, padding: 10, ids, scale: 2 })),
+      'image/png': svg.then(() => exportPng(doc, opts)),
     };
     if (Item.supports?.('image/svg+xml')) data['image/svg+xml'] = svg.then((s) => new Blob([s], { type: 'image/svg+xml' }));
     try {
