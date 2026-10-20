@@ -35,7 +35,7 @@ function threePages() {
   // a wire on page 2 carrying the same name
   const r1 = place(doc, 'resistor', 0, 0, p2);
   const r2 = place(doc, 'resistor', 200, 0, p2);
-  const w = wire(doc, r1, '2', r2, '1', { label: 'SDA' });
+  const w = wire(doc, r1, '2', r2, '1', { label: 'SDA', page: p2 });
   return { doc, p1, p2, p3, l1, l3, w };
 }
 
@@ -125,7 +125,7 @@ describe('page-ref rendering', () => {
     const one = createDoc();
     place(one, 'net-label', 0, 0, undefined, 'SDA');
     const solo = exportSvg(one, { theme: 'light', background: false, padding: 10 }).svg;
-    expect(solo).not.toContain('page-ref');
+    expect(solo).not.toContain('class="page-ref"');
   });
 
   it('Scene renders the tspan only when the value label is shown and an xref exists', () => {

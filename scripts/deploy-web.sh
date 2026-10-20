@@ -5,7 +5,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-if [ -n "$(git status --porcelain)" ]; then
+# uncommitted changes, or new files where the build can pick them up, would ship
+# something that isn't in git; stray files elsewhere (screenshots, notes) don't matter
+if [ -n "$(git status --porcelain --untracked-files=no)" ] || [ -n "$(git ls-files --others --exclude-standard -- src public index.html vite.config.ts package.json)" ]; then
   echo "Working tree is not clean; commit or stash first." >&2
   exit 1
 fi
