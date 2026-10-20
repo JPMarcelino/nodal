@@ -629,9 +629,10 @@ export function movePageTo(id: string, to: number) {
 export function moveSelectionToPage(page: string | null) {
   const ids = S().selection;
   if (!ids.length) return toast('Select something to move first');
+  const locked = ids.filter((id) => vdoc().items[id]?.locked);
   let target = page ?? '';
   let moved: string[] = [];
-  mutate(
+  const ok = mutate(
     (d) => {
       if (!target) target = addPage(d as CircuitDoc);
       moved = moveItemsToPage(d as CircuitDoc, ids, target);
@@ -639,6 +640,11 @@ export function moveSelectionToPage(page: string | null) {
     [],
     { allPages: true },
   );
+  if (!ok) return;
   const name = docPages(S().doc).find((p) => p.id === target)?.name ?? 'page';
-  if (moved.length) toast(`Moved ${moved.length} item${moved.length === 1 ? '' : 's'} to ${name}`, 'success');
+  if (!moved.length) {
+    if (locked.length) toast('Locked items stay on their page');
+    return;
+  }
+  toast(`Moved ${moved.length} item${moved.length === 1 ? '' : 's'} to ${name}${locked.length ? ` (${locked.length} locked stayed)` : ''}`, 'success');
 }
