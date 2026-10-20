@@ -48,26 +48,26 @@ export function duplicatePage(d: CircuitDoc, id: string, name?: string): string 
  */
 export function moveItemsToPage(d: CircuitDoc, ids: Iterable<string>, page: string): string[] {
   const target = resolvePage(d, page);
-  const move = new Set([...ids].filter((id) => d.items[id] && itemPage(d, d.items[id]) !== target));
+  const move = new Set([...ids].filter((id) => d.items[id] && !d.items[id].locked && itemPage(d, d.items[id]) !== target));
   if (!move.size) return [];
   const from = new Set([...move].map((id) => itemPage(d, d.items[id])));
   const onFrom = (it: Item) => from.has(itemPage(d, it));
   // wires between moved items (or loose ones touching them) go too
   for (const it of Object.values(d.items)) {
-    if (it.type !== 'wire' || move.has(it.id) || !onFrom(it)) continue;
+    if (it.type !== 'wire' || it.locked || move.has(it.id) || !onFrom(it)) continue;
     const oa = owner(it.a);
     const ob = owner(it.b);
     if ((oa || ob) && (!oa || move.has(oa)) && (!ob || move.has(ob))) move.add(it.id);
   }
   // junctions all of whose wires go
   for (const it of Object.values(d.items)) {
-    if (it.type !== 'junction' || move.has(it.id) || !onFrom(it)) continue;
+    if (it.type !== 'junction' || it.locked || move.has(it.id) || !onFrom(it)) continue;
     const wires = Object.values(d.items).filter((w) => w.type === 'wire' && (owner(w.a) === it.id || owner(w.b) === it.id));
     if (wires.length && wires.every((w) => move.has(w.id))) move.add(it.id);
   }
   // wires crossing the cut let go of whatever is on the other side
   for (const it of Object.values(d.items)) {
-    if (it.type !== 'wire' || !onFrom(it)) continue;
+    if (it.type !== 'wire' || it.locked || !onFrom(it)) continue;
     for (const end of ['a', 'b'] as const) {
       const o = owner(it[end]);
       if (!o || move.has(o) === move.has(it.id)) continue;
@@ -76,7 +76,7 @@ export function moveItemsToPage(d: CircuitDoc, ids: Iterable<string>, page: stri
     }
   }
   for (const s of connectorsOf(d, move)) {
-    if (!move.has(s.id)) detachConnector(d, s, { from: !!s.from && move.has(s.from.id), to: !!s.to && move.has(s.to.id) });
+    if (!move.has(s.id) && !s.locked) detachConnector(d, s, { from: !!s.from && move.has(s.from.id), to: !!s.to && move.has(s.to.id) });
   }
   for (const id of move) {
     const s = d.items[id];
