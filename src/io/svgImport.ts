@@ -232,9 +232,9 @@ function decodeCssEscapes(css: string): string {
 /**
  * Decode until no escapes remain (the browser decodes again at
  * tokenisation, so a single pass leaves `@\\69 mport` → `@\69 mport`
- * looking innocent). The trailing backslash strip neutralises any
- * nesting deeper than the bound: without a `\` the browser cannot
- * re-form `@import` or `url(`.
+ * looking innocent). Bounded so a pathological run of backslashes can't
+ * hang the import; any escapes left over after the bound are removed by
+ * normalizeCss below, so the bound is only a performance concern.
  */
 function decodeCssEscapesFully(css: string): string {
   let out = css;
@@ -247,16 +247,27 @@ function decodeCssEscapesFully(css: string): string {
 }
 
 /**
+ * Fully decoded with no backslashes left: what the browser will
+ * tokenise. Stripping here (rather than after the @import/url patterns)
+ * matters: with N backslashes still present after the decode bound,
+ * stripping afterwards would itself re-form `url(` / `@import` past the
+ * patterns that already ran. Patterns below always run on this
+ * backslash-free text, and cleanSvgAttr detects on it too.
+ */
+function normalizeCss(css: string): string {
+  return decodeCssEscapesFully(css).replace(/\\/g, '');
+}
+
+/**
  * CSS with comments, @import rules and external url() targets removed;
  * internal url(#…) paint servers are kept. The url() pattern is
  * quote-aware so a ')' inside a quoted URL can't leave garbage behind.
  */
 function scrubSvgCss(css: string): string {
-  return decodeCssEscapesFully(css)
+  return normalizeCss(css)
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/@import[^;]*;?/gi, '')
-    .replace(/url\(\s*(?!(["']?)\s*#)("([^"]*)"|'([^']*)'|[^)]*)\)/gi, 'none')
-    .replace(/\\/g, '');
+    .replace(/url\(\s*(?!(["']?)\s*#)("([^"]*)"|'([^']*)'|[^)]*)\)/gi, 'none');
 }
 
 /**
@@ -271,7 +282,7 @@ export function cleanSvgAttr(local: string, value: string): string | null {
   if (name === 'style') return scrubSvgCss(value);
   // presentation attributes (fill, stroke, filter, clip-path, mask,
   // marker-*, cursor, …) can all carry url(https://…) payloads, escapes included
-  if (/url\(/i.test(decodeCssEscapesFully(value))) return scrubSvgCss(value);
+  if (/url\(/i.test(normalizeCss(value))) return scrubSvgCss(value);
   if (name === 'formaction' || name === 'action' || name === 'poster' || name === 'background' || name === 'cite' || name === 'data' || name === 'codebase' || name === 'classid' || name === 'usemap') return null;
   return value;
 }
