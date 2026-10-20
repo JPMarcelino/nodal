@@ -1,4 +1,4 @@
-import { docBounds, makeComponent, makeShape, topGroup } from '../model/doc';
+import { docBounds, groupChain, makeComponent, makeShape, topGroup } from '../model/doc';
 import { withContents } from '../model/containers';
 import { PRESET_SIZE, getPreset, makePresetShape } from '../model/shapePresets';
 import { nextPresentationStep } from '../model/presentation';
@@ -342,7 +342,7 @@ export function selectAll() {
   const { scope } = S();
   const doc = vdoc();
   const ids = Object.values(doc.items)
-    .filter((i) => !i.hidden && !i.locked && (!scope || topGroup(doc, i, undefined) !== undefined))
+    .filter((i) => !i.hidden && !i.locked && (!scope || groupChain(doc, i.group).includes(scope)))
     .map((i) => i.id);
   select(ids);
 }
