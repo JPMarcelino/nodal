@@ -65,7 +65,7 @@ export function RichText({ text, x, y, fontSize, anchor = 'start', fill, fontWei
                   fill={fill}
                   stroke={fill}
                   strokeWidth={0}
-                  dangerouslySetInnerHTML={{ __html: r.svg.body.replace(/currentColor/g, fill) }}
+                  dangerouslySetInnerHTML={{ __html: r.svg.body }}
                 />
               ) : (
                 <text key={j} x={x0 + r.x} y={base} fill={r.error ? '#e5484d' : fill} opacity={r.error ? 1 : 0.6} style={{ whiteSpace: 'pre' }}>
