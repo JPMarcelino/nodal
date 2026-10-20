@@ -212,11 +212,32 @@ const BLOCKED_SVG_TAGS = new Set([
 /** Internal `#fragment` refs (paint servers, use targets) are safe; anything else can load code or phone home. */
 const safeSvgRef = (value: string) => value.trimStart().startsWith('#');
 
-/** CSS with @import rules and external url() targets removed; internal url(#…) paint servers are kept. */
+/**
+ * CSS `\69` escapes decoded, so `@\69 mport` or `u\52 l(` can't smuggle
+ * tokens past the scrub below.
+ */
+function decodeCssEscapes(css: string): string {
+  return css.replace(/\\([0-9a-fA-F]{1,6}\s?|[\s\S])/g, (_m, esc: string) => {
+    if (/^[0-9a-fA-F]/.test(esc)) {
+      const cp = parseInt(esc.trim(), 16);
+      return cp > 0x10ffff ? '�' : String.fromCodePoint(cp);
+    }
+    // a backslash-newline is a line continuation, any other escape is literal
+    if (esc === '\n' || esc === '\r' || esc === '\f') return '';
+    return esc;
+  });
+}
+
+/**
+ * CSS with comments, @import rules and external url() targets removed;
+ * internal url(#…) paint servers are kept. The url() pattern is
+ * quote-aware so a ')' inside a quoted URL can't leave garbage behind.
+ */
 function scrubSvgCss(css: string): string {
-  return css
+  return decodeCssEscapes(css)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/@import[^;]*;?/gi, '')
-    .replace(/url\(\s*(?!(["']?)\s*#)[^)]*\)/gi, 'none');
+    .replace(/url\(\s*(?!(["']?)\s*#)("([^"]*)"|'([^']*)'|[^)]*)\)/gi, 'none');
 }
 
 /**
@@ -229,6 +250,9 @@ export function cleanSvgAttr(local: string, value: string): string | null {
   if (name === 'href') return safeSvgRef(value) ? value : null; // javascript:/data:/remote refs
   if (name === 'src' || name === 'srcdoc') return null;
   if (name === 'style') return scrubSvgCss(value);
+  // presentation attributes (fill, stroke, filter, clip-path, mask,
+  // marker-*, cursor, …) can all carry url(https://…) payloads, escapes included
+  if (/url\(/i.test(decodeCssEscapes(value))) return scrubSvgCss(value);
   if (name === 'formaction' || name === 'action' || name === 'poster' || name === 'background' || name === 'cite' || name === 'data' || name === 'codebase' || name === 'classid' || name === 'usemap') return null;
   return value;
 }
