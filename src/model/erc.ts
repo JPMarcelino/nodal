@@ -1,7 +1,7 @@
 import { computeHotSpots } from './hotspots';
 import { toWorld } from './geometry';
 import { computeNets, touchingPins } from './netlist';
-import { docPages, viewDoc } from './pages';
+import { docPages, itemPage, viewDoc } from './pages';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Point, SymbolDef } from './types';
 import { wirePolyline } from './wires';
@@ -173,9 +173,9 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
     const page = viewDoc(doc, p.id);
     const polys = new Map<string, Point[]>();
     for (const it of Object.values(page.items)) if (it.type === 'wire' && !it.hidden) polys.set(it.id, wirePolyline(page, it));
-    return computeHotSpots(page, polys, []);
+    return computeHotSpots(page, polys, []).map((h) => ({ h, page: p.id }));
   });
-  for (const h of hotSpots) {
+  for (const { h, page } of hotSpots) {
     if (h.kind === 'end' || h.kind === 'touch' || h.kind === 'pinTouch') unfinished.add(h.wire);
     if (h.kind === 'end') {
       issues.push({ key: `loose-end:${h.wire}:${h.end}`, rule: 'loose-end', severity: 'warning', message: 'Wire end is not connected to anything', items: [h.wire], at: h.pt });
@@ -192,7 +192,7 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
                 : 'a wire';
       const message =
         h.kind === 'pinTouch' ? `${what} lies on a wire without connecting to it — solder it` : `Wire end touches ${what} without connecting — solder it`;
-      issues.push({ key: `touching-end:${h.kind}:${h.pt.x},${h.pt.y}`, rule: 'touching-end', severity: 'warning', message, items: [h.wire], at: h.pt });
+      issues.push({ key: `touching-end:${page}:${h.kind}:${h.pt.x},${h.pt.y}`, rule: 'touching-end', severity: 'warning', message, items: [h.wire], at: h.pt });
     }
   }
 
@@ -262,7 +262,7 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
   const spots = new Map<string, ComponentItem[]>();
   for (const c of comps) {
     if (!isPart(defOf.get(c.id)!)) continue;
-    const k = `${c.symbol}@${Math.round(c.x)},${Math.round(c.y)}`;
+    const k = `${itemPage(doc, c)}|${c.symbol}@${Math.round(c.x)},${Math.round(c.y)}`;
     spots.set(k, [...(spots.get(k) ?? []), c]);
   }
   for (const [k, list] of spots) {
