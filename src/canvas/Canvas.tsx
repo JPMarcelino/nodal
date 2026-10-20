@@ -20,6 +20,7 @@ import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, rebaseGesture, select, set, toast, useStore, useViewDoc, vdoc, withGestureMutate } from '../store/store';
 import { viewDoc } from '../model/pages';
+import { pageCrossRefs } from '../model/pageRefs';
 import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
 import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, shapeTitle, useSceneData } from './Scene';
@@ -187,6 +188,7 @@ export function Canvas() {
   const altMove = useStore((s) => s.altMove);
   const layerHover = useStore((s) => s.layerHover);
   const data = useSceneData(doc);
+  const xrefs = useStore((s) => pageCrossRefs(s.doc, s.page));
   const wireAvoid = useStore((s) => s.prefs.wireAvoid);
   const wrapRef = useRef<HTMLDivElement>(null);
   const gRef = useRef<Gesture | null>(null);
@@ -2160,7 +2162,7 @@ export function Canvas() {
           {scopeBounds && (
             <rect x={scopeBounds.x - 16} y={scopeBounds.y - 16} width={scopeBounds.w + 32} height={scopeBounds.h + 32} rx={10} className="scope-box" strokeWidth={1.5 / z} />
           )}
-          <Scene doc={doc} data={data} palette={EDITOR_PALETTE} highlight={highlight} frames={!presenting} />
+          <Scene doc={doc} data={data} palette={EDITOR_PALETTE} highlight={highlight} frames={!presenting} xrefs={xrefs} />
 
           {/* unconnected port markers */}
           {prefs.showPortMarkers && z > 0.45 && (
