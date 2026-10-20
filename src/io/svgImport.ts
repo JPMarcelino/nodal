@@ -213,8 +213,9 @@ const BLOCKED_SVG_TAGS = new Set([
 const safeSvgRef = (value: string) => value.trimStart().startsWith('#');
 
 /**
- * CSS `\69` escapes decoded, so `@\69 mport` or `u\52 l(` can't smuggle
- * tokens past the scrub below.
+ * CSS `\69` escapes decoded repeatedly, so `@\69 mport`, `@\5c 69mport`
+ * (double-escaped) or `u\52 l(` can't smuggle tokens past the scrub below.
+ * Bounded so a pathological run of backslashes can't hang the import.
  */
 function decodeCssEscapes(css: string): string {
   return css.replace(/\\([0-9a-fA-F]{1,6}\s?|[\s\S])/g, (_m, esc: string) => {
@@ -229,12 +230,41 @@ function decodeCssEscapes(css: string): string {
 }
 
 /**
+ * Decode until no escapes remain (the browser decodes again at
+ * tokenisation, so a single pass leaves `@\\69 mport` → `@\69 mport`
+ * looking innocent). Bounded so a pathological run of backslashes can't
+ * hang the import; any escapes left over after the bound are removed by
+ * normalizeCss below, so the bound is only a performance concern.
+ */
+function decodeCssEscapesFully(css: string): string {
+  let out = css;
+  for (let i = 0; i < 10; i++) {
+    const next = decodeCssEscapes(out);
+    if (next === out) return out;
+    out = next;
+  }
+  return out;
+}
+
+/**
+ * Fully decoded with no backslashes left: what the browser will
+ * tokenise. Stripping here (rather than after the @import/url patterns)
+ * matters: with N backslashes still present after the decode bound,
+ * stripping afterwards would itself re-form `url(` / `@import` past the
+ * patterns that already ran. Patterns below always run on this
+ * backslash-free text, and cleanSvgAttr detects on it too.
+ */
+function normalizeCss(css: string): string {
+  return decodeCssEscapesFully(css).replace(/\\/g, '');
+}
+
+/**
  * CSS with comments, @import rules and external url() targets removed;
  * internal url(#…) paint servers are kept. The url() pattern is
  * quote-aware so a ')' inside a quoted URL can't leave garbage behind.
  */
 function scrubSvgCss(css: string): string {
-  return decodeCssEscapes(css)
+  return normalizeCss(css)
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/@import[^;]*;?/gi, '')
     .replace(/url\(\s*(?!(["']?)\s*#)("([^"]*)"|'([^']*)'|[^)]*)\)/gi, 'none');
@@ -246,14 +276,20 @@ function scrubSvgCss(css: string): string {
  */
 export function cleanSvgAttr(local: string, value: string): string | null {
   const name = local.toLowerCase();
-  if (name.startsWith('on')) return null; // event handlers (onload, onerror, onbegin, …)
-  if (name === 'href') return safeSvgRef(value) ? value : null; // javascript:/data:/remote refs
-  if (name === 'src' || name === 'srcdoc') return null;
-  if (name === 'style') return scrubSvgCss(value);
+  // localName may be 'href'/'base'/'src' while name is 'xlink:href'/'xml:base';
+  // normalise so prefixed variants can't smuggle past the checks below.
+  const base = name.includes(':') ? name.slice(name.lastIndexOf(':') + 1) : name;
+  if (name.startsWith('on') || base.startsWith('on')) return null; // event handlers (onload, onerror, onbegin, …)
+  // xml:base re-bases otherwise-safe url(#…) and href="#…" to the attacker
+  // origin, so internal refs would fetch/paint remotely once attached.
+  if (base === 'base') return null;
+  if (base === 'href') return safeSvgRef(value) ? value : null; // javascript:/data:/remote refs
+  if (base === 'src' || base === 'srcdoc' || base === 'srcset' || base === 'imagesrcset') return null;
+  if (name === 'style' || base === 'style') return scrubSvgCss(value);
   // presentation attributes (fill, stroke, filter, clip-path, mask,
   // marker-*, cursor, …) can all carry url(https://…) payloads, escapes included
-  if (/url\(/i.test(decodeCssEscapes(value))) return scrubSvgCss(value);
-  if (name === 'formaction' || name === 'action' || name === 'poster' || name === 'background' || name === 'cite' || name === 'data' || name === 'codebase' || name === 'classid' || name === 'usemap') return null;
+  if (/url\(/i.test(normalizeCss(value))) return scrubSvgCss(value);
+  if (base === 'formaction' || base === 'action' || base === 'poster' || base === 'background' || base === 'cite' || base === 'data' || base === 'codebase' || base === 'classid' || base === 'usemap' || base === 'profile' || base === 'longdesc' || base === 'archive' || base === 'code' || base === 'lowsrc' || base === 'dynsrc') return null;
   return value;
 }
 
