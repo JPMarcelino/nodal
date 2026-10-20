@@ -44,7 +44,7 @@ function segOverlap(a1: Point, a2: Point, b1: Point, b2: Point): [Point, Point] 
 }
 
 function findOverlap(doc: CircuitDoc, changed: Set<string>): Overlap | null {
-  const wires = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire' && !i.hidden);
+  const wires = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire' && !i.hidden && !i.locked);
   const polys = new Map(wires.map((w) => [w.id, wirePolyline(doc, w)]));
   for (const w of wires) {
     if (!changed.has(w.id)) continue;
