@@ -369,6 +369,53 @@ describe('SVG import options and symbol recognition', () => {
     expect(items.filter((i) => i.type === 'junction')).toHaveLength(0);
   });
 
+  describe('user-library symbols stay in the document', () => {
+    it('insertSvgDrawing snapshots recognised user symbols (and their base type) into doc.symbols', async () => {
+      const { createDoc } = await import('../model/doc');
+      const { getUserLibrary, instanceSymbol, setUserLibrary } = await import('../model/registry');
+      const { compileSource } = await import('../model/symbols/dsl');
+      const { toWorld } = await import('../model/geometry');
+      const { primPolys } = await import('../model/svgSymbols');
+      const { DEFAULT_SVG_IMPORT, insertSvgDrawing } = await import('../model/svgDrawing');
+
+      const prev = { ...getUserLibrary() };
+      try {
+        const base = compileSource({ id: 'user-box', name: 'Box', category: 'My symbols', w: 40, h: 20, draw: 'R 0 0 40 20', ports: '1:0,10 2:40,10', prefix: 'U', value: '', fields: '', keywords: '' });
+        const typeB = compileSource({ id: 'user-box-b', name: 'Box', category: 'My symbols', w: 40, h: 20, draw: 'R 0 0 40 20\nL 0 0 40 20', ports: '1:0,10 2:40,10', prefix: 'U', value: '', fields: '', keywords: '', variantOf: 'user-box', variantName: 'B' });
+        setUserLibrary({ [base.id]: base, [typeB.id]: typeB });
+        // draw the B type exactly as a placed part would
+        const placed = { symbol: typeB.id, x: 0, y: 0, rot: 0 as const, flipX: false };
+        const def = instanceSymbol({ symbols: {} }, placed);
+        const lines = def.prims.flatMap(primPolys).map((poly) => ({ pts: poly.map((q) => toWorld(placed, def, q.x, q.y)), closed: false, width: 2, color: '#000000', dashed: false }));
+        const doc = createDoc();
+        insertSvgDrawing(doc, { lines, boxes: [], dots: [], texts: [] }, { x: 0, y: 0 }, undefined, 'u', { ...DEFAULT_SVG_IMPORT, symbols: true });
+        const part = Object.values(doc.items).find((i) => i.type === 'component');
+        expect(part?.type === 'component' && part.symbol).toBe(typeB.id);
+        // both the type and its base travel with the document, so the file is self-contained
+        expect(doc.symbols[typeB.id]).toBeTruthy();
+        expect(doc.symbols[base.id]).toBeTruthy();
+      } finally {
+        setUserLibrary(prev);
+      }
+    });
+
+    it('extractFragment keeps a part type base so shared templates stay complete', async () => {
+      const { createDoc, makeComponent } = await import('../model/doc');
+      const { compileSource } = await import('../model/symbols/dsl');
+      const { extractFragment } = await import('../model/ops');
+      const base = compileSource({ id: 'user-box2', name: 'Box', category: 'My symbols', w: 40, h: 20, draw: 'R 0 0 40 20', ports: '1:0,10', prefix: 'U', value: '', fields: '', keywords: '' });
+      const typeB = compileSource({ id: 'user-box2-b', name: 'Box', category: 'My symbols', w: 40, h: 20, draw: 'R 0 0 40 20', ports: '1:0,10', prefix: 'U', value: '', fields: '', keywords: '', variantOf: 'user-box2', variantName: 'B' });
+      const doc = createDoc();
+      doc.symbols[base.id] = base;
+      doc.symbols[typeB.id] = typeB;
+      const c = makeComponent(doc, typeB.id, 0, 0);
+      doc.items[c.id] = c;
+      const frag = extractFragment(doc, new Set([c.id]));
+      expect(frag.symbols[typeB.id]).toBeTruthy();
+      expect(frag.symbols[base.id]).toBeTruthy();
+    });
+  });
+
   it('makes lines and polygons instead of wires and boxes when asked', async () => {
     const { createDoc } = await import('../model/doc');
     const { insertSvgDrawing } = await import('../model/svgDrawing');

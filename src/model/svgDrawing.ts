@@ -6,7 +6,7 @@ import { mapNodes, packPath } from './path';
 import { packPoly } from './polygon';
 import { boxPath, pathPolys, recognizeSymbols } from './svgSymbols';
 import type { CircuitDoc, Endpoint, JunctionItem, Point, WireItem } from './types';
-import { instanceSymbol } from './registry';
+import { getUserLibrary, instanceSymbol } from './registry';
 import { portPosition } from './wires';
 
 /** How an imported SVG is turned into items. */
@@ -77,6 +77,11 @@ export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point
     const refs = new Set(Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])));
     for (const p of found.parts) {
       const pos = move(p);
+      // snapshot user-library symbols into the document so saved/shared files stay self-contained (as placeComponent does)
+      const lib = getUserLibrary();
+      if (!doc.symbols[p.symbol] && lib[p.symbol]) doc.symbols[p.symbol] = lib[p.symbol];
+      const base = (doc.symbols[p.symbol] ?? lib[p.symbol])?.variantOf;
+      if (base && !doc.symbols[base] && lib[base]) doc.symbols[base] = lib[base];
       const c = makeComponent(doc, p.symbol, pos.x, pos.y, p.rot, p.flipX);
       if (p.scale) c.scale = p.scale;
       // keep the drawing's reference unless the circuit already uses it
