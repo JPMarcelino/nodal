@@ -39,11 +39,11 @@ import { WireAngleButton } from './WireAngleButton';
 const MENUS: { label: string; items: (string | '-')[] }[] = [
   {
     label: 'File',
-    items: ['file.new', 'file.open', 'file.import', '-', 'file.save', 'file.saveAs', '-', 'file.export', 'file.copySvg', 'file.copyPng', 'present.video', '-', 'file.print', '-', 'collab.share', 'collab.exportLib', 'collab.importLib', 'collab.exportTemplate', 'collab.importTemplate'],
+    items: ['file.new', 'file.open', 'file.import', '-', 'file.save', 'file.saveAs', '-', 'file.export', 'file.exportSelection', 'file.print', '-', 'collab.share'],
   },
   {
     label: 'Edit',
-    items: ['edit.undo', 'edit.redo', '-', 'edit.cut', 'edit.copy', 'edit.paste', 'edit.pasteHere', 'edit.duplicate', 'edit.delete', '-', 'edit.selectAll', 'edit.find', 'edit.lock', 'edit.hide', '-', 'edit.annotate', '-', 'help.settings'],
+    items: ['edit.undo', 'edit.redo', '-', 'edit.cut', 'edit.copy', 'file.copyPng', 'file.copySvg', 'edit.paste', 'edit.pasteHere', 'edit.duplicate', 'edit.delete', '-', 'edit.selectAll', 'edit.find', 'edit.lock', 'edit.hide', '-', 'edit.annotate', '-', 'help.settings'],
   },
   {
     label: 'Place',

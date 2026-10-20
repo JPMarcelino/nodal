@@ -7,6 +7,8 @@ import { S, imageExportOptions, newDoc, replaceDoc, set, toast, vdoc, type Expor
 export { imageExportOptions };
 import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, printDoc, selectionDoc, type SvgOptions } from './export';
+import { writePictureClipboard } from './clipboardCopy';
+import { extractFragment } from '../model/ops';
 import { openTextFile, sanitizeName, saveFile } from './files';
 import { ask } from '../ui/Ask';
 import { saveVersion } from './versionStore';
@@ -123,6 +125,20 @@ export function openExport(scope: ExportScope = {}) {
 export function scopeSvgOptions(scope: ExportScope, kind: 'png' | 'svg', look: { theme: 'light' | 'dark'; background: boolean }): SvgOptions {
   if (scope.clip) return { ...look, padding: kind === 'png' ? 0 : 4, clip: scope.clip };
   return { ...look, padding: 20, ids: scope.ids?.length ? scope.ids : undefined };
+}
+
+/**
+ * Copies what the Export dialog shows as a picture (PNG + SVG). The page and
+ * selections carry their items along, so pasting back into Nodal gives them
+ * editable; an area is a picture only (its wires are cut).
+ */
+export async function copyScope(scope: ExportScope, look: { theme: 'light' | 'dark'; background: boolean; scale: number }) {
+  const doc = vdoc();
+  const ids = scope.clip ? [] : scope.ids?.length ? scope.ids : Object.keys(doc.items);
+  const frag = ids.length ? extractFragment(doc, new Set(ids)) : undefined;
+  const ok = await writePictureClipboard(doc, { ...scopeSvgOptions(scope, 'png', look), scale: look.scale }, frag);
+  if (ok) toast('Copied as a picture: paste it into any app, or back into Nodal', 'success');
+  else toast('Clipboard is not available here: export a PNG or SVG instead', 'error');
 }
 
 export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'kicad' | 'bom' | 'json';

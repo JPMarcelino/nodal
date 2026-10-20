@@ -8,6 +8,7 @@ import { openAnyFile } from './files';
 import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from './imageImport';
 import { importLibraryText, importTemplateText, insertCircuit } from './sharing';
 import { svgToDrawing } from './svgImport';
+import { fragmentFromText } from './clipboardCopy';
 
 /** Everything "Import file…" and drag & drop understand. */
 export const IMPORT_FILTER = [
@@ -27,6 +28,13 @@ export const viewCentre = (): Point => {
 export async function importFileText(name: string, text: string, at?: Point, svg?: SvgImportOptions): Promise<void> {
   try {
     const trimmed = text.trimStart();
+    // a picture copied from Nodal (Ctrl+C, Export → Copy) carries its items: bring them back editable
+    const copied = fragmentFromText(text);
+    if (copied) {
+      const ids = importTemplateText(JSON.stringify(copied), at);
+      toast(`Inserted ${ids.length} item${ids.length === 1 ? '' : 's'} copied from Nodal`, 'success');
+      return;
+    }
     if (/\.svg$/i.test(name) || (trimmed.startsWith('<') && /<svg[\s>]/i.test(text))) {
       await importSvgDrawing(name, text, at ?? viewCentre(), svg);
       return;

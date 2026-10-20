@@ -1,6 +1,6 @@
-import { copyAsPng, copyAsSvg, doExport, exportSelection, fileNew, fileOpen, filePrint, fileSave, openExport, startAreaExport } from '../io/fileActions';
+import { copyAsPng, copyAsSvg, exportSelection, fileNew, fileOpen, filePrint, fileSave, openExport, startAreaExport } from '../io/fileActions';
 import { importFile } from '../io/importFiles';
-import { exportLibraryFile, exportTemplateFile, importLibraryFile, importTemplateFile } from '../io/sharing';
+import { exportLibraryFile, exportTemplateFile } from '../io/sharing';
 import { selectionToDrawing } from '../model/fromSelection';
 import { selectedGroup } from '../model/doc';
 import { computeNets, netOfWire } from '../model/netlist';
@@ -24,6 +24,8 @@ export interface Command {
   run: () => void;
   /** Shown in the palette only when this returns true. */
   when?: () => boolean;
+  /** Extra words the command palette finds it by. */
+  keywords?: string;
 }
 
 const hasSel = () => S().selection.length > 0;
@@ -33,31 +35,23 @@ export const COMMANDS: Command[] = [
   // File
   { id: 'file.new', label: 'New circuit', category: 'File', keys: ['Mod+Alt+N'], run: fileNew },
   { id: 'file.open', label: 'Open…', category: 'File', keys: ['Mod+O'], run: fileOpen },
-  { id: 'file.import', label: 'Import… (circuit, library, SVG, PDF, image)', category: 'File', keys: [], run: importFile },
+  { id: 'file.import', label: 'Import…', category: 'File', keys: [], run: importFile, keywords: 'circuit symbol library template svg pdf image png jpg picture' },
   { id: 'file.save', label: 'Save', category: 'File', keys: ['Mod+S'], run: () => fileSave() },
   { id: 'file.saveAs', label: 'Save as…', category: 'File', keys: ['Mod+Shift+S'], run: () => fileSave(true) },
   { id: 'file.saveVersion', label: 'Save version…', category: 'File', keys: ['Mod+Alt+V'], run: () => focusVersionName() },
   { id: 'file.history', label: 'Version history', category: 'File', keys: ['Mod+Alt+H'], run: () => set({ leftPanel: true, leftTab: 'history' }) },
   { id: 'edit.copyStyle', label: 'Copy style', category: 'Edit', keys: ['Mod+Shift+Alt+C'], run: () => copyStyle() },
   { id: 'edit.pasteStyle', label: 'Paste style onto the selection', category: 'Edit', keys: ['Mod+Shift+Alt+V'], run: () => pasteStyle() },
-  { id: 'file.export', label: 'Export…', category: 'File', keys: ['Mod+E'], run: () => openExport() },
-  { id: 'file.exportSvg', label: 'Export as SVG…', category: 'File', keys: [], run: () => openExport() },
-  { id: 'file.exportPng', label: 'Export as PNG…', category: 'File', keys: ['Mod+Shift+E'], run: () => openExport() },
-  { id: 'file.exportDxf', label: 'Export as DXF (CAD)', category: 'File', keys: [], run: () => doExport('dxf') },
-  { id: 'file.exportSpice', label: 'Export SPICE netlist', category: 'File', keys: [], run: () => doExport('spice') },
-  { id: 'file.exportKicad', label: 'Export KiCad netlist (PCB layout)', category: 'File', keys: [], run: () => doExport('kicad') },
-  { id: 'file.exportBom', label: 'Export bill of materials (CSV)', category: 'File', keys: [], run: () => doExport('bom') },
+  // every export goes through the Export dialog, which previews it (images, data, templates, libraries, video)
+  { id: 'file.export', label: 'Export…', category: 'File', keys: ['Mod+E', 'Mod+Shift+E'], run: () => openExport(), keywords: 'png svg image pdf print dxf cad spice kicad netlist bom csv json template library video area' },
   { id: 'file.copySvg', label: 'Copy selection as SVG', category: 'File', keys: ['Mod+Alt+C'], run: copyAsSvg },
   { id: 'file.copyPng', label: 'Copy selection as image (PNG)', category: 'File', keys: ['Mod+Alt+Shift+P'], run: copyAsPng },
-  { id: 'file.exportSelection', label: 'Export selection as PNG…', category: 'File', keys: ['Mod+Alt+E'], run: () => exportSelection() },
-  { id: 'file.exportSelectionSvg', label: 'Export selection as SVG…', category: 'File', keys: [], run: () => exportSelection() },
+  { id: 'file.exportSelection', label: 'Export selection…', category: 'File', keys: ['Mod+Alt+E'], run: () => exportSelection(), when: hasSel },
   { id: 'file.exportArea', label: 'Export canvas area…', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
   { id: 'file.print', label: 'Print…', category: 'File', keys: ['Mod+P'], run: filePrint },
   { id: 'collab.share', label: 'Share & collaborate…', category: 'File', keys: ['Mod+Alt+S'], run: () => set({ dialog: 'share' }) },
   { id: 'collab.exportLib', label: 'Export my symbol library', category: 'File', keys: [], run: exportLibraryFile },
-  { id: 'collab.importLib', label: 'Import a symbol library…', category: 'File', keys: [], run: importLibraryFile },
   { id: 'collab.exportTemplate', label: 'Export selection as a template', category: 'File', keys: [], run: () => exportTemplateFile(S().selection), when: hasSel },
-  { id: 'collab.importTemplate', label: 'Insert a template…', category: 'File', keys: [], run: importTemplateFile },
 
   // Edit
   { id: 'edit.undo', label: 'Undo', category: 'Edit', keys: ['Mod+Z'], cadence: ['U', 'Mod+Z'], run: undo },

@@ -3,7 +3,7 @@ import { extractFragment, insertFragment, type Fragment } from '../model/ops';
 import { snap } from '../model/geometry';
 import type { CircuitDoc, Point, SymbolDef } from '../model/types';
 import { S, mergeUserSymbols, mutate, set, toast } from '../store/store';
-import { openTextFile, sanitizeName, saveFile } from './files';
+import { sanitizeName, saveFile } from './files';
 
 /* ------------------------------------------------------------------ */
 /* Shareable payloads                                                  */
@@ -126,28 +126,6 @@ export async function exportTemplateFile(ids: string[]) {
     if (res !== false) toast('Template exported', 'success');
   } catch (e) {
     toast(`Template export failed: ${(e as Error).message}`, 'error');
-  }
-}
-
-export async function importLibraryFile() {
-  const f = await openTextFile([{ name: 'Nodal symbol library', extensions: ['json'] }]);
-  if (!f) return;
-  try {
-    const n = importLibraryText(f.text, { overwrite: false });
-    toast(n ? `Imported ${n} symbol${n > 1 ? 's' : ''}` : 'Every symbol was already in your library', n ? 'success' : 'info');
-  } catch (e) {
-    toast(`Could not import library: ${(e as Error).message}`, 'error');
-  }
-}
-
-export async function importTemplateFile() {
-  const f = await openTextFile([{ name: 'Nodal template', extensions: ['json'] }]);
-  if (!f) return;
-  try {
-    const ids = importTemplateText(f.text);
-    toast(`Inserted template (${ids.length} items)`, 'success');
-  } catch (e) {
-    toast(`Could not import template: ${(e as Error).message}`, 'error');
   }
 }
 
