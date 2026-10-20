@@ -1,9 +1,9 @@
 import type { Point } from '../model/types';
-import type { Fragment } from '../model/ops';
 import { toast } from '../store/store';
 import { pasteFragment } from '../store/actions';
 import { importFileText, viewCentre } from './importFiles';
 import { insertPictures, rasterToPicture, type Picture } from './imageImport';
+import { fragmentFromText } from './clipboardCopy';
 
 export type ClipboardPasteKind = 'fragment' | 'image' | 'svg' | 'none';
 
@@ -40,16 +40,11 @@ export async function pasteClipboardContent(
   at?: Point,
   deps: ClipboardPasteDeps = {},
 ): Promise<ClipboardPasteKind> {
-  if (text && text.includes('"nodal-fragment"')) {
-    try {
-      const frag = JSON.parse(text) as Fragment;
-      if (frag && Array.isArray(frag.items) && frag.items.length) {
-        pasteFragment(frag, at);
-        return 'fragment';
-      }
-    } catch {
-      /* corrupt JSON: carry on to the image / in-memory paths */
-    }
+  // our own copy (JSON, or an SVG with the items inside) pastes as editable items, not as a picture
+  const frag = fragmentFromText(text) ?? fragmentFromText(svgText);
+  if (frag) {
+    pasteFragment(frag, at);
+    return 'fragment';
   }
   if (imageBlob) {
     try {

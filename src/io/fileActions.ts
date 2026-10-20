@@ -2,7 +2,9 @@ import { normalizeDoc, uid } from '../model/doc';
 import { prepareMath } from '../model/latex';
 import { toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
 import type { CircuitDoc, Rect } from '../model/types';
-import { S, newDoc, replaceDoc, set, toast, vdoc } from '../store/store';
+import { S, imageExportOptions, newDoc, replaceDoc, set, toast, vdoc, type ExportScope } from '../store/store';
+
+export { imageExportOptions };
 import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, printDoc, selectionDoc, type SvgOptions } from './export';
 import { openTextFile, sanitizeName, saveFile } from './files';
@@ -111,15 +113,16 @@ export async function fileSave(saveAs = false): Promise<boolean> {
   }
 }
 
-/**
- * Theme, background and PNG resolution of every image export (dialog, menus,
- * shortcuts, right-click, area, clipboard): the app's current theme, so the
- * picture looks like the canvas, and the background / resolution last chosen
- * in the Export dialog.
- */
-export function imageExportOptions(): { theme: 'light' | 'dark'; background: boolean; scale: number } {
-  const p = S().prefs;
-  return { theme: p.theme, background: p.exportBackground ?? true, scale: p.exportScale ?? 3 };
+
+/** Opens the Export dialog, which previews what will be exported: the page, `scope.ids`, or the area `scope.clip`. */
+export function openExport(scope: ExportScope = {}) {
+  set({ dialog: 'export', exportScope: scope, exportArea: null });
+}
+
+/** SVG options for exporting (and previewing) a scope as `kind`; areas are cropped tight, the page and selections get a margin. */
+export function scopeSvgOptions(scope: ExportScope, kind: 'png' | 'svg', look: { theme: 'light' | 'dark'; background: boolean }): SvgOptions {
+  if (scope.clip) return { ...look, padding: kind === 'png' ? 0 : 4, clip: scope.clip };
+  return { ...look, padding: 20, ids: scope.ids?.length ? scope.ids : undefined };
 }
 
 export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'kicad' | 'bom' | 'json';
@@ -191,33 +194,24 @@ export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partia
   }
 }
 
-/** Arms "export area" mode: the next rectangle drawn on the canvas is exported. */
-export function startAreaExport(kind: 'png' | 'svg', opts: Partial<SvgOptions> & { scale?: number } = {}) {
-  const img = imageExportOptions();
-  set({
-    dialog: null,
-    exportArea: {
-      kind,
-      theme: opts.theme ?? img.theme,
-      background: opts.background ?? img.background,
-      scale: opts.scale ?? img.scale,
-    },
-  });
+/** Arms "export area" mode: the next rectangle drawn on the canvas opens the Export dialog on it. */
+export function startAreaExport(kind: 'png' | 'svg' = 'png') {
+  set({ dialog: null, exportArea: { kind } });
 }
 
-/** Finishes an armed area export; rectangles too small to be deliberate just cancel it. */
+/** Finishes an armed area export by previewing it; rectangles too small to be deliberate just cancel it. */
 export function runAreaExport(rect: Rect) {
   const job = S().exportArea;
   set({ exportArea: null });
   if (!job || rect.w < 4 || rect.h < 4) return;
-  void doClipExport(job.kind, rect, { theme: job.theme, background: job.background, scale: job.scale, padding: job.kind === 'png' ? 0 : 4 });
+  openExport({ clip: rect });
 }
 
-/** Exports only the currently selected items. */
-export function exportSelection(kind: ExportKind = 'png') {
+/** Opens the Export dialog on just the selected items. */
+export function exportSelection() {
   const sel = S().selection;
   if (!sel.length) return toast('Select items to export first');
-  void doExport(kind, { ids: sel });
+  openExport({ ids: sel });
 }
 
 export async function copyAsSvg() {

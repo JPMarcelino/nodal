@@ -4,7 +4,7 @@ import { createDoc, groupMembers, normalizeDoc, topGroup } from '../model/doc';
 import { setUserLibrary, usedSymbols } from '../model/registry';
 import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
-import type { CircuitDoc, Dash, Item, Point, SymbolDef, Tool, WireAngle } from '../model/types';
+import type { CircuitDoc, Dash, Item, Point, Rect, SymbolDef, Tool, WireAngle } from '../model/types';
 import { settleEdit } from '../model/settle';
 import { editPage, itemPage, mergeView, multiPage, resolvePage, viewDoc } from '../model/pages';
 
@@ -14,12 +14,15 @@ export interface View {
   zoom: number;
 }
 
-/** Pending "draw a rectangle and export its contents" job. */
+/** Pending "draw a rectangle and export its contents" job (the Export dialog then previews it). */
 export interface ExportAreaJob {
   kind: 'png' | 'svg';
-  theme: 'light' | 'dark';
-  background: boolean;
-  scale: number;
+}
+
+/** What the Export dialog exports and previews: the page (empty), some items, or a drawn area. */
+export interface ExportScope {
+  ids?: string[];
+  clip?: Rect;
 }
 
 export interface Placing {
@@ -126,6 +129,7 @@ export interface AppState {
   wireBrush: { color?: string; width?: number; radius?: number; dash?: Dash } | null;
   /** When set, the next drag on the canvas defines an export rectangle. */
   exportArea: ExportAreaJob | null;
+  exportScope: ExportScope | null;
   /** Viewing someone else's live session: the circuit can't be changed. */
   viewOnly: boolean;
 }
@@ -222,6 +226,7 @@ export const useStore = create<AppState>(() => ({
   canvasSize: { w: 800, h: 600 },
   wireBrush: null,
   exportArea: null,
+  exportScope: null,
   viewOnly: false,
 }));
 
@@ -503,6 +508,17 @@ export function toast(text: string, kind: Toast['kind'] = 'info') {
 /* ------------------------------------------------------------------ */
 /* Preferences & persistence                                           */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Theme, background and PNG resolution of every image export (dialog, menus,
+ * shortcuts, right-click, area, clipboard): the app's current theme, so the
+ * picture looks like the canvas, and the background / resolution last chosen
+ * in the Export dialog.
+ */
+export function imageExportOptions(): { theme: 'light' | 'dark'; background: boolean; scale: number } {
+  const p = S().prefs;
+  return { theme: p.theme, background: p.exportBackground ?? true, scale: p.exportScale ?? 3 };
+}
 
 export function setPrefs(p: Partial<Prefs>) {
   set((s) => ({ prefs: { ...s.prefs, ...p } }));

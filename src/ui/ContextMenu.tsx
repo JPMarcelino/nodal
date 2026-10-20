@@ -65,7 +65,7 @@ import {
   StretchVertical,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { copyAsPng, copyAsSvg, doExport, filePrint, startAreaExport, type ExportKind } from '../io/fileActions';
+import { copyAsPng, copyAsSvg, doExport, filePrint, openExport, startAreaExport, type ExportKind } from '../io/fileActions';
 import { exportTemplateFile } from '../io/sharing';
 import * as A from '../store/actions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
@@ -103,8 +103,9 @@ const rows = (...r: (Row | null | false | '' | undefined)[]): Row[] => {
 function exportRows(ids?: string[]): Row[] {
   const x = (kind: ExportKind) => () => void doExport(kind, { ids });
   return rows(
-    { label: 'PNG image', icon: <FileImage size={I} />, run: x('png') },
-    { label: 'SVG vector', icon: <FileCode2 size={I} />, run: x('svg') },
+    // images open the Export dialog, which previews them first
+    { label: 'PNG image…', icon: <FileImage size={I} />, run: () => openExport({ ids }) },
+    { label: 'SVG vector…', icon: <FileCode2 size={I} />, run: () => openExport({ ids }) },
     { label: 'Copy as SVG', icon: <Copy size={I} />, run: () => void copyAsSvg(), key: keysFor('file.copySvg')[0] },
     { label: 'Copy as image', icon: <Copy size={I} />, run: () => void copyAsPng(), key: keysFor('file.copyPng')[0] },
     '-',
@@ -117,7 +118,7 @@ function exportRows(ids?: string[]): Row[] {
     '-',
     !ids && { label: 'Area…', icon: <Scan size={I} />, run: () => startAreaExport('png'), key: keysFor('file.exportArea')[0] },
     !ids && { label: 'Print / PDF…', icon: <Printer size={I} />, run: () => void filePrint(), key: keysFor('file.print')[0] },
-    { label: 'More options…', icon: <Download size={I} />, run: () => set({ dialog: 'export' }), key: keysFor('file.export')[0] },
+    { label: 'More options…', icon: <Download size={I} />, run: () => openExport({ ids }), key: keysFor('file.export')[0] },
   );
 }
 

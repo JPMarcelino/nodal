@@ -31,8 +31,9 @@ import { canConvertToPath, convertToPath, hasHeads, pathNodes, setNodeKind, setP
 import { resolveConnector } from '../model/connectors';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '../model/types';
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
+import { fragmentFromText, writeSelectionClipboard } from '../io/clipboardCopy';
 import { viewCentre } from '../io/importFiles';
-import { S, activePage, inGesture, mutate, pushRecent, select, set, setPage, setPrefs, toast, vdoc } from './store';
+import { S, activePage, inGesture, mutate, pushRecent, select, set, setPage, setPrefs, toast, vdoc, imageExportOptions } from './store';
 import { addPage, docPages, editPage, movePage, pageIndex, pageItemIds, renamePage } from '../model/pages';
 import { deletePage, duplicatePage, moveItemsToPage } from '../model/pageOps';
 import { confirmDelete } from '../ui/Ask';
@@ -231,8 +232,8 @@ export function copySelection() {
   if (!S().selection.length) return;
   clipboard = extractFragment(vdoc(), sel());
   pasteCount = 0;
-  const text = JSON.stringify(clipboard);
-  navigator.clipboard?.writeText(text).catch(() => undefined);
+  // other apps get a picture of the selection; pasting back here restores the items
+  void writeSelectionClipboard(vdoc(), S().selection, clipboard, imageExportOptions());
   toast(`Copied ${S().selection.length} item${S().selection.length > 1 ? 's' : ''}`);
 }
 
@@ -252,7 +253,7 @@ export async function paste(at?: { x: number; y: number }) {
   // read() when one is already present.
   let imageBlob: Blob | null = null;
   let svgText: string | null = null;
-  if (!(text && text.includes('"nodal-fragment"'))) {
+  if (!fragmentFromText(text)) {
     const cb = navigator.clipboard as unknown as { read?: () => Promise<ClipboardItem[]> } | undefined;
     if (typeof cb?.read === 'function') {
       try {
