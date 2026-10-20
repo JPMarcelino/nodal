@@ -167,6 +167,15 @@ describe('SVG sanitising', () => {
     expect(cleanSvgAttr('style', 'fill:u\\52 l(https://evil/x)')).toBe('fill:none');
     expect(cleanSvgAttr('style', '@\\69 mport url(https://evil/c);.a{fill:red}')).toBe('.a{fill:red}');
     expect(cleanSvgAttr('fill', 'u\\72 l(https://evil/x)')).toBe('none');
+    // double-escaped tokens re-form url(/@import after one decode, so the
+    // scrub must decode to a fixpoint and leave no backslash to re-decode
+    expect(cleanSvgAttr('style', '@\\\\69 mport url(https://evil/c);.a{fill:red}')).toBe('.a{fill:red}');
+    expect(cleanSvgAttr('style', '@\\\\\\\\69 mport url(https://evil/c);.a{fill:red}')).toBe('.a{fill:red}');
+    expect(cleanSvgAttr('fill', '\\\\75rl(https://evil/x)')).toBe('none');
+    expect(cleanSvgAttr('fill', '\\\\\\\\75rl(https://evil/x)')).toBe('none');
+    expect(cleanSvgAttr('style', 'fill:u\\\\52 l(https://evil/x)')).toBe('fill:none');
+    // no backslash survives for the browser to re-decode at tokenisation
+    expect(cleanSvgAttr('style', 'fill:red\\')).toBe('fill:red');
     // a ')' inside a quoted URL can't leave garbage behind
     expect(cleanSvgAttr('fill', 'url("https://evil/a)b")')).toBe('none');
   });
