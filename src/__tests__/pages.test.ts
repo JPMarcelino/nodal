@@ -313,6 +313,61 @@ describe('page edits', () => {
     expect(left.a.kind).toBe('free');
     expect(left.b).toEqual({ kind: 'port', comp: c.id, port: '1' });
   });
+
+  it('leaves locked parts behind when moving to another page', () => {
+    const { doc, p1, p2, r1, r2, w } = twoPages();
+    (doc.items[r1.id] as ComponentItem).locked = true;
+    let moved: string[] = [];
+    const next = produce(doc, (d) => void (moved = moveItemsToPage(d as CircuitDoc, [r1.id, r2.id], p2)));
+    // the locked part stays on page 1; the unlocked one moves alone
+    expect(itemPage(next, next.items[r1.id])).toBe(p1);
+    expect(next.items[r2.id].page).toBe(p2);
+    expect(moved).toEqual([r2.id]);
+    // the wire between them stays and keeps its locked end, letting go of the moved part
+    const left = next.items[w.id] as WireItem;
+    expect(itemPage(next, left)).toBe(p1);
+    expect(left.a).toEqual({ kind: 'port', comp: r1.id, port: '2' });
+    expect(left.b.kind).toBe('free');
+  });
+
+  it('does not auto-move a locked wire between moved parts; its moved ends go loose', () => {
+    const doc = createDoc();
+    const p2 = addPage(doc);
+    const p1 = docPages(doc)[0].id;
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    const ab = wire(doc, a, '2', b, '1', { locked: true });
+    let moved: string[] = [];
+    const next = produce(doc, (d) => void (moved = moveItemsToPage(d as CircuitDoc, [a.id, b.id], p2)));
+    expect(moved.sort()).toEqual([a.id, b.id].sort());
+    // the locked wire stays on page 1 with both ends loose where the pins were,
+    // so no connection spans pages and every view keeps resolving
+    const left = next.items[ab.id] as WireItem;
+    expect(itemPage(next, left)).toBe(p1);
+    expect(left.a.kind).toBe('free');
+    expect(left.b.kind).toBe('free');
+  });
+
+  it('does not auto-move a locked junction when its wires move', () => {
+    const doc = createDoc();
+    const p2 = addPage(doc);
+    const p1 = docPages(doc)[0].id;
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    const jid = uid('j');
+    doc.items[jid] = { id: jid, type: 'junction', x: 100, y: 0, locked: true };
+    const aj: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'port', comp: a.id, port: '2' }, b: { kind: 'junction', id: jid }, pts: [] };
+    const bj: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'junction', id: jid }, b: { kind: 'port', comp: b.id, port: '1' }, pts: [] };
+    doc.items[aj.id] = aj;
+    doc.items[bj.id] = bj;
+    let moved: string[] = [];
+    const next = produce(doc, (d) => void (moved = moveItemsToPage(d as CircuitDoc, [aj.id, bj.id], p2)));
+    expect(moved.sort()).toEqual([aj.id, bj.id].sort());
+    // the locked junction stays on page 1; the moved wires let go of it (and of the staying parts)
+    expect(itemPage(next, next.items[jid])).toBe(p1);
+    expect((next.items[aj.id] as WireItem).b.kind).toBe('free');
+    expect((next.items[bj.id] as WireItem).a.kind).toBe('free');
+  });
 });
 
 describe('netlist across pages', () => {

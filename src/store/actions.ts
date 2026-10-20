@@ -629,11 +629,14 @@ export function movePageTo(id: string, to: number) {
 export function moveSelectionToPage(page: string | null) {
   const ids = S().selection;
   if (!ids.length) return toast('Select something to move first');
-  const locked = ids.filter((id) => vdoc().items[id]?.locked);
+  // the selection may hold ids from another page, so count locks in the full doc
+  const locked = ids.filter((id) => S().doc.items[id]?.locked);
   let target = page ?? '';
   let moved: string[] = [];
   const ok = mutate(
     (d) => {
+      // an all-locked selection moves nothing: don't leave a blank page behind
+      if (!target && !ids.some((id) => d.items[id] && !d.items[id].locked)) return;
       if (!target) target = addPage(d as CircuitDoc);
       moved = moveItemsToPage(d as CircuitDoc, ids, target);
     },

@@ -44,7 +44,9 @@ export function duplicatePage(d: CircuitDoc, id: string, name?: string): string 
  * items go along; a wire still joining something left behind stays where it
  * is and lets go of the moved part (its end is left loose on the spot), so
  * nothing is deleted. Connectors let go the same way, and groups split
- * between pages are left behind by what moved. Returns the ids moved.
+ * between pages are left behind by what moved. Locked items never move (nor
+ * are they auto-added); a locked wire or connector staying behind still lets
+ * go of moved ends, so nothing stays attached across pages. Returns the ids moved.
  */
 export function moveItemsToPage(d: CircuitDoc, ids: Iterable<string>, page: string): string[] {
   const target = resolvePage(d, page);
@@ -65,9 +67,11 @@ export function moveItemsToPage(d: CircuitDoc, ids: Iterable<string>, page: stri
     const wires = Object.values(d.items).filter((w) => w.type === 'wire' && (owner(w.a) === it.id || owner(w.b) === it.id));
     if (wires.length && wires.every((w) => move.has(w.id))) move.add(it.id);
   }
-  // wires crossing the cut let go of whatever is on the other side
+  // wires crossing the cut let go of whatever is on the other side (locked
+  // wires stay too, but their moved ends still go loose, so no connection
+  // spans pages and every view keeps resolving)
   for (const it of Object.values(d.items)) {
-    if (it.type !== 'wire' || it.locked || !onFrom(it)) continue;
+    if (it.type !== 'wire' || !onFrom(it)) continue;
     for (const end of ['a', 'b'] as const) {
       const o = owner(it[end]);
       if (!o || move.has(o) === move.has(it.id)) continue;
@@ -76,7 +80,7 @@ export function moveItemsToPage(d: CircuitDoc, ids: Iterable<string>, page: stri
     }
   }
   for (const s of connectorsOf(d, move)) {
-    if (!move.has(s.id) && !s.locked) detachConnector(d, s, { from: !!s.from && move.has(s.from.id), to: !!s.to && move.has(s.to.id) });
+    if (!move.has(s.id)) detachConnector(d, s, { from: !!s.from && move.has(s.from.id), to: !!s.to && move.has(s.to.id) });
   }
   for (const id of move) {
     const s = d.items[id];
