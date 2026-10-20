@@ -224,4 +224,28 @@ describe('resize with Shift / Ctrl', () => {
   it('a corner dragged past its anchor flips', () => {
     expect(resizeInFrame(b, 0, 'se', { x: -20, y: -30 }, 10)).toEqual({ x: -20, y: -30, w: 20, h: 30 });
   });
+  it('Shift keeps proportions about the opposite corner when turned', () => {
+    const rot = 30;
+    const c = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    const corner = (r: Rect, which: 'nw' | 'se') => rotateDeg(which === 'nw' ? { x: r.x, y: r.y } : { x: r.x + r.w, y: r.y + r.h }, rot, { x: r.x + r.w / 2, y: r.y + r.h / 2 });
+    // (200, 100) in the shape's own frame doubles both sides, like the unturned case
+    const p = rotateDeg({ x: 200, y: 100 }, rot, c);
+    const out = resizeInFrame(b, rot, 'se', p, 10, 0, { aspect: true });
+    expect(out.w).toBeCloseTo(200, 6);
+    expect(out.h).toBeCloseTo(100, 6);
+    const nw = corner(b, 'nw');
+    const nw2 = corner(out, 'nw');
+    expect(nw2.x).toBeCloseTo(nw.x, 6);
+    expect(nw2.y).toBeCloseTo(nw.y, 6);
+  });
+  it('Ctrl grows about the centre when turned', () => {
+    const rot = 90;
+    const c = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    const p = rotateDeg({ x: 110, y: 60 }, rot, c);
+    const out = resizeInFrame(b, rot, 'se', p, 10, 0, { centre: true });
+    expect(out.w).toBeCloseTo(120, 6);
+    expect(out.h).toBeCloseTo(70, 6);
+    expect(out.x + out.w / 2).toBeCloseTo(c.x, 6);
+    expect(out.y + out.h / 2).toBeCloseTo(c.y, 6);
+  });
 });
