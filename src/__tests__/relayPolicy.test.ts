@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   EXPIRE_MS,
+  MAX_MESSAGE,
   MAX_PEERS,
   MAX_SNAPSHOT,
   gateMessage,
@@ -66,6 +67,14 @@ describe('relayPolicy', () => {
     expect(gateMessage('p', undefined, false)).toBe('drop');
     expect(gateMessage('nope', 'x', true)).toBe('drop');
     expect(gateMessage('nope', 'x', false)).toBe('drop');
+  });
+
+  it('lets the largest allowed snapshot through the frame cap (no silent drop)', () => {
+    // gateMessage allows saves up to MAX_SNAPSHOT, but Room.webSocketMessage
+    // drops raw frames over MAX_MESSAGE before gating, so the frame cap must
+    // clear the JSON envelope around a max-size save.
+    expect(gateMessage('save', 'x'.repeat(MAX_SNAPSHOT), true)).toBe('save');
+    expect(JSON.stringify({ t: 'save', d: 'x'.repeat(MAX_SNAPSHOT) }).length).toBeLessThanOrEqual(MAX_MESSAGE);
   });
 
   it('caps the room size and expires idle rooms after 24h', () => {
