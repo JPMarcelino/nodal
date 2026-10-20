@@ -1,6 +1,7 @@
 import { wireStyleFor } from './wires';
-import { defaultAlign, defaultValign, lineCap, lineJoin, textSize } from './shapeText';
-import type { CircuitDoc, ComponentItem, Dash, Item, Rect, ShapeItem, WireItem } from './types';
+import { defaultValign, lineCap, lineJoin, textSize } from './shapeText';
+import { getSymbol } from './registry';
+import type { CircuitDoc, ComponentItem, Dash, Item, LabelStyle, Rect, ShapeItem, WireItem } from './types';
 
 /**
  * One set of style properties for every kind of item, so a selection of parts,
@@ -17,14 +18,16 @@ export interface Look {
   dash: Dash;
   /** Text and label colour; '' = the default. */
   text: string;
-  /* text (shapes) */
+  /* text (shapes, part labels, wire labels) */
   size: number;
   bold: boolean;
   italic: boolean;
   underline: boolean;
+  allCaps: boolean;
   /** '' = sans. */
   font: '' | 'serif' | 'mono';
-  align: 'start' | 'middle' | 'end';
+  /** '' = the item's own default. */
+  align: '' | 'start' | 'middle' | 'end';
   valign: 'top' | 'middle' | 'bottom';
   /** Free text: width it wraps at; 0 = no wrapping. */
   wrapW: number;
@@ -46,16 +49,19 @@ export interface Look {
 
 export type LookKey = keyof Look;
 
-const TEXT_KEYS: LookKey[] = ['size', 'bold', 'italic', 'underline', 'font', 'text', 'align'];
+/** The text formatting every kind of text offers (see TextFormatRows). */
+export const TEXT_KEYS: LookKey[] = ['size', 'bold', 'italic', 'underline', 'allCaps', 'font', 'text', 'align'];
+/** Labels of wires sit at their side of the wire, so they have no alignment. */
+const WIRE_LABEL_KEYS: LookKey[] = TEXT_KEYS.filter((k) => k !== 'align');
 const EFFECT_KEYS: LookKey[] = ['opacity', 'shadow'];
 
 /** Which style properties an item has. */
 export function lookKeys(it: Item): LookKey[] {
   switch (it.type) {
     case 'component':
-      return ['line', 'fill', 'fillOpacity', 'width', 'dash', 'text'];
+      return ['line', 'fill', 'fillOpacity', 'width', 'dash', ...TEXT_KEYS];
     case 'wire':
-      return ['line', 'width', 'dash'];
+      return it.label ? ['line', 'width', 'dash', ...WIRE_LABEL_KEYS] : ['line', 'width', 'dash'];
     case 'shape':
       switch (it.kind) {
         case 'text':
@@ -84,11 +90,24 @@ export function lookKeys(it: Item): LookKey[] {
 /** An item's style as shown in the editor (defaults filled in). */
 export function lookOf(doc: CircuitDoc, it: Item): Partial<Look> {
   switch (it.type) {
-    case 'component':
-      return { line: it.color ?? '', fill: it.fill ?? '', fillOpacity: it.fillOpacity ?? 1, width: it.lineWidth ?? 2, dash: it.dash ?? 'solid', text: it.labelColor ?? '' };
+    case 'component': {
+      // the label the part shows by name: a net label's value, otherwise its reference
+      const netName = !!getSymbol(doc, it.symbol).valueIsLabel;
+      const st = (netName ? it.valueStyle : it.refStyle) ?? {};
+      return {
+        line: it.color ?? '',
+        fill: it.fill ?? '',
+        fillOpacity: it.fillOpacity ?? 1,
+        width: it.lineWidth ?? 2,
+        dash: it.dash ?? 'solid',
+        // both names and net names are 11px and bold unless restyled
+        ...labelLookOf(st, 11, true),
+        text: st.color ?? (netName ? '' : it.labelColor) ?? '',
+      };
+    }
     case 'wire': {
       const st = wireStyleFor(doc.settings, it);
-      return { line: st.color, width: st.width, dash: st.dash };
+      return { line: st.color, width: st.width, dash: st.dash, ...labelLookOf(it.labelStyle ?? {}, 10, true) };
     }
     case 'shape':
       return {
@@ -102,8 +121,9 @@ export function lookOf(doc: CircuitDoc, it: Item): Partial<Look> {
         bold: it.bold ?? (it.kind === 'rect' || it.kind === 'zone' || it.kind === 'ellipse' || it.kind === 'polygon'),
         italic: !!it.italic,
         underline: !!it.underline,
+        allCaps: !!it.allCaps,
         font: it.font ?? '',
-        align: it.align ?? defaultAlign(it),
+        align: it.align ?? '',
         valign: it.valign ?? defaultValign(it),
         wrapW: it.wrapW ?? 0,
         lineOpacity: it.strokeOpacity ?? 1,
@@ -132,7 +152,15 @@ export function applyLook(it: Item, p: Partial<Look>) {
     if (want('fillOpacity')) c.fillOpacity = p.fillOpacity === 1 ? undefined : p.fillOpacity;
     if (want('width')) c.lineWidth = p.width === 2 ? undefined : p.width;
     if (want('dash')) c.dash = p.dash === 'solid' ? undefined : p.dash;
-    if (want('text')) c.labelColor = p.text || undefined;
+    // text formatting goes to both of the part's labels
+    const label: Partial<LabelStyle> = labelPatch(p, has);
+    if (want('text')) delete c.labelColor;
+    if (Object.keys(label).length) {
+      c.refStyle = mergeLabelStyle(c.refStyle, label);
+      c.valueStyle = mergeLabelStyle(c.valueStyle, label);
+      if (!c.refStyle) delete c.refStyle;
+      if (!c.valueStyle) delete c.valueStyle;
+    }
   } else if (it.type === 'wire') {
     const w = it as WireItem;
     const st = { ...w.style };
@@ -143,6 +171,11 @@ export function applyLook(it: Item, p: Partial<Look>) {
     if (want('width')) st.width = p.width;
     if (want('dash')) st.dash = p.dash;
     w.style = st;
+    const label = labelPatch(p, has);
+    if (Object.keys(label).length) {
+      w.labelStyle = mergeLabelStyle(w.labelStyle, label);
+      if (!w.labelStyle) delete w.labelStyle;
+    }
   } else if (it.type === 'shape') {
     const s = it as ShapeItem;
     if (want('line') && p.line) s.stroke = p.line;
@@ -174,8 +207,9 @@ export function applyLook(it: Item, p: Partial<Look>) {
     if (want('bold')) s.bold = p.bold!;
     if (want('italic')) s.italic = p.italic || undefined;
     if (want('underline')) s.underline = p.underline || undefined;
+    if (want('allCaps')) s.allCaps = p.allCaps || undefined;
     if (want('font')) s.font = p.font || undefined;
-    if (want('align')) s.align = p.align === defaultAlign(s) ? undefined : p.align;
+    if (want('align')) s.align = p.align || undefined;
     if (want('valign')) s.valign = p.valign === defaultValign(s) ? undefined : p.valign;
     if (want('wrapW')) s.wrapW = p.wrapW! > 0 ? p.wrapW : undefined;
     if (want('lineOpacity')) s.strokeOpacity = p.lineOpacity === 1 ? undefined : p.lineOpacity;
@@ -185,6 +219,42 @@ export function applyLook(it: Item, p: Partial<Look>) {
     if (want('opacity')) s.opacity = p.opacity === 1 ? undefined : p.opacity;
     if (want('shadow')) s.shadow = p.shadow || undefined;
   }
+}
+
+/** Text formatting of a part or wire label as Look properties. */
+function labelLookOf(st: LabelStyle, size: number, bold: boolean): Partial<Look> {
+  return {
+    size: st.size ?? size,
+    bold: st.bold ?? bold,
+    italic: !!st.italic,
+    underline: !!st.underline,
+    allCaps: !!st.allCaps,
+    font: st.font ?? '',
+    align: st.align ?? '',
+    text: st.color ?? '',
+  };
+}
+
+/** The label style changes a Look patch asks for (only keys the item has). */
+function labelPatch(p: Partial<Look>, has: Set<LookKey>): Partial<LabelStyle> {
+  const out: Partial<LabelStyle> = {};
+  const want = (k: LookKey) => k in p && has.has(k);
+  if (want('size')) out.size = p.size;
+  if (want('bold')) out.bold = p.bold;
+  if (want('italic')) out.italic = p.italic || undefined;
+  if (want('underline')) out.underline = p.underline || undefined;
+  if (want('allCaps')) out.allCaps = p.allCaps || undefined;
+  if (want('font')) out.font = p.font || undefined;
+  if (want('align')) out.align = p.align || undefined;
+  if (want('text')) out.color = p.text || undefined;
+  return out;
+}
+
+/** A label style with a patch applied; unset keys are dropped, and an empty style is undefined. */
+export function mergeLabelStyle(st: LabelStyle | undefined, patch: Partial<LabelStyle>): LabelStyle | undefined {
+  const next: LabelStyle = { ...st, ...patch };
+  for (const k of Object.keys(next) as (keyof LabelStyle)[]) if (next[k] === undefined || next[k] === '') delete next[k];
+  return Object.keys(next).length ? next : undefined;
 }
 
 /** The shared value of a property across items, or undefined when they differ (or none has it). */

@@ -9,7 +9,7 @@ import { buildWirePath, wireLabelSpot, endpointInfo, hopLayerMap, hopsFromCrossi
 import { SheetFrame } from './SheetFrame';
 import { RichText } from './RichText';
 import { hasMath } from '../model/latex';
-import { layoutRich, measureRich } from '../model/richText';
+import { layoutRich, measureRich, upperText } from '../model/richText';
 import { dashArray } from '../model/dash';
 import { FONT_STACKS } from '../model/fonts';
 import { defaultAlign, defaultValign, hasHeader, headerHeight, lineCap, lineJoin, measureTextShape, shapeText, textFaceStyle, textSize, textWeight, titleWidth } from '../model/shapeText';
@@ -299,15 +299,12 @@ function labelRects(spot: LabelSpot, c: ComponentItem): Rect[] {
   return out;
 }
 
-/** Upper-cases plain text but leaves `$…$` maths alone. */
-const upper = (t: string) => t.split(/(\$[^$]*\$)/).map((s, i) => (i % 2 ? s : s.toUpperCase())).join('');
-
 /** Text, size, weight and style a part label is drawn with. */
 export function labelLook(c: ComponentItem, which: 'ref' | 'value', def?: Pick<SymbolDef, 'valueIsLabel'>) {
   const st: LabelStyle = (which === 'ref' ? c.refStyle : c.valueStyle) ?? {};
   const raw = which === 'ref' ? c.ref : c.value;
   let text = raw ? `${st.prefix ?? ''}${raw}${st.suffix ?? ''}` : raw;
-  if (st.allCaps) text = upper(text);
+  if (st.allCaps) text = upperText(text);
   const netName = which === 'value' && !!def?.valueIsLabel;
   const size = st.size ?? (which === 'ref' || netName ? 11 : 10.5);
   const normal = which === 'ref' ? 650 : netName ? 700 : 400;
@@ -315,6 +312,35 @@ export function labelLook(c: ComponentItem, which: 'ref' | 'value', def?: Pick<S
   return { st, text, size, weight };
 }
 export type LabelLook = ReturnType<typeof labelLook>;
+
+/** Inline text style of a label (the label classes' CSS would otherwise override size and weight). */
+const labelFace = (st: LabelStyle, size: number, weight: number) => ({
+  fontSize: size,
+  fontWeight: weight,
+  fontStyle: st.italic ? ('italic' as const) : undefined,
+  textDecoration: st.underline ? 'underline' : undefined,
+  fontFamily: st.font ? FONT_STACKS[st.font] : undefined,
+});
+
+/** Text, size, weight and style a wire's net label is drawn with. */
+export function wireLabelLook(w: Pick<WireItem, 'label' | 'labelStyle'>) {
+  const st: LabelStyle = w.labelStyle ?? {};
+  const raw = w.label ?? '';
+  const text = st.allCaps ? upperText(raw) : raw;
+  const size = st.size ?? 10;
+  const weight = st.bold === undefined ? 600 : st.bold ? 700 : 400;
+  return { st, text, size, weight };
+}
+
+/** Where a wire label is drawn: its spot, moved off the wire to make room for a larger size. */
+export function wireLabelAt(w: WireItem, pts: Point[], width: number) {
+  const spot = wireLabelSpot(w, pts, width);
+  const grow = (w.labelStyle?.size ?? 10) - 10;
+  if (!spot || !grow) return spot;
+  if (spot.side === 'below') return { ...spot, y: spot.y + grow };
+  if (spot.side === 'left' || spot.side === 'right') return { ...spot, y: spot.y + grow * 0.35 };
+  return spot;
+}
 
 /** Approximate unrotated box of a label's text at its anchor. */
 export function labelBox(at: LabelPos, look: LabelLook): Rect {
@@ -340,13 +366,7 @@ function PartLabel({ at, look, fill, bg, className, children }: { at: LabelPos; 
         fontWeight={weight}
         className={className}
         fill={fill}
-        style={{
-          fontSize: size,
-          fontWeight: weight,
-          fontStyle: st.italic ? 'italic' : undefined,
-          textDecoration: st.underline ? 'underline' : undefined,
-          fontFamily: st.font ? FONT_STACKS[st.font] : undefined,
-        }}
+        style={labelFace(st, size, weight)}
       >
         {children}
       </RichText>
@@ -437,7 +457,8 @@ export const WireView = memo(function WireView({
   const st = wireStyleFor(settings, w);
   const color = inkColor(st.color, palette);
   const d = buildWirePath(pts, st.radius, hops, settings.hops, settings.hopSize);
-  const spot = w.label && !w.labelHidden && !settings.hideWireLabels ? wireLabelSpot(w, pts, st.width) : null;
+  const spot = w.label && !w.labelHidden && !settings.hideWireLabels ? wireLabelAt(w, pts, st.width) : null;
+  const look = spot ? wireLabelLook(w) : null;
   return (
     <g className="wire" data-id={w.id} opacity={dim ? 0.25 : 1}>
       <path
@@ -449,7 +470,9 @@ export const WireView = memo(function WireView({
         strokeLinejoin="round"
         strokeDasharray={dashArray(st.dash, st.width)}
       />
-      {w.label && spot && <RichText text={w.label} x={spot.x} y={spot.y} anchor={spot.anchor} fontSize={10} className="wire-label" fill={color} />}
+      {spot && look && (
+        <RichText text={look.text} x={spot.x} y={spot.y} anchor={spot.anchor} fontSize={look.size} fontWeight={look.weight} className="wire-label" fill={look.st.color || color} style={labelFace(look.st, look.size, look.weight)} />
+      )}
     </g>
   );
 });

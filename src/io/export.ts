@@ -16,9 +16,10 @@ import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 import { withoutFrames } from '../model/presentation';
 import { shapeOutline } from '../model/path';
 
-export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string }> = {
-  light: { sym: '#1f2433', symBg: '#ffffff', label: '#1f2433', value: '#5a6275', bg: '#ffffff', selection: '#3b82f6', ink: '#000000', grid: '#e6e8ee' },
-  dark: { sym: '#e6dfcf', symBg: '#0f0e0c', label: '#ece6d8', value: '#a69f8f', bg: '#0f0e0c', selection: '#d4af6a', ink: '#e6dfcf', grid: '#2a2722' },
+/** The editor's colours (styles/app.css) as plain values, so an export looks like the canvas in that theme. */
+export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string; danger: string }> = {
+  light: { sym: '#1f1c16', symBg: '#fffdf9', label: '#1f1c16', value: '#6b6355', bg: '#fffdf9', selection: '#9a7429', ink: '#000000', grid: '#e6e8ee', danger: '#c4483c' },
+  dark: { sym: '#e6dfcf', symBg: '#0f0e0c', label: '#ece6d8', value: '#9c9483', bg: '#0f0e0c', selection: '#d4af6a', ink: '#e6dfcf', grid: '#2a2722', danger: '#e5786d' },
 };
 
 export interface SvgOptions {
@@ -53,7 +54,7 @@ export function clipAreaDoc(doc: CircuitDoc, rect: Rect): CircuitDoc {
         pts: run.slice(1, -1).map((p) => ({ x: p.x, y: p.y })),
         routing: 'straight',
         ...(it.style ? { style: { ...it.style } } : {}),
-        ...(it.label ? { label: it.label } : {}),
+        ...(it.label ? { label: it.label, ...(it.labelStyle ? { labelStyle: it.labelStyle } : {}) } : {}),
         ...(it.hopLayer ? { hopLayer: it.hopLayer } : {}),
       } as WireItem;
     }
@@ -138,12 +139,13 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
   }
   const data = computeSceneData(d);
   const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette, xrefs }));
-  const css = `text{font-family:${FONT}}.ref-label{font-size:11px;font-weight:600}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:#c4483c}.page-ref{font-weight:400;font-size:0.85em;opacity:.7}.comp.dnp>g:first-child{opacity:.45}`;
+  // the label rules of styles/app.css, which a standalone file doesn't have
+  const css = `text{font-family:${FONT}}.sym-text{font-weight:500;stroke:none}.ref-label{font-size:11px;font-weight:650}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:${palette.danger}}.page-ref{font-weight:400;font-size:0.85em;opacity:.7}.comp.dnp>g:first-child{opacity:.45}`;
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(box.w)}" height="${Math.ceil(box.h)}" viewBox="${box.x} ${box.y} ${box.w} ${box.h}">
 <title>${escapeXml(doc.name)}</title>
 <style>${css}</style>
-${opts.background ? `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${palette.bg}"/>` : ''}
+${opts.background ? `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${escapeXml(d.settings.background || palette.bg)}"/>` : ''}
 <g style="--sym-bg:${palette.symBg}">${inner.replace(/var\(--sym-bg\)/g, palette.symBg)}</g>
 </svg>`;
   return { svg, bounds: box };
@@ -410,6 +412,7 @@ export function printDoc(doc: CircuitDoc) {
   const host = document.createElement('div');
   host.id = 'print-host';
   host.innerHTML = (pages.length ? pages : views.slice(0, 1))
+    // always light: dark-theme ink would be near-white on paper
     .map((v) => exportSvg(v, { theme: 'light', background: false, padding: 20 }).svg.replace(/^<\?xml[^>]*>/, ''))
     .join('');
   for (const el of host.querySelectorAll('svg')) {

@@ -1,5 +1,5 @@
 import { ClipboardPaste, Copy } from 'lucide-react';
-import { applyLook, commonLook, lookOf, type Look } from '../model/style';
+import { TEXT_KEYS, applyLook, commonLook, lookOf, type Look, type LookKey } from '../model/style';
 import { DASH_OPTIONS } from '../model/dash';
 import { FONT_OPTIONS } from '../model/fonts';
 import { measureTextShape } from '../model/shapeText';
@@ -70,7 +70,8 @@ export function DashSelect({ value, mixed, onChange }: { value: Dash; mixed?: bo
   );
 }
 
-const ALIGNS: { value: Look['align']; label: string }[] = [
+const ALIGNS: { value: Look['align']; label: string; title?: string }[] = [
+  { value: '', label: 'Auto', title: 'The default for this kind of text' },
   { value: 'start', label: 'Left' },
   { value: 'middle', label: 'Centre' },
   { value: 'end', label: 'Right' },
@@ -97,7 +98,7 @@ const FILLS: { value: Look['fillKind']; label: string }[] = [
 ];
 
 /** One-click colours: automatic / none, the palette, and any colour. */
-function SwatchRow({ value, onChange, noneTitle, mixed }: { value: string; onChange: (v: string) => void; noneTitle: string; mixed?: boolean }) {
+export function SwatchRow({ value, onChange, noneTitle, mixed }: { value: string; onChange: (v: string) => void; noneTitle: string; mixed?: boolean }) {
   const cur = mixed ? null : value.toLowerCase();
   return (
     <span className="swatch-row">
@@ -123,6 +124,79 @@ function Percent({ value, onChange }: { value: number; onChange: (v: number) => 
   );
 }
 
+/** The formatting every kind of text offers — shape text, part labels and wire labels alike. */
+export type TextFormat = Pick<Look, 'font' | 'size' | 'bold' | 'italic' | 'underline' | 'allCaps' | 'text' | 'align'>;
+
+const EMPHASIS = [
+  ['bold', 'B', 'Bold'],
+  ['italic', 'I', 'Italic'],
+  ['underline', 'U', 'Underline'],
+  ['allCaps', 'AA', 'All caps'],
+] as const;
+
+/**
+ * Font, size, emphasis, colour and alignment rows, shared by every text in the
+ * inspector so they all look and behave the same. `keys` limits the rows to the
+ * properties the text has (wire labels have no alignment).
+ */
+export function TextFormatRows({
+  value,
+  onChange,
+  mixed = new Set(),
+  keys,
+}: {
+  value: Partial<TextFormat>;
+  onChange: (p: Partial<TextFormat>) => void;
+  mixed?: Set<LookKey>;
+  keys?: Set<LookKey>;
+}) {
+  const has = (k: keyof TextFormat) => !keys || keys.has(k);
+  const hint = (k: keyof TextFormat) => (mixed.has(k) ? ' (mixed)' : '');
+  return (
+    <>
+      {has('font') && (
+        <Row label={`Font${hint('font')}`}>
+          <Segmented value={mixed.has('font') ? ('none' as Look['font']) : (value.font ?? '')} options={FONT_OPTIONS} onChange={(font) => onChange({ font })} />
+        </Row>
+      )}
+      {has('size') && (
+        <Row label={`Size${hint('size')}`}>
+          <NumberInput value={value.size ?? 13} min={4} max={120} step={0.5} suffix="px" onChange={(size) => onChange({ size })} />
+        </Row>
+      )}
+      <Row label="Style">
+        <span className="type-buttons">
+          {EMPHASIS.filter(([k]) => has(k)).map(([k, glyph, name]) => {
+            const on = !!value[k] && !mixed.has(k);
+            return (
+              <button
+                key={k}
+                type="button"
+                className={`type-btn ${k}${on ? ' active' : ''}`}
+                title={`${name}${hint(k)}`}
+                aria-pressed={on}
+                onClick={() => onChange({ [k]: !on })}
+              >
+                {glyph}
+              </button>
+            );
+          })}
+        </span>
+      </Row>
+      {has('text') && (
+        <Row label={`Colour${hint('text')}`}>
+          <SwatchRow value={value.text ?? ''} mixed={mixed.has('text')} onChange={(text) => onChange({ text })} noneTitle="Default text colour" />
+        </Row>
+      )}
+      {has('align') && (
+        <Row label={`Align${hint('align')}`}>
+          <Segmented value={mixed.has('align') ? ('none' as Look['align']) : (value.align ?? '')} options={ALIGNS} onChange={(align) => onChange({ align })} />
+        </Row>
+      )}
+    </>
+  );
+}
+
 /** Extra content a panel can add to the sections of a style section. */
 export interface StyleExtras {
   /** First in "Text" (e.g. the content field). */
@@ -138,10 +212,12 @@ export interface StyleExtras {
  * and shapes alike, all at once. Each item takes the properties it has. Shapes
  * get their text, line, fill and effect options in sections of their own.
  */
-export function StyleSection({ ids, title = 'Style', extras = {} }: { ids: string[]; title?: string; extras?: StyleExtras }) {
+export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { ids: string[]; title?: string; extras?: StyleExtras; noText?: boolean }) {
   const doc = useViewDoc();
   const items = ids.map((id) => doc.items[id]).filter(Boolean);
   const { value, keys, mixed } = commonLook(doc, items);
+  // a panel with text controls of its own (a part's labels) leaves them out here
+  if (noText) for (const k of TEXT_KEYS) keys.delete(k);
   if (!keys.size) return null;
   const set = (p: Partial<Look>) => restyle(ids, p);
   const hint = (k: keyof Look) => (mixed.has(k) ? ' (mixed)' : '');
@@ -247,11 +323,6 @@ export function StyleSection({ ids, title = 'Style', extras = {} }: { ids: strin
   }
   const hasLine = keys.has('line') || keys.has('width') || keys.has('dash');
   const hasFillSection = keys.has('fill') || keys.has('fillKind');
-  const emphasis = [
-    ['bold', 'B', 'Bold'],
-    ['italic', 'I', 'Italic'],
-    ['underline', 'U', 'Underline'],
-  ] as const;
   // the copy / paste buttons sit on the first section
   let first = true;
   const actions = () => (first ? ((first = false), copyPaste) : undefined);
@@ -260,27 +331,7 @@ export function StyleSection({ ids, title = 'Style', extras = {} }: { ids: strin
       {keys.has('size') && (
         <Section title="Text" actions={actions()}>
           {extras.textTop}
-          <Row label={`Font${hint('font')}`}>
-            <Segmented value={mixed.has('font') ? ('none' as Look['font']) : (value.font ?? '')} options={FONT_OPTIONS} onChange={(font) => set({ font })} />
-          </Row>
-          <Row label={`Font size${hint('size')}`}>
-            <NumberInput value={value.size ?? 13} min={6} max={120} suffix="px" onChange={(size) => set({ size })} />
-          </Row>
-          <Row label="Style">
-            <span className="type-buttons">
-              {emphasis.map(([k, glyph, name]) => (
-                <button key={k} type="button" className={`type-btn ${k}${value[k] ? ' active' : ''}`} title={name} aria-pressed={!!value[k]} onClick={() => set({ [k]: !value[k] } as Partial<Look>)}>
-                  {glyph}
-                </button>
-              ))}
-            </span>
-          </Row>
-          <Row label={`Text colour${hint('text')}`}>
-            <SwatchRow value={value.text ?? ''} mixed={mixed.has('text')} onChange={(text) => set({ text })} noneTitle="Default text colour" />
-          </Row>
-          <Row label={`Align${hint('align')}`}>
-            <Segmented value={mixed.has('align') ? ('' as Look['align']) : (value.align ?? 'start')} options={ALIGNS} onChange={(align) => set({ align })} />
-          </Row>
+          <TextFormatRows value={value} mixed={mixed} keys={keys} onChange={set} />
           {keys.has('valign') && (
             <Row label={`Vertical align${hint('valign')}`}>
               <Segmented value={mixed.has('valign') ? ('' as Look['valign']) : (value.valign ?? 'top')} options={VALIGNS} onChange={(valign) => set({ valign })} />

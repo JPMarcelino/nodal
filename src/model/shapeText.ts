@@ -1,5 +1,5 @@
 import { FONT_STACKS } from './fonts';
-import { measureRich, wrapRich } from './richText';
+import { measureRich, upperText, wrapRich } from './richText';
 import type { ShapeItem, ShapeKind } from './types';
 
 /** Whether a container shows its title in a header band (swimlane look). */
@@ -35,7 +35,7 @@ export function wrapWidth(s: ShapeItem): number | undefined {
 
 /** The text as it is laid out: the same source, with line breaks where it wraps. */
 export function shapeText(s: ShapeItem): string {
-  const text = s.text ?? '';
+  const text = s.allCaps ? upperText(s.text ?? '') : (s.text ?? '');
   const w = wrapWidth(s);
   return w ? wrapRich(text, textSize(s), textWeight(s), w, s.font) : text;
 }

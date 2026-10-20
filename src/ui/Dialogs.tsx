@@ -448,9 +448,13 @@ export function SettingsDialog() {
 /* ------------------------------------------------------------------ */
 
 export function ExportDialog() {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [bg, setBg] = useState(false);
-  const [scale, setScale] = useState(3);
+  // the theme starts as the app's own; background and resolution are remembered for every export
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => S().prefs.theme);
+  const bg = useStore((s) => s.prefs.exportBackground ?? true);
+  const scale = useStore((s) => s.prefs.exportScale ?? 3);
+  const setBg = (exportBackground: boolean) => setPrefs({ exportBackground });
+  const setScale = (exportScale: number) => setPrefs({ exportScale });
+  const appTheme = useStore((s) => s.prefs.theme);
   const [onlySel, setOnlySel] = useState(false);
   const hasSel = useStore((s) => s.selection.length > 0);
   const opts = () => ({ theme, background: bg, scale, ids: onlySel ? S().selection : undefined });
@@ -472,7 +476,7 @@ export function ExportDialog() {
   return (
     <Modal title="Export" onClose={close} width={620}>
       <div className="export-opts">
-        <Field label="Image theme">
+        <Field label="Image theme" hint={theme === appTheme ? 'Matches the app' : 'Differs from the app (menu and shortcut exports use the app theme)'}>
           <Segmented
             value={theme}
             options={[
@@ -482,7 +486,7 @@ export function ExportDialog() {
             onChange={setTheme}
           />
         </Field>
-        <Field label="Background">
+        <Field label="Background" hint="Paint the canvas colour behind the drawing; off leaves it transparent">
           <Toggle checked={bg} onChange={setBg} />
         </Field>
         <Field label="PNG resolution">
@@ -502,6 +506,9 @@ export function ExportDialog() {
             <Toggle checked={onlySel} onChange={setOnlySel} />
           </Field>
         )}
+        <p className="muted small" style={{ gridColumn: '1 / -1', margin: 0 }}>
+          Images follow the app's {appTheme} theme. Background and resolution set here also apply to exports from the menus, shortcuts and right-click.
+        </p>
       </div>
       <div className="export-grid">
         <Card icon={<FileImage size={20} />} title="PNG image" desc="High-resolution bitmap for documents & chat" onClick={() => doExport('png', opts())} />
