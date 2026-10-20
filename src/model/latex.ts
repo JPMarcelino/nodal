@@ -85,6 +85,21 @@ export function onMathReady(fn: () => void) {
   return () => void listeners.delete(fn);
 }
 
+/**
+ * The formula source is untrusted document text and the SVG body is injected
+ * as HTML (RichText), so neutralise what MathJax passes through: event
+ * handler attributes and links with dangerous schemes (`\\href{javascript:…}`
+ * renders an `<a href>`). http(s), mailto and fragment links are kept.
+ */
+export function scrubMathSvg(body: string): string {
+  return body
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*')/gi, '')
+    .replace(/\s(xlink:)?href\s*=\s*("[^"]*"|'[^']*')/gi, (m, _p: string, q: string) => {
+      const v = q.slice(1, -1).trim();
+      return /^(#|https?:|mailto:)/i.test(v) ? m : '';
+    });
+}
+
 /** Loads MathJax (once). Resolves when formulas can be typeset synchronously. */
 export function loadMath(): Promise<void> {
   if (convert) return Promise.resolve();
@@ -108,7 +123,7 @@ export function loadMath(): Promise<void> {
       const num = (v: string | null | undefined) => parseFloat(v ?? '0') || 0;
       const style = adaptor.getAttribute(svg, 'style') ?? '';
       const valign = /vertical-align:\s*(-?[\d.]+)ex/.exec(style);
-      const body = adaptor.innerHTML(svg);
+      const body = scrubMathSvg(adaptor.innerHTML(svg));
       const err = /data-mjx-error="([^"]*)"/.exec(body);
       return {
         body,
