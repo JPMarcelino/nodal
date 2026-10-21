@@ -94,7 +94,7 @@ function insertFragmentAt(frag: Fragment, at?: Point, groupName?: string): strin
   const dx = b ? snap(targetX - (b.x + b.w / 2), g) : 0;
   const dy = b ? snap(targetY - (b.y + b.h / 2), g) : 0;
   let ids: string[] = [];
-  mutate((d) => {
+  const ok = mutate((d) => {
     let scope = S().scope;
     if (groupName) {
       const g = uid('g');
@@ -103,6 +103,7 @@ function insertFragmentAt(frag: Fragment, at?: Point, groupName?: string): strin
     }
     ids = insertFragment(d, frag, dx, dy, scope);
   });
+  if (!ok) return [];
   set({ selection: ids });
   return ids;
 }

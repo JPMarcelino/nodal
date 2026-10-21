@@ -865,7 +865,7 @@ export function Canvas() {
       d.items[s.id] = s;
       id = s.id;
     });
-    set({ selection: [id] });
+    if (id) set({ selection: [id] });
   };
 
   // switching tools drops a half-drawn polygon or path
@@ -897,7 +897,7 @@ export function Canvas() {
       d.items[s.id] = s;
       id = s.id;
     });
-    set({ selection: [id] });
+    if (id) set({ selection: [id] });
   };
 
   const commitWire = (g: Extract<Gesture, { kind: 'wire' }>, end: Target) => {
@@ -1012,6 +1012,17 @@ export function Canvas() {
     if (!g.moved && g.pick) select([g.pick]);
   };
 
+  /** Drops the gesture in progress, undoing what it changed so far (Esc, or the system cancelling the pointer). */
+  const abortGesture = () => {
+    const g = gRef.current;
+    if (!g) return;
+    if (g.kind === 'move' || g.kind === 'conn' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'rotate' || g.kind === 'scale' || g.kind === 'groupScale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
+    setGesture(null);
+    // a cancelled copy takes its staged items with it
+    if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => vdoc().items[id]) });
+    set({ wirePart: null });
+  };
+
   /* ---------------------------- keyboard ---------------------------- */
 
   useEffect(() => {
@@ -1087,11 +1098,7 @@ export function Canvas() {
         }
       }
       if (g && combo === 'Escape') {
-        if (g.kind === 'move' || g.kind === 'conn' || g.kind === 'polyPart' || g.kind === 'segment' || g.kind === 'resize' || g.kind === 'rotate' || g.kind === 'scale' || g.kind === 'groupScale' || g.kind === 'label' || g.kind === 'shapeTitle' || g.kind === 'node' || g.kind === 'endpoint') endGesture(false);
-        setGesture(null);
-        // a cancelled copy takes its staged items with it
-        if (g.kind === 'move' && g.floating) set({ selection: S().selection.filter((id) => vdoc().items[id]) });
-        set({ wirePart: null });
+        abortGesture();
         return true;
       }
       return false;
@@ -1122,11 +1129,15 @@ export function Canvas() {
       if (e.code === 'Space') setSpaceDown(false);
       remod(e);
     };
+    // the Space key-up never arrives when the window loses focus while it is held
+    const blur = () => setSpaceDown(false);
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
+    window.addEventListener('blur', blur);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', blur);
     };
   }, []);
 
@@ -1265,6 +1276,7 @@ export function Canvas() {
         d.items[s.id] = s;
         id = s.id;
       });
+      if (!id) return;
       set({ selection: [id] });
       setEditingText(id);
       return;
@@ -1956,7 +1968,7 @@ export function Canvas() {
               d.items[s.id] = s;
               id = s.id;
             });
-            set({ selection: [id] });
+            if (id) set({ selection: [id] });
           }
         } else if (g.shape === 'frame') {
           // a bare click frames what is on screen
@@ -1974,7 +1986,7 @@ export function Canvas() {
             d.items[s.id] = s;
             id = s.id;
           });
-          set({ selection: [id] });
+          if (id) set({ selection: [id] });
         }
         setGesture(null);
         break;
@@ -1988,19 +2000,33 @@ export function Canvas() {
     }
   };
 
-  const onWheel = (e: React.WheelEvent) => {
-    const r = wrapRef.current!.getBoundingClientRect();
-    const zoomMode = e.ctrlKey || e.metaKey || S().prefs.wheel === 'zoom';
-    if (zoomMode && !e.shiftKey) {
-      const factor = Math.exp(-e.deltaY * (e.ctrlKey && Math.abs(e.deltaY) < 50 ? 0.01 : 0.0015));
-      A.zoomBy(factor, e.clientX - r.left, e.clientY - r.top);
-    } else {
-      const v = S().view;
-      const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
-      const dy = e.shiftKey && !e.deltaX ? 0 : e.deltaY;
-      set({ view: { ...v, x: v.x - dx, y: v.y - dy } });
-    }
-  };
+  // a native, non-passive listener: React's passive onWheel can't stop Ctrl+wheel / pinch from zooming the whole page
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      // HTML on top of the drawing (minimap, text editors, menus) keeps its own wheel behaviour
+      if (e.target instanceof HTMLElement && e.target !== el) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      // Firefox reports mouse wheels in lines (or pages); work in pixels
+      const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? r.height : 1;
+      const deltaX = e.deltaX * unit;
+      const deltaY = e.deltaY * unit;
+      const zoomMode = e.ctrlKey || e.metaKey || S().prefs.wheel === 'zoom';
+      if (zoomMode && !e.shiftKey) {
+        const factor = Math.exp(-deltaY * (e.ctrlKey && Math.abs(deltaY) < 50 ? 0.01 : 0.0015));
+        A.zoomBy(factor, e.clientX - r.left, e.clientY - r.top);
+      } else {
+        const v = S().view;
+        const dx = e.shiftKey && !deltaX ? deltaY : deltaX;
+        const dy = e.shiftKey && !deltaX ? 0 : deltaY;
+        set({ view: { ...v, x: v.x - dx, y: v.y - dy } });
+      }
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -2136,6 +2162,7 @@ export function Canvas() {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={abortGesture}
       onPointerLeave={() => {
         set({ pointerOnCanvas: false });
         setHover({ item: null, port: null });
@@ -2143,7 +2170,6 @@ export function Canvas() {
         setHotPending(null);
         if (hotMenu) scheduleHotClose();
       }}
-      onWheel={onWheel}
       onContextMenu={onContextMenu}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('application/x-nodal-symbol') || e.dataTransfer.types.includes('application/x-nodal-shape')) {

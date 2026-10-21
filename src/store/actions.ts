@@ -239,6 +239,10 @@ export function copySelection() {
 }
 
 export function cutSelection() {
+  // cut moves what it can remove: whole items (not just a picked wire part), never locked ones
+  const ids = editable();
+  if (!ids.length) return toast('Locked items can’t be cut — copy them instead');
+  set({ selection: ids, wirePart: null });
   copySelection();
   deleteSelection();
 }

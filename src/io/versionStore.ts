@@ -2,7 +2,7 @@ import { normalizePages } from '../model/pages';
 import { migrateItems, uid } from '../model/doc';
 import type { CircuitDoc } from '../model/types';
 import { pruneAutos, sameContent, type Version } from '../model/versions';
-import { S, inGesture, mutate, toast, useStore } from '../store/store';
+import { S, inGesture, mutate, set, toast, useStore } from '../store/store';
 
 /*
  * Version history: restore points of each document, kept in IndexedDB on this
@@ -162,6 +162,8 @@ export async function restoreVersion(v: Version) {
     d.symbols = v.doc.symbols;
     d.pages = normalizePages({ ...v.doc, items: {} }).pages;
   }, [], { allPages: true });
+  // the group you were inside may not exist in the restored version
+  set({ scope: undefined });
   toast('Version restored · Undo brings back what was there', 'success');
 }
 
