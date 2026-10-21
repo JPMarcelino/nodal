@@ -190,6 +190,18 @@ describe('SVG sanitising', () => {
     expect(cleanSvgAttr('fill', 'url("https://evil/a)b")')).toBe('none');
   });
 
+  it('strips xml:base so internal refs cannot be re-based to a remote origin', () => {
+    expect(cleanSvgAttr('base', 'https://evil/')).toBeNull();
+    expect(cleanSvgAttr('xml:base', 'https://evil/')).toBeNull();
+    expect(cleanSvgAttr('xlink:href', 'javascript:alert(1)')).toBeNull();
+    const root = fakeEl('svg', SVGNS, [['xml:base', 'base', 'https://evil/']]);
+    const rect = fakeEl('rect', SVGNS, [['fill', 'fill', 'url(#g)'], ['width', 'width', '10']]);
+    root.appendChild(rect);
+    sanitizeSvg(root as unknown as Element);
+    expect(root.attr('xml:base')).toBeNull();
+    expect(rect.attr('fill')).toBe('url(#g)');
+  });
+
   it('sanitizeSvg cleans a hostile tree while keeping drawable shapes', () => {
     const root = fakeEl('svg', SVGNS, [['onload', 'onload', 'evil()'], ['width', 'width', '100']]);
     const script = fakeEl('script');
