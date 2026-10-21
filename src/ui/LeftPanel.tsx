@@ -1,5 +1,6 @@
 import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, History, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFold } from './controls';
 import { drawOrderCached } from '../model/doc';
 import { computeNets } from '../model/netlist';
 import { reorderItem } from '../model/ops';
@@ -168,7 +169,7 @@ function ShapeTile({ preset }: { preset: ShapePreset }) {
 }
 
 function ShapeCategory({ name, presets, defaultOpen = false }: { name: string; presets: ShapePreset[]; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useFold(`lib:${name}`, defaultOpen);
   if (!presets.length) return null;
   return (
     <div className="lib-cat">
@@ -189,7 +190,7 @@ function ShapeCategory({ name, presets, defaultOpen = false }: { name: string; p
 }
 
 function Category({ name, defs, defaultOpen = true }: { name: string; defs: SymbolDef[]; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useFold(`lib:${name}`, defaultOpen);
   if (!defs.length) return null;
   return (
     <div className="lib-cat">
@@ -329,11 +330,11 @@ function Library() {
                 <div className="empty-note small">Draw your own parts, or duplicate any built-in symbol and tweak it.</div>
               )}
             </div>
-            {PRESET_CATEGORIES.map((c, i) => (
-              <ShapeCategory key={c.id} name={c.label} presets={SHAPE_PRESETS.filter((p) => p.category === c.id)} defaultOpen={i === 0} />
-            ))}
             {CATEGORY_ORDER.map((c) => (
               <Category key={c} name={c} defs={byCat.get(c) ?? []} defaultOpen={c === 'Passive' || c === 'Semiconductors' || c === 'Power & Sources'} />
+            ))}
+            {PRESET_CATEGORIES.map((c) => (
+              <ShapeCategory key={c.id} name={c.label} presets={SHAPE_PRESETS.filter((p) => p.category === c.id)} />
             ))}
           </>
         )}

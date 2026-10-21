@@ -33,8 +33,9 @@ export function Minimap({ data }: { data: SceneData }) {
     const r = ref.current!.getBoundingClientRect();
     const ox = (W - box.w * k) / 2;
     const oy = (H - box.h * k) / 2;
-    const wx = (clientX - r.left - ox) / k + box.x;
-    const wy = (clientY - r.top - oy) / k + box.y;
+    // the map may be drawn smaller than W×H (narrow canvases), so work in its own units
+    const wx = (((clientX - r.left) * W) / r.width - ox) / k + box.x;
+    const wy = (((clientY - r.top) * H) / r.height - oy) / k + box.y;
     const v = S().view;
     set({ view: { ...v, x: size.w / 2 - wx * v.zoom, y: size.h / 2 - wy * v.zoom } });
   };
@@ -45,6 +46,7 @@ export function Minimap({ data }: { data: SceneData }) {
         ref={ref}
         width={W}
         height={H}
+        viewBox={`0 0 ${W} ${H}`}
         onPointerDown={(e) => {
           (e.target as Element).setPointerCapture(e.pointerId);
           navigate(e.clientX, e.clientY);

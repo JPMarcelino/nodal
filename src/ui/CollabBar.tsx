@@ -32,7 +32,7 @@ export function CollabBar() {
   if (status === 'off') {
     return (
       <button className="secondary-btn share-btn" onClick={openShare} title="Share & collaborate live">
-        <Users size={15} /> Share
+        <Users size={15} /> <span className="btn-label">Share</span>
       </button>
     );
   }

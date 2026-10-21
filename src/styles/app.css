@@ -162,6 +162,24 @@ kbd {
   flex: 1;
   position: relative;
   min-width: 0;
+  container-type: inline-size;
+}
+
+/* a narrow canvas gets a slimmer tool rail (it wraps to a second row only as a last resort) */
+@container (max-width: 760px) {
+  .tool-rail {
+    gap: 0;
+  }
+  .tool-rail .tool-btn {
+    width: 29px;
+  }
+  .tool-rail .rail-sep {
+    margin: 0 1px;
+  }
+  .minimap svg {
+    width: 140px;
+    height: 91px;
+  }
 }
 
 /* ---------------------------- top bar ---------------------------- */
@@ -169,7 +187,9 @@ kbd {
 .topbar {
   height: 46px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* the sides keep their content; the circuit name gives way (ellipsis) when space runs out */
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, auto) minmax(max-content, 1fr);
+  gap: 8px;
   align-items: center;
   padding: 0 10px;
   background: var(--panel);
@@ -253,9 +273,29 @@ kbd {
   text-align: left;
 }
 
-.dropdown-item:hover {
+.dropdown-item:hover:not(:disabled) {
   background: var(--accent-soft);
   color: var(--text);
+}
+
+.dropdown-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.dropdown-label {
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dropdown-check {
+  flex: none;
+  width: 13px;
+  margin-left: -4px;
+  display: inline-flex;
+  color: var(--accent);
 }
 
 .dropdown-item kbd {
@@ -402,8 +442,15 @@ kbd {
   }
 }
 
+.topbar-center {
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
 .doc-name {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   font-weight: 600;
@@ -413,6 +460,11 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.doc-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .doc-name:hover {
@@ -2080,6 +2132,10 @@ select.input {
   transform: translateX(-50%);
   z-index: 4;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: max-content;
+  max-width: calc(100% - 16px);
   align-items: center;
   gap: 2px;
   padding: 5px;
@@ -2775,15 +2831,27 @@ select.input {
   }
 }
 
+@media (max-width: 1280px) {
+  .brand > span,
+  .palette-hint {
+    display: none;
+  }
+  .brand {
+    margin-right: 4px;
+  }
+}
+
 @media (max-width: 1100px) {
   .menubar .menu-btn {
     padding: 6px 7px;
   }
-  .panel {
-    width: 240px;
+  .topbar .btn-label,
+  .topbar .tb-optional {
+    display: none;
   }
-  .right-panel {
-    width: 260px;
+  .topbar .primary-btn,
+  .topbar .share-btn {
+    padding: 0 9px;
   }
 }
 

@@ -356,7 +356,11 @@ function DocumentPanel() {
           Reset all wires to default style
         </button>
       </Section>
-      <Section title="Show">
+      <Section
+        title="Show"
+        defaultOpen={false}
+        summary={[!settings.hideRefs && 'names', !settings.hideValues && 'values', !settings.hideWireLabels && 'wire names'].filter(Boolean).join(' · ') || 'labels hidden'}
+      >
         <Field label="Part names">
           <Toggle checked={!settings.hideRefs} onChange={(v) => upd((s) => (s.hideRefs = !v))} />
         </Field>
@@ -368,7 +372,7 @@ function DocumentPanel() {
         </Field>
       </Section>
       <SheetSection />
-      <Section title="Canvas (saved with this drawing)">
+      <Section title="Canvas" defaultOpen={false} summary={`${settings.grid}px grid${settings.snap ? ' · snap' : ''}`}>
         <Field label="Grid">
           <NumberInput value={settings.grid} min={2} max={100} suffix="px" onChange={(v) => upd((s) => (s.grid = v))} />
         </Field>
@@ -378,6 +382,7 @@ function DocumentPanel() {
         <Field label="Snap to grid">
           <Toggle checked={settings.snap} onChange={(v) => upd((s) => (s.snap = v))} />
         </Field>
+        <More id="canvas-colours" label="Colours">
         <Field label="Symbol colour">
           <ColorInput value={settings.componentColor} allowNone onChange={(v) => upd((s) => (s.componentColor = v))} />
         </Field>
@@ -387,6 +392,8 @@ function DocumentPanel() {
         <Field label="Background">
           <ColorInput value={settings.background} allowNone onChange={(v) => upd((s) => (s.background = v))} />
         </Field>
+        </More>
+        <div className="section-note">Saved with this drawing.</div>
       </Section>
       <div className="inspector-tip">
         Tip: select something to edit it. Press <kbd>?</kbd> for all shortcuts, <kbd>Ctrl+K</kbd> for the command palette.

@@ -3,6 +3,13 @@ import { ChevronRight } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { keysFor, prettyKey } from '../store/commands';
 
+/** Pure black is the theme-aware "ink" (black on paper, cream on the dark theme). */
+export const INK = '#000000';
+const isInk = (c: string) => /^#(000|000000)$/i.test(c);
+/** What a swatch paints: ink follows the theme, anything else is literal. */
+export const swatchBg = (c: string) => (isInk(c) ? 'var(--ink)' : c);
+export const swatchTitle = (c: string) => (isInk(c) ? 'Ink (follows the theme)' : c);
+
 export const SWATCHES = ['#000000', '#3ddc97', '#7aa2f7', '#bb9af7', '#f7768e', '#ff9e64', '#e0af68', '#9ece6a', '#2ac3de', '#c0caf5', '#565f89', '#1f2433', '#ffffff'];
 
 export function Field({ label, children, hint, wide }: { label: string; children: ReactNode; hint?: string; wide?: boolean }) {
@@ -85,15 +92,16 @@ export function NumberInput({
   step?: number;
   suffix?: string;
 }) {
-  const [v, setV] = useState(String(value));
-  useEffect(() => setV(String(+value.toFixed(2))), [value]);
+  const fmt = (n: number) => String(+n.toFixed(2));
+  const [v, setV] = useState(fmt(value));
+  useEffect(() => setV(fmt(value)), [value]);
   const commit = (raw = v) => {
     let n = parseFloat(raw);
-    if (Number.isNaN(n)) return setV(String(value));
+    if (!Number.isFinite(n)) return setV(fmt(value));
     if (min !== undefined) n = Math.max(min, n);
     if (max !== undefined) n = Math.min(max, n);
     if (n !== value) onChange(n);
-    else setV(String(value));
+    else setV(fmt(value));
   };
   return (
     <span className="number-input">
@@ -107,8 +115,9 @@ export function NumberInput({
           if (e.key === 'Enter') commit();
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
-            const n = (parseFloat(v) || 0) + (e.key === 'ArrowUp' ? step : -step) * (e.shiftKey ? 10 : 1);
-            setV(String(+n.toFixed(2)));
+            const base = parseFloat(v);
+            const n = (Number.isFinite(base) ? base : value) + (e.key === 'ArrowUp' ? step : -step) * (e.shiftKey ? 10 : 1);
+            setV(fmt(n));
             commit(String(n));
           }
         }}
@@ -138,6 +147,7 @@ export function Slider({ value, onChange, min, max, step = 0.01 }: { value: numb
 
 export function ColorInput({ value, onChange, allowNone }: { value: string; onChange: (v: string) => void; allowNone?: boolean }) {
   const [open, setOpen] = useState(false);
+  const [rev, setRev] = useState(0);
   const isNone = !value || value === 'none';
   const ref = useRef<HTMLSpanElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -181,8 +191,22 @@ export function ColorInput({ value, onChange, allowNone }: { value: string; onCh
   }, [open]);
   return (
     <span className="color-input" ref={ref}>
-      <button type="button" className={isNone ? 'swatch none' : 'swatch'} style={{ background: isNone ? undefined : value }} onClick={() => setOpen(!open)} />
-      <TextInput value={isNone ? '' : value} onChange={(v) => onChange(v || (allowNone ? '' : value))} placeholder={allowNone ? 'auto' : ''} mono />
+      <button type="button" className={isNone ? 'swatch none' : 'swatch'} style={{ background: isNone ? undefined : swatchBg(value) }} title={isNone ? 'Automatic' : swatchTitle(value)} onClick={() => setOpen(!open)} />
+      <TextInput
+        key={rev}
+        value={isNone ? '' : isInk(value) ? 'ink' : value}
+        onChange={(raw) => {
+          const v = raw.trim();
+          if (!v) return onChange(allowNone ? '' : value);
+          if (v.toLowerCase() === 'ink') return onChange(INK);
+          // a bare hex without '#' is still meant as a colour; anything unreadable keeps the old one
+          const c = /^[0-9a-f]{3}([0-9a-f]{3})?$/i.test(v) ? `#${v}` : v;
+          if (CSS.supports('color', c)) onChange(c.toLowerCase());
+          else setRev((r) => r + 1);
+        }}
+        placeholder={allowNone ? 'auto' : ''}
+        mono
+      />
       {open &&
         createPortal(
           <div className="swatch-pop" ref={popRef} style={pos}>
@@ -200,8 +224,8 @@ export function ColorInput({ value, onChange, allowNone }: { value: string; onCh
               <button
                 key={c}
                 className="swatch"
-                style={{ background: c }}
-                title={c}
+                style={{ background: swatchBg(c) }}
+                title={swatchTitle(c)}
                 onClick={() => {
                   onChange(c);
                   setOpen(false);
@@ -210,7 +234,7 @@ export function ColorInput({ value, onChange, allowNone }: { value: string; onCh
             ))}
             <label className="swatch custom" title="Custom colour">
               +
-              <input type="color" value={isNone ? '#7aa2f7' : value.slice(0, 7)} onChange={(e) => onChange(e.target.value)} />
+              <input type="color" value={/^#[0-9a-f]{6}/i.test(value) ? value.slice(0, 7) : '#7aa2f7'} onChange={(e) => onChange(e.target.value)} />
             </label>
           </div>,
           document.body,
@@ -276,7 +300,8 @@ export function setFolds(patch: Record<string, boolean>) {
   }
   foldListeners.forEach((f) => f());
 }
-function useFold(id: string, defaultOpen: boolean): [boolean, (open: boolean) => void] {
+/** A fold (open / closed) that is remembered across sessions. */
+export function useFold(id: string, defaultOpen: boolean): [boolean, (open: boolean) => void] {
   const open = useSyncExternalStore(
     (f) => (foldListeners.add(f), () => void foldListeners.delete(f)),
     () => folds[id] ?? defaultOpen,
