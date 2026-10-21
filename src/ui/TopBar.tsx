@@ -1,4 +1,5 @@
 import {
+  Check,
   CircleDot,
   Unplug,
   Pentagon,
@@ -47,20 +48,20 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   },
   {
     label: 'Place',
-    items: ['tool.wire', 'tool.placeLast', '-', 'tool.resistor', 'tool.capacitor', 'tool.ground', 'tool.vcc', 'tool.netLabel', 'tool.junction', '-', 'tool.rect', 'tool.zone', 'tool.ellipse', 'tool.line', 'tool.arrow', 'tool.text', '-', 'symbols.new', 'symbols.fromSelection', 'symbols.edit'],
+    items: ['tool.wire', 'tool.placeLast', '-', 'tool.resistor', 'tool.capacitor', 'tool.ground', 'tool.vcc', 'tool.netLabel', 'tool.junction', '-', 'tool.rect', 'tool.zone', 'tool.ellipse', 'tool.polygon', 'tool.path', 'tool.line', 'tool.arrow', 'tool.text', '-', 'symbols.new', 'symbols.fromSelection', 'symbols.edit'],
   },
   {
     label: 'Arrange',
     items: [
       'arrange.rotateCw', 'arrange.rotateCcw', 'arrange.flipH', 'arrange.flipV', '-',
-      'arrange.group', 'arrange.ungroup', 'arrange.enterGroup', '-',
+      'arrange.group', 'arrange.ungroup', 'arrange.enterGroup', 'arrange.exitGroup', 'arrange.toPath', '-',
       'arrange.alignLeft', 'arrange.alignHCenter', 'arrange.alignRight', 'arrange.alignTop', 'arrange.alignVCenter', 'arrange.alignBottom', 'arrange.distH', 'arrange.distV', '-',
       'arrange.sameWidth', 'arrange.sameHeight', 'arrange.sameSize', '-',
       'arrange.front', 'arrange.forward', 'arrange.backward', 'arrange.back',
     ],
   },
   { label: 'Page', items: ['page.new', 'page.duplicate', 'page.rename', 'page.delete', '-', 'page.prev', 'page.next', '-', 'page.moveLeft', 'page.moveRight'] },
-  { label: 'Wire', items: ['tool.wire', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.corners'] },
+  { label: 'Wire', items: ['tool.wire', 'tool.solder', 'wire.reroute', 'wire.highlightNet', '-', 'wire.hops', 'wire.corners'] },
   {
     label: 'Explain',
     items: ['explain.toggle', '-', 'tool.pen', 'tool.highlighter', 'tool.laser', 'tool.eraser', '-', 'tool.trace', 'tool.callout', '-', 'tool.frame', 'present.timeline', 'explain.present', 'present.video', '-', 'explain.renumber', 'explain.clear'],
@@ -90,21 +91,28 @@ function MenuBar() {
           </button>
           {open === i && (
             <div className="dropdown">
-              {m.items.map((id, j) => {
+              {m.items.map((id, j, all) => {
                 if (id === '-') return <div key={j} className="dropdown-sep" />;
                 const c = COMMAND_MAP.get(id);
                 if (!c) return null;
                 const k = keysFor(id)[0];
+                const on = c.checked?.();
+                // keep labels aligned when some entries of this menu carry a tick
+                const slot = all.some((x) => COMMAND_MAP.get(x)?.checked);
                 return (
                   <button
                     key={id}
                     className="dropdown-item"
+                    disabled={c.when ? !c.when() : false}
                     onClick={() => {
                       setOpen(null);
                       c.run();
                     }}
                   >
-                    <span>{c.label}</span>
+                    <span className="dropdown-label">
+                      {slot && <span className="dropdown-check">{on && <Check size={13} />}</span>}
+                      {c.label}
+                    </span>
                     {k && <kbd>{prettyKey(k)}</kbd>}
                   </button>
                 );
@@ -145,7 +153,7 @@ function DocName() {
     );
   return (
     <button className="doc-name" onClick={() => setEditing(true)} title="Rename circuit">
-      {name}
+      <span className="doc-name-text">{name}</span>
       {dirty && <span className="dirty-dot" title="Unsaved changes" />}
     </button>
   );
@@ -191,13 +199,13 @@ export function TopBar() {
         <button className={right ? 'icon-btn active' : 'icon-btn'} onClick={() => set({ rightPanel: !right })} title="Toggle properties (Ctrl+I)">
           <PanelRight size={16} />
         </button>
-        <button className="icon-btn" onClick={() => set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">
+        <button className="icon-btn tb-optional" onClick={() => set({ dialog: 'shortcuts' })} title="Keyboard shortcuts (?)">
           <Keyboard size={16} />
         </button>
         <span className="divider" />
         <CollabBar />
-        <button className="primary-btn" onClick={() => openExport()}>
-          <Download size={15} /> Export
+        <button className="primary-btn" onClick={() => openExport()} title="Export">
+          <Download size={15} /> <span className="btn-label">Export</span>
         </button>
       </div>
     </header>

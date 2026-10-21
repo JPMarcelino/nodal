@@ -6,7 +6,7 @@ import { measureTextShape } from '../model/shapeText';
 import type { Dash, Item, ShapeItem } from '../model/types';
 import { S, mutate, toast, useViewDoc, vdoc } from '../store/store';
 import type { ReactNode } from 'react';
-import { NumberInput, SWATCHES, Section, Segmented, Slider, Toggle } from './controls';
+import { NumberInput, SWATCHES, Section, Segmented, Slider, Toggle, swatchBg, swatchTitle } from './controls';
 
 /** Style copied with "Copy style", ready to paste onto other items. */
 let copied: Partial<Look> | null = null;
@@ -104,7 +104,7 @@ export function SwatchRow({ value, onChange, noneTitle, mixed }: { value: string
     <span className="swatch-row">
       <button type="button" className={`swatch none${cur === '' ? ' picked' : ''}`} title={noneTitle} onClick={() => onChange('')} />
       {SWATCHES.map((c) => (
-        <button key={c} type="button" className={`swatch${cur === c ? ' picked' : ''}`} style={{ background: c }} title={c} onClick={() => onChange(c)} />
+        <button key={c} type="button" className={`swatch${cur === c ? ' picked' : ''}`} style={{ background: swatchBg(c) }} title={swatchTitle(c)} onClick={() => onChange(c)} />
       ))}
       <label className={`swatch custom${cur && !SWATCHES.includes(cur) ? ' picked' : ''}`} title="Any colour" style={cur && !SWATCHES.includes(cur) ? { background: cur } : undefined}>
         +

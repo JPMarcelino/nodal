@@ -22,8 +22,10 @@ export interface Command {
   /** Keys in the Cadence (Virtuoso schematic) scheme; when absent the Nodal keys apply minus any Cadence uses. */
   cadence?: string[];
   run: () => void;
-  /** Shown in the palette only when this returns true. */
+  /** Shown in the palette only when this returns true (menus show it greyed out). */
   when?: () => boolean;
+  /** For on/off commands: whether it is currently on (menus show a tick). */
+  checked?: () => boolean;
   /** Extra words the command palette finds it by. */
   keywords?: string;
 }
@@ -167,7 +169,7 @@ export const COMMANDS: Command[] = [
   { id: 'wire.reroute', label: 'Re-route selected wires', category: 'Wire', keys: ['Shift+W'], run: A.rerouteWires },
   { id: 'wire.highlightNet', label: 'Highlight net of selected wire', category: 'Wire', keys: ['N'], run: highlightNet },
   { id: 'wire.hops', label: 'Cycle wire crossing style (hop / gap / none)', category: 'Wire', keys: ['Mod+Shift+J'], run: cycleHops },
-  { id: 'wire.corners', label: 'Toggle rounded wire corners', category: 'Wire', keys: ['Mod+Shift+K'], run: toggleCorners },
+  { id: 'wire.corners', label: 'Toggle rounded wire corners', category: 'Wire', keys: ['Mod+Shift+K'], run: toggleCorners, checked: () => vdoc().settings.wire.radius > 0 },
 
   // View
   { id: 'view.zoomIn', label: 'Zoom in', category: 'View', keys: ['=', 'Mod+=', '+'], cadence: ['[', 'Mod+=', '='], run: () => A.zoomBy(1.25) },
@@ -175,16 +177,16 @@ export const COMMANDS: Command[] = [
   { id: 'view.fit', label: 'Zoom to fit', category: 'View', keys: ['Shift+1', 'F'], run: () => A.fitView() },
   { id: 'view.fitSel', label: 'Zoom to selection', category: 'View', keys: ['Shift+2'], run: () => A.fitView(S().selection) },
   { id: 'view.100', label: 'Zoom to 100%', category: 'View', keys: ['Mod+0', 'Shift+0'], run: () => A.zoomTo(1) },
-  { id: 'view.refs', label: 'Show part names', category: 'View', keys: ['Alt+N'], run: () => toggleSetting('hideRefs', 'Part names') },
-  { id: 'view.values', label: 'Show part values', category: 'View', keys: ['Alt+U'], run: () => toggleSetting('hideValues', 'Part values') },
-  { id: 'view.wireLabels', label: 'Show wire names', category: 'View', keys: ['Alt+W'], run: () => toggleSetting('hideWireLabels', 'Wire names') },
-  { id: 'view.alignGuides', label: 'Alignment guides while moving', category: 'View', keys: ['Alt+G'], run: () => { setPrefs({ alignGuides: !S().prefs.alignGuides }); toast(S().prefs.alignGuides ? 'Alignment guides on' : 'Alignment guides off'); } },
-  { id: 'view.grid', label: 'Toggle grid', category: 'View', keys: ['G'], run: () => mutateSettings((s) => (s.showGrid = !s.showGrid)) },
-  { id: 'view.snap', label: 'Toggle snap to grid', category: 'View', keys: ["Mod+'"], run: () => mutateSettings((s) => (s.snap = !s.snap)) },
-  { id: 'view.library', label: 'Toggle library panel', category: 'View', keys: ['Mod+B'], run: () => set((s) => ({ leftPanel: !s.leftPanel })) },
-  { id: 'view.inspector', label: 'Toggle properties panel', category: 'View', keys: ['Mod+I'], run: () => set((s) => ({ rightPanel: !s.rightPanel })) },
+  { id: 'view.refs', label: 'Show part names', category: 'View', keys: ['Alt+N'], run: () => toggleSetting('hideRefs', 'Part names'), checked: () => !vdoc().settings.hideRefs },
+  { id: 'view.values', label: 'Show part values', category: 'View', keys: ['Alt+U'], run: () => toggleSetting('hideValues', 'Part values'), checked: () => !vdoc().settings.hideValues },
+  { id: 'view.wireLabels', label: 'Show wire names', category: 'View', keys: ['Alt+W'], run: () => toggleSetting('hideWireLabels', 'Wire names'), checked: () => !vdoc().settings.hideWireLabels },
+  { id: 'view.alignGuides', label: 'Alignment guides while moving', category: 'View', keys: ['Alt+G'], run: () => { setPrefs({ alignGuides: !S().prefs.alignGuides }); toast(S().prefs.alignGuides ? 'Alignment guides on' : 'Alignment guides off'); }, checked: () => S().prefs.alignGuides },
+  { id: 'view.grid', label: 'Toggle grid', category: 'View', keys: ['G'], run: () => mutateSettings((s) => (s.showGrid = !s.showGrid)), checked: () => vdoc().settings.showGrid },
+  { id: 'view.snap', label: 'Toggle snap to grid', category: 'View', keys: ["Mod+'"], run: () => mutateSettings((s) => (s.snap = !s.snap)), checked: () => vdoc().settings.snap },
+  { id: 'view.library', label: 'Toggle library panel', category: 'View', keys: ['Mod+B'], run: () => set((s) => ({ leftPanel: !s.leftPanel })), checked: () => S().leftPanel },
+  { id: 'view.inspector', label: 'Toggle properties panel', category: 'View', keys: ['Mod+I'], run: () => set((s) => ({ rightPanel: !s.rightPanel })), checked: () => S().rightPanel },
   { id: 'view.layers', label: 'Show layers panel', category: 'View', keys: ['Mod+Shift+O'], run: () => set({ leftPanel: true, leftTab: 'layers' }) },
-  { id: 'view.minimap', label: 'Toggle minimap', category: 'View', keys: ['Alt+M'], run: () => setPrefs({ showMinimap: !S().prefs.showMinimap }) },
+  { id: 'view.minimap', label: 'Toggle minimap', category: 'View', keys: ['Alt+M'], run: () => setPrefs({ showMinimap: !S().prefs.showMinimap }), checked: () => S().prefs.showMinimap },
   { id: 'view.theme', label: 'Toggle light / dark theme', category: 'View', keys: ['Mod+Shift+D'], run: () => setPrefs({ theme: S().prefs.theme === 'dark' ? 'light' : 'dark' }) },
   { id: 'view.focus', label: 'Focus mode (hide panels)', category: 'View', keys: ['Mod+.'], run: focusMode },
   { id: 'view.search', label: 'Search symbol library', category: 'View', keys: ['/'], cadence: ['I', '/'], run: focusSearch },
