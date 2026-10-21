@@ -408,12 +408,15 @@ function followChange(from: CircuitDoc, to: CircuitDoc) {
   if (pages.size && !pages.has(activePage())) setPage([...pages][0]);
 }
 
+/** The entered group, if it still exists in `doc` (undo can take a group away while you're inside it). */
+const liveScope = (scope: string | undefined, doc: CircuitDoc) => (scope && doc.groups?.[scope] ? scope : undefined);
+
 export function undo() {
   if (inGesture()) return;
   const s = S();
   if (!s.past.length || s.viewOnly) return;
   const prev = s.past[s.past.length - 1];
-  set({ doc: prev, past: s.past.slice(0, -1), future: [s.doc, ...s.future], dirty: true, selection: s.selection.filter((id) => prev.items[id]), wirePart: null });
+  set({ doc: prev, past: s.past.slice(0, -1), future: [s.doc, ...s.future], dirty: true, selection: s.selection.filter((id) => prev.items[id]), wirePart: null, scope: liveScope(s.scope, prev) });
   followChange(s.doc, prev);
 }
 
@@ -422,7 +425,7 @@ export function redo() {
   const s = S();
   if (!s.future.length || s.viewOnly) return;
   const next = s.future[0];
-  set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]), wirePart: null });
+  set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]), wirePart: null, scope: liveScope(s.scope, next) });
   followChange(s.doc, next);
 }
 
@@ -441,7 +444,7 @@ export function applyExternal(patch: (doc: CircuitDoc) => CircuitDoc) {
   const doc = patch(s.doc);
   // a node/segment sub-selection only survives if its wire was left untouched
   const wirePart = s.wirePart && doc.items[s.wirePart.wire] === s.doc.items[s.wirePart.wire] ? s.wirePart : null;
-  set({ doc, past: s.past.map(patch), future: s.future.map(patch), selection: s.selection.filter((id) => doc.items[id]), wirePart });
+  set({ doc, past: s.past.map(patch), future: s.future.map(patch), selection: s.selection.filter((id) => doc.items[id]), wirePart, scope: liveScope(s.scope, doc) });
 }
 
 let autosavePaused = false;
@@ -598,10 +601,14 @@ function autosaveNow() {
   if (!doc || typeof doc !== 'object' || doc.format !== 'nodal' || typeof doc.items !== 'object' || !doc.settings) return;
   try {
     localStorage.setItem(LS.doc, JSON.stringify(doc));
+    autosaveFailed = false;
   } catch {
-    /* quota exceeded — ignore */
+    // quota exceeded (big pictures): say so once, and let the unload guard warn
+    if (!autosaveFailed) toast('This circuit is too big to keep in the browser — save it to a file', 'error');
+    autosaveFailed = true;
   }
 }
+let autosaveFailed = false;
 
 if (typeof window !== 'undefined') {
   // an edit made just before the page goes away is still written
@@ -609,7 +616,7 @@ if (typeof window !== 'undefined') {
   // leaving with changes that exist nowhere else (autosave off, or not yet saved to the open file)
   window.addEventListener('beforeunload', (e) => {
     const s = S();
-    if (!s.dirty || !Object.keys(s.doc.items).length || (s.prefs.autosave && !s.filePath)) return;
+    if (!s.dirty || !Object.keys(s.doc.items).length || (s.prefs.autosave && !s.filePath && !autosaveFailed)) return;
     e.preventDefault();
     e.returnValue = '';
   });

@@ -22,15 +22,16 @@ export async function openTextFile(filters: FileFilter[]): Promise<OpenedFile | 
     const text = await readTextFile(path);
     return { name: path.split(/[\\/]/).pop() ?? path, path, text };
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = filters.flatMap((f) => f.extensions.map((e) => `.${e}`)).join(',');
-    input.onchange = async () => {
+    input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return resolve(null);
-      resolve({ name: file.name, path: null, text: await file.text() });
+      file.text().then((text) => resolve({ name: file.name, path: null, text }), reject);
     };
+    input.oncancel = () => resolve(null);
     input.click();
   });
 }
@@ -53,6 +54,7 @@ export async function openAnyFile(filters: FileFilter[]): Promise<{ file: File; 
       const file = input.files?.[0];
       resolve(file ? { file, path: null } : null);
     };
+    input.oncancel = () => resolve(null);
     input.click();
   });
 }

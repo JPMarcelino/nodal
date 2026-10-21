@@ -24,7 +24,9 @@ export function fragmentFromText(text: string | null | undefined): Fragment | nu
   if (!meta && !text.includes('"nodal-fragment"')) return null;
   try {
     const frag = JSON.parse(meta ? unescapeXml(meta[1]) : text) as Fragment;
-    return frag && Array.isArray(frag.items) && frag.items.length ? frag : null;
+    const ok = (x: unknown) => !!x && typeof x === 'object' && typeof (x as { id?: unknown }).id === 'string' && typeof (x as { type?: unknown }).type === 'string';
+    // pasted text can be anything: only take fragments whose items look like items
+    return frag && Array.isArray(frag.items) && frag.items.length && frag.items.every(ok) && (!frag.groups || Array.isArray(frag.groups)) ? frag : null;
   } catch {
     return null;
   }

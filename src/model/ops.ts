@@ -815,7 +815,8 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
     const parent = g.group && gMap.get(g.group);
     doc.groups[gMap.get(g.id)!] = { id: gMap.get(g.id)!, name: g.name, group: parent || scope };
   }
-  Object.assign(doc.symbols, frag.symbols);
+  // a symbol this circuit already defines keeps its own (possibly edited) definition
+  for (const [k, v] of Object.entries(frag.symbols ?? {})) if (!doc.symbols[k]) doc.symbols[k] = v;
   const refs = new Set([...Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])), ...outsideRefs()]);
   const out: string[] = [];
   const remapEp = (ep: Endpoint): Endpoint => {
@@ -996,7 +997,18 @@ export function annotate(doc: CircuitDoc) {
   // page by page, then top to bottom, left to right
   const sheet = new Map(docPages(doc).map((p, i) => [p.id, i]));
   const at = (c: ComponentItem) => sheet.get(itemPage(doc, c)) ?? 0;
-  comps.sort((a, b) => at(a) - at(b) || (Math.abs(a.y - b.y) > 40 ? a.y - b.y : a.x - b.x));
+  // rows: parts within 40px of a row's first (top-most) part share it; a stable,
+  // transitive order (a pairwise "close enough in y" comparison is not)
+  comps.sort((a, b) => at(a) - at(b) || a.y - b.y || a.x - b.x);
+  const row = new Map<ComponentItem, number>();
+  let top = -Infinity;
+  let page = -1;
+  let r = 0;
+  for (const c of comps) {
+    if (at(c) !== page || c.y - top > 40) [page, top, r] = [at(c), c.y, r + 1];
+    row.set(c, r);
+  }
+  comps.sort((a, b) => row.get(a)! - row.get(b)! || a.x - b.x);
   const counters = new Map<string, number>();
   for (const c of comps) {
     const prefix = instanceSymbol(doc, c).prefix;

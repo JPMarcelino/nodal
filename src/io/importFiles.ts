@@ -79,9 +79,10 @@ async function importSvgDrawing(fileName: string, text: string, at: Point, opts?
   if (!how) return;
   const g = S().doc.settings.grid;
   const ids: string[] = [];
-  mutate((d) => {
+  const ok = mutate((d) => {
     ids.push(...insertSvgDrawing(d as CircuitDoc, drawing, { x: snap(at.x, g), y: snap(at.y, g) }, S().scope, name, how));
   }, ids);
+  if (!ok) return;
   const count = (type: string) => ids.filter((id) => S().doc.items[id]?.type === type).length;
   const n = (k: number, one: string) => `${k} ${one}${k === 1 ? '' : 's'}`;
   const [parts, wires] = [count('component'), count('wire')];
