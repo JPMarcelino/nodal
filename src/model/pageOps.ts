@@ -29,7 +29,8 @@ export function duplicatePage(d: CircuitDoc, id: string, name?: string): string 
   const page = addPage(d, label, src);
   const ids = pageItemIds(d, src);
   const frag = extractFragment(d, new Set(ids));
-  const added = insertFragment(d, frag, 0, 0);
+  // the new page starts empty, so the copies keep their references
+  const added = insertFragment(d, frag, 0, 0, undefined, []);
   added.forEach((nid, i) => {
     const it = d.items[nid];
     it.page = page;

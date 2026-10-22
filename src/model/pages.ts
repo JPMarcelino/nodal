@@ -1,5 +1,5 @@
 import { produce, type Draft } from 'immer';
-import { groupChain, uid, withOutsideItems } from './doc';
+import { groupChain, uid } from './doc';
 import type { CircuitDoc, Group, Item, Page } from './types';
 
 /**
@@ -134,9 +134,9 @@ export function editPage(
     const next = produce(view, (d) => void recipe(d, view));
     return after ? after(view, next) : next;
   };
+  // each page names its parts on its own, so an edit only ever sees its page
   if (view === doc) return edit();
-  const next = withOutsideItems(() => Object.values(doc.items).filter((it) => !(it.id in view.items)), edit);
-  return mergeView(doc, view, next, page);
+  return mergeView(doc, view, edit(), page);
 }
 
 /* ------------------------------------------------------------------ */
