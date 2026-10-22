@@ -9,6 +9,7 @@ import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from 
 import { importLibraryText, importTemplateText, insertCircuit } from './sharing';
 import { svgToDrawing } from './svgImport';
 import { fragmentFromText } from './clipboardCopy';
+import { sceneFromFile, sceneFromSvgText } from './embeddedScene';
 
 /** Everything "Import file…" and drag & drop understand. */
 export const IMPORT_FILTER = [
@@ -35,13 +36,15 @@ export async function importFileText(name: string, text: string, at?: Point, svg
       toast(`Inserted ${ids.length} item${ids.length === 1 ? '' : 's'} copied from Nodal`, 'success');
       return;
     }
-    if (/\.svg$/i.test(name) || (trimmed.startsWith('<') && /<svg[\s>]/i.test(text))) {
+    // an SVG exported with its circuit inside is that circuit, not a drawing
+    const embedded = sceneFromSvgText(text);
+    if (!embedded && (/\.svg$/i.test(name) || (trimmed.startsWith('<') && /<svg[\s>]/i.test(text)))) {
       await importSvgDrawing(name, text, at ?? viewCentre(), svg);
       return;
     }
     let data: { format?: unknown };
     try {
-      data = JSON.parse(text);
+      data = JSON.parse(embedded ?? text);
     } catch {
       throw new Error('Nodal can import circuits (.nodal), symbol libraries, templates, SVG, PDF and images');
     }
@@ -49,7 +52,7 @@ export async function importFileText(name: string, text: string, at?: Point, svg
       case 'nodal': {
         // dropped or imported circuits are added to this one; File → Open replaces it
         const ids = insertCircuit(normalizeDoc(data), at);
-        toast(`Added “${name.replace(/\.(nodal|json)$/i, '')}” (${ids.length} items, grouped; double-click to edit inside)`, 'success');
+        toast(`Added “${name.replace(/\.(nodal|json|png|svg)$/i, '')}” (${ids.length} items, grouped; double-click to edit inside)`, 'success');
         return;
       }
       case 'nodal-library': {
@@ -93,6 +96,9 @@ async function importSvgDrawing(fileName: string, text: string, at: Point, opts?
 
 /** Imports one file of any supported kind; text formats go through `importFileText`. */
 async function importOneFile(file: File, at?: Point) {
+  // a PNG exported with its circuit inside is that circuit, not a picture
+  const embedded = /\.png$/i.test(file.name) || file.type === 'image/png' ? await sceneFromFile(file).catch(() => null) : null;
+  if (embedded) return importFileText(file.name, embedded, at);
   if (isRaster(file) || isPdf(file)) {
     try {
       let pictures;

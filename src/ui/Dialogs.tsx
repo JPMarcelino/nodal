@@ -498,6 +498,8 @@ export function ExportDialog() {
   const scale = useStore((s) => s.prefs.exportScale ?? 3);
   const setBg = (exportBackground: boolean) => setPrefs({ exportBackground });
   const setScale = (exportScale: number) => setPrefs({ exportScale });
+  const withScene = useStore((s) => s.prefs.exportScene ?? true);
+  const setWithScene = (exportScene: boolean) => setPrefs({ exportScene });
   const appTheme = useStore((s) => s.prefs.theme);
   const given = useStore((s) => s.exportScope);
   const clip = given?.clip;
@@ -553,6 +555,9 @@ export function ExportDialog() {
             ]}
             onChange={setScale}
           />
+        </Field>
+        <Field label="Include circuit (re-editable)" hint="PNG and SVG files carry the circuit: open, import or drop them into Nodal to edit it again">
+          <Toggle checked={withScene} onChange={setWithScene} />
         </Field>
         {!clip && pick.length > 0 && (
           <Field label="Only selection">

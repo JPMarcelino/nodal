@@ -76,6 +76,8 @@ export interface Prefs {
   /** Image exports: paint the canvas colour behind the drawing (unset = yes), and the PNG resolution (unset = 3×). */
   exportBackground?: boolean;
   exportScale?: number;
+  /** PNG and SVG exports carry the circuit so they can be opened again (unset = yes). */
+  exportScene?: boolean;
 }
 
 
@@ -518,9 +520,9 @@ export function toast(text: string, kind: Toast['kind'] = 'info') {
  * picture looks like the canvas, and the background / resolution last chosen
  * in the Export dialog.
  */
-export function imageExportOptions(): { theme: 'light' | 'dark'; background: boolean; scale: number } {
+export function imageExportOptions(): { theme: 'light' | 'dark'; background: boolean; scale: number; scene: boolean } {
   const p = S().prefs;
-  return { theme: p.theme, background: p.exportBackground ?? true, scale: p.exportScale ?? 3 };
+  return { theme: p.theme, background: p.exportBackground ?? true, scale: p.exportScale ?? 3, scene: p.exportScene ?? true };
 }
 
 export function setPrefs(p: Partial<Prefs>) {

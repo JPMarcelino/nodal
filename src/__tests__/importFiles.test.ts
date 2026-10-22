@@ -53,6 +53,36 @@ describe('importFileText', () => {
   });
 });
 
+describe('pictures exported with their circuit', () => {
+  it('import as that circuit', async () => {
+    const { S, set } = await import('../store/store');
+    const { createDoc, makeComponent } = await import('../model/doc');
+    const { exportSvg } = await import('../io/export');
+    const { pngWithScene, sceneJson, svgWithScene } = await import('../io/embeddedScene');
+    const { importDroppedFiles, importFileText } = await import('../io/importFiles');
+
+    const circuit = createDoc('Pictured');
+    const r = makeComponent(circuit, 'inductor', 0, 0);
+    circuit.items[r.id] = r;
+    const inductors = () => Object.values(S().doc.items).filter((i) => i.type === 'component' && i.symbol === 'inductor');
+    set({ doc: createDoc('Open circuit'), dirty: false });
+
+    // an SVG carrying its circuit is added as a group, not converted as a drawing
+    const svg = svgWithScene(exportSvg(circuit, { theme: 'light', background: false, padding: 20 }).svg, sceneJson(circuit));
+    await importFileText('pictured.svg', svg, { x: 100, y: 100 });
+    expect(inductors().length).toBe(1);
+    expect(S().doc.groups[inductors()[0].group!]?.name).toBe('Pictured');
+    expect(S().doc.name).toBe('Open circuit');
+
+    // so is a dropped PNG carrying it
+    const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+    const withScene = await pngWithScene(new Blob([png], { type: 'image/png' }), sceneJson(circuit));
+    await importDroppedFiles([new File([withScene], 'pictured.png', { type: 'image/png' })], { x: 300, y: 100 });
+    expect(inductors().length).toBe(2);
+    expect(S().toasts[S().toasts.length - 1]).toMatchObject({ kind: 'success', text: expect.stringContaining('“pictured”') });
+  });
+});
+
 describe('pasteClipboardContent', () => {
   it('pastes fragments, images and SVG in priority order', async () => {
     const { S, set, mutate } = await import('../store/store');
