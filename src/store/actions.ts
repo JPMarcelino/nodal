@@ -4,6 +4,8 @@ import { PRESET_SIZE, getPreset, makePresetShape } from '../model/shapePresets';
 import { nextPresentationStep } from '../model/presentation';
 import { snap, unionRects } from '../model/geometry';
 import { sheetRect } from '../model/sheet';
+import { QUICK_DIRS, planQuickAdd, quickAddFields, type QuickDir } from '../model/quickAdd';
+import { commitWire } from '../model/wireCommit';
 import {
   alignItems,
   annotate,
@@ -163,6 +165,50 @@ export function placeAtCenter(symbol: string) {
   const x = snap((canvasSize.w / 2 - view.x) / view.zoom, g * 2);
   const y = snap((canvasSize.h / 2 - view.y) / view.zoom, g * 2);
   placeComponent(symbol, x, y);
+}
+
+/** The one unlocked part selected (outside any group not entered), for quick add. */
+function quickAddSource() {
+  const s = S();
+  if (s.viewOnly || s.placing || X().presenting !== null || s.selection.length !== 1) return null;
+  const doc = vdoc();
+  const c = doc.items[s.selection[0]];
+  if (c?.type !== 'component' || c.locked || topGroup(doc, c, s.scope)) return null;
+  return c;
+}
+
+/** Whether quick add applies: exactly one unlocked part is selected and the document can be edited. */
+export const canQuickAdd = () => !!quickAddSource();
+
+/**
+ * Quick add: places a copy of the selected part one short wire away in a
+ * direction, wired pin to pin (turned so a pin faces back), and selects it,
+ * so pressing again builds a chain. One undo step for the part and its wire.
+ */
+export function quickAdd(dir: QuickDir) {
+  const src = quickAddSource();
+  if (!src) return;
+  const doc = vdoc();
+  const grid = doc.settings.grid;
+  const d = QUICK_DIRS[dir];
+  const plan = planQuickAdd(doc, src, d, grid);
+  if (typeof plan === 'string') return toast(plan);
+  const { scope, wireBrush } = S();
+  let id = '';
+  mutate((dd) => {
+    const c = makeComponent(dd as CircuitDoc, src.symbol, plan.x, plan.y, plan.rot, !!src.flipX);
+    Object.assign(c, quickAddFields(src, plan.rot));
+    c.group = scope;
+    dd.items[c.id] = c;
+    id = c.id;
+    commitWire(dd as CircuitDoc, { kind: 'port', comp: src.id, ...plan.from }, { kind: 'port', comp: c.id, ...plan.to }, {
+      hFirst: d.x !== 0,
+      group: scope,
+      routeGrid: plan.route ? grid : undefined,
+      ...(wireBrush ? { style: { ...wireBrush } } : {}),
+    });
+  });
+  if (id && vdoc().items[id]) set({ selection: [id] });
 }
 
 /* ------------------------------------------------------------------ */

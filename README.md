@@ -60,6 +60,7 @@ You can also share without a live session. Open **File → Share & collaborate�
 
 ### Wiring
 - Drag from any pin to draw a wire, or press **W** and click to add bends. Wires stay orthogonal; press **Space** to flip the elbow and **Backspace** to remove the last bend.
+- **Quick add (chain parts):** with one part selected, **Ctrl+Shift+←/→/↑/↓** places a copy of it (same value, fields and style; next reference designator) a short wire away in that direction, wired from the pin facing that way (turned if needed so a pin faces back, e.g. a resistor chained downward stands up), skipping occupied spots. The copy is selected, so pressing again builds a chain; one undo removes the part and its wire.
 - Ending a wire on another wire creates a **junction** automatically. **Alt-drag** on a wire starts a branch from it.
 - **Crossings hop:** where wires cross without connecting, a small arc is drawn (you can switch to a gap or a plain crossing).
 - **Placing parts onto wires connects them:** a pin set down exactly on a loose wire end takes that end, and a part dropped across a wire is inserted into it (the wire is split at its pins, and the piece that would short the part is removed). Wires dragged over pins don't connect by accident.
@@ -166,7 +167,7 @@ Press **?** in the app for the full list. You can rebind any shortcut in Setting
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Select all | `Ctrl+A` |
 | Place resistor / capacitor | `Shift+R` / `Shift+C` | Place ground / supply / net label | `Shift+G` / `Shift+V` / `Shift+L` |
 | Place last used part | `P` | Search library | `/` |
-| Tool lock (keep placing) | `Shift+Q` | | |
+| Tool lock (keep placing) | `Shift+Q` | Quick add a wired copy of the part | `Ctrl+Shift+←/→/↑/↓` |
 | Zoom in / out / fit / 100% | `=` / `-` / `F` / `Ctrl+0` | Zoom to selection | `Shift+2` |
 | Grid / Snap | `G` / `Ctrl+'` | Minimap | `M` |
 | Bring to front / send to back | `Ctrl+Shift+]` / `Ctrl+Shift+[` | Bring forward / back | `Ctrl+]` / `Ctrl+[` |
