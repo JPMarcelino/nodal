@@ -42,7 +42,8 @@ interface Fading {
 
 let fadeId = 0;
 
-export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefObject<HTMLDivElement> }) {
+/** Memoised: only its own state and the drawing re-render it, not every pointer move on the canvas. */
+export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefObject<HTMLDivElement> }) {
   const tool = useStore((s) => s.tool);
   const view = useStore((s) => s.view);
   const doc = useViewDoc();
@@ -594,7 +595,7 @@ export function ExplainLayer({ data, wrapRef }: { data: SceneData; wrapRef: RefO
       {(active || flows.length > 0) && ex.presenting === null && <ExplainDock />}
     </>
   );
-}
+});
 
 /* ------------------------------------------------------------------ */
 /* Pieces                                                              */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
 import { measureTextShape, textFaceStyle, textSize, textWeight } from '../model/shapeText';
 import { drawOrderCached, groupMembers, groupTags, itemBounds, labelsShown, makeShape, selectedGroup } from '../model/doc';
@@ -23,7 +23,7 @@ import { viewDoc } from '../model/pages';
 import { pageCrossRefs } from '../model/pageRefs';
 import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, shapeTitle, useSceneData, wireLabelAt, wireLabelLook } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, shapeTitle, useSceneData, wireLabelAt, wireLabelLook, type SceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
@@ -1535,21 +1535,38 @@ export function Canvas() {
     }
   };
 
+  const hoverAt = useRef<Point | null>(null);
+  const hoverFrame = useRef<number>();
+  useEffect(() => () => void (hoverFrame.current !== undefined && cancelAnimationFrame(hoverFrame.current)), []);
+  /** The latest render's hover update (tool, hover menu and gesture state as they are now). */
+  const hoverRef = useRef((_w: Point) => {});
+  hoverRef.current = (w: Point) => {
+    setCursor(w);
+    const g = gRef.current;
+    if (g && g.kind !== 'arm') return;
+    if (tool === 'select' || tool === 'wire' || tool === 'node' || g) {
+      const pi = findPort(w);
+      const item = pi ? null : hitItem(w);
+      if (pi?.comp !== hover.port?.comp || pi?.port !== hover.port?.port || item !== hover.item) setHover({ port: pi, item });
+    }
+    if (!placing && !S().exportArea && !g) trackHotSpot(w);
+  };
+
   const onPointerMove = (e: React.PointerEvent) => {
     lastMove.current = { clientX: e.clientX, clientY: e.clientY };
     const w = toWorldPt(e.clientX, e.clientY);
-    setCursor(w);
     set(S().pointerOnCanvas ? { cursor: w } : { cursor: w, pointerOnCanvas: true });
-    const g = gRef.current;
-    if (!g || g.kind === 'arm') {
-      if (tool === 'select' || tool === 'wire' || tool === 'node' || g) {
-        const pi = findPort(w);
-        const item = pi ? null : hitItem(w);
-        if (pi?.comp !== hover.port?.comp || pi?.port !== hover.port?.port || item !== hover.item) setHover({ port: pi, item });
-      }
-      if (!placing && !S().exportArea && !g) trackHotSpot(w);
-      return;
+    // the drawn cursor feedback and hover hit-testing run at most once per frame, not per pointer event
+    hoverAt.current = w;
+    if (hoverFrame.current === undefined) {
+      hoverFrame.current = requestAnimationFrame(() => {
+        hoverFrame.current = undefined;
+        const at = hoverAt.current;
+        if (at) hoverRef.current(at);
+      });
     }
+    const g = gRef.current;
+    if (!g || g.kind === 'arm') return;
     const v = S().view;
     switch (g.kind) {
       case 'pan':
@@ -2148,7 +2165,6 @@ export function Canvas() {
     : null;
 
   const scopeBounds = scope ? groupBounds(doc, scope) : null;
-  const connectedPorts = data.portDegree;
   const showErc = useStore((s) => s.leftPanel && s.leftTab === 'check');
   const ercAll = useErcIssues(showErc);
   // markers only for findings about this page's items
@@ -2164,6 +2180,9 @@ export function Canvas() {
       onPointerUp={onPointerUp}
       onPointerCancel={abortGesture}
       onPointerLeave={() => {
+        // a hover still queued for this frame would bring the outline back
+        if (hoverFrame.current !== undefined) cancelAnimationFrame(hoverFrame.current);
+        hoverFrame.current = undefined;
         set({ pointerOnCanvas: false });
         setHover({ item: null, port: null });
         clearHotTimer('open');
@@ -2209,15 +2228,7 @@ export function Canvas() {
           <Scene doc={doc} data={data} palette={EDITOR_PALETTE} highlight={highlight} frames={!presenting} xrefs={xrefs} />
 
           {/* unconnected port markers */}
-          {prefs.showPortMarkers && z > 0.45 && (
-            <g className="port-markers">
-              {ports.map((p) =>
-                connectedPorts.get(`${p.comp}:${p.port}`) || data.touching.has(`${p.comp}:${p.port}`) ? null : (
-                  <circle key={`${p.comp}:${p.port}`} cx={p.pt.x} cy={p.pt.y} r={2.4} strokeWidth={1 / z} className="port-marker" />
-                ),
-              )}
-            </g>
-          )}
+          {prefs.showPortMarkers && z > 0.45 && <PortMarkers ports={ports} data={data} z={z} />}
 
           {/* rule-check findings, while the Check tab is open */}
           {ercIssues.map((i) =>
@@ -2693,6 +2704,19 @@ function GlueMarkers({ doc, glue, z }: { doc: CircuitDoc; glue: GlueHit; z: numb
 
 /** Lines and arrows are outlined along their drawn path. */
 const connectorOutline = (doc: CircuitDoc, s: ShapeItem) => buildWirePath(resolveConnector(doc, s).flat, 0);
+
+/** Rings on the pins nothing is wired to; memoised, as there is one per free pin and the canvas re-renders as the pointer moves. */
+const PortMarkers = memo(function PortMarkers({ ports, data, z }: { ports: PortInfo[]; data: SceneData; z: number }) {
+  return (
+    <g className="port-markers">
+      {ports.map((p) =>
+        data.portDegree.get(`${p.comp}:${p.port}`) || data.touching.has(`${p.comp}:${p.port}`) ? null : (
+          <circle key={`${p.comp}:${p.port}`} cx={p.pt.x} cy={p.pt.y} r={2.4} strokeWidth={1 / z} className="port-marker" />
+        ),
+      )}
+    </g>
+  );
+});
 
 function HoverOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; polys: Map<string, Point[]>; z: number }) {
   const it = doc.items[id];
