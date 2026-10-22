@@ -147,6 +147,9 @@ The web app can be installed (Chrome/Edge: the install icon in the address bar; 
 - Dark and light themes, compact/normal/large UI sizes, minimap, focus mode
 - **Command palette** (**Ctrl+K**): run any command or place any part by name
 - **Customisable keyboard shortcuts** (Settings → Keyboard shortcuts)
+- **Tool lock** (padlock at the left of the tool rail, **Shift+Q**): placing a part keeps it armed for the next click instead of returning to Select (the drawing tools — wire, shapes, text — already stay active). **Esc** returns to Select. Remembered between sessions.
+- **Hint line**: a quiet line at the bottom of the canvas names the next useful step for the tool and selection in hand (with your own key bindings). Turn it off in Settings → *Show hints*.
+- **Welcome screen** on an empty page: place a part, open or import a file, the command palette, the example circuit or a live session. It goes as soon as anything is placed.
 
 ## Keyboard shortcuts
 
@@ -163,6 +166,7 @@ Press **?** in the app for the full list. You can rebind any shortcut in Setting
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Select all | `Ctrl+A` |
 | Place resistor / capacitor | `Shift+R` / `Shift+C` | Place ground / supply / net label | `Shift+G` / `Shift+V` / `Shift+L` |
 | Place last used part | `P` | Search library | `/` |
+| Tool lock (keep placing) | `Shift+Q` | | |
 | Zoom in / out / fit / 100% | `=` / `-` / `F` / `Ctrl+0` | Zoom to selection | `Shift+2` |
 | Grid / Snap | `G` / `Ctrl+'` | Minimap | `M` |
 | Bring to front / send to back | `Ctrl+Shift+]` / `Ctrl+Shift+[` | Bring forward / back | `Ctrl+]` / `Ctrl+[` |

@@ -424,6 +424,12 @@ export function SettingsDialog() {
           <Field label="Minimap">
             <Toggle checked={prefs.showMinimap} onChange={(showMinimap) => setPrefs({ showMinimap })} />
           </Field>
+          <Field label="Show hints (next step for the tool in hand, at the bottom of the canvas)">
+            <Toggle checked={prefs.showHints} onChange={(showHints) => setPrefs({ showHints })} />
+          </Field>
+          <Field label="Tool lock (keep placing parts after each click)">
+            <Toggle checked={prefs.toolLock} onChange={(toolLock) => setPrefs({ toolLock })} />
+          </Field>
           <Field label="Wires route around parts and stay off other pins">
             <Toggle checked={prefs.wireAvoid} onChange={(wireAvoid) => setPrefs({ wireAvoid })} />
           </Field>

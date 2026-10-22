@@ -109,6 +109,32 @@ export function startPlacing(symbol: string) {
   pushRecent(symbol);
 }
 
+/**
+ * Whether placing goes on after a part is dropped: with the tool lock on,
+ * with Shift held, or in the Cadence scheme (which places copies until Esc).
+ * Otherwise one part is placed and the pointer returns to Select.
+ */
+export function keepsPlacing(shift = false): boolean {
+  const p = S().prefs;
+  return shift || p.toolLock || p.shortcuts === 'cadence';
+}
+
+/** Drops the part being placed at (x, y); placement then ends unless keepsPlacing. Returns the new part's id. */
+export function placeArmed(x: number, y: number, shift = false): string | null {
+  const pl = S().placing;
+  if (!pl) return null;
+  const id = placeComponent(pl.symbol, x, y, pl.rot, pl.flipX);
+  if (!keepsPlacing(shift)) set({ placing: null });
+  return id;
+}
+
+/** Tool lock on/off: keep the armed part after each click (drawing tools already stay active). */
+export function toggleToolLock() {
+  const on = !S().prefs.toolLock;
+  setPrefs({ toolLock: on });
+  toast(on ? 'Tool lock on: placing goes on after each click (Esc returns to Select)' : 'Tool lock off');
+}
+
 export function placeComponent(symbol: string, x: number, y: number, rot: 0 | 90 | 180 | 270 = 0, flipX = false) {
   const { scope, userLibrary } = S();
   let id = '';

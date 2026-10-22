@@ -24,6 +24,8 @@ import {
   Presentation,
   Frame,
   Film,
+  Lock,
+  LockOpen,
 } from 'lucide-react';
 import { isExplainTool, useExplain } from '../store/explain';
 import { useEffect, useRef, useState } from 'react';
@@ -48,7 +50,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   },
   {
     label: 'Place',
-    items: ['tool.wire', 'tool.placeLast', '-', 'tool.resistor', 'tool.capacitor', 'tool.ground', 'tool.vcc', 'tool.netLabel', 'tool.junction', '-', 'tool.rect', 'tool.zone', 'tool.ellipse', 'tool.polygon', 'tool.path', 'tool.line', 'tool.arrow', 'tool.text', '-', 'symbols.new', 'symbols.fromSelection', 'symbols.edit'],
+    items: ['tool.wire', 'tool.placeLast', 'tool.lock', '-', 'tool.resistor', 'tool.capacitor', 'tool.ground', 'tool.vcc', 'tool.netLabel', 'tool.junction', '-', 'tool.rect', 'tool.zone', 'tool.ellipse', 'tool.polygon', 'tool.path', 'tool.line', 'tool.arrow', 'tool.text', '-', 'symbols.new', 'symbols.fromSelection', 'symbols.edit'],
   },
   {
     label: 'Arrange',
@@ -237,8 +239,19 @@ export function ToolRail() {
   const armed = useStore((s) => s.shapePreset);
   const lastExplain = useExplain((s) => s.lastTool);
   const timelineOpen = useExplain((s) => s.timelineOpen);
+  const toolLock = useStore((s) => s.prefs.toolLock);
+  const lockKey = prettyKey(keysFor('tool.lock')[0] ?? '');
   return (
     <div className="tool-rail" onPointerDown={(e) => e.stopPropagation()}>
+      <button
+        className={toolLock ? 'tool-btn lock-btn on' : 'tool-btn lock-btn'}
+        onClick={A.toggleToolLock}
+        aria-pressed={toolLock}
+        title={`Tool lock: keep placing parts after each click${lockKey ? ` (${lockKey})` : ''}`}
+      >
+        {toolLock ? <Lock size={16} /> : <LockOpen size={16} />}
+      </button>
+      <span className="rail-sep" />
       {TOOLS.map((t, i) => (
         <span key={t.cmd} style={{ display: 'contents' }}>
           {(i === 4 || i === 6) && <span className="rail-sep" />}
