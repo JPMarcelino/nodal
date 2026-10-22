@@ -23,6 +23,8 @@ export interface HintState {
   shapePreset?: boolean;
   /** Modes that show their own banner (Alt move, area export): no hint. */
   banner?: boolean;
+  /** View mode is on: the circuit can't be changed. */
+  viewMode?: boolean;
   /**
    * Formats a key: a command id (`edit.duplicate`) gives its current binding,
    * or '' when unbound; anything else is a fixed combo (`Mod+Enter`, `Esc`).
@@ -50,6 +52,12 @@ export function hintFor(s: HintState): string | null {
     return ka && kb ? `${ka} / ${kb} ${what}` : ka ? `${ka} ${what}` : kb ? `${kb} ${what}` : null;
   };
   const esc = k('Escape');
+
+  if (s.viewMode) {
+    if (s.banner) return null;
+    const key = k('view.viewMode');
+    return key ? `View mode — ${key} to edit` : 'View mode — click “View mode” at the top to edit';
+  }
 
   if (s.editingText) return join([`${k('Mod+Enter')} or click outside to finish`, `${esc} stops editing`, 'write $…$ for maths']);
 

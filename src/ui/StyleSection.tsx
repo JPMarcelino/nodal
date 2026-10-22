@@ -6,7 +6,7 @@ import { measureTextShape } from '../model/shapeText';
 import type { Dash, Item, ShapeItem } from '../model/types';
 import { S, mutate, toast, useViewDoc, vdoc } from '../store/store';
 import type { ReactNode } from 'react';
-import { NumberInput, SWATCHES, Section, Segmented, Slider, Toggle, swatchBg, swatchTitle } from './controls';
+import { EyedropperButton, NumberInput, SWATCHES, Section, Segmented, Slider, Toggle, swatchBg, swatchTitle } from './controls';
 
 /** Style copied with "Copy style", ready to paste onto other items. */
 let copied: Partial<Look> | null = null;
@@ -110,6 +110,7 @@ export function SwatchRow({ value, onChange, noneTitle, mixed }: { value: string
         +
         <input type="color" value={cur && /^#[0-9a-f]{6}$/.test(cur) ? cur : '#7aa2f7'} onChange={(e) => onChange(e.target.value)} />
       </label>
+      <EyedropperButton onPick={onChange} />
     </span>
   );
 }

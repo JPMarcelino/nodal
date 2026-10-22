@@ -24,7 +24,7 @@ import { SyncState, changedKeys, docFromEntries, writeEntries, type Entry } from
 
 export const COLLAB_URL: string = import.meta.env.VITE_COLLAB_URL ?? 'wss://nodal-collab.nodal-collab.workers.dev';
 /** Links made from the desktop app point at the web app, so anyone can open them. */
-const PUBLIC_APP_URL = 'https://jpmarcelino.github.io/nodal/';
+export const PUBLIC_APP_URL = 'https://jpmarcelino.github.io/nodal/';
 
 export interface PeerView {
   /** World point at the centre of their canvas. */

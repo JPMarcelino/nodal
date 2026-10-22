@@ -5700,3 +5700,173 @@ body.is-presenting .welcome {
   color: var(--accent);
   background: var(--accent-soft);
 }
+
+/* ==================================================================== */
+/* View mode, stats panel, eyedropper                                   */
+/* ==================================================================== */
+
+.topbar-center {
+  align-items: center;
+  gap: 8px;
+}
+
+/* View mode is on: a click goes back to editing */
+.view-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.85em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.view-pill:hover {
+  background: var(--panel-3);
+}
+
+.view-pill-x {
+  opacity: 0.7;
+}
+
+@media (max-width: 560px) {
+  .view-pill-label {
+    display: none;
+  }
+}
+
+/* read-only properties: still readable and foldable, not editable */
+.right-panel.read-only .field-control,
+.right-panel.read-only .swatch-row,
+.right-panel.read-only .btn-row,
+.right-panel.read-only .secondary-btn {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.swatch.eyedropper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-dim);
+  background: var(--panel-2);
+  cursor: pointer;
+}
+
+.swatch.eyedropper:hover {
+  color: var(--text);
+  background: var(--panel-3);
+}
+
+.stats-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+  width: 210px;
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 6px 10px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  font-size: 0.9em;
+}
+
+/* narrow canvas: the tool rail takes the top edge, so the panel sits low on the right */
+@container (max-width: 760px) {
+  .stats-panel {
+    top: auto;
+    bottom: 44px;
+    max-height: calc(100% - 120px);
+  }
+}
+
+.stats-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.stats-head .icon-btn {
+  height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
+}
+
+.stats-group + .stats-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.stats-title {
+  color: var(--text-faint);
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  line-height: 1.6;
+}
+
+.stats-label {
+  color: var(--text-dim);
+}
+
+.stats-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+body.is-presenting .stats-panel {
+  display: none;
+}
+
+.share-link-builder {
+  margin-top: 10px;
+}
+
+.share-link-builder .row-gap {
+  display: flex;
+  gap: 6px;
+}
+
+.share-link-builder .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-link-builder summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.share-link-builder > .input {
+  width: 100%;
+  margin-top: 6px;
+  box-sizing: border-box;
+}
+
+.share-link-builder .error-text {
+  color: var(--danger, #f7768e);
+}

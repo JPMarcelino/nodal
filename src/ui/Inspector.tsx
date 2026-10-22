@@ -46,7 +46,7 @@ import { normDeg, ROT_KINDS, setShapeSize, shapeRot } from '../model/rotation';
 import { detachConnector } from '../model/connectors';
 import { isPathShape, isSmooth, pathNodes } from '../model/path';
 import * as A from '../store/actions';
-import { S, goToItems, mutate, select, set, toast, useStore } from '../store/store';
+import { S, goToItems, mutate, readOnly, select, set, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
 import { ExplainShapePanel, FramePanel } from './ExplainInspector';
 import { DashSelect, Row, StyleSection, TextFormatRows, restyle, type TextFormat } from './StyleSection';
@@ -1361,6 +1361,7 @@ export function Inspector() {
   const items = selection.map((id) => doc.items[id]).filter(Boolean);
   const width = usePanelWidth('right', useStore((s) => s.prefs.rightWidth));
   const scrollRef = useRef<HTMLDivElement>(null);
+  const locked = useStore(readOnly);
   let body: JSX.Element;
   if (!items.length) body = <DocumentPanel />;
   else if (items.length === 1 && items[0].type === 'component') body = <ComponentPanel c={items[0]} />;
@@ -1372,7 +1373,7 @@ export function Inspector() {
   else if (items.length === 1 && items[0].type === 'junction') body = <div className="panel-title">Junction</div>;
   else body = <MultiPanel ids={selection} />;
   return (
-    <aside className="panel right-panel" style={{ width }}>
+    <aside className={locked ? 'panel right-panel read-only' : 'panel right-panel'} style={{ width }}>
       <PanelResizer side="right" />
       <div className="tabs">
         <button className="active">{items.length ? 'Properties' : 'Document'}</button>

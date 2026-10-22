@@ -3,7 +3,9 @@ import { extractFragment, insertFragment, type Fragment } from '../model/ops';
 import { snap } from '../model/geometry';
 import type { CircuitDoc, Point, SymbolDef } from '../model/types';
 import { S, mergeUserSymbols, mutate, set, toast } from '../store/store';
-import { sanitizeName, saveFile } from './files';
+import { isDesktop, sanitizeName, saveFile } from './files';
+import { checkLibraryUrl, fetchLibraryText, parseAddLibraryHash, parseRemoteLibrary } from './libraryUrl';
+import { ask } from '../ui/Ask';
 
 /* ------------------------------------------------------------------ */
 /* Shareable payloads                                                  */
@@ -157,6 +159,74 @@ export async function pasteTemplateFromClipboard() {
   } catch (e) {
     toast(`Could not paste template: ${(e as Error).message}`, 'error');
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Adding a library from a link (#addLibrary=…)                        */
+/* ------------------------------------------------------------------ */
+
+let adding = false;
+
+/**
+ * Downloads the library at `raw`, asks before adding it, then merges its new
+ * symbols into My symbols (never replacing one already there). Returns how
+ * many were added.
+ */
+export async function addLibraryFromUrl(raw: string): Promise<number> {
+  if (adding) return 0;
+  adding = true;
+  try {
+    const url = checkLibraryUrl(raw);
+    toast(`Fetching the symbol library from ${url.host}…`, 'info');
+    const lib = parseRemoteLibrary(await fetchLibraryText(url));
+    const existing = S().userLibrary;
+    const fresh = Object.keys(lib.symbols).filter((id) => !existing[id]);
+    const total = Object.keys(lib.symbols).length;
+    if (!total) {
+      toast(`“${lib.name}” from ${url.host} has no symbols that can be added`, 'error');
+      return 0;
+    }
+    if (!fresh.length) {
+      toast(`Every symbol of “${lib.name}” is already in My symbols`, 'info');
+      return 0;
+    }
+    const plural = (n: number) => `${n} symbol${n === 1 ? '' : 's'}`;
+    const notes = [
+      total > fresh.length ? `${plural(total - fresh.length)} you already have stay as they are.` : '',
+      lib.skipped ? `${plural(lib.skipped)} that couldn’t be read (or would replace a built-in one) are left out.` : '',
+    ].filter(Boolean);
+    const ok = await ask(
+      `Add ${plural(fresh.length)} from ${url.host}?`,
+      [`“${lib.name}” will be added to My symbols.`, ...notes, 'Only add libraries from people you trust.'].join(' '),
+      [
+        { label: 'Cancel', value: false },
+        { label: 'Add symbols', value: true, kind: 'primary' },
+      ],
+      false,
+    );
+    if (!ok) return 0;
+    mergeUserSymbols(Object.fromEntries(fresh.map((id) => [id, lib.symbols[id]])));
+    toast(`Added ${plural(fresh.length)} to My symbols`, 'success');
+    return fresh.length;
+  } catch (e) {
+    toast(`Could not add the library: ${(e as Error).message}`, 'error');
+    return 0;
+  } finally {
+    adding = false;
+  }
+}
+
+/** Handles `#addLibrary=<url>` in the page address (web), now and whenever the hash changes; the hash is removed so a reload doesn't ask again. */
+export function addLibraryFromLocation() {
+  if (isDesktop()) return;
+  const check = () => {
+    const raw = parseAddLibraryHash(location.hash);
+    if (raw === null) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    void addLibraryFromUrl(raw);
+  };
+  check();
+  window.addEventListener('hashchange', check);
 }
 
 /* ------------------------------------------------------------------ */

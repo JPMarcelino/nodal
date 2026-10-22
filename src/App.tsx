@@ -17,6 +17,7 @@ import { PageBar } from './ui/PageBar';
 import { useExplain } from './store/explain';
 import { AskHost } from './ui/Ask';
 import { SvgImportHost } from './ui/SvgImportDialog';
+import { StatsPanel } from './ui/StatsPanel';
 
 function isTyping(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
@@ -108,6 +109,7 @@ export function App() {
         <main className={showTimeline ? 'stage with-timeline' : 'stage'}>
           <ToolRail />
           <Canvas />
+          <StatsPanel />
           {showTimeline && <Timeline />}
           <PageBar />
         </main>

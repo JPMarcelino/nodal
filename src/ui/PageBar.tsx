@@ -4,13 +4,14 @@ import { createPortal } from 'react-dom';
 import { docPages, resolvePage } from '../model/pages';
 import * as A from '../store/actions';
 import { keysFor, prettyKey } from '../store/commands';
-import { useStore } from '../store/store';
+import { readOnly, useStore } from '../store/store';
 
 /** Page tabs along the bottom of the canvas (like a spreadsheet's sheets): click to show, double-click to rename, right-click for more, drag to reorder. */
 export function PageBar() {
   const pages = useStore((s) => docPages(s.doc));
   const active = useStore((s) => resolvePage(s.doc, s.page));
-  const viewOnly = useStore((s) => s.viewOnly);
+  // View mode or a view-only session: pages can be shown, not changed
+  const viewOnly = useStore(readOnly);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [drag, setDrag] = useState<{ id: string; over: number } | null>(null);

@@ -35,7 +35,7 @@ import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { fragmentFromText, writePictureClipboard } from '../io/clipboardCopy';
 import { viewCentre } from '../io/importFiles';
-import { S, activePage, inGesture, mutate, pushRecent, select, set, setPage, setPrefs, toast, vdoc, imageExportOptions } from './store';
+import { S, activePage, inGesture, mutate, pushRecent, readOnly, viewModeKey, select, set, setPage, setPrefs, toast, vdoc, imageExportOptions } from './store';
 import { addPage, docPages, editPage, movePage, pageIndex, pageItemIds, renamePage } from '../model/pages';
 import { deletePage, duplicatePage, moveItemsToPage } from '../model/pageOps';
 import { confirmDelete } from '../ui/Ask';
@@ -48,7 +48,48 @@ const editable = () => S().selection.filter((id) => vdoc().items[id] && !vdoc().
 /* Tools & placement                                                   */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* View mode                                                           */
+/* ------------------------------------------------------------------ */
+
+/** Tools that only look (select, pan, trace a net, laser pointer): the ones View mode keeps. */
+export const VIEW_TOOLS: ReadonlySet<Tool> = new Set<Tool>(['select', 'pan', 'trace', 'laser']);
+
+let lastNotice = 0;
+/** Tells the user why an edit did nothing while the circuit is read-only (at most every few seconds). */
+export function readOnlyNotice() {
+  if (Date.now() - lastNotice < 3000) return;
+  lastNotice = Date.now();
+  if (S().viewOnly) return toast('This live session is view-only. Leave it to work on your own circuit.', 'info');
+  const k = viewModeKey.label();
+  toast(`View mode: the circuit can’t be changed${k ? ` (${k} to edit)` : ''}`, 'info');
+}
+
+/**
+ * Turns View mode on or off (toggles without an argument). On: back to the
+ * Select tool, nothing armed. A session guest stays read-only either way.
+ */
+export function setViewMode(on = !S().viewMode) {
+  if (on === S().viewMode) return;
+  if (on) {
+    const keep = VIEW_TOOLS.has(S().tool);
+    set({ viewMode: true, placing: null, shapePreset: null, contextMenu: null, wirePart: null, altMove: false, ...(keep ? {} : { tool: 'select' as Tool }) });
+    const k = viewModeKey.label();
+    toast(`View mode: look, select, find and export${k ? ` · ${k} to edit` : ''}`, 'info');
+    return;
+  }
+  set({ viewMode: false });
+  if (S().viewOnly) toast('Still view-only: this live session can’t be edited from here', 'info');
+  else toast('Editing', 'info');
+}
+
+/** Opens or closes the floating stats panel. */
+export function toggleStats() {
+  set((s) => ({ statsOpen: !s.statsOpen }));
+}
+
 export function setTool(tool: Tool) {
+  if (readOnly() && !VIEW_TOOLS.has(tool)) return readOnlyNotice();
   set({ tool, altMove: false, placing: null, shapePreset: null, contextMenu: null });
   if (isExplainTool(tool)) setX({ lastTool: tool });
 }
@@ -60,6 +101,7 @@ export function toggleExplain() {
 
 /** Select tool in alt-move mode: only the selection moves, connections to it are left behind. */
 export function setAltMove() {
+  if (readOnly()) return readOnlyNotice();
   set({ tool: 'select', altMove: true, placing: null, contextMenu: null });
 }
 
@@ -85,6 +127,7 @@ export function renameGroup(gid: string, name: string) {
 
 /** Arms a library shape: click for the default size, drag for a box of your own. */
 export function armShape(id: string) {
+  if (readOnly()) return readOnlyNotice();
   set({ tool: 'rect', altMove: false, placing: null, shapePreset: id, contextMenu: null });
 }
 
@@ -107,6 +150,7 @@ export function addPresetShape(id: string, at: Point, size: { w: number; h: numb
 }
 
 export function startPlacing(symbol: string) {
+  if (readOnly()) return readOnlyNotice();
   set({ placing: { symbol, rot: 0, flipX: false, repeat: true }, tool: 'select', contextMenu: null });
   pushRecent(symbol);
 }
@@ -170,7 +214,7 @@ export function placeAtCenter(symbol: string) {
 /** The one unlocked part selected (outside any group not entered), for quick add. */
 function quickAddSource() {
   const s = S();
-  if (s.viewOnly || s.placing || X().presenting !== null || s.selection.length !== 1) return null;
+  if (readOnly(s) || s.placing || X().presenting !== null || s.selection.length !== 1) return null;
   const doc = vdoc();
   const c = doc.items[s.selection[0]];
   if (c?.type !== 'component' || c.locked || topGroup(doc, c, s.scope)) return null;
@@ -425,7 +469,7 @@ export function duplicateIncrementSelection() {
 
 /** Stages an exact copy of the selection on top of the original (no undo step) and selects it; for placing with the pointer. */
 export function copyInPlace(): string[] {
-  if (!S().selection.length) return [];
+  if (!S().selection.length || readOnly()) return [];
   const frag = extractFragment(vdoc(), sel());
   let ids: string[] = [];
   const next = editPage(S().doc, S().page, (d) => {

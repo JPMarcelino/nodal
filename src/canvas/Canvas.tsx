@@ -18,7 +18,7 @@ import { routeObstacles } from '../model/route';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
-import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, rebaseGesture, select, set, toast, useStore, useViewDoc, vdoc, withGestureMutate } from '../store/store';
+import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, readOnly, rebaseGesture, select, set, toast, useStore, useViewDoc, vdoc, withGestureMutate } from '../store/store';
 import { viewDoc } from '../model/pages';
 import { pageCrossRefs } from '../model/pageRefs';
 import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
@@ -277,7 +277,7 @@ export function Canvas() {
 
   /** Tracks the pointer resting on a hot spot (only while idle in the select / edit points tools). */
   const trackHotSpot = (w: Point) => {
-    const h = tool === 'select' || tool === 'node' ? hotSpotAt(w) : null;
+    const h = (tool === 'select' || tool === 'node') && !readOnly() ? hotSpotAt(w) : null;
     if (!h) {
       clearHotTimer('open');
       setHotPending(null);
@@ -1171,7 +1171,7 @@ export function Canvas() {
     }
     if (e.button !== 0) return;
     // the lock badge of a selected locked item unlocks it
-    const badge = tool === 'select' && !placing && !gRef.current ? lockBadgeAt(w) : null;
+    const badge = tool === 'select' && !placing && !gRef.current && !readOnly() ? lockBadgeAt(w) : null;
     if (badge) {
       mutate((d) => d.items[badge] && (d.items[badge].locked = false));
       toast('Unlocked');
@@ -1194,6 +1194,28 @@ export function Canvas() {
     // export-area mode: any drag defines the export rectangle
     if (S().exportArea) {
       setGesture({ kind: 'exportArea', start: sp(w), cur: sp(w) });
+      return;
+    }
+
+    // View mode (or a view-only session): a click selects (Shift / Ctrl adds), a double-click
+    // goes into a group or back out, a drag draws a marquee; nothing is moved or edited
+    if (readOnly() && !gRef.current) {
+      const hit = hitItems(w)[0] ?? null;
+      const it = hit ? vdoc().items[hit] : undefined;
+      if (it && isDouble) {
+        if (it.group && it.group !== S().scope) A.enterGroup(hit!);
+        return;
+      }
+      if (hit) {
+        select([hit], e.shiftKey || e.ctrlKey || e.metaKey ? 'toggle' : 'replace');
+        return;
+      }
+      if (isDouble && S().scope) {
+        A.exitGroup();
+        return;
+      }
+      set({ wirePart: null });
+      setGesture({ kind: 'marquee', start: w, cur: w, additive: e.shiftKey || e.ctrlKey || e.metaKey });
       return;
     }
 
@@ -2078,6 +2100,11 @@ export function Canvas() {
 
   const onDrop = (e: React.DragEvent) => {
     setFileDrag(false);
+    if (readOnly()) {
+      e.preventDefault();
+      A.readOnlyNotice();
+      return;
+    }
     if (e.dataTransfer.files.length) {
       e.preventDefault();
       void importDroppedFiles(e.dataTransfer.files, toWorldPt(e.clientX, e.clientY));
