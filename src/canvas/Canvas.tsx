@@ -33,6 +33,7 @@ import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
+import { HintBar, WelcomeScreen } from '../ui/CanvasGuides';
 import { marqueeHits } from '../model/marquee';
 import { gestureSlots, hitSlop, useTouchInput } from './touch';
 import { applySolder, solderActionFor } from './solder';
@@ -1253,9 +1254,8 @@ export function Canvas() {
 
     if (placing) {
       const p = sp(w);
-      A.placeComponent(placing.symbol, p.x, p.y, placing.rot, placing.flipX);
-      // Cadence keeps placing copies until Esc; Nodal places one (Shift for more)
-      if (!e.shiftKey && S().prefs.shortcuts !== 'cadence') set({ placing: null });
+      // one part, then back to Select; Shift, the tool lock or the Cadence scheme keep placing copies until Esc
+      A.placeArmed(p.x, p.y, e.shiftKey);
       return;
     }
 
@@ -2545,37 +2545,16 @@ export function Canvas() {
           <b>Alt move</b> · only the selection moves; wires to it are left behind (unsoldered) · <kbd>M</kbd> normal move
         </div>
       )}
-      {tool === 'solder' && !g && !exportAreaJob && (
-        <div className="canvas-hint">
-          Click a crossing, a touching end or a pin on a wire to <b>solder</b> · click a junction or wired pin to <b>unsolder</b> · <kbd>Esc</kbd> back to select
-        </div>
-      )}
-      {tool === 'node' && !g && !exportAreaJob && (
-        <div className="canvas-hint">
-          Drag a bend or wire end to move it · click a node to select it, then <kbd>Del</kbd> removes it
-          (double-click also removes) · <kbd>Alt</kbd> drag freely · <kbd>Esc</kbd> back to select
-        </div>
-      )}
       {exportAreaJob && (
         <div className="canvas-hint">
           Drag a rectangle over the region to export · <kbd>Esc</kbd>/<kbd>right-click</kbd> cancel
         </div>
       )}
-      {g?.kind === 'wire' && (
-        <div className="canvas-hint">
-          Click to add bends · click a pin, wire or junction to connect · <kbd>Space</kbd> flip elbow · <kbd>⌫</kbd> undo bend · <kbd>Enter</kbd>/double-click to finish · <kbd>Esc</kbd> cancel
-        </div>
-      )}
-      {g?.kind === 'shape' && (g.shape === 'line' || g.shape === 'arrow') && (
-        <div className="canvas-hint">
-          Release on a shape or part to attach — on a dot to pin the end there, anywhere else on it to let it float round the outline · <kbd>Alt</kbd> don't attach
-        </div>
-      )}
-      {placing && !g && (
-        <div className="canvas-hint">
-          Click to place · <kbd>R</kbd> rotate · <kbd>X</kbd>/<kbd>Y</kbd> flip · hold <kbd>Shift</kbd> to place several · <kbd>Esc</kbd> cancel
-        </div>
-      )}
+      <WelcomeScreen />
+      <HintBar
+        gesture={!g ? null : g.kind === 'wire' || g.kind === 'polygon' || g.kind === 'path' ? g.kind : g.kind === 'shape' && (g.shape === 'line' || g.shape === 'arrow') ? 'connector' : 'other'}
+        editingText={!!editingText}
+      />
     </div>
   );
 }

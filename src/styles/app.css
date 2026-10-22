@@ -5494,3 +5494,209 @@ body.is-presenting .page-bar {
 body.is-presenting .stage .canvas-wrap {
   bottom: 0;
 }
+
+/* ==================================================================== */
+/* Hint line and welcome screen                                          */
+/* ==================================================================== */
+
+/* one quiet line: the next useful step for the tool in hand (never takes the pointer) */
+.hint-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 3;
+  max-width: calc(100% - 48px);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--canvas) 78%, transparent);
+  color: var(--text-faint);
+  font-size: 0.85em;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* clear of the minimap in the bottom-right corner (200px + margins, on both sides to stay centred) */
+.hint-bar.with-minimap {
+  max-width: calc(100% - 460px);
+}
+
+@container (max-width: 640px) {
+  .hint-bar.with-minimap {
+    display: none;
+  }
+}
+
+@container (max-width: 420px) {
+  .hint-bar {
+    display: none;
+  }
+}
+
+/* touch-only screens: keyboard hints don't apply and the bottom edge belongs to the fingers */
+@media (hover: none) and (pointer: coarse) {
+  .hint-bar {
+    display: none;
+  }
+}
+
+body.is-presenting .hint-bar,
+body.is-presenting .welcome {
+  display: none;
+}
+
+/* welcome screen over an empty page: only its buttons take the pointer */
+.welcome {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.welcome-inner {
+  position: relative;
+  max-width: calc(100% - 32px);
+}
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 26px 20px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--canvas) 82%, transparent);
+  animation: welcome-in 0.3s ease-out;
+}
+
+@keyframes welcome-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.welcome-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.9em;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.welcome-sub {
+  color: var(--text-dim);
+  font-size: 0.95em;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 19.5em;
+  max-width: 100%;
+}
+
+.welcome-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  text-align: left;
+  pointer-events: auto;
+}
+
+.welcome-btn > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.welcome-btn > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.welcome-btn:hover,
+.welcome-btn:focus-visible {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.welcome-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* faint hand-drawn pointers to the tool rail and the parts library */
+.welcome-note {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-faint);
+  font-size: 0.9em;
+  font-style: italic;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+.welcome-note svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.welcome-note.to-rail {
+  bottom: 100%;
+  left: 50%;
+  flex-direction: column;
+  transform: translateX(-50%);
+  margin-bottom: 4px;
+}
+
+.welcome-note.to-library {
+  right: 100%;
+  top: 22%;
+  flex-direction: column;
+  margin-right: 4px;
+}
+
+/* little room: just the card */
+@container (max-width: 700px) {
+  .welcome-note.to-library {
+    display: none;
+  }
+}
+
+@media (max-height: 640px) {
+  .welcome-note.to-rail {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .welcome-btn {
+    padding: 10px 12px;
+  }
+}
+
+/* tool lock on the tool rail */
+.tool-btn.lock-btn.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}

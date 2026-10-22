@@ -78,6 +78,10 @@ export interface Prefs {
   exportScale?: number;
   /** PNG and SVG exports carry the circuit so they can be opened again (unset = yes). */
   exportScene?: boolean;
+  /** Tool lock: placing a part keeps the part armed instead of returning to Select. */
+  toolLock: boolean;
+  /** The quiet hint line at the bottom of the canvas: the next useful action for the tool in hand. */
+  showHints: boolean;
 }
 
 
@@ -171,6 +175,8 @@ const DEFAULT_PREFS: Prefs = {
   leftWidth: 280,
   rightWidth: 290,
   wireAngle: 'ortho',
+  toolLock: false,
+  showHints: true,
 };
 
 function initialDoc(): CircuitDoc {

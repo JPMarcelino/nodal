@@ -1,6 +1,7 @@
 import { itemBounds, normalizeDoc, uid } from '../model/doc';
 import { rectsIntersect } from '../model/geometry';
 import { prepareMath } from '../model/latex';
+import { sampleDoc } from '../model/sample';
 import { toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
 import type { CircuitDoc, Rect } from '../model/types';
 import { S, imageExportOptions, newDoc, replaceDoc, set, toast, vdoc, type ExportScope } from '../store/store';
@@ -73,6 +74,15 @@ export async function openFromHistory(doc: CircuitDoc) {
   set({ dirty: true });
   setTimeout(() => fitView(), 0);
   toast(`Opened ${doc.name}`, 'success');
+}
+
+/** Opens the built-in example circuit (the 555 LED flasher) as a new, unsaved circuit. */
+export async function openExample() {
+  if (!(await confirmDiscard('Opening the example'))) return;
+  const doc = sampleDoc();
+  replaceDoc(doc, null);
+  setTimeout(() => fitView(), 0);
+  toast(`Opened the example: ${doc.name}`, 'success');
 }
 
 function loadCircuit(name: string, doc: CircuitDoc, path: string | null) {

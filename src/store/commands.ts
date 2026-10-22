@@ -104,6 +104,7 @@ export const COMMANDS: Command[] = [
   { id: 'tool.arrow', label: 'Arrow', category: 'Tools', keys: ['A'], run: () => A.setTool('arrow') },
   { id: 'tool.text', label: 'Text', category: 'Tools', keys: ['T'], cadence: ['N', 'T'], run: () => A.setTool('text') },
   { id: 'tool.pan', label: 'Hand (pan) tool', category: 'Tools', keys: ['H'], run: () => A.setTool('pan') },
+  { id: 'tool.lock', label: 'Tool lock (keep placing parts after each click)', category: 'Tools', keys: ['Shift+Q'], run: () => A.toggleToolLock(), checked: () => S().prefs.toolLock, keywords: 'keep repeat sticky padlock stay' },
   // Explain: talk a circuit through
   { id: 'explain.toggle', label: 'Explain tools', category: 'Tools', keys: [], run: A.toggleExplain },
   { id: 'tool.pen', label: 'Pen', category: 'Tools', keys: ['D'], run: () => A.setTool('pen') },
