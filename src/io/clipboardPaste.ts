@@ -4,8 +4,9 @@ import { pasteFragment } from '../store/actions';
 import { importFileText, viewCentre } from './importFiles';
 import { insertPictures, rasterToPicture, type Picture } from './imageImport';
 import { fragmentFromText } from './clipboardCopy';
+import { sceneFromFile } from './embeddedScene';
 
-export type ClipboardPasteKind = 'fragment' | 'image' | 'svg' | 'none';
+export type ClipboardPasteKind = 'fragment' | 'circuit' | 'image' | 'svg' | 'none';
 
 export interface ClipboardPasteData {
   text?: string | null;
@@ -30,7 +31,7 @@ export function isSvgText(text: string): boolean {
 
 /**
  * Handles already-read clipboard data in priority order — Nodal fragment,
- * raster image, SVG document — and reports which path ran. The in-memory
+ * picture exported with its circuit, raster image, SVG document — and reports which path ran. The in-memory
  * fragment fallback stays in `paste()`, which owns that state; reading the
  * clipboard stays there too, so this function is pure logic plus insertion
  * and is easy to unit test.
@@ -45,6 +46,12 @@ export async function pasteClipboardContent(
   if (frag) {
     pasteFragment(frag, at);
     return 'fragment';
+  }
+  // an exported PNG that carries its circuit (most apps drop the chunk when copying, but not all)
+  const scene = imageBlob ? await sceneFromFile(imageBlob).catch(() => null) : null;
+  if (scene) {
+    await importFileText('Pasted circuit.png', scene, at);
+    return 'circuit';
   }
   if (imageBlob) {
     try {

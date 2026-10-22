@@ -1,4 +1,5 @@
-import { normalizeDoc, uid } from '../model/doc';
+import { itemBounds, normalizeDoc, uid } from '../model/doc';
+import { rectsIntersect } from '../model/geometry';
 import { prepareMath } from '../model/latex';
 import { toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
 import type { CircuitDoc, Rect } from '../model/types';
@@ -9,11 +10,14 @@ import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, printDoc, selectionDoc, type SvgOptions } from './export';
 import { writePictureClipboard } from './clipboardCopy';
 import { extractFragment } from '../model/ops';
-import { openTextFile, sanitizeName, saveFile } from './files';
+import { openAnyFile, sanitizeName, saveFile } from './files';
+import { pngWithScene, sceneFromFile, sceneJson, svgWithScene } from './embeddedScene';
 import { ask } from '../ui/Ask';
 import { saveVersion } from './versionStore';
 
 export const NODAL_FILTER = [{ name: 'Nodal circuit', extensions: ['nodal', 'json'] }];
+/** What File → Open takes: circuits, and pictures exported with their circuit inside. */
+const OPEN_FILTER = [{ name: 'Nodal circuit (or a PNG / SVG exported with it)', extensions: ['nodal', 'json', 'png', 'svg'] }];
 
 /**
  * Before the open circuit is replaced: with unsaved changes, asks whether to
@@ -45,9 +49,17 @@ export async function fileNew() {
 export async function fileOpen() {
   if (!(await confirmDiscard('Opening a file'))) return;
   try {
-    const f = await openTextFile(NODAL_FILTER);
+    const f = await openAnyFile(OPEN_FILTER);
     if (!f) return;
-    loadCircuit(f.name, normalizeDoc(JSON.parse(f.text)), f.path);
+    const { file, path } = f;
+    if (/\.(png|svg)$/i.test(file.name) || /^image\//.test(file.type)) {
+      const json = await sceneFromFile(file);
+      if (!json) throw new Error('this picture does not carry a Nodal circuit (export it with “Include circuit” on)');
+      // no path: saving must not write the circuit over the picture
+      loadCircuit(file.name, normalizeDoc(JSON.parse(json)), null);
+      return;
+    }
+    loadCircuit(file.name, normalizeDoc(JSON.parse(await file.text())), path);
   } catch (e) {
     toast(`Could not open file: ${(e as Error).message}`, 'error');
   }
@@ -143,8 +155,38 @@ export async function copyScope(scope: ExportScope, look: { theme: 'light' | 'da
 
 export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'kicad' | 'bom' | 'json';
 
+/**
+ * The circuit an exported picture carries: the whole circuit (every page) for
+ * a page export, the selected items (and the wires between them) for a
+ * selection, and the items an area touches, whole and uncut, for an area.
+ */
+export function sceneForScope(scope: ExportScope): string {
+  if (!scope.clip && !scope.ids?.length) return sceneJson(S().doc);
+  const doc = vdoc();
+  const c = scope.clip;
+  const ids = c
+    ? Object.values(doc.items)
+        .filter((it) => {
+          const b = !it.hidden && itemBounds(doc, it);
+          return !!b && rectsIntersect(c, b);
+        })
+        .map((it) => it.id)
+    : scope.ids!;
+  return sceneJson(selectionDoc(doc, ids));
+}
+
+/** The picture, with the circuit inside when `scene`. */
+async function imageFile(kind: 'png' | 'svg', doc: CircuitDoc, opts: SvgOptions & { scale: number }, scene: string | null): Promise<string | Blob> {
+  if (kind === 'svg') {
+    const { svg } = exportSvg(doc, opts);
+    return scene ? svgWithScene(svg, scene) : svg;
+  }
+  const png = await exportPng(doc, opts);
+  return scene ? pngWithScene(png, scene) : png;
+}
+
 /** Exports the circuit, or with `opts.ids` only those items (and the wires between them), in any format. Images use imageExportOptions unless told otherwise. */
-export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { scale?: number } = {}) {
+export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { scale?: number; scene?: boolean } = {}) {
   const full = S().doc;
   const part = !!opts.ids?.length;
   // drawings show the page on screen; netlists, BOM and JSON cover every page
@@ -160,11 +202,12 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
     let res: string | null | false = null;
     switch (kind) {
       case 'svg':
-        res = await saveFile(exportSvg(doc, svgOpts).svg, `${base}.svg`, [{ name: 'SVG image', extensions: ['svg'] }]);
+      case 'png': {
+        const scene = (opts.scene ?? img.scene) ? sceneForScope({ ids: opts.ids }) : null;
+        const data = await imageFile(kind, doc, { ...svgOpts, scale: opts.scale ?? img.scale }, scene);
+        res = await saveFile(data, `${base}.${kind}`, [kind === 'svg' ? { name: 'SVG image', extensions: ['svg'] } : { name: 'PNG image', extensions: ['png'] }]);
         break;
-      case 'png':
-        res = await saveFile(await exportPng(doc, { ...svgOpts, scale: opts.scale ?? img.scale }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
-        break;
+      }
       case 'dxf':
         res = await saveFile(exportDxf(doc), `${base}.dxf`, [{ name: 'AutoCAD DXF', extensions: ['dxf'] }]);
         break;
@@ -193,17 +236,16 @@ export async function filePrint() {
 }
 
 /** Exports an arbitrary world-space window; wires are cut at the boundary. */
-export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partial<SvgOptions> & { scale?: number }) {
+export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partial<SvgOptions> & { scale?: number; scene?: boolean }) {
   const base = `${sanitizeName(S().doc.name)}-area`;
   const img = imageExportOptions();
   const svgOpts: SvgOptions = { theme: img.theme, background: img.background, padding: 8, ...opts, clip: rect };
   const doc = vdoc();
   try {
     await prepareMath(doc);
-    const res =
-      kind === 'svg'
-        ? await saveFile(exportSvg(doc, svgOpts).svg, `${base}.svg`, [{ name: 'SVG image', extensions: ['svg'] }])
-        : await saveFile(await exportPng(doc, { ...svgOpts, scale: opts.scale ?? img.scale }), `${base}.png`, [{ name: 'PNG image', extensions: ['png'] }]);
+    const scene = (opts.scene ?? img.scene) ? sceneForScope({ clip: rect }) : null;
+    const data = await imageFile(kind, doc, { ...svgOpts, scale: opts.scale ?? img.scale }, scene);
+    const res = await saveFile(data, `${base}.${kind}`, [kind === 'svg' ? { name: 'SVG image', extensions: ['svg'] } : { name: 'PNG image', extensions: ['png'] }]);
     if (res !== false) toast(`Exported ${kind.toUpperCase()} of selected area`, 'success');
   } catch (e) {
     toast(`Export failed: ${(e as Error).message}`, 'error');
