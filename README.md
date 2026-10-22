@@ -162,7 +162,7 @@ Press **?** in the app for the full list. You can rebind any shortcut in Setting
 
 | Action | Keys | Action | Keys |
 | --- | --- | --- | --- |
-| Select / Pan tool | `V` / `H` (or hold `Space`) | Wire tool | `W` |
+| Select / Pan tool | `M` / `H` (or hold `Space`) | Wire tool | `W` |
 | Rectangle / Zone | `B` / `Z` | Ellipse / Line / Arrow / Text | `O` / `L` / `A` / `T` |
 | Rotate / Rotate back | `R` / `Alt+R` | Flip horizontal / vertical | `X` / `Y` |
 | Group / Ungroup | `Ctrl+G` / `Ctrl+Shift+G` | Lock | `Ctrl+Shift+L` |

@@ -2045,7 +2045,8 @@ export function Canvas() {
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       // HTML on top of the drawing (minimap, text editors, menus) keeps its own wheel behaviour
-      if (e.target instanceof HTMLElement && e.target !== el) return;
+      // (the explain tools' input surface is the drawing, so it zooms and pans like it)
+      if (e.target instanceof HTMLElement && e.target !== el && !e.target.classList.contains('explain-input')) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       // Firefox reports mouse wheels in lines (or pages); work in pixels
