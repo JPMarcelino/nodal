@@ -1,5 +1,5 @@
 import { Search, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { computeNets, netPages, type Net } from '../model/netlist';
 import { docPages, multiPage } from '../model/pages';
 import * as A from '../store/actions';
@@ -13,9 +13,16 @@ interface Row {
 /** Every net in the whole circuit, with its pin and wire counts and the pages it spans. */
 export function NetsPanel() {
   const doc = useStore((s) => s.doc);
-  const nets = useMemo(() => computeNets(doc), [doc]);
-  const pages = useMemo(() => docPages(doc), [doc]);
-  const multi = multiPage(doc);
+  // recompute once edits settle, like CheckPanel: not on every drag frame
+  const [settled, setSettled] = useState(doc);
+  useEffect(() => {
+    if (doc === settled) return;
+    const t = setTimeout(() => setSettled(doc), 250);
+    return () => clearTimeout(t);
+  }, [doc, settled]);
+  const nets = useMemo(() => computeNets(settled), [settled]);
+  const pages = useMemo(() => docPages(settled), [settled]);
+  const multi = multiPage(settled);
   const [q, setQ] = useState('');
 
   const rows = useMemo<Row[]>(() => {
@@ -25,19 +32,19 @@ export function NetsPanel() {
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
       .map((net) => ({
         net,
-        pages: netPages(doc, net).flatMap((id) => {
+        pages: netPages(settled, net).flatMap((id) => {
           const page = at.get(id);
           return page ? [page] : [];
         }),
       }));
-  }, [nets, doc, pages]);
+  }, [nets, settled, pages]);
 
   const query = q.trim().toLowerCase();
   const shown = useMemo(() => {
     if (!query) return rows;
     const words = query.split(/\s+/);
     return rows.filter(({ net, pages: on }) => {
-      const hay = [net.name, ...net.pins.flatMap((p) => [p.ref, p.portName]), ...on.map((p) => p.name)].join(' ').toLowerCase();
+      const hay = [net.name, ...net.names, ...net.pins.flatMap((p) => [p.ref, p.portName]), ...on.map((p) => p.name)].join(' ').toLowerCase();
       return words.every((w) => hay.includes(w));
     });
   }, [rows, query]);
