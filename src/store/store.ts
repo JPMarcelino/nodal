@@ -138,6 +138,14 @@ export interface AppState {
   exportScope: ExportScope | null;
   /** Viewing someone else's live session: the circuit can't be changed. */
   viewOnly: boolean;
+  /**
+   * View mode, the user's own read-only switch: look, select, find, trace and
+   * export, but nothing changes the circuit. Separate from `viewOnly` (which
+   * the live session owns), so turning it off never lets a session guest edit.
+   */
+  viewMode: boolean;
+  /** The floating stats panel is open. */
+  statsOpen: boolean;
 }
 
 const LS = {
@@ -236,9 +244,17 @@ export const useStore = create<AppState>(() => ({
   exportArea: null,
   exportScope: null,
   viewOnly: false,
+  viewMode: false,
+  statsOpen: false,
 }));
 
 export const S = () => useStore.getState();
+
+/** Key of the View mode command, for messages (set by the command table, which knows the bindings). */
+export const viewModeKey = { label: () => '' };
+
+/** Whether the circuit can't be changed right now: View mode, or a view-only live session. */
+export const readOnly = (s: Pick<AppState, 'viewOnly' | 'viewMode'> = S()) => s.viewOnly || s.viewMode;
 export const set = (p: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => useStore.setState(p);
 
 /** The document as the canvas sees it: only the active page's items (see model/pages). */
@@ -322,11 +338,11 @@ export function withGestureMutate<T>(fn: () => T): T {
  * Records an edit as one undo step. It applies to the active page only (the
  * draft holds just that page's items; anything added lands on it), unless
  * `allPages` is set: page edits and document-wide changes such as renumbering.
- * Returns false when the edit was refused (read-only session, running gesture).
+ * Returns false when the edit was refused (View mode, read-only session, running gesture).
  */
 export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: string[], opts?: { allPages?: boolean }): boolean {
   const s = S();
-  if (s.viewOnly) {
+  if (readOnly(s)) {
     if (selection) set({ selection });
     return false;
   }
@@ -372,7 +388,7 @@ export function rebaseGesture() {
 
 /** Re-applies a recipe against the gesture's starting document. */
 export function gestureUpdate(recipe: (d: Draft<CircuitDoc>, base: CircuitDoc) => void) {
-  if (!gestureBase || S().viewOnly) return;
+  if (!gestureBase || readOnly()) return;
   const base = gestureBase;
   set({ doc: editPage(base, S().page, recipe) });
 }
@@ -390,7 +406,7 @@ export function endGesture(commit = true) {
   gestureUndo = null;
   if (!base) return;
   const s = S();
-  if (!commit || s.viewOnly) {
+  if (!commit || readOnly(s)) {
     set({ doc: base });
     return;
   }
@@ -422,7 +438,7 @@ const liveScope = (scope: string | undefined, doc: CircuitDoc) => (scope && doc.
 export function undo() {
   if (inGesture()) return;
   const s = S();
-  if (!s.past.length || s.viewOnly) return;
+  if (!s.past.length || readOnly(s)) return;
   const prev = s.past[s.past.length - 1];
   set({ doc: prev, past: s.past.slice(0, -1), future: [s.doc, ...s.future], dirty: true, selection: s.selection.filter((id) => prev.items[id]), wirePart: null, scope: liveScope(s.scope, prev) });
   followChange(s.doc, prev);
@@ -431,7 +447,7 @@ export function undo() {
 export function redo() {
   if (inGesture()) return;
   const s = S();
-  if (!s.future.length || s.viewOnly) return;
+  if (!s.future.length || readOnly(s)) return;
   const next = s.future[0];
   set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]), wirePart: null, scope: liveScope(s.scope, next) });
   followChange(s.doc, next);

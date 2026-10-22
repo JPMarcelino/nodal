@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { joinFromUrl } from './collab/session';
 import { isDesktop } from './io/files';
+import { addLibraryFromLocation } from './io/sharing';
 import { startVersionHistory } from './io/versionStore';
 import './styles/app.css';
 
@@ -16,6 +17,7 @@ const showGallery = import.meta.env.DEV && Gallery !== null && location.hash.sta
 
 if (!showGallery) {
   joinFromUrl();
+  addLibraryFromLocation();
   startVersionHistory();
 }
 

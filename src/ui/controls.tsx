@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Pipette } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { keysFor, prettyKey } from '../store/commands';
 
@@ -145,6 +145,60 @@ export function Slider({ value, onChange, min, max, step = 0.01 }: { value: numb
   );
 }
 
+/** The browser's screen colour picker (Chromium, Edge / WebView2); absent in Firefox, Safari and WebKitGTK. */
+interface EyeDropperApi {
+  open(opts?: { signal?: AbortSignal }): Promise<{ sRGBHex: string }>;
+}
+type EyeDropperCtor = new () => EyeDropperApi;
+
+/** Whether this browser can pick a colour from anywhere on the screen. */
+export const hasEyeDropper = () => typeof window !== 'undefined' && 'EyeDropper' in window;
+
+/**
+ * Picks a colour from the screen. Resolves with a lowercase #rrggbb, or null
+ * when the user cancels (Esc) or the picker isn't available.
+ */
+export async function pickScreenColour(): Promise<string | null> {
+  if (!hasEyeDropper()) return null;
+  try {
+    const Ctor = (window as unknown as { EyeDropper: EyeDropperCtor }).EyeDropper;
+    const { sRGBHex } = await new Ctor().open();
+    return toHex(sRGBHex);
+  } catch {
+    // AbortError: the user pressed Esc. Nothing to say.
+    return null;
+  }
+}
+
+/** #rrggbb from the picker's result (some engines give rgb()/rgba()). */
+function toHex(c: string): string | null {
+  const v = c.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(v)) return v;
+  const m = v.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/);
+  if (!m) return null;
+  return `#${[m[1], m[2], m[3]].map((n) => Math.min(255, +n).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** A swatch-sized button that picks a colour from the screen; renders nothing where the browser can't. */
+export function EyedropperButton({ onPick, onBefore }: { onPick: (hex: string) => void; onBefore?: () => void }) {
+  if (!hasEyeDropper()) return null;
+  return (
+    <button
+      type="button"
+      className="swatch eyedropper"
+      title="Pick a colour from the screen"
+      aria-label="Pick a colour from the screen"
+      onClick={async () => {
+        onBefore?.();
+        const c = await pickScreenColour();
+        if (c) onPick(c);
+      }}
+    >
+      <Pipette size={13} />
+    </button>
+  );
+}
+
 export function ColorInput({ value, onChange, allowNone }: { value: string; onChange: (v: string) => void; allowNone?: boolean }) {
   const [open, setOpen] = useState(false);
   const [rev, setRev] = useState(0);
@@ -236,6 +290,8 @@ export function ColorInput({ value, onChange, allowNone }: { value: string; onCh
               +
               <input type="color" value={/^#[0-9a-f]{6}/i.test(value) ? value.slice(0, 7) : '#7aa2f7'} onChange={(e) => onChange(e.target.value)} />
             </label>
+            {/* closes first, so the popover isn't in the way of what you pick */}
+            <EyedropperButton onBefore={() => setOpen(false)} onPick={onChange} />
           </div>,
           document.body,
         )}

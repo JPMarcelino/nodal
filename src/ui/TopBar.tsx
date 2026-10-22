@@ -26,6 +26,8 @@ import {
   Film,
   Lock,
   LockOpen,
+  Eye,
+  X as XIcon,
 } from 'lucide-react';
 import { isExplainTool, useExplain } from '../store/explain';
 import { useEffect, useRef, useState } from 'react';
@@ -33,7 +35,7 @@ import type { Tool } from '../model/types';
 import * as A from '../store/actions';
 import { openExport } from '../io/fileActions';
 import { COMMANDS, COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
-import { S, mutate, redo, set, undo, useStore } from '../store/store';
+import { S, mutate, readOnly, redo, set, undo, useStore } from '../store/store';
 import { CollabBar } from './CollabBar';
 import { Logo } from './Logo';
 import { toggleTimeline } from './Timeline';
@@ -70,7 +72,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   },
   {
     label: 'View',
-    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.grid', 'view.snap', 'view.minimap', 'view.alignGuides', '-', 'view.refs', 'view.values', 'view.wireLabels', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
+    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.viewMode', 'view.stats', '-', 'view.grid', 'view.snap', 'view.minimap', 'view.alignGuides', '-', 'view.refs', 'view.values', 'view.wireLabels', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
   },
   { label: 'Help', items: ['help.palette', 'help.shortcuts', '-', 'help.about'] },
 ];
@@ -130,6 +132,7 @@ function MenuBar() {
 function DocName() {
   const name = useStore((s) => s.doc.name);
   const dirty = useStore((s) => s.dirty);
+  const locked = useStore(readOnly);
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(name);
   useEffect(() => setV(name), [name]);
@@ -154,16 +157,32 @@ function DocName() {
       />
     );
   return (
-    <button className="doc-name" onClick={() => setEditing(true)} title="Rename circuit">
+    <button className="doc-name" onClick={() => !locked && setEditing(true)} title={locked ? name : 'Rename circuit'}>
       <span className="doc-name-text">{name}</span>
       {dirty && <span className="dirty-dot" title="Unsaved changes" />}
     </button>
   );
 }
 
+/** Shown while View mode is on; a click goes back to editing. */
+function ViewModePill() {
+  const on = useStore((s) => s.viewMode);
+  useStore((s) => s.prefs.keymap);
+  useStore((s) => s.prefs.keymapCadence);
+  if (!on) return null;
+  const k = prettyKey(keysFor('view.viewMode')[0] ?? '');
+  return (
+    <button className="view-pill" onClick={() => A.setViewMode(false)} title={`View mode: the circuit can’t be changed. Click to edit${k ? ` (${k})` : ''}`}>
+      <Eye size={13} />
+      <span className="view-pill-label">View mode</span>
+      <XIcon size={12} className="view-pill-x" />
+    </button>
+  );
+}
+
 export function TopBar() {
-  const canUndo = useStore((s) => s.past.length > 0);
-  const canRedo = useStore((s) => s.future.length > 0);
+  const canUndo = useStore((s) => s.past.length > 0 && !readOnly(s));
+  const canRedo = useStore((s) => s.future.length > 0 && !readOnly(s));
   const zoom = useStore((s) => s.view.zoom);
   const left = useStore((s) => s.leftPanel);
   const right = useStore((s) => s.rightPanel);
@@ -178,6 +197,7 @@ export function TopBar() {
       </div>
       <div className="topbar-center">
         <DocName />
+        <ViewModePill />
       </div>
       <div className="topbar-right">
         <button className="icon-btn" title={`Command palette (${prettyKey(keysFor('help.palette')[0] ?? '')})`} onClick={() => set({ dialog: 'palette' })}>
@@ -241,6 +261,20 @@ export function ToolRail() {
   const timelineOpen = useExplain((s) => s.timelineOpen);
   const toolLock = useStore((s) => s.prefs.toolLock);
   const lockKey = prettyKey(keysFor('tool.lock')[0] ?? '');
+  const locked = useStore(readOnly);
+  if (locked) {
+    // View mode (or a view-only session): only the tools that look
+    return (
+      <div className="tool-rail" onPointerDown={(e) => e.stopPropagation()}>
+        {TOOLS.filter((t) => !t.alt && A.VIEW_TOOLS.has(t.tool)).map((t) => (
+          <button key={t.cmd} className={tool === t.tool ? 'tool-btn active' : 'tool-btn'} onClick={() => A.setTool(t.tool)} title={`${t.label} (${prettyKey(keysFor(t.cmd)[0] ?? '')})`}>
+            {t.icon}
+            <span className="tool-key">{prettyKey(keysFor(t.cmd)[0] ?? '')}</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="tool-rail" onPointerDown={(e) => e.stopPropagation()}>
       <button

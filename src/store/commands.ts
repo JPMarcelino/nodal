@@ -9,7 +9,7 @@ import { clearExplainOverlays } from './explain';
 import { startPresenting } from '../ui/Presenter';
 import { renumberCallouts } from '../ui/ExplainDock';
 import { toggleTimeline } from '../ui/Timeline';
-import { S, activePage, redo, set, setPrefs, toast, undo, mutate, vdoc } from './store';
+import { S, activePage, readOnly, viewModeKey, redo, set, setPrefs, toast, undo, mutate, vdoc } from './store';
 import { docPages, pageIndex } from '../model/pages';
 import { canvasActions } from './canvasActions';
 import { copyStyle, pasteStyle } from '../ui/StyleSection';
@@ -195,6 +195,8 @@ export const COMMANDS: Command[] = [
   { id: 'view.theme', label: 'Toggle light / dark theme', category: 'View', keys: ['Mod+Shift+D'], run: () => setPrefs({ theme: S().prefs.theme === 'dark' ? 'light' : 'dark' }) },
   { id: 'view.focus', label: 'Focus mode (hide panels)', category: 'View', keys: ['Mod+.'], run: focusMode },
   { id: 'view.search', label: 'Search symbol library', category: 'View', keys: ['/'], cadence: ['I', '/'], run: focusSearch },
+  { id: 'view.viewMode', label: 'View mode (read-only: look, select, find, export)', category: 'View', keys: ['Alt+Shift+R'], run: () => A.setViewMode(), checked: () => S().viewMode, keywords: 'read only readonly lock locked protect view zen viewer' },
+  { id: 'view.stats', label: 'Stats (selection size, parts, nets, wire length)', category: 'View', keys: ['Alt+/'], run: () => A.toggleStats(), checked: () => S().statsOpen, keywords: 'statistics info count measure bounding box dimensions length' },
   { id: 'view.check', label: 'Check circuit (electrical rules check)', category: 'View', keys: ['Mod+Alt+R'], cadence: ['X', 'Mod+Alt+R'], run: () => set({ leftPanel: true, leftTab: 'check' }) },
   { id: 'view.checkSave', label: 'Check and save', category: 'File', keys: [], cadence: ['Shift+X'], run: checkAndSave },
 
@@ -232,6 +234,38 @@ export const COMMANDS: Command[] = [
   { id: 'help.shortcutScheme', label: 'Switch shortcut scheme (Nodal / Cadence)', category: 'Help', keys: [], run: toggleScheme },
   { id: 'help.about', label: 'About Nodal', category: 'Help', keys: [], run: () => set({ dialog: 'about' }) },
 ];
+
+/**
+ * Commands that change the circuit. In View mode (or as a view-only session
+ * guest) they are hidden from the palette, greyed in menus, and their keys
+ * only say why nothing happened. The store refuses the edits anyway; this
+ * keeps the UI honest about it.
+ */
+export const EDIT_COMMANDS: ReadonlySet<string> = new Set([
+  'edit.pasteStyle',
+  'edit.undo', 'edit.redo', 'edit.cut', 'edit.paste', 'edit.pasteHere', 'edit.duplicate', 'edit.duplicateIncrement', 'edit.delete',
+  'edit.annotate', 'edit.lock', 'edit.hide', 'edit.properties',
+  'edit.nudgeLeft', 'edit.nudgeRight', 'edit.nudgeUp', 'edit.nudgeDown', 'edit.nudgeLeftBig', 'edit.nudgeRightBig', 'edit.nudgeUpBig', 'edit.nudgeDownBig',
+  'edit.nudgeLeftFine', 'edit.nudgeRightFine', 'edit.nudgeUpFine', 'edit.nudgeDownFine',
+  'edit.quickAddRight', 'edit.quickAddLeft', 'edit.quickAddUp', 'edit.quickAddDown',
+  'edit.move', 'edit.moveDetached', 'edit.copyMove',
+  'tool.altMove', 'tool.node', 'tool.solder', 'tool.wire', 'tool.rect', 'tool.zone', 'tool.ellipse', 'tool.polygon', 'tool.path', 'tool.line', 'tool.arrow', 'tool.text',
+  'tool.pen', 'tool.highlighter', 'tool.eraser', 'tool.callout', 'tool.frame', 'explain.renumber',
+  'tool.placeLast', 'tool.netLabel', 'tool.pin', 'tool.ground', 'tool.vcc', 'tool.resistor', 'tool.capacitor', 'tool.junction',
+  ...COMMANDS.filter((c) => c.category === 'Arrange' && c.id !== 'arrange.enterGroup' && c.id !== 'arrange.exitGroup').map((c) => c.id),
+  'page.new', 'page.rename', 'page.duplicate', 'page.delete', 'page.moveLeft', 'page.moveRight',
+  'wire.reroute', 'wire.hops', 'wire.corners',
+  // these are stored in the circuit, so they are edits too
+  'view.refs', 'view.values', 'view.wireLabels', 'view.grid', 'view.snap',
+  'symbols.edit', 'symbols.fromSelection',
+]);
+
+for (const c of COMMANDS) {
+  if (!EDIT_COMMANDS.has(c.id)) continue;
+  const { run, when } = c;
+  c.run = () => (readOnly() ? A.readOnlyNotice() : run());
+  c.when = () => !readOnly() && (!when || when());
+}
 
 export const COMMAND_MAP = new Map(COMMANDS.map((c) => [c.id, c]));
 
@@ -389,6 +423,8 @@ function checkAndSave() {
   set({ leftPanel: true, leftTab: 'check' });
   void fileSave();
 }
+
+viewModeKey.label = () => prettyKey(keysFor('view.viewMode')[0] ?? '');
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
 

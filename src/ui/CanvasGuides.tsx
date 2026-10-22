@@ -5,7 +5,7 @@ import type { CircuitDoc, Item } from '../model/types';
 import { openExample } from '../io/fileActions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { isExplainTool, useExplain } from '../store/explain';
-import { set, useStore } from '../store/store';
+import { readOnly, set, useStore } from '../store/store';
 import { viewDoc } from '../model/pages';
 import { hintFor, type HintGesture, type HintSel } from './hints';
 import { Logo } from './Logo';
@@ -36,10 +36,10 @@ function isEmpty(o: object): boolean {
   return true;
 }
 
-/** The welcome screen shows on an empty page while editing (not presenting, not as a session guest). */
+/** The welcome screen shows on an empty page while editing (not presenting, not in View mode or as a session guest). */
 function useWelcomeShown(): boolean {
   const empty = useStore((s) => isEmpty(viewDoc(s.doc, s.page).items));
-  const idle = useStore((s) => s.tool === 'select' && !s.placing && !s.viewOnly && !s.exportArea);
+  const idle = useStore((s) => s.tool === 'select' && !s.placing && !readOnly(s) && !s.exportArea);
   const presenting = useExplain((s) => s.presenting !== null);
   return empty && idle && !presenting;
 }
@@ -58,6 +58,7 @@ export const HintBar = memo(function HintBar({ gesture, editingText }: { gesture
   const banner = useStore((s) => !!s.exportArea || (s.tool === 'select' && s.altMove));
   const shapePreset = useStore((s) => !!s.shapePreset);
   const minimap = useStore((s) => s.prefs.showMinimap);
+  const viewMode = useStore((s) => s.viewMode);
   // a string, so the line only re-renders when the kinds change
   const selKey = useStore((s) => {
     if (!s.selection.length) return '';
@@ -81,6 +82,7 @@ export const HintBar = memo(function HintBar({ gesture, editingText }: { gesture
     editingText,
     shapePreset,
     banner,
+    viewMode,
     key: keyLabel,
   });
   if (!text) return null;

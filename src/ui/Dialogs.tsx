@@ -18,6 +18,9 @@ import {
   pasteTemplateFromClipboard,
   templateToText,
 } from '../io/sharing';
+import { buildLibraryLink } from '../io/libraryUrl';
+import { isDesktop } from '../io/files';
+import { PUBLIC_APP_URL } from '../collab/session';
 import { librarySymbols, variantDefs } from '../model/registry';
 import { BUILTIN_SYMBOLS } from '../model/symbols';
 import type { SymbolDef } from '../model/types';
@@ -611,6 +614,39 @@ export function ExportDialog() {
   );
 }
 
+/**
+ * Builds an "add this library" link: host the saved .json anywhere that serves
+ * it over https with CORS (a GitHub gist's raw link, GitHub Pages…), paste its
+ * address, copy the Nodal link that offers to add it.
+ */
+function LibraryLinkBuilder() {
+  const [fileUrl, setFileUrl] = useState('');
+  let link = '';
+  let error = '';
+  if (fileUrl.trim()) {
+    try {
+      link = buildLibraryLink(fileUrl, isDesktop() ? PUBLIC_APP_URL : `${location.origin}${location.pathname}`);
+    } catch (e) {
+      error = (e as Error).message;
+    }
+  }
+  return (
+    <details className="share-link-builder">
+      <summary>Copy library link…</summary>
+      <p className="muted small">
+        Save the library as .json and put it online where it is served over https and may be downloaded from other sites (a GitHub gist’s “Raw” link or GitHub Pages work). Paste its address here: anyone opening the link is asked before the symbols are added to their library.
+      </p>
+      <div className="row-gap">
+        <input className="input mono" placeholder="https://…/my-symbols.nodal-lib.json" value={fileUrl} onChange={(e) => setFileUrl(e.target.value)} aria-label="Address of the hosted library file" />
+        <button className="primary-btn" disabled={!link} onClick={() => copyToClipboard(link, 'Library link')}>
+          <Copy size={14} /> Copy link
+        </button>
+      </div>
+      {error ? <p className="muted small error-text">{error}</p> : link ? <input className="input mono small" readOnly value={link} onFocus={(e) => e.currentTarget.select()} aria-label="Library link" /> : null}
+    </details>
+  );
+}
+
 export function ShareDialog() {
   const [tab, setTab] = useState<'library' | 'template'>('library');
   const userLibrary = useStore((s) => s.userLibrary);
@@ -656,6 +692,7 @@ export function ShareDialog() {
               </button>
             </div>
             <textarea className="input mono share-text" readOnly value={libText} onFocus={(e) => e.currentTarget.select()} />
+            <LibraryLinkBuilder />
           </>
         ) : (
           <>

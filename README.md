@@ -56,6 +56,7 @@ The relay is a small Cloudflare Worker in [`collab-server/`](collab-server).
 
 You can also share without a live session. Open **File → Share & collaborate…** to:
 - **Share your whole symbol library** as copy-paste text or a `.json` file, and import someone else's (imports *merge*, never overwrite).
+- **Add a library by link:** host the saved `.json` anywhere that serves it over https and allows downloads from other sites (a gist's *Raw* link, GitHub Pages…), paste its address under *Copy library link…*, and send the link. Opening `…/nodal/#addLibrary=<url-encoded https URL>` downloads it (up to 5 MB, 15 s), asks *"Add N symbols from host?"* and merges them into My symbols — never replacing a symbol you have or a built-in one. Each symbol is rebuilt from known fields only (plain colours, plain path data), so nothing in the file can run or load anything. The link is cleared from the address bar afterwards, so a reload doesn't ask again.
 - **Share any part of a circuit as a reusable template** — select it and send it; the template carries its parts, wiring and custom symbols, and lands correctly on another machine.
 
 ### Wiring
@@ -109,6 +110,7 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 ### Colour, fill and size
 - The **Style** section of the inspector works on anything selected (one part, or a mix of parts, wires and shapes) and changes them all at once. It covers line colour, fill colour and opacity, line width, solid/dashed/dotted lines, and text/label colour, with one-click swatches or any colour.
 - Parts can be coloured individually: line colour, a fill for their bodies, line width, dashes and label colour.
+- **Eyedropper:** in browsers that support it (Chrome, Edge, the Windows app) every colour picker has a pipette button that picks a colour from anywhere on the screen. Esc cancels.
 - **Copy style** / **Paste style** (Ctrl+Shift+Alt+C / V) carries a look from one item to others.
 - **Resize parts:** drag a corner handle of a selected part (in quarter steps; Shift for any size), or set *Size* in the inspector. The drawing, pins and text scale together and keep their aspect ratio, while line widths stay the same so the part still matches the rest of the schematic. Wires stay connected.
 - New parts start with their value hidden (net names on labels and rails still show). Turn it on per part, or use *Values* in the top bar.
@@ -150,6 +152,8 @@ The web app can be installed (Chrome/Edge: the install icon in the address bar; 
 - **Customisable keyboard shortcuts** (Settings → Keyboard shortcuts)
 - **Tool lock** (padlock at the left of the tool rail, **Shift+Q**): placing a part keeps it armed for the next click instead of returning to Select (the drawing tools — wire, shapes, text — already stay active). **Esc** returns to Select. Remembered between sessions.
 - **Hint line**: a quiet line at the bottom of the canvas names the next useful step for the tool and selection in hand (with your own key bindings). Turn it off in Settings → *Show hints*.
+- **View mode** (**Alt+Shift+R**, or *View → View mode*): the circuit becomes read-only — select, hover, pan, zoom, find, trace and highlight nets, copy and export all still work, but nothing moves, gets deleted, wired, placed, pasted, edited in the inspector or undone. The tool rail keeps only Select and Pan, edit commands hide from the palette and menus, and a **View mode** pill in the top bar (click to edit again) and the hint line say so. It isn't remembered after a reload. Guests of a view-only live session are read-only regardless.
+- **Stats** (**Alt+/**, or *View → Stats*): a small floating panel with the selection's item count, bounding box (X, Y, W × H in px, as in the inspector) and a lone part's rotation; and for the page and the whole circuit the number of parts (power symbols, net labels, ports and flags are counted separately), wires and their total length, nets that join something, and pages.
 - **Welcome screen** on an empty page: place a part, open or import a file, the command palette, the example circuit or a live session. It goes as soon as anything is placed.
 
 ## Keyboard shortcuts
@@ -176,6 +180,7 @@ Press **?** in the app for the full list. You can rebind any shortcut in Setting
 | Command palette | `Ctrl+K` | Save / Open / Export | `Ctrl+S` / `Ctrl+O` / `Ctrl+E` |
 | Find | `Ctrl+F` | Check circuit | `Ctrl+Alt+R` |
 | New symbol | `Ctrl+Shift+N` | Library / Properties panel | `Ctrl+B` / `Ctrl+I` |
+| View mode (read-only) | `Alt+Shift+R` | Stats panel | `Alt+/` |
 
 ## Development
 
