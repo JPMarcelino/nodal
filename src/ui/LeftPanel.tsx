@@ -16,6 +16,7 @@ import { S, mutate, removeSymbolFromLibrary, select, set, toast, toggleFavorite,
 import { CheckPanel, useErcIssues } from './CheckPanel';
 import { confirmDelete } from './Ask';
 import { HistoryPanel } from './HistoryPanel';
+import { NetsPanel } from './NetsPanel';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
 
@@ -594,6 +595,9 @@ export function LeftPanel() {
         <button className={tab === 'layers' ? 'active' : ''} onClick={() => set({ leftTab: 'layers' })}>
           Layers
         </button>
+        <button className={tab === 'nets' ? 'active' : ''} onClick={() => set({ leftTab: 'nets' })} title="Nets in this circuit">
+          Nets
+        </button>
         <button className={tab === 'check' ? 'active' : ''} onClick={() => set({ leftTab: 'check' })} title="Electrical rules check">
           Check <CheckBadge />
         </button>
@@ -601,7 +605,7 @@ export function LeftPanel() {
           <History size={15} />
         </button>
       </div>
-      {tab === 'library' ? <Library /> : tab === 'layers' ? <Layers /> : tab === 'check' ? <CheckPanel /> : <HistoryPanel />}
+      {tab === 'library' ? <Library /> : tab === 'layers' ? <Layers /> : tab === 'nets' ? <NetsPanel /> : tab === 'check' ? <CheckPanel /> : <HistoryPanel />}
     </aside>
   );
 }
