@@ -14,6 +14,7 @@ const KEYS: Record<string, string> = {
   'view.search': '/',
   'help.palette': 'Ctrl+K',
   'wire.highlightNet': 'N',
+  'edit.quickAddRight': 'Ctrl+Shift+→',
 };
 // command ids give their binding ('' when unbound); fixed combos come back as they are
 const key = (x: string) => (x.includes('.') ? KEYS[x] ?? '' : x === 'Escape' ? 'Esc' : x);
@@ -33,6 +34,7 @@ describe('hintFor', () => {
     expect(h).toContain('X / Y flip');
     expect(h).toContain('drag a corner to resize');
     expect(h).toContain('Ctrl+D duplicates');
+    expect(h).toContain('Ctrl+Shift+→ (or another arrow) chains a wired copy');
   });
 
   it('uses the user’s bindings and drops unbound commands', () => {

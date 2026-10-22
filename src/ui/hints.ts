@@ -141,7 +141,7 @@ function selectHint(s: HintState, cmd: (id: string, what: string) => string | nu
   }
   switch (sel[0]) {
     case 'part':
-      return join([cmd('arrange.rotateCw', 'rotates'), pair('arrange.flipH', 'arrange.flipV', 'flip'), 'drag a corner to resize', cmd('edit.duplicate', 'duplicates'), cmd('edit.properties', 'edits the value')]);
+      return join([cmd('arrange.rotateCw', 'rotates'), pair('arrange.flipH', 'arrange.flipV', 'flip'), 'drag a corner to resize', cmd('edit.duplicate', 'duplicates'), cmd('edit.quickAddRight', '(or another arrow) chains a wired copy'), cmd('edit.properties', 'edits the value')]);
     case 'label':
       return join([cmd('edit.properties', 'renames the net'), 'drag its name to move it', cmd('edit.duplicateIncrement', 'duplicates with the next number (D0 → D1)'), cmd('arrange.rotateCw', 'rotates')]);
     case 'labelledWire':
