@@ -1,5 +1,6 @@
 import { Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { docPages, resolvePage } from '../model/pages';
 import * as A from '../store/actions';
 import { keysFor, prettyKey } from '../store/commands';
@@ -101,30 +102,34 @@ export function PageBar() {
           <Plus size={14} />
         </button>
       )}
-      {menu && (
-        <div className="page-menu dropdown" style={{ left: menu.x, bottom: window.innerHeight - menu.y + 4 }} role="menu">
-          <button className="dropdown-item" onClick={run(() => setRenaming(menu.id))}>
-            Rename
-          </button>
-          <button className="dropdown-item" onClick={run(() => A.duplicatePageCmd(menu.id))}>
-            Duplicate
-          </button>
-          <button className="dropdown-item" disabled={pages.length < 2} onClick={run(() => void A.deletePageCmd(menu.id))}>
-            Delete
-          </button>
-          <div className="dropdown-sep" />
-          <button className="dropdown-item" disabled={index(menu.id) === 0} onClick={run(() => A.movePageBy(menu.id, -1))}>
-            Move left
-          </button>
-          <button className="dropdown-item" disabled={index(menu.id) === pages.length - 1} onClick={run(() => A.movePageBy(menu.id, 1))}>
-            Move right
-          </button>
-          <div className="dropdown-sep" />
-          <button className="dropdown-item" onClick={run(A.newPage)}>
-            New page
-          </button>
-        </div>
-      )}
+      {menu &&
+        // portalled to <body>: .stage is a size container (contain: layout), which would otherwise
+        // make it the containing block for this fixed menu and offset its viewport coordinates
+        createPortal(
+          <div className="page-menu dropdown" style={{ left: menu.x, bottom: window.innerHeight - menu.y + 4 }} role="menu">
+            <button className="dropdown-item" onClick={run(() => setRenaming(menu.id))}>
+              Rename
+            </button>
+            <button className="dropdown-item" onClick={run(() => A.duplicatePageCmd(menu.id))}>
+              Duplicate
+            </button>
+            <button className="dropdown-item" disabled={pages.length < 2} onClick={run(() => void A.deletePageCmd(menu.id))}>
+              Delete
+            </button>
+            <div className="dropdown-sep" />
+            <button className="dropdown-item" disabled={index(menu.id) === 0} onClick={run(() => A.movePageBy(menu.id, -1))}>
+              Move left
+            </button>
+            <button className="dropdown-item" disabled={index(menu.id) === pages.length - 1} onClick={run(() => A.movePageBy(menu.id, 1))}>
+              Move right
+            </button>
+            <div className="dropdown-sep" />
+            <button className="dropdown-item" onClick={run(A.newPage)}>
+              New page
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
