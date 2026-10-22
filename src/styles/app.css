@@ -870,7 +870,7 @@ body.is-resizing-panel .stage {
   max-width: 100%;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 
@@ -5507,15 +5507,19 @@ body.is-presenting .stage .canvas-wrap {
   transform: translateX(-50%);
   z-index: 3;
   max-width: calc(100% - 48px);
+  width: max-content;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--canvas) 78%, transparent);
   color: var(--text-faint);
   font-size: 0.85em;
   line-height: 1.4;
-  white-space: nowrap;
+  text-align: center;
+  /* wraps to a second line rather than cutting the hint short */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   overflow: hidden;
-  text-overflow: ellipsis;
   pointer-events: none;
   user-select: none;
 }

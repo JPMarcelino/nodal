@@ -2,6 +2,7 @@ import { CheckCircle2, Info, XCircle } from 'lucide-react';
 import type { Tool } from '../model/types';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { useStore } from '../store/store';
+import { isExplainTool } from '../store/explain';
 
 const DRAG = 'Drag to draw · Esc returns to select';
 const TOOL_HINT: Record<Tool, string> = {
@@ -40,10 +41,12 @@ export function StatusBar() {
   const zoom = useStore((s) => s.view.zoom);
   const scope = useStore((s) => s.scope);
   const filePath = useStore((s) => s.filePath);
+  // the hint line on the canvas says it better; explain tools keep theirs here
+  const hintLine = useStore((s) => s.prefs.showHints && !s.viewOnly && !isExplainTool(s.tool));
   const hint = placing ? `Placing — click to drop · ${keyOf('arrange.rotateCw')} rotate · ${keyOf('arrange.flipH')}/${keyOf('arrange.flipV')} flip · Esc cancel` : TOOL_HINT[tool];
   return (
     <footer className="statusbar">
-      <span className="status-hint">{hint}</span>
+      <span className="status-hint">{hintLine ? null : hint}</span>
       <span className="grow" />
       {filePath && <span className="status-item path" title={filePath}>{filePath.split(/[\\/]/).pop()}</span>}
       {scope && <span className="status-item accent">in group</span>}
