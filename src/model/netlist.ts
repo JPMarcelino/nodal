@@ -1,6 +1,6 @@
 import { toWorld } from './geometry';
 import { stripMath } from './latex';
-import { itemPage, multiPage } from './pages';
+import { docPages, itemPage, multiPage } from './pages';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint } from './types';
 
@@ -235,6 +235,18 @@ export function computeNets(doc: CircuitDoc, opts?: { ignoreLabels?: boolean }):
   }
   nets.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   return nets;
+}
+
+/** Ids of the pages holding any of the net's wires or pin components, in document page order. */
+export function netPages(doc: CircuitDoc, net: Net): string[] {
+  const pages = new Set<string>();
+  for (const id of [...net.wires, ...net.pins.map((p) => p.comp)]) {
+    const item = doc.items[id];
+    if (item) pages.add(itemPage(doc, item));
+  }
+  return docPages(doc)
+    .filter((p) => pages.has(p.id))
+    .map((p) => p.id);
 }
 
 /** Net that contains a given wire. */

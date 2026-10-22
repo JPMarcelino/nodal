@@ -115,7 +115,7 @@ export interface AppState {
   symbolSeed: (SelectionDrawing & { ids: string[] }) | null;
   leftPanel: boolean;
   rightPanel: boolean;
-  leftTab: 'library' | 'layers' | 'check' | 'history';
+  leftTab: 'library' | 'layers' | 'nets' | 'check' | 'history';
   prefs: Prefs;
   userLibrary: Record<string, SymbolDef>;
   favorites: string[];

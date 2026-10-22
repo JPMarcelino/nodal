@@ -983,6 +983,10 @@ body.is-resizing-panel .stage {
   background: var(--panel-2);
 }
 
+.net-row {
+  width: 100%;
+}
+
 .layer-row {
   position: relative;
   user-select: none;
