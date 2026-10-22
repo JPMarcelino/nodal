@@ -29,7 +29,9 @@ const TOOL_HINT: Record<Tool, string> = {
 const keyOf = (id: string) => prettyKey(keysFor(id)[0] ?? '');
 
 export function StatusBar() {
-  const cursor = useStore((s) => s.cursor);
+  // whole units only, so sub-unit pointer moves don't re-render the status bar
+  const cx = useStore((s) => Math.round(s.cursor.x));
+  const cy = useStore((s) => Math.round(s.cursor.y));
   const selection = useStore((s) => s.selection.length);
   const tool = useStore((s) => s.tool);
   const placing = useStore((s) => s.placing);
@@ -50,7 +52,7 @@ export function StatusBar() {
         snap {snapOn ? `${grid}px` : 'off'}
       </button>
       <span className="status-item mono">
-        {Math.round(cursor.x)}, {Math.round(cursor.y)}
+        {cx}, {cy}
       </span>
       <span className="status-item mono">{Math.round(zoom * 100)}%</span>
     </footer>

@@ -1,8 +1,17 @@
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Eye, EyeOff, OctagonAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ERC_RULES, runErc, splitIgnored, type ErcIssue, type ErcRule } from '../model/erc';
+import type { CircuitDoc } from '../model/types';
 import * as A from '../store/actions';
 import { goToItems, mutate, select, set, useStore } from '../store/store';
+
+/** One rule check per document, shared by the tab badge, the panel and the canvas markers. */
+const ercCache = new WeakMap<CircuitDoc, ErcIssue[]>();
+function ercOf(doc: CircuitDoc): ErcIssue[] {
+  let issues = ercCache.get(doc);
+  if (!issues) ercCache.set(doc, (issues = runErc(doc)));
+  return issues;
+}
 
 /** Rule-check findings for the current circuit, re-run once edits pause (not on every drag frame). */
 export function useErcResult(enabled = true): { active: ErcIssue[]; ignored: ErcIssue[] } {
@@ -13,7 +22,7 @@ export function useErcResult(enabled = true): { active: ErcIssue[]; ignored: Erc
     const t = setTimeout(() => setChecked(doc), 250);
     return () => clearTimeout(t);
   }, [doc, checked]);
-  const all = useMemo(() => (enabled ? runErc(checked) : []), [checked, enabled]);
+  const all = useMemo(() => (enabled ? ercOf(checked) : []), [checked, enabled]);
   const ignoredKeys = useStore((s) => s.doc.settings.ercIgnored);
   return useMemo(() => splitIgnored(all, ignoredKeys), [all, ignoredKeys]);
 }

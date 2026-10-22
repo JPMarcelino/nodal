@@ -778,7 +778,8 @@ export { measureText };
 /* Whole scene                                                         */
 /* ------------------------------------------------------------------ */
 
-export function Scene({ doc, data, palette, highlight, frames = false, xrefs }: { doc: CircuitDoc; data: SceneData; palette: Palette; highlight?: Set<string> | null; frames?: boolean; xrefs?: ReadonlyMap<string, string> }) {
+/** Memoised: the editor re-renders on every pointer move, the drawing only when what it shows changes. */
+export const Scene = memo(function Scene({ doc, data, palette, highlight, frames = false, xrefs }: { doc: CircuitDoc; data: SceneData; palette: Palette; highlight?: Set<string> | null; frames?: boolean; xrefs?: ReadonlyMap<string, string> }) {
   // presentation frames are only drawn while editing
   const items = Object.values(doc.items).filter((i) => !i.hidden && (frames || !(i.type === 'shape' && i.kind === 'frame')));
   // one back-to-front stack for shapes, wires and parts (the layers panel order, z else creation order)
@@ -793,9 +794,15 @@ export function Scene({ doc, data, palette, highlight, frames = false, xrefs }: 
   };
   const dots: { x: number; y: number; color: string; key: string }[] = [];
   const js = doc.settings.junctionSize;
+  // the first wire at each junction gives its dot colour
+  const wireAt = new Map<string, WireItem>();
+  for (const w of wires) {
+    if (w.a.kind === 'junction' && !wireAt.has(w.a.id)) wireAt.set(w.a.id, w);
+    if (w.b.kind === 'junction' && !wireAt.has(w.b.id)) wireAt.set(w.b.id, w);
+  }
   for (const it of items) {
     if (it.type === 'junction' && (data.junctionDegree.get(it.id) ?? 0) >= 3) {
-      const w = wires.find((w) => (w.a.kind === 'junction' && w.a.id === it.id) || (w.b.kind === 'junction' && w.b.id === it.id));
+      const w = wireAt.get(it.id);
       dots.push({ x: it.x, y: it.y, color: w ? wireStyle(doc, w).color : doc.settings.wire.color, key: it.id });
     }
   }
@@ -842,4 +849,4 @@ export function Scene({ doc, data, palette, highlight, frames = false, xrefs }: 
       </g>
     </>
   );
-}
+});

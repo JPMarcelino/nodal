@@ -1,4 +1,5 @@
-import { useRef } from 'react';
+import { memo, useMemo, useRef } from 'react';
+import type { CircuitDoc } from '../model/types';
 import { docBounds, itemBounds } from '../model/doc';
 import { shapeTransform } from '../model/rotation';
 import { unionRects } from '../model/geometry';
@@ -10,12 +11,13 @@ import type { SceneData } from './Scene';
 const W = 200;
 const H = 130;
 
-export function Minimap({ data }: { data: SceneData }) {
+export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
   const doc = useViewDoc();
   const view = useStore((s) => s.view);
   const size = useStore((s) => s.canvasSize);
   const ref = useRef<SVGSVGElement>(null);
-  const b = unionRects([docBounds(doc), sheetRect(doc.settings)].filter((r): r is Rect => !!r));
+  // panning and zooming only move the viewport box; the drawing is measured once per edit
+  const b = useMemo(() => unionRects([docBounds(doc), sheetRect(doc.settings)].filter((r): r is Rect => !!r)), [doc]);
   const vp = { x: -view.x / view.zoom, y: -view.y / view.zoom, w: size.w / view.zoom, h: size.h / view.zoom };
   const all = b
     ? {
@@ -54,23 +56,32 @@ export function Minimap({ data }: { data: SceneData }) {
         onPointerMove={(e) => e.buttons === 1 && navigate(e.clientX, e.clientY)}
       >
         <g transform={`translate(${(W - box.w * k) / 2} ${(H - box.h * k) / 2}) scale(${k}) translate(${-box.x} ${-box.y})`}>
-          {Object.values(doc.items).map((it) => {
-            if (it.hidden) return null;
-            if (it.type === 'shape' && (it.kind === 'zone' || it.kind === 'rect')) {
-              return <rect key={it.id} x={it.x} y={it.y} width={it.w} height={it.h} fill={it.fill} fillOpacity={Math.max(0.15, it.fillOpacity)} stroke="none" transform={shapeTransform(it)} />;
-            }
-            if (it.type === 'component') {
-              const r = itemBounds(doc, it)!;
-              return <rect key={it.id} x={r.x} y={r.y} width={r.w} height={r.h} className="mm-comp" />;
-            }
-            return null;
-          })}
-          {[...data.polys].map(([id, pts]) => (
-            <polyline key={id} points={pts.map((p) => `${p.x},${p.y}`).join(' ')} className="mm-wire" strokeWidth={2 / k} fill="none" />
-          ))}
+          <MapContent doc={doc} data={data} k={k} />
           <rect x={vp.x} y={vp.y} width={vp.w} height={vp.h} className="mm-view" strokeWidth={1.5 / k} />
         </g>
       </svg>
     </div>
   );
-}
+});
+
+/** The parts, zones and wires of the map, redrawn only when the drawing (or the map scale) changes. */
+const MapContent = memo(function MapContent({ doc, data, k }: { doc: CircuitDoc; data: SceneData; k: number }) {
+  return (
+    <>
+      {Object.values(doc.items).map((it) => {
+        if (it.hidden) return null;
+        if (it.type === 'shape' && (it.kind === 'zone' || it.kind === 'rect')) {
+          return <rect key={it.id} x={it.x} y={it.y} width={it.w} height={it.h} fill={it.fill} fillOpacity={Math.max(0.15, it.fillOpacity)} stroke="none" transform={shapeTransform(it)} />;
+        }
+        if (it.type === 'component') {
+          const r = itemBounds(doc, it)!;
+          return <rect key={it.id} x={r.x} y={r.y} width={r.w} height={r.h} className="mm-comp" />;
+        }
+        return null;
+      })}
+      {[...data.polys].map(([id, pts]) => (
+        <polyline key={id} points={pts.map((p) => `${p.x},${p.y}`).join(' ')} className="mm-wire" strokeWidth={2 / k} fill="none" />
+      ))}
+    </>
+  );
+});
