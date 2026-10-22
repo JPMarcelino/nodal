@@ -70,6 +70,7 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
 
   /* --------------------------- references --------------------------- */
   const byRef = new Map<string, ComponentItem[]>();
+  const firstPage = docPages(doc)[0].id;
   for (const c of comps) {
     const def = defOf.get(c.id)!;
     if (!isPart(def)) continue;
@@ -78,14 +79,19 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
       issues.push({ key: `unannotated:${c.id}`, rule: 'unannotated', severity: 'warning', message: `${def.name} has no reference number${ref ? ` (“${ref}”)` : ''}`, items: [c.id], at: { x: c.x, y: c.y } });
       continue;
     }
-    const list = byRef.get(ref.toUpperCase());
+    // each page names its parts on its own, so only a clash on one page counts
+    const page = itemPage(doc, c);
+    const k = `${page}|${ref.toUpperCase()}`;
+    const list = byRef.get(k);
     if (list) list.push(c);
-    else byRef.set(ref.toUpperCase(), [c]);
+    else byRef.set(k, [c]);
   }
-  for (const [, list] of byRef) {
+  for (const list of byRef.values()) {
     if (list.length < 2) continue;
+    // first-page keys stay as before, so issues ignored in older files stay ignored
+    const page = itemPage(doc, list[0]);
     issues.push({
-      key: `duplicate-ref:${list[0].ref}`,
+      key: `duplicate-ref:${page === firstPage ? '' : `${page}:`}${list[0].ref}`,
       rule: 'duplicate-ref',
       severity: 'error',
       message: `${list.length} parts are called ${list[0].ref}`,

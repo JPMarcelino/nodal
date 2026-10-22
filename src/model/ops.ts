@@ -1,7 +1,7 @@
 import { current, isDraft } from 'immer';
 import { withContents } from './containers';
 import { connectorsOf, detachConnector, isConnector, resolveConnector } from './connectors';
-import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, outsideRefs, refersTo, uid } from './doc';
+import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
 import { eq, projectOnSegment, rectsIntersect, rotate, simplify, snap, unionRects } from './geometry';
 import { inkPoints, packInk } from './ink';
 import { mapNodes, pathNodes, setPathNodes } from './path';
@@ -805,8 +805,12 @@ export function extractFragment(doc: CircuitDoc, ids: Set<string>): Fragment {
   return { format: 'nodal-fragment', items, groups: [...groupIds].map((g) => clone(doc.groups[g])), symbols };
 }
 
-/** Inserts a fragment with fresh ids, offset by (dx, dy). Returns the new item ids. */
-export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: number, scope?: string): string[] {
+/**
+ * Inserts a fragment with fresh ids, offset by (dx, dy). Returns the new item ids.
+ * Parts keep their references unless one is already in `taken` (by default the
+ * references in `doc`, which during a page edit is just that page).
+ */
+export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: number, scope?: string, taken?: Iterable<string>): string[] {
   const idMap = new Map<string, string>();
   for (const it of frag.items) idMap.set(it.id, uid(it.id[0] ?? 'i'));
   const gMap = new Map<string, string>();
@@ -817,7 +821,7 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
   }
   // a symbol this circuit already defines keeps its own (possibly edited) definition
   for (const [k, v] of Object.entries(frag.symbols ?? {})) if (!doc.symbols[k]) doc.symbols[k] = v;
-  const refs = new Set([...Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])), ...outsideRefs()]);
+  const refs = new Set(taken ?? Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])));
   const out: string[] = [];
   const remapEp = (ep: Endpoint): Endpoint => {
     if (ep.kind === 'port') return idMap.has(ep.comp) ? { ...ep, comp: idMap.get(ep.comp)! } : { kind: 'free', x: 0, y: 0 };

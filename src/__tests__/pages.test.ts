@@ -2,7 +2,9 @@ import { produce } from 'immer';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { changedKeys, SyncState, writeEntries } from '../collab/sync';
 import { createDoc, makeComponent, makeShape, normalizeDoc, uid } from '../model/doc';
+import { runErc } from '../model/erc';
 import { computeNets } from '../model/netlist';
+import { extractFragment, insertFragment } from '../model/ops';
 import { deletePage, duplicatePage, moveItemsToPage } from '../model/pageOps';
 import { addPage, docPages, editPage, itemPage, movePage, pageItemIds, samePage, viewDoc } from '../model/pages';
 import type { CircuitDoc, ComponentItem, WireItem } from '../model/types';
@@ -64,8 +66,8 @@ describe('page views', () => {
     expect((next.items[r3.id] as ComponentItem).x).toBe(30);
     // the other page is untouched (same objects)
     expect(next.items[r1.id]).toBe(doc.items[r1.id]);
-    // references stay unique across pages (R1–R3 are taken)
-    expect((next.items[added] as ComponentItem).ref).toBe('R4');
+    // each page names its parts on its own: page 2 only has R3
+    expect((next.items[added] as ComponentItem).ref).toBe('R1');
   });
 
   it('settles edits on their own page only: a part dropped where another page has a wire stays unconnected', async () => {
@@ -284,8 +286,9 @@ describe('page edits', () => {
     expect(gid).not.toBe('g1');
     expect(comps.every((c) => c.group === gid)).toBe(true);
     expect(next.groups[gid]).toBeTruthy();
-    // parts take free references, so the netlist stays valid
-    expect(new Set(Object.values(next.items).flatMap((i) => (i.type === 'component' ? [i.ref] : []))).size).toBe(5);
+    // the copies keep their names: each page names its parts on its own
+    expect(comps.map((c) => c.ref).sort()).toEqual([r1.ref, r2.ref].sort());
+    expect(runErc(next).some((i) => i.rule === 'duplicate-ref')).toBe(false);
   });
 
   it('reorders pages without moving untagged items', () => {
@@ -428,5 +431,30 @@ describe('presence on pages', () => {
     expect(samePage(doc, 'gone', undefined)).toBe(true);
     expect(samePage(doc, second, first)).toBe(false);
     expect(samePage(doc, second, second)).toBe(true);
+  });
+});
+
+describe('names per page', () => {
+  it('keeps references when pasting onto another page, and still renames a clash on the same page', () => {
+    const { doc, p1, p2, r1 } = twoPages();
+    const frag = extractFragment(viewDoc(doc, p1), new Set([r1.id]));
+    let pasted = '';
+    const next = editPage(doc, p2, (d) => void ([pasted] = insertFragment(d as CircuitDoc, frag, 0, 0)));
+    expect((next.items[pasted] as ComponentItem).ref).toBe(r1.ref);
+    let again = '';
+    const twice = editPage(next, p2, (d) => void ([again] = insertFragment(d as CircuitDoc, frag, 0, 0)));
+    expect((twice.items[again] as ComponentItem).ref).not.toBe(r1.ref);
+  });
+
+  it('flags a duplicate reference only within one page', () => {
+    const { doc, r1, r3 } = twoPages();
+    r3.ref = r1.ref;
+    expect(runErc(doc).some((i) => i.rule === 'duplicate-ref')).toBe(false);
+    const { doc: d2, p2, r3: s3 } = twoPages();
+    const extra = place(d2, 'resistor', 300, 0, p2);
+    extra.ref = s3.ref;
+    const dup = runErc(d2).find((i) => i.rule === 'duplicate-ref');
+    expect(dup?.items.sort()).toEqual([s3.id, extra.id].sort());
+    expect(dup?.key).toBe(`duplicate-ref:${p2}:${s3.ref}`);
   });
 });

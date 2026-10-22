@@ -140,29 +140,8 @@ export function docBounds(doc: CircuitDoc, ids?: Iterable<string>): Rect | null 
   return unionRects(list.filter((i) => !i.hidden).map((i) => itemBounds(doc, i)).filter((r): r is Rect => !!r));
 }
 
-/** Items on the other pages while an edit is confined to one page (see model/pages editPage). */
-let outside: (() => Iterable<Item>) | null = null;
-
-/** Runs `fn` with the items of the other pages known, so new references stay unique across the whole circuit. */
-export function withOutsideItems<T>(items: () => Iterable<Item>, fn: () => T): T {
-  const prev = outside;
-  outside = items;
-  try {
-    return fn();
-  } finally {
-    outside = prev;
-  }
-}
-
-/** References already used on the other pages (empty outside a page edit). */
-export function outsideRefs(): string[] {
-  return outside ? [...outside()].flatMap((i) => (i.type === 'component' ? [i.ref] : [])) : [];
-}
-
 export function nextRef(doc: CircuitDoc, prefix: string, taken?: Set<string>): string {
-  const own = taken ?? new Set(Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])));
-  const elsewhere = outsideRefs();
-  const used = elsewhere.length ? new Set([...own, ...elsewhere]) : own;
+  const used = taken ?? new Set(Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])));
   let n = 1;
   while (used.has(`${prefix}${n}`)) n++;
   return `${prefix}${n}`;
