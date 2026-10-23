@@ -289,8 +289,49 @@ function spiceKind(id: string, prefix: string, ports: string[]): SpiceKind {
   return null;
 }
 
+/**
+ * References to write into the exports: each page names its parts on its own,
+ * so two pages may both hold an R1. A netlist needs one part per reference, so
+ * clashing ones (in page order, then document order) get `-2`, `-3`… suffixes
+ * for the export only; the document itself is left alone. References that are
+ * already unique never change.
+ */
+export function exportRefs(doc: CircuitDoc): Map<string, string> {
+  const pageAt = new Map(docPages(doc).map((p, i) => [p.id, i]));
+  const comps = Object.values(doc.items)
+    .filter((c): c is ComponentItem => c.type === 'component')
+    .filter((c) => {
+      const def = instanceSymbol(doc, c);
+      return !def.prefix.startsWith('#') && !def.valueIsLabel;
+    })
+    .sort((a, b) => (pageAt.get(itemPage(doc, a)) ?? 0) - (pageAt.get(itemPage(doc, b)) ?? 0));
+  const count = new Map<string, number>();
+  for (const c of comps) {
+    const key = c.ref.toUpperCase();
+    count.set(key, (count.get(key) ?? 0) + 1);
+  }
+  // reserve the references that are already unique, so a suffix can never take one of their names
+  const used = new Set([...count].filter(([, n]) => n === 1).map(([ref]) => ref));
+  const out = new Map<string, string>();
+  for (const c of comps) {
+    const key = c.ref.toUpperCase();
+    if (count.get(key) === 1) {
+      out.set(c.id, c.ref);
+      continue;
+    }
+    let ref = c.ref;
+    let n = 2;
+    while (used.has(ref.toUpperCase())) ref = `${c.ref}-${n++}`;
+    used.add(ref.toUpperCase());
+    out.set(c.id, ref);
+  }
+  return out;
+}
+
 export function toSpiceNetlist(doc: CircuitDoc): string {
   const nets = computeNets(doc);
+  const refs = exportRefs(doc);
+  const refOf = (c: ComponentItem) => refs.get(c.id) ?? c.ref;
   const pinNet = new Map<string, string>();
   for (const n of nets) {
     const name = /^(gnd|0|ground|0v|agnd|dgnd)$/i.test(n.name) ? '0' : stripMath(n.name).replace(/[^\w.+-]+/g, '_');
@@ -300,22 +341,22 @@ export function toSpiceNetlist(doc: CircuitDoc): string {
   const skipped: string[] = [];
   const comps = Object.values(doc.items)
     .filter((c): c is ComponentItem => c.type === 'component')
-    .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+    .sort((a, b) => refOf(a).localeCompare(refOf(b), undefined, { numeric: true }));
   for (const c of comps) {
     const def = instanceSymbol(doc, c);
     if (def.prefix.startsWith('#') || !def.ports.length) continue;
     if (c.props.dnp === '1') {
-      skipped.push(`${c.ref} (not populated)`);
+      skipped.push(`${refOf(c)} (not populated)`);
       continue;
     }
     const kind = spiceKind(def.id, def.prefix, def.ports.map((p) => p.id));
     if (!kind) {
-      skipped.push(`${c.ref} (${def.name})`);
+      skipped.push(`${refOf(c)} (${def.name})`);
       continue;
     }
     const order = kind.order ?? def.ports.map((p) => p.id);
-    const nodes = order.map((id) => pinNet.get(`${c.id}:${id}`) ?? `NC_${c.ref}_${id}`.replace(/[^\w]+/g, '_'));
-    const ref = c.ref.replace(/[^\w]+/g, '_');
+    const nodes = order.map((id) => pinNet.get(`${c.id}:${id}`) ?? `NC_${refOf(c)}_${id}`.replace(/[^\w]+/g, '_'));
+    const ref = refOf(c).replace(/[^\w]+/g, '_');
     const name = ref.toUpperCase().startsWith(kind.letter) ? ref : `${kind.letter}${ref}`;
     const raw = stripMath(c.value || def.value || '').trim();
     let value: string;
@@ -348,6 +389,7 @@ const BOM_COLUMNS = ['Item', 'Quantity', 'References', 'Value', 'Description', '
 export function toBomCsv(doc: CircuitDoc): string {
   type Row = { refs: string[]; cells: string[]; dnp: boolean };
   const rows = new Map<string, Row>();
+  const names = exportRefs(doc);
   for (const c of Object.values(doc.items)) {
     if (c.type !== 'component') continue;
     const def = instanceSymbol(doc, c);
@@ -362,7 +404,7 @@ export function toBomCsv(doc: CircuitDoc): string {
     const cells = [stripMath(c.value), def.name, p('footprint'), p('manufacturer'), p('mpn'), p('supplier'), p('supplier_pn'), p('datasheet'), specs];
     const k = `${def.id}|${dnp}|${cells.join('|')}`;
     const row = rows.get(k) ?? { refs: [], cells, dnp };
-    row.refs.push(c.ref);
+    row.refs.push(names.get(c.id) ?? c.ref);
     rows.set(k, row);
   }
   const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
@@ -380,13 +422,15 @@ export function toBomCsv(doc: CircuitDoc): string {
 /** KiCad netlist (S-expression, version E) for handing the design to a PCB layout. */
 export function toKicadNetlist(doc: CircuitDoc): string {
   const q = (s: string) => `"${stripMath(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const refs = exportRefs(doc);
+  const refOf = (c: ComponentItem) => refs.get(c.id) ?? c.ref;
   const comps = Object.values(doc.items)
     .filter((c): c is ComponentItem => c.type === 'component')
     .filter((c) => {
       const def = instanceSymbol(doc, c);
       return !def.prefix.startsWith('#') && !def.valueIsLabel;
     })
-    .sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+    .sort((a, b) => refOf(a).localeCompare(refOf(b), undefined, { numeric: true }));
   const out = ['(export (version "E")', `  (design (source ${q(`${doc.name}.nodal`)}) (date ${q(new Date().toISOString())}) (tool "Nodal"))`, '  (components'];
   for (const c of comps) {
     const def = instanceSymbol(doc, c);
@@ -398,7 +442,7 @@ export function toKicadNetlist(doc: CircuitDoc): string {
       ['DNP', c.props.dnp === '1' ? 'DNP' : ''],
     ].filter(([, v]) => v?.trim());
     out.push(
-      `    (comp (ref ${q(c.ref)}) (value ${q(c.value || def.name)})${fp ? ` (footprint ${q(fp)})` : ''}` +
+      `    (comp (ref ${q(refOf(c))}) (value ${q(c.value || def.name)})${fp ? ` (footprint ${q(fp)})` : ''}` +
         ` (libsource (lib "nodal") (part ${q(def.id)}) (description ${q(def.name)}))` +
         (extra.length ? ` (fields ${extra.map(([k, v]) => `(field (name ${q(k!)}) ${q(v!)})`).join(' ')})` : '') +
         ')',
@@ -409,7 +453,7 @@ export function toKicadNetlist(doc: CircuitDoc): string {
     .filter((n) => n.pins.length)
     .forEach((n, i) => {
       out.push(`    (net (code "${i + 1}") (name ${q(n.name)})`);
-      for (const p of n.pins) out.push(`      (node (ref ${q(p.ref)}) (pin ${q(p.port)}) (pinfunction ${q(p.portName)}))`);
+      for (const p of n.pins) out.push(`      (node (ref ${q(refs.get(p.comp) ?? p.ref)}) (pin ${q(p.port)}) (pinfunction ${q(p.portName)}))`);
       out.push('    )');
     });
   out.push('  )', ')', '');
