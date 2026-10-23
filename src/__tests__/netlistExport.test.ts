@@ -105,6 +105,57 @@ describe('BOM and KiCad export', () => {
     expect([...new Set(nodeRefs)].sort()).toEqual(['R1', 'R1-2']);
   });
 
+  it('renames a same-page duplicate reference in every export', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    b.ref = a.ref;
+    expect(a.ref).toBe('R1');
+    // the checker still reports the duplicate, but the exports de-duplicate it
+    expect(runErc(doc).some((i) => i.rule === 'duplicate-ref')).toBe(true);
+
+    const spice = toSpiceNetlist(doc);
+    const elements = spice
+      .split('\n')
+      .filter((l) => /^R/.test(l))
+      .map((l) => l.split(' ')[0]);
+    expect(elements).toEqual(['R1', 'R1_2']);
+
+    const bom = toBomCsv(doc).trim().split('\n')[1];
+    expect(bom).toContain('"R1, R1-2"');
+
+    const kicad = toKicadNetlist(doc);
+    const compRefs = [...kicad.matchAll(/\(comp \(ref "([^"]+)"\)/g)].map((m) => m[1]);
+    expect(compRefs).toEqual(['R1', 'R1-2']);
+    // the document itself keeps both refs exactly as the user typed them
+    expect([a.ref, b.ref]).toEqual(['R1', 'R1']);
+  });
+
+  it('treats a case-insensitive clash across pages as a clash', () => {
+    const doc = createDoc();
+    const p2 = addPage(doc, 'Second');
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    b.page = p2;
+    b.ref = a.ref.toLowerCase();
+    expect(a.ref).toBe('R1');
+
+    const spice = toSpiceNetlist(doc);
+    const elements = spice
+      .split('\n')
+      .filter((l) => /^R/.test(l) || /^r/.test(l))
+      .map((l) => l.split(' ')[0]);
+    expect(elements).toEqual(['R1', 'r1_2']);
+
+    const kicad = toKicadNetlist(doc);
+    const compRefs = [...kicad.matchAll(/\(comp \(ref "([^"]+)"\)/g)].map((m) => m[1]);
+    expect(compRefs).toEqual(['R1', 'r1-2']);
+    const nodeRefs = [
+      ...new Set([...kicad.matchAll(/\(node \(ref "([^"]+)"\)/g)].map((m) => m[1])),
+    ];
+    expect(nodeRefs.sort()).toEqual(['R1', 'r1-2']);
+  });
+
   it('reserves unique refs so a clashing page gets the next free suffix', () => {
     const doc = createDoc();
     const p2 = addPage(doc, 'Second');
