@@ -307,23 +307,25 @@ export function exportRefs(doc: CircuitDoc): Map<string, string> {
     .sort((a, b) => (pageAt.get(itemPage(doc, a)) ?? 0) - (pageAt.get(itemPage(doc, b)) ?? 0));
   const count = new Map<string, number>();
   for (const c of comps) {
-    const key = c.ref.toUpperCase();
+    const ref = c.ref.trim();
+    const key = ref.toUpperCase();
     count.set(key, (count.get(key) ?? 0) + 1);
   }
   // reserve the references that are already unique, so a suffix can never take one of their names
   const used = new Set([...count].filter(([, n]) => n === 1).map(([ref]) => ref));
   const out = new Map<string, string>();
   for (const c of comps) {
-    const key = c.ref.toUpperCase();
+    const ref = c.ref.trim();
+    const key = ref.toUpperCase();
     if (count.get(key) === 1) {
-      out.set(c.id, c.ref);
+      out.set(c.id, ref);
       continue;
     }
-    let ref = c.ref;
+    let name = ref;
     let n = 2;
-    while (used.has(ref.toUpperCase())) ref = `${c.ref}-${n++}`;
-    used.add(ref.toUpperCase());
-    out.set(c.id, ref);
+    while (used.has(name.toUpperCase())) name = `${ref}-${n++}`;
+    used.add(name.toUpperCase());
+    out.set(c.id, name);
   }
   return out;
 }

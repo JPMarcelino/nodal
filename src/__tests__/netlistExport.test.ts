@@ -87,7 +87,8 @@ describe('BOM and KiCad export', () => {
     const a = place(doc, 'resistor', 0, 0);
     const b = place(doc, 'resistor', 200, 0);
     b.page = p2;
-    b.ref = a.ref;
+    // trailing whitespace is trimmed like the ERC's duplicate-ref check
+    b.ref = `${a.ref} `;
     expect(a.ref).toBe('R1');
 
     const spice = toSpiceNetlist(doc);
@@ -102,6 +103,27 @@ describe('BOM and KiCad export', () => {
     const nodeRefs = [...kicad.matchAll(/\(node \(ref "([^"]+)"\)/g)].map((m) => m[1]);
     expect(compRefs.sort()).toEqual(['R1', 'R1-2']);
     expect([...new Set(nodeRefs)].sort()).toEqual(['R1', 'R1-2']);
+  });
+
+  it('reserves unique refs so a clashing page gets the next free suffix', () => {
+    const doc = createDoc();
+    const p2 = addPage(doc, 'Second');
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    b.ref = 'R1-2';
+    const c = place(doc, 'resistor', 0, 0);
+    c.page = p2;
+    c.ref = a.ref;
+    expect(a.ref).toBe('R1');
+
+    const kicad = toKicadNetlist(doc);
+    const compRefs = [...kicad.matchAll(/\(comp \(ref "([^"]+)"\)/g)].map((m) => m[1]);
+    expect(compRefs).toEqual(['R1', 'R1-2', 'R1-3']);
+
+    const spice = toSpiceNetlist(doc);
+    expect(spice).toMatch(/^R1 /m);
+    expect(spice).toMatch(/^R1_2 /m);
+    expect(spice).toMatch(/^R1_3 /m);
   });
 });
 
