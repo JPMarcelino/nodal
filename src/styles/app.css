@@ -987,6 +987,16 @@ body.is-resizing-panel .stage {
   width: 100%;
 }
 
+.net-row-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
 .layer-row {
   position: relative;
   user-select: none;

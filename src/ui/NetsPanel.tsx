@@ -52,6 +52,7 @@ export function NetsPanel() {
   const open = (net: Net, page?: string) => {
     let here: string[];
     if (page) {
+      if (!docPages(doc).some((p) => p.id === page)) return;
       setPage(page);
       if (activePage() !== page) return;
       here = netItemsOnPage(doc, net, page);
@@ -86,27 +87,16 @@ export function NetsPanel() {
       </div>
       <div className="lib-scroll">
         {shown.map(({ net, pages: on }) => (
-          <div
-            key={`${net.name}:${net.wires[0] ?? net.pins[0]?.comp ?? ''}`}
-            className="layer-row net-row"
-            role="button"
-            tabIndex={0}
-            onClick={() => open(net)}
-            onKeyDown={(e) => {
-              if (e.target !== e.currentTarget) return;
-              if (e.key !== 'Enter' && e.key !== ' ') return;
-              e.preventDefault();
-              open(net);
-            }}
-            title="Select this net and show it"
-          >
-            <span className="layer-name">{net.name}</span>
-            <span className="layer-tag" title="Pins">
-              {net.pins.length} pin{net.pins.length === 1 ? '' : 's'}
-            </span>
-            <span className="layer-tag" title="Wires">
-              {net.wires.length} wire{net.wires.length === 1 ? '' : 's'}
-            </span>
+          <div key={`${net.name}:${net.wires[0] ?? net.pins[0]?.comp ?? ''}`} className="layer-row net-row">
+            <button type="button" className="net-row-main" onClick={() => open(net)} title="Select this net and show it">
+              <span className="layer-name">{net.name}</span>
+              <span className="layer-tag" title="Pins">
+                {net.pins.length} pin{net.pins.length === 1 ? '' : 's'}
+              </span>
+              <span className="layer-tag" title="Wires">
+                {net.wires.length} wire{net.wires.length === 1 ? '' : 's'}
+              </span>
+            </button>
             {multi &&
               on.map((page) => (
                 <button
