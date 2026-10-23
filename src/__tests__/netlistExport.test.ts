@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, uid } from '../model/doc';
 import { runErc } from '../model/erc';
 import { computeNets, spiceValue, toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
+import { addPage } from '../model/pages';
 import type { CircuitDoc, ComponentItem, WireItem } from '../model/types';
 
 function place(doc: CircuitDoc, symbol: string, x: number, y: number) {
@@ -78,6 +79,29 @@ describe('BOM and KiCad export', () => {
     expect(out).toContain('(comp (ref "R1") (value "10kΩ") (footprint "Resistor_SMD:R_0603")');
     expect(out).toMatch(/\(node \(ref "R1"\) \(pin "2"\)/);
     expect(out).toMatch(/\(node \(ref "C1"\) \(pin "1"\)/);
+  });
+
+  it('de-duplicates references that clash across pages in every export', () => {
+    const doc = createDoc();
+    const p2 = addPage(doc, 'Second');
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    b.page = p2;
+    b.ref = a.ref;
+    expect(a.ref).toBe('R1');
+
+    const spice = toSpiceNetlist(doc);
+    expect(spice).toMatch(/^R1 /m);
+    expect(spice).toMatch(/^R1_2 /m);
+
+    const bom = toBomCsv(doc).trim().split('\n')[1];
+    expect(bom).toContain('"R1, R1-2"');
+
+    const kicad = toKicadNetlist(doc);
+    const compRefs = [...kicad.matchAll(/\(comp \(ref "([^"]+)"\)/g)].map((m) => m[1]);
+    const nodeRefs = [...kicad.matchAll(/\(node \(ref "([^"]+)"\)/g)].map((m) => m[1]);
+    expect(compRefs.sort()).toEqual(['R1', 'R1-2']);
+    expect([...new Set(nodeRefs)].sort()).toEqual(['R1', 'R1-2']);
   });
 });
 
