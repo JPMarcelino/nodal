@@ -1,9 +1,9 @@
 import { Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { computeNets, netPages, type Net } from '../model/netlist';
+import { computeNets, netItemsOnPage, netPages, type Net } from '../model/netlist';
 import { docPages, multiPage } from '../model/pages';
 import * as A from '../store/actions';
-import { goToItems, select, set, useStore } from '../store/store';
+import { activePage, goToItems, select, set, setPage, useStore } from '../store/store';
 
 interface Row {
   net: Net;
@@ -49,8 +49,15 @@ export function NetsPanel() {
     });
   }, [rows, query]);
 
-  const open = (net: Net) => {
-    const here = goToItems([...net.wires, ...net.pins.map((p) => p.comp)]);
+  const open = (net: Net, page?: string) => {
+    let here: string[];
+    if (page) {
+      setPage(page);
+      if (activePage() !== page) return;
+      here = netItemsOnPage(doc, net, page);
+    } else {
+      here = goToItems([...net.wires, ...net.pins.map((p) => p.comp)]);
+    }
     select(here);
     set({ highlight: net.wires.length ? new Set(net.wires) : null });
     A.revealItems(here);
@@ -79,7 +86,20 @@ export function NetsPanel() {
       </div>
       <div className="lib-scroll">
         {shown.map(({ net, pages: on }) => (
-          <button key={`${net.name}:${net.wires[0] ?? net.pins[0]?.comp ?? ''}`} className="layer-row net-row" onClick={() => open(net)} title="Select this net and show it">
+          <div
+            key={`${net.name}:${net.wires[0] ?? net.pins[0]?.comp ?? ''}`}
+            className="layer-row net-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => open(net)}
+            onKeyDown={(e) => {
+              if (e.target !== e.currentTarget) return;
+              if (e.key !== 'Enter' && e.key !== ' ') return;
+              e.preventDefault();
+              open(net);
+            }}
+            title="Select this net and show it"
+          >
             <span className="layer-name">{net.name}</span>
             <span className="layer-tag" title="Pins">
               {net.pins.length} pin{net.pins.length === 1 ? '' : 's'}
@@ -89,11 +109,21 @@ export function NetsPanel() {
             </span>
             {multi &&
               on.map((page) => (
-                <span key={page.id} className="layer-tag" title={page.name}>
+                <button
+                  key={page.id}
+                  type="button"
+                  className="layer-tag net-page"
+                  title={`Show page ${page.n}: ${page.name}`}
+                  aria-label={`Show page ${page.n}: ${page.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    open(net, page.id);
+                  }}
+                >
                   {page.n}
-                </span>
+                </button>
               ))}
-          </button>
+          </div>
         ))}
         {!shown.length && (
           <div className="empty-note">
@@ -101,7 +131,7 @@ export function NetsPanel() {
           </div>
         )}
       </div>
-      <div className="layer-foot muted small">Click a net to select and show it{multi ? ' · badges are page numbers' : ''}</div>
+      <div className="layer-foot muted small">Click a net to select and show it{multi ? ' · page numbers open that page' : ''}</div>
     </div>
   );
 }
