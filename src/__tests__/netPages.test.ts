@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, uid } from '../model/doc';
-import { computeNets, netPages, type Net } from '../model/netlist';
+import { computeNets, netItemsOnPage, netPages, type Net } from '../model/netlist';
 import { addPage, docPages } from '../model/pages';
 import type { CircuitDoc, ComponentItem, WireItem } from '../model/types';
 
@@ -75,5 +75,50 @@ describe('netPages', () => {
     const resistor = place(doc, 'resistor', 0, 0);
     const net = computeNets(doc).find((n) => n.pins.some((p) => p.comp === resistor.id))!;
     expect(netPages(doc, net)).toEqual([docPages(doc)[0].id]);
+  });
+});
+
+describe('netItemsOnPage', () => {
+  it('returns only the wires and pin components on the requested page, wires first', () => {
+    const doc = createDoc();
+    const first = docPages(doc)[0].id;
+    const power = addPage(doc, 'Power');
+    const r1 = place(doc, 'resistor', 0, 0, first);
+    const r2 = place(doc, 'resistor', 100, 0, power);
+    const w1 = freeWire(doc, first);
+    const w2 = freeWire(doc, power);
+    const net: Net = {
+      name: 'SDA',
+      names: ['SDA'],
+      wires: [w1.id, 'missing-wire', w2.id],
+      pins: [
+        { comp: r1.id, ref: 'R1', port: '1', portName: '1' },
+        { comp: 'missing-part', ref: 'R9', port: '1', portName: '1' },
+        { comp: r2.id, ref: 'R2', port: '1', portName: '1' },
+      ],
+    };
+    expect(netItemsOnPage(doc, net, power)).toEqual([w2.id, r2.id]);
+    expect(netItemsOnPage(doc, net, first)).toEqual([w1.id, r1.id]);
+  });
+
+  it('resolves unset and unknown pages to the first page', () => {
+    const doc = createDoc();
+    const first = docPages(doc)[0].id;
+    const power = addPage(doc, 'Power');
+    const r1 = place(doc, 'resistor', 0, 0, first);
+    const r2 = place(doc, 'resistor', 100, 0, power);
+    const w1 = freeWire(doc, first);
+    const w2 = freeWire(doc, power);
+    const net: Net = {
+      name: 'SDA',
+      names: ['SDA'],
+      wires: [w1.id, w2.id],
+      pins: [
+        { comp: r1.id, ref: 'R1', port: '1', portName: '1' },
+        { comp: r2.id, ref: 'R2', port: '1', portName: '1' },
+      ],
+    };
+    expect(netItemsOnPage(doc, net)).toEqual([w1.id, r1.id]);
+    expect(netItemsOnPage(doc, net, 'no-such-page')).toEqual([w1.id, r1.id]);
   });
 });
