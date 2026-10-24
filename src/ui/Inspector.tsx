@@ -52,6 +52,7 @@ import { ExplainShapePanel, FramePanel } from './ExplainInspector';
 import { DashSelect, Row, StyleSection, TextFormatRows, restyle, type TextFormat } from './StyleSection';
 import { TEXT_KEYS, commonLook, mergeLabelStyle } from '../model/style';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
+import { useSettledDoc } from './useSettledDoc';
 
 const HEAD_TITLES: Record<HeadKind, string> = {
   none: 'None — plain end',
@@ -635,7 +636,9 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
   const doc = useStore((s) => s.doc);
   const def = getSymbol(doc, c.symbol);
   const upd = (fn: (c: ComponentItem) => void) => mutate((d) => fn(d.items[c.id] as ComponentItem));
-  const nets = useMemo(() => computeNets(doc), [doc]);
+  // net names update once a drag settles, not on every pointer move
+  const settled = useSettledDoc();
+  const nets = useMemo(() => computeNets(settled), [settled]);
   return (
     <>
       <div className="comp-header">
@@ -732,7 +735,8 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
         if (w?.type === 'wire') w.style = { ...w.style, ...p };
       }),
     );
-  const net = useMemo(() => netOfWire(computeNets(doc), first.id), [doc, first.id]);
+  const settled = useSettledDoc();
+  const net = useMemo(() => netOfWire(computeNets(settled), first.id), [settled, first.id]);
   const updLabel = (fn: (w: WireItem) => void) =>
     mutate((d) => {
       const w = d.items[first.id] as WireItem | undefined;
