@@ -63,6 +63,24 @@ export interface CollabState {
 }
 
 export const PEER_COLORS = ['#e8590c', '#1c7ed6', '#2f9e44', '#c2255c', '#7048e8', '#0c8599', '#e67700', '#5c940d', '#ae3ec9', '#d6336c'];
+const PEER_GREY = '#868e96';
+/** A colour is drawn straight into CSS and SVG, so only plain hex is allowed (never url(…)). */
+const PEER_COLOR = /^#[0-9a-f]{6}$/i;
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+/** Presence fields come from other people's browsers: keep only what can safely be drawn. */
+const asPeerColor = (v: unknown): string => (typeof v === 'string' && PEER_COLOR.test(v) ? v : PEER_GREY);
+const asPeerPoint = (v: unknown): Point | undefined => {
+  if (!v || typeof v !== 'object') return undefined;
+  const { x, y } = v as Partial<Point>;
+  return isNum(x) && isNum(y) ? { x, y } : undefined;
+};
+const asPeerView = (v: unknown): PeerView | undefined => {
+  if (!v || typeof v !== 'object') return undefined;
+  const { cx, cy, zoom } = v as Partial<PeerView>;
+  return isNum(cx) && isNum(cy) && isNum(zoom) && zoom > 0 ? { cx, cy, zoom } : undefined;
+};
+const asPeerSelection = (v: unknown): string[] =>
+  Array.isArray(v) ? v.slice(0, 500).filter((id): id is string => typeof id === 'string') : [];
 const ADJECTIVES = ['Swift', 'Bright', 'Quiet', 'Clever', 'Steady', 'Lucky', 'Bold', 'Calm', 'Keen', 'Nimble', 'Sunny', 'Brave'];
 const PARTS = ['Capacitor', 'Resistor', 'Inductor', 'Diode', 'Transistor', 'Relay', 'Crystal', 'Fuse', 'Op-amp', 'Mosfet', 'Varistor', 'Thermistor'];
 const pick = <T>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
@@ -71,7 +89,7 @@ const ME_KEY = 'nodal.collab.me';
 function loadMe(): Me {
   try {
     const raw = JSON.parse(localStorage.getItem(ME_KEY) ?? 'null') as Me | null;
-    if (raw && typeof raw.name === 'string' && typeof raw.color === 'string') return raw;
+    if (raw && typeof raw.name === 'string' && typeof raw.color === 'string' && PEER_COLOR.test(raw.color)) return raw;
   } catch {
     /* fall through */
   }
@@ -219,6 +237,7 @@ export function setMyName(name: string) {
 }
 
 export function setMyColor(color: string) {
+  if (!PEER_COLOR.test(color)) return;
   const me = { ...C().me, color };
   setC({ me });
   localStorage.setItem(ME_KEY, JSON.stringify(me));
@@ -415,10 +434,10 @@ async function handle(msg: ServerMsg) {
       const peer: Peer = {
         id: msg.from,
         name: typeof p.name === 'string' ? p.name.slice(0, 40) : '…',
-        color: typeof p.color === 'string' ? p.color : '#868e96',
-        cursor: p.cursor,
-        selection: Array.isArray(p.selection) ? p.selection : [],
-        view: p.view,
+        color: asPeerColor(p.color),
+        cursor: asPeerPoint(p.cursor),
+        selection: asPeerSelection(p.selection),
+        view: asPeerView(p.view),
         page: typeof p.page === 'string' ? p.page.slice(0, 80) : undefined,
         laser: p.laser === 1 || p.laser === 2 ? p.laser : 0,
         edit: C().peers[msg.from]?.edit,
