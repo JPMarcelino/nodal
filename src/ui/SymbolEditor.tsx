@@ -208,7 +208,7 @@ export function SymbolEditor() {
       if (src.variantOf) {
         const base = getSymbol(S().doc, src.variantOf);
         const vid = !asNew && src.id ? src.id : `user-type-${slug(variantName)}-${uid('').slice(-5)}`;
-        const def = compileSource({ ...src, id: vid, name: base.name, category: base.category, prefix: base.prefix, value: src.value || base.value || '' });
+        const def = compileSource({ ...src, id: vid, name: base.name, category: base.category, prefix: base.prefix, value: src.value || base.value || '', variants: undefined });
         // the type inherits the base's identity, labels and fields
         def.name = base.name;
         def.category = base.category;
@@ -233,7 +233,9 @@ export function SymbolEditor() {
       }
       // ---- Save as a standalone symbol ----
       const id = !asNew && src.id ? src.id : `user-${slug(src.name)}-${uid('').slice(-5)}`;
-      const def = compileSource({ ...src, id });
+      // keep the current type list only when overwriting the same symbol; a copy starts without its types
+      const existing = !asNew && src.id ? getSymbol(S().doc, id) : null;
+      const def = compileSource({ ...src, id, variants: existing?.id === id ? existing.variants : undefined });
       saveUserSymbol(def);
       // made from a selection: one undoable step swaps those items for the new symbol
       if (seed) {

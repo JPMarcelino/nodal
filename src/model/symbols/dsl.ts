@@ -214,6 +214,8 @@ export interface SymbolSource {
   variantOf?: string;
   /** Label of this type. */
   variantName?: string;
+  /** Alternative drawings offered for this symbol. */
+  variants?: VariantRef[];
 }
 
 export function compileSource(src: SymbolSource): SymbolDef {
@@ -228,6 +230,7 @@ export function compileSource(src: SymbolSource): SymbolDef {
     keywords: src.keywords,
     variantOf: src.variantOf || undefined,
     variantName: src.variantName || undefined,
+    variants: src.variants,
   });
   def.custom = true;
   def.source = JSON.stringify(src);
@@ -241,6 +244,8 @@ export function sourceOf(def: SymbolDef): SymbolSource {
       // older sources may pre-date the variant fields
       if (def.variantOf && parsed.variantOf === undefined) parsed.variantOf = def.variantOf;
       if (def.variantName && parsed.variantName === undefined) parsed.variantName = def.variantName;
+      // the symbol itself is authoritative: its type list may have changed since the source was written
+      parsed.variants = def.variants;
       return parsed;
     } catch {
       /* fall through */
@@ -260,6 +265,7 @@ export function sourceOf(def: SymbolDef): SymbolSource {
     keywords: def.keywords ?? '',
     variantOf: def.variantOf,
     variantName: def.variantName,
+    variants: def.variants,
   };
 }
 
