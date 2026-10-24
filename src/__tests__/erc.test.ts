@@ -109,16 +109,26 @@ describe('electrical rules check', () => {
     expect(runErc(doc).some((i) => i.rule === 'single-label')).toBe(false);
   });
 
-  it('treats a wire end naming a missing part as a loose end instead of crashing', () => {
+  it('treats a wire end naming a missing or non-component item as a loose end instead of crashing', () => {
     const doc = createDoc();
     const r = place(doc, 'resistor', 0, 0);
     const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'port', comp: 'missing', port: '1' }, b: { kind: 'port', comp: r.id, port: '1' }, pts: [] };
+    // an id that exists but is not a part (here, the wire itself)
+    const self: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'port', comp: '', port: '1' }, b: { kind: 'port', comp: '', port: '2' }, pts: [{ x: 10, y: 10 }, { x: 20, y: 10 }] };
+    self.a = { kind: 'port', comp: self.id, port: '1' };
+    self.b = { kind: 'port', comp: self.id, port: '2' };
     doc.items[w.id] = w;
+    doc.items[self.id] = self;
     const loaded = normalizeDoc(JSON.parse(JSON.stringify(doc)));
+    expect(loaded.items[w.id]).toMatchObject({ a: { kind: 'free', x: 0, y: 0 } });
+    expect(loaded.items[self.id]).toMatchObject({ a: { kind: 'free', x: 10, y: 10 }, b: { kind: 'free', x: 20, y: 10 } });
     expect(() => computeNets(loaded)).not.toThrow();
     expect(() => runErc(loaded)).not.toThrow();
     const net = computeNets(loaded).find((n) => n.wires.includes(w.id))!;
     expect(net.pins).toEqual([{ comp: r.id, ref: r.ref, port: '1', portName: expect.any(String) }]);
+    const loose = computeNets(loaded).find((n) => n.wires.includes(self.id))!;
+    expect(loose.pins).toEqual([]);
+    expect(runErc(loaded).some((i) => i.rule === 'loose-end' && i.items.includes(self.id))).toBe(true);
   });
 
   it('ignores a no-connect flag wired to a missing part', () => {
