@@ -587,7 +587,7 @@ export function matchSize(mode: SizeMode) {
 }
 
 export function reorder(dir: StackMove) {
-  const ids = S().selection.filter((id) => vdoc().items[id] && vdoc().items[id].type !== 'junction');
+  const ids = S().selection.filter((id) => vdoc().items[id] && vdoc().items[id].type !== 'junction' && !vdoc().items[id].locked);
   if (!ids.length) return toast('Select something to move it forward or back');
   mutate((d) => void restackItems(d as CircuitDoc, ids, dir));
 }
@@ -601,8 +601,10 @@ export function toggleLock() {
 }
 
 export function toggleHidden(ids: string[]) {
-  const hide = !ids.every((id) => vdoc().items[id]?.hidden);
-  mutate((d) => ids.forEach((id) => d.items[id] && (d.items[id].hidden = hide)));
+  const targets = ids.filter((id) => vdoc().items[id] && !vdoc().items[id].locked);
+  if (!targets.length) return;
+  const hide = !targets.every((id) => vdoc().items[id]?.hidden);
+  mutate((d) => targets.forEach((id) => d.items[id] && (d.items[id].hidden = hide)));
 }
 
 export function rerouteWires() {
