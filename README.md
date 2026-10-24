@@ -118,7 +118,7 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 ### Organising
 - **Groups** (**Ctrl+G** / **Ctrl+Shift+G**), including nested groups. Double-click a grouped item to enter the group.
 - **Layers** panel: tree of groups and items, with show/hide and lock
-- **Nets** panel: every net in the circuit with its pin and wire counts; click a net to select and zoom to it, or click a page badge on a multi-page circuit to open that page with the net selected and highlighted
+- **Nets** panel: every net in the circuit with its pin and wire counts; click a net to select and zoom to it, click a page badge on a multi-page circuit to open that page with the net selected and highlighted, or click the pencil to rename the net everywhere it is labelled (wire labels, net labels and rails, on every page) in one undo step
 - Align and distribute, rotate (**R**), flip (**X**/**Y**), nudge with the arrow keys
 - Copy/paste between windows (the clipboard holds JSON); **Ctrl+V pastes under the mouse pointer**, **Ctrl+Shift+V** pastes next to the original; duplicate
 - Automatic reference designators (R1, C2…), plus a renumber command

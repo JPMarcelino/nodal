@@ -27,6 +27,7 @@ import {
   type StackMove,
 } from '../model/ops';
 import { getSymbol } from '../model/registry';
+import { computeNets, netLabelsNamed, renameNetLabels } from '../model/netlist';
 import { incrementLabels } from '../model/increment';
 import { deletePolyCorner } from '../model/polygon';
 import { canConvertToPath, convertToPath, hasHeads, pathNodes, setNodeKind, setPathNodes } from '../model/path';
@@ -38,7 +39,7 @@ import { viewCentre } from '../io/importFiles';
 import { S, activePage, inGesture, mutate, pushRecent, readOnly, viewModeKey, select, set, setPage, setPrefs, toast, vdoc, imageExportOptions } from './store';
 import { addPage, docPages, editPage, movePage, pageIndex, pageItemIds, renamePage } from '../model/pages';
 import { deletePage, duplicatePage, moveItemsToPage } from '../model/pageOps';
-import { confirmDelete } from '../ui/Ask';
+import { ask, confirmDelete } from '../ui/Ask';
 import { X, isExplainTool, setX } from './explain';
 
 const sel = () => new Set(S().selection);
@@ -628,6 +629,44 @@ export function updateItems(ids: Iterable<string>, patch: (it: Item) => void, op
       if (it && !it.locked) patch(it as Item);
     }
   }, undefined, opts);
+}
+
+/**
+ * Renames every wire label, net label and rail that names net `from` to `to`,
+ * across every page, as one undo step. Locked matches stop the whole rename
+ * (rather than leaving half a net behind), and a name already used by another
+ * net asks before the two are joined.
+ */
+export async function renameNet(from: string, to: string) {
+  const f = from.trim();
+  const t = to.trim();
+  if (!f || !t || f === t) return;
+  if (readOnly()) return readOnlyNotice();
+  const doc = S().doc;
+  const matches = netLabelsNamed(doc, f);
+  if (!matches.length) return;
+  const locked = matches.filter((id) => doc.items[id]?.locked).length;
+  if (locked) {
+    return toast(`“${f}” has ${locked === 1 ? 'a locked label' : `${locked} locked labels`}. Unlock ${locked === 1 ? 'it' : 'them'} first.`, 'info');
+  }
+  if (computeNets(doc).some((n) => n.names.includes(t))) {
+    const ok = await ask(
+      'Rename and join?',
+      `“${t}” already names another net. Renaming “${f}” joins the two nets.`,
+      [
+        { label: 'Cancel', value: false },
+        { label: 'Rename and join', value: true, kind: 'primary' },
+      ],
+      false,
+    );
+    if (!ok) return;
+  }
+  let changed = 0;
+  const applied = mutate((d) => {
+    changed = renameNetLabels(d as CircuitDoc, f, t).changed;
+  }, undefined, { allPages: true });
+  if (!applied) return;
+  toast(`Renamed ${changed} label${changed === 1 ? '' : 's'} to “${t}”`, 'success');
 }
 
 /* ------------------------------------------------------------------ */

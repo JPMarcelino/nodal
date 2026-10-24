@@ -245,6 +245,60 @@ export function computeNets(doc: CircuitDoc, opts?: { ignoreLabels?: boolean }):
   return nets;
 }
 
+export interface NetRenameResult {
+  /** Matching items whose name was changed. */
+  changed: number;
+  /** Matching items left alone because they are locked. */
+  locked: number;
+}
+
+/**
+ * Ids of every item that names net `name`: a wire's label, or a net-label /
+ * power-rail part's effective name (its value, else the symbol's default).
+ * Hidden labels name a net too, so they are included.
+ */
+export function netLabelsNamed(doc: CircuitDoc, name: string): string[] {
+  const wanted = name.trim();
+  if (!wanted) return [];
+  const ids: string[] = [];
+  for (const it of Object.values(doc.items)) {
+    if (it.type === 'wire') {
+      if ((it.label ?? '').trim() === wanted) ids.push(it.id);
+      continue;
+    }
+    if (it.type !== 'component') continue;
+    const def = instanceSymbol(doc, it);
+    if (!def.valueIsLabel && !def.prefix.startsWith('#PWR')) continue;
+    if ((it.value || def.value || '').trim() === wanted) ids.push(it.id);
+  }
+  return ids;
+}
+
+/**
+ * Renames every unlocked item that names net `from` to `to`, in place (call it
+ * on an Immer draft). Both names are trimmed, and an empty or unchanged rename
+ * does nothing. Returns how many items changed and how many matches were
+ * locked and left alone.
+ */
+export function renameNetLabels(doc: CircuitDoc, from: string, to: string): NetRenameResult {
+  const f = from.trim();
+  const t = to.trim();
+  const result: NetRenameResult = { changed: 0, locked: 0 };
+  if (!f || !t || f === t) return result;
+  for (const id of netLabelsNamed(doc, f)) {
+    const it = doc.items[id];
+    if (!it) continue;
+    if (it.locked) {
+      result.locked++;
+      continue;
+    }
+    if (it.type === 'wire') it.label = t;
+    else if (it.type === 'component') it.value = t;
+    result.changed++;
+  }
+  return result;
+}
+
 /** Ids of the pages holding any of the net's wires or pin components, in document page order. */
 export function netPages(doc: CircuitDoc, net: Net): string[] {
   const pages = new Set<string>();
