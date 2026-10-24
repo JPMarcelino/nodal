@@ -96,17 +96,39 @@ export function normalizeDoc(raw: unknown): CircuitDoc {
   if (!d || typeof d !== 'object' || d.format !== 'nodal' || typeof d.items !== 'object') {
     throw new Error('This file is not a Nodal circuit.');
   }
+  const items = migrateItems(d.items ?? {});
+  freeDanglingWireEnds(items);
   return normalizePages({
     format: 'nodal',
     version: 1,
     id: typeof d.id === 'string' && d.id ? d.id : uid('d'),
     name: d.name || 'Untitled circuit',
     settings: { ...structuredClone(DEFAULT_SETTINGS), ...d.settings, wire: { ...DEFAULT_SETTINGS.wire, ...d.settings?.wire }, ercIgnored: Array.isArray(d.settings?.ercIgnored) ? d.settings.ercIgnored : undefined },
-    items: migrateItems(d.items ?? {}),
+    items,
     groups: d.groups ?? {},
     symbols: d.symbols ?? {},
     pages: d.pages,
   });
+}
+
+/**
+ * A shared or older file can name a part that no longer exists as a wire end.
+ * Make that end loose at its nearest bend, so the wire still draws and the ERC
+ * reports the break instead of treating the missing part as a pin.
+ */
+function freeDanglingWireEnds(items: Record<string, Item>) {
+  for (const it of Object.values(items)) {
+    if (it.type !== 'wire') continue;
+    for (const end of ['a', 'b'] as const) {
+      const ep = it[end];
+      if (ep.kind !== 'port') continue;
+      const c = items[ep.comp];
+      if (c && c.type === 'component') continue;
+      const pts = Array.isArray(it.pts) ? it.pts : [];
+      const p = (end === 'a' ? pts[0] : pts[pts.length - 1]) ?? { x: 0, y: 0 };
+      it[end] = { kind: 'free', x: Number.isFinite(p.x) ? p.x : 0, y: Number.isFinite(p.y) ? p.y : 0 };
+    }
+  }
 }
 
 export function itemBounds(doc: CircuitDoc, it: Item): Rect | null {
