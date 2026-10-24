@@ -123,8 +123,15 @@ export function refreshTouching(
   return { cells, touching, same: false };
 }
 
-const key = (ep: Endpoint, wireId: string, end: string) =>
-  ep.kind === 'port' ? `p:${ep.comp}:${ep.port}` : ep.kind === 'junction' ? `j:${ep.id}` : `f:${wireId}:${end}`;
+/** A wire endpoint attached to a missing or non-component item is just a loose end, not a pin. */
+const key = (doc: CircuitDoc, ep: Endpoint, wireId: string, end: string) => {
+  if (ep.kind === 'port') {
+    const c = doc.items[ep.comp];
+    if (c && c.type === 'component') return `p:${ep.comp}:${ep.port}`;
+    return `f:${wireId}:${end}`;
+  }
+  return ep.kind === 'junction' ? `j:${ep.id}` : `f:${wireId}:${end}`;
+};
 
 class DSU {
   parent = new Map<string, string>();
@@ -150,8 +157,8 @@ export function computeNets(doc: CircuitDoc, opts?: { ignoreLabels?: boolean }):
   const comps = Object.values(doc.items).filter((i): i is ComponentItem => i.type === 'component');
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'wire') continue;
-    const a = key(it.a, it.id, 'a');
-    const b = key(it.b, it.id, 'b');
+    const a = key(doc, it.a, it.id, 'a');
+    const b = key(doc, it.b, it.id, 'b');
     dsu.union(`w:${it.id}`, a);
     dsu.union(a, b);
   }
@@ -206,7 +213,8 @@ export function computeNets(doc: CircuitDoc, opts?: { ignoreLabels?: boolean }):
       }
     } else if (k.startsWith('p:')) {
       const [, comp, port] = k.split(':');
-      const c = doc.items[comp] as ComponentItem;
+      const c = doc.items[comp];
+      if (!c || c.type !== 'component') continue;
       const def = instanceSymbol(doc, c);
       if (def.valueIsLabel || def.prefix.startsWith('#')) {
         const label = labelOf.get(k);

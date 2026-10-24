@@ -104,7 +104,12 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
   const wired = new Map<string, number>();
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'wire') continue;
-    for (const ep of [it.a, it.b]) if (ep.kind === 'port') wired.set(`${ep.comp}:${ep.port}`, (wired.get(`${ep.comp}:${ep.port}`) ?? 0) + 1);
+    for (const ep of [it.a, it.b]) {
+      if (ep.kind !== 'port') continue;
+      const c = doc.items[ep.comp];
+      if (!c || c.type !== 'component') continue;
+      wired.set(`${ep.comp}:${ep.port}`, (wired.get(`${ep.comp}:${ep.port}`) ?? 0) + 1);
+    }
   }
   const touching = touchingPins(doc);
   const touched = new Set(touching.flat());
@@ -122,7 +127,11 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
       if (it.type !== 'wire') continue;
       const ends = [it.a, it.b];
       if (!ends.some((e) => e.kind === 'port' && e.comp === c.id)) continue;
-      for (const e of ends) if (e.kind === 'port' && e.comp !== c.id) ncPins.add(`${e.comp}:${e.port}`);
+      for (const e of ends) {
+        if (e.kind !== 'port' || e.comp === c.id) continue;
+        const other = doc.items[e.comp];
+        if (other && other.type === 'component') ncPins.add(`${e.comp}:${e.port}`);
+      }
     }
   }
   for (const c of comps) {
@@ -167,8 +176,9 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
   for (const k of ncPins) {
     if (!wired.get(k)) continue;
     const [comp, port] = k.split(':');
-    const c = doc.items[comp] as ComponentItem;
-    const def = defOf.get(comp)!;
+    const c = doc.items[comp];
+    const def = defOf.get(comp);
+    if (!c || c.type !== 'component' || !def) continue;
     issues.push({ key: `nc-connected:${k}`, rule: 'nc-connected', severity: 'warning', message: `${c.ref || def.name} pin ${pinName(def, port)} is marked no-connect but has a wire`, items: [comp], at: pinAt(c, port) });
   }
 
