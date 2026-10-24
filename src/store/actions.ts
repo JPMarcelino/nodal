@@ -606,8 +606,9 @@ export function toggleHidden(ids: string[]) {
 }
 
 export function rerouteWires() {
-  const ids = S().selection.filter((id) => vdoc().items[id]?.type === 'wire');
-  if (!ids.length) return toast('Select wires to re-route');
+  const wires = S().selection.filter((id) => vdoc().items[id]?.type === 'wire');
+  const ids = wires.filter((id) => !vdoc().items[id]?.locked);
+  if (!ids.length) return toast(wires.length ? 'Locked wires can’t be re-routed' : 'Select wires to re-route');
   mutate((d) => ids.forEach((id) => d.items[id].type === 'wire' && ((d.items[id] as Extract<Item, { type: 'wire' }>).pts = [])));
 }
 
@@ -616,8 +617,14 @@ export function annotateAll() {
   toast('Reference designators renumbered', 'success');
 }
 
-export function updateItems(ids: string[], patch: (it: Item) => void) {
-  mutate((d) => ids.forEach((id) => d.items[id] && patch(d.items[id] as Item)));
+/** Applies a patch to each given item that isn't locked, as one undo step. */
+export function updateItems(ids: Iterable<string>, patch: (it: Item) => void, opts?: { allPages?: boolean }) {
+  mutate((d) => {
+    for (const id of ids) {
+      const it = d.items[id];
+      if (it && !it.locked) patch(it as Item);
+    }
+  }, undefined, opts);
 }
 
 /* ------------------------------------------------------------------ */

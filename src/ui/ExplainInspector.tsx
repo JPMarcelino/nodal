@@ -16,7 +16,9 @@ import { toggleTimeline } from './Timeline';
 export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   const first = shapes[0];
   const ids = shapes.map((s) => s.id);
-  const upd = (fn: (s: ShapeItem) => void) => mutate((d) => ids.forEach((id) => fn(d.items[id] as ShapeItem)));
+  const upd = (fn: (s: ShapeItem) => void) => A.updateItems(ids, (it) => {
+    if (it.type === 'shape') fn(it);
+  });
   const allCallouts = shapes.every((s) => s.kind === 'callout');
   const allInk = shapes.every((s) => s.kind === 'ink');
   const title = allCallouts ? (shapes.length > 1 ? `${shapes.length} callouts` : `Callout ${first.step ?? ''}`) : allInk ? (shapes.length > 1 ? `${shapes.length} strokes` : first.highlighter ? 'Highlighter stroke' : 'Ink stroke') : `${shapes.length} annotations`;
@@ -60,8 +62,12 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
                 checked={!!first.highlighter}
                 onChange={(v) =>
                   mutate((d) => {
-                    ids.forEach((id) => ((d.items[id] as ShapeItem).highlighter = v || undefined));
-                    restackItems(d as CircuitDoc, ids, v ? 'back' : 'front');
+                    const targets = ids.filter((id) => {
+                      const s = d.items[id];
+                      return s && !s.locked;
+                    });
+                    targets.forEach((id) => ((d.items[id] as ShapeItem).highlighter = v || undefined));
+                    restackItems(d as CircuitDoc, targets, v ? 'back' : 'front');
                   })
                 }
               />
@@ -107,7 +113,9 @@ function TimingSection({ shapes, upd }: { shapes: ShapeItem[]; upd: Upd }) {
 export function FramePanel({ shapes }: { shapes: ShapeItem[] }) {
   const first = shapes[0];
   const ids = shapes.map((s) => s.id);
-  const upd: Upd = (fn) => mutate((d) => ids.forEach((id) => fn(d.items[id] as ShapeItem)));
+  const upd: Upd = (fn) => A.updateItems(ids, (it) => {
+    if (it.type === 'shape') fn(it);
+  });
   /** Reshape around the centre to an aspect ratio (keeps the area roughly the same). */
   const aspect = (a: number) =>
     upd((s) => {
