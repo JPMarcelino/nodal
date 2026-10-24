@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFold } from './controls';
 import { drawOrderCached } from '../model/doc';
 import { computeNets } from '../model/netlist';
+import { viewDoc } from '../model/pages';
 import { reorderItem } from '../model/ops';
 import { getSymbol, instanceSymbol, librarySymbols, variantDefs } from '../model/registry';
 import { CATEGORY_ORDER } from '../model/symbols';
@@ -19,6 +20,7 @@ import { HistoryPanel } from './HistoryPanel';
 import { NetsPanel } from './NetsPanel';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
+import { useSettledDoc } from './useSettledDoc';
 
 function Tile({ def }: { def: SymbolDef }) {
   const fav = useStore((s) => s.favorites.includes(def.id));
@@ -374,6 +376,7 @@ type LockFilter = 'any' | 'locked' | 'unlocked';
 
 function Layers() {
   const doc = useViewDoc();
+  const page = useStore((s) => s.page);
   const selection = useStore((s) => s.selection);
   const [filter, setFilter] = useState<'all' | 'component' | 'wire' | 'shape'>('all');
   const [vis, setVis] = useState<VisFilter>('any');
@@ -384,12 +387,15 @@ function Layers() {
   const [drag, setDrag] = useState<{ id: string; startY: number; moved: boolean } | null>(null);
   const [drop, setDrop] = useState<{ id: string; place: 'before' | 'after' } | null>(null);
   const sel = new Set(selection);
-  // wires are listed by their net's name (automatic netN when unnamed)
+  // wires are listed by their net's name (automatic netN when unnamed); read the
+  // settled document so a drag doesn't recompute the netlist on every pointer move
+  const settled = useSettledDoc();
+  const netDoc = useMemo(() => viewDoc(settled, page), [settled, page]);
   const netByWire = useMemo(() => {
     const m = new Map<string, string>();
-    for (const n of computeNets(doc)) for (const w of n.wires) m.set(w, n.name);
+    for (const n of computeNets(netDoc)) for (const w of n.wires) m.set(w, n.name);
     return m;
-  }, [doc]);
+  }, [netDoc]);
   const order = useMemo(() => drawOrderCached(doc), [doc]);
   const filtering = filter !== 'all' || vis !== 'any' || lock !== 'any';
   // front-most first, like most layer panels
@@ -429,7 +435,7 @@ function Layers() {
         onPointerEnter={() => !drag && hover([it.id])}
         onPointerLeave={() => !drag && hover([])}
         onPointerDown={(e) => {
-          if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+          if (it.locked || e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
           e.currentTarget.setPointerCapture(e.pointerId);
           setDrag({ id: it.id, startY: e.clientY, moved: false });
         }}
@@ -441,7 +447,7 @@ function Layers() {
           const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-layer-id]') as HTMLElement | null;
           const tid = el?.dataset.layerId;
           const target = tid ? doc.items[tid] : null;
-          if (!el || !target || tid === it.id || target.group !== it.group) return setDrop(null);
+          if (!el || !target || tid === it.id || target.locked || target.group !== it.group) return setDrop(null);
           const r = el.getBoundingClientRect();
           setDrop({ id: tid!, place: e.clientY < r.top + r.height / 2 ? 'before' : 'after' });
         }}

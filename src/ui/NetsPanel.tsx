@@ -1,9 +1,10 @@
 import { Search, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { computeNets, netItemsOnPage, netPages, type Net } from '../model/netlist';
 import { docPages, multiPage } from '../model/pages';
 import * as A from '../store/actions';
 import { activePage, goToItems, select, set, setPage, useStore } from '../store/store';
+import { useSettledDoc } from './useSettledDoc';
 
 interface Row {
   net: Net;
@@ -12,14 +13,9 @@ interface Row {
 
 /** Every net in the whole circuit, with its pin and wire counts and the pages it spans. */
 export function NetsPanel() {
+  // clicks act on the live document; the list itself recomputes once edits settle
   const doc = useStore((s) => s.doc);
-  // recompute once edits settle, like CheckPanel: not on every drag frame
-  const [settled, setSettled] = useState(doc);
-  useEffect(() => {
-    if (doc === settled) return;
-    const t = setTimeout(() => setSettled(doc), 250);
-    return () => clearTimeout(t);
-  }, [doc, settled]);
+  const settled = useSettledDoc();
   const nets = useMemo(() => computeNets(settled), [settled]);
   const pages = useMemo(() => docPages(settled), [settled]);
   const multi = multiPage(settled);

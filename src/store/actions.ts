@@ -587,7 +587,7 @@ export function matchSize(mode: SizeMode) {
 }
 
 export function reorder(dir: StackMove) {
-  const ids = S().selection.filter((id) => vdoc().items[id] && vdoc().items[id].type !== 'junction');
+  const ids = S().selection.filter((id) => vdoc().items[id] && vdoc().items[id].type !== 'junction' && !vdoc().items[id].locked);
   if (!ids.length) return toast('Select something to move it forward or back');
   mutate((d) => void restackItems(d as CircuitDoc, ids, dir));
 }
@@ -601,13 +601,16 @@ export function toggleLock() {
 }
 
 export function toggleHidden(ids: string[]) {
-  const hide = !ids.every((id) => vdoc().items[id]?.hidden);
-  mutate((d) => ids.forEach((id) => d.items[id] && (d.items[id].hidden = hide)));
+  const targets = ids.filter((id) => vdoc().items[id] && !vdoc().items[id].locked);
+  if (!targets.length) return;
+  const hide = !targets.every((id) => vdoc().items[id]?.hidden);
+  mutate((d) => targets.forEach((id) => d.items[id] && (d.items[id].hidden = hide)));
 }
 
 export function rerouteWires() {
-  const ids = S().selection.filter((id) => vdoc().items[id]?.type === 'wire');
-  if (!ids.length) return toast('Select wires to re-route');
+  const wires = S().selection.filter((id) => vdoc().items[id]?.type === 'wire');
+  const ids = wires.filter((id) => !vdoc().items[id]?.locked);
+  if (!ids.length) return toast(wires.length ? 'Locked wires can’t be re-routed' : 'Select wires to re-route');
   mutate((d) => ids.forEach((id) => d.items[id].type === 'wire' && ((d.items[id] as Extract<Item, { type: 'wire' }>).pts = [])));
 }
 
@@ -616,8 +619,14 @@ export function annotateAll() {
   toast('Reference designators renumbered', 'success');
 }
 
-export function updateItems(ids: string[], patch: (it: Item) => void) {
-  mutate((d) => ids.forEach((id) => d.items[id] && patch(d.items[id] as Item)));
+/** Applies a patch to each given item that isn't locked, as one undo step. */
+export function updateItems(ids: Iterable<string>, patch: (it: Item) => void, opts?: { allPages?: boolean }) {
+  mutate((d) => {
+    for (const id of ids) {
+      const it = d.items[id];
+      if (it && !it.locked) patch(it as Item);
+    }
+  }, undefined, opts);
 }
 
 /* ------------------------------------------------------------------ */

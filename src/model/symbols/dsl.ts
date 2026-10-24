@@ -210,10 +210,18 @@ export interface SymbolSource {
   value: string;
   fields: string;
   keywords: string;
+  /** Hide the reference/value labels by default (power rails, labels…). */
+  hideLabels?: boolean;
+  /** Symbol whose value is shown as the main label (net labels, rails). */
+  valueIsLabel?: boolean;
+  /** Drawing of the closed state (switches), offered as an open/closed toggle. */
+  closed?: string;
   /** Id of the symbol this drawing is a "type" of, if any. */
   variantOf?: string;
   /** Label of this type. */
   variantName?: string;
+  /** Alternative drawings offered for this symbol. */
+  variants?: VariantRef[];
 }
 
 export function compileSource(src: SymbolSource): SymbolDef {
@@ -226,8 +234,12 @@ export function compileSource(src: SymbolSource): SymbolDef {
     value: src.value,
     fields: src.fields,
     keywords: src.keywords,
+    hideLabels: src.hideLabels,
+    valueIsLabel: src.valueIsLabel,
+    closed: src.closed,
     variantOf: src.variantOf || undefined,
     variantName: src.variantName || undefined,
+    variants: src.variants,
   });
   def.custom = true;
   def.source = JSON.stringify(src);
@@ -241,6 +253,11 @@ export function sourceOf(def: SymbolDef): SymbolSource {
       // older sources may pre-date the variant fields
       if (def.variantOf && parsed.variantOf === undefined) parsed.variantOf = def.variantOf;
       if (def.variantName && parsed.variantName === undefined) parsed.variantName = def.variantName;
+      // the symbol itself is authoritative: these may have changed since the source was written
+      parsed.hideLabels = def.hideLabels;
+      parsed.valueIsLabel = def.valueIsLabel;
+      parsed.closed = def.closedPrims ? primsToDsl(def.closedPrims) : undefined;
+      parsed.variants = def.variants;
       return parsed;
     } catch {
       /* fall through */
@@ -258,8 +275,12 @@ export function sourceOf(def: SymbolDef): SymbolSource {
     value: def.value ?? '',
     fields: (def.fields ?? []).map((f) => (f.default ? `${f.label}=${f.default}` : f.label)).join(', '),
     keywords: def.keywords ?? '',
+    hideLabels: def.hideLabels,
+    valueIsLabel: def.valueIsLabel,
+    closed: def.closedPrims ? primsToDsl(def.closedPrims) : undefined,
     variantOf: def.variantOf,
     variantName: def.variantName,
+    variants: def.variants,
   };
 }
 

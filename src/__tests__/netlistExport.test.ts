@@ -53,6 +53,19 @@ describe('SPICE export', () => {
     expect(net).not.toMatch(/^R1 /m);
     expect(net).toMatch(/Not simulated: .*J1.*R1/);
   });
+
+  it('de-duplicates sanitised element names', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    a.ref = 'R1-2';
+    b.ref = 'R1_2';
+    const names = toSpiceNetlist(doc)
+      .split('\n')
+      .filter((l) => /^R/.test(l))
+      .map((l) => l.split(' ')[0]);
+    expect(names).toEqual(['R1_2', 'R1_2_2']);
+  });
 });
 
 describe('BOM and KiCad export', () => {
@@ -249,6 +262,57 @@ describe('wire labels name nets', () => {
     const spice = toSpiceNetlist(doc);
     expect(spice.split('\n').find((l) => l.startsWith('R1'))).toContain('VOUT');
     expect(toKicadNetlist(doc)).toContain('(name "VOUT")');
+  });
+
+  it('keeps distinct nets on distinct SPICE nodes when sanitising their names would collide', () => {
+    const doc = createDoc();
+    const pair = (label: string, y: number) => {
+      const a = place(doc, 'resistor', 0, y);
+      const b = place(doc, 'resistor', 200, y);
+      labelledWire(doc, a, '2', b, '1', label);
+    };
+    pair('A B', 0);
+    pair('A_B', 100);
+    pair('A_B-2', 200);
+    const nodes = toSpiceNetlist(doc)
+      .split('\n')
+      .filter((l) => /^R\d+ /.test(l))
+      .flatMap((l) => l.split(' ').slice(1, 3))
+      .filter((n) => n.startsWith('A_B'))
+      .sort();
+    // the already-unique "A_B-2" keeps its name, so the "A_B" clash steps over it
+    expect(nodes).toEqual(['A_B', 'A_B', 'A_B-2', 'A_B-2', 'A_B-3', 'A_B-3']);
+  });
+
+  it('de-duplicates SPICE node names without case', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    const c = place(doc, 'resistor', 0, 100);
+    const d = place(doc, 'resistor', 200, 100);
+    labelledWire(doc, a, '2', b, '1', 'A B');
+    labelledWire(doc, c, '2', d, '1', 'a_b');
+    const nodes = toSpiceNetlist(doc)
+      .split('\n')
+      .filter((l) => /^R\d+ /.test(l))
+      .flatMap((l) => l.split(' ').slice(1, 3))
+      .filter((n) => n.toUpperCase().startsWith('A_B'))
+      .map((n) => n.toUpperCase())
+      .sort();
+    expect(nodes).toEqual(['A_B', 'A_B', 'A_B-2', 'A_B-2']);
+  });
+
+  it('exports a maths-formatted zero label as the ground node', () => {
+    const doc = createDoc();
+    const a = place(doc, 'resistor', 0, 0);
+    const b = place(doc, 'resistor', 200, 0);
+    labelledWire(doc, a, '2', b, '1', '$\\mathsf{0}$');
+    const nodes = toSpiceNetlist(doc)
+      .split('\n')
+      .filter((l) => /^R\d+ /.test(l))
+      .flatMap((l) => l.split(' ').slice(1, 3));
+    expect(nodes).toContain('0');
+    expect(nodes).not.toContain('0-2');
   });
 
   it('a hidden wire label still names its net', () => {

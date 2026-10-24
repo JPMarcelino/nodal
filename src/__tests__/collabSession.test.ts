@@ -264,6 +264,19 @@ afterAll(async () => {
 /* ------------------------------------------------------------------ */
 
 describe('session orchestration (fake relay)', () => {
+  it('keeps the saved display name when only its stored colour is invalid', async () => {
+    mem.set('nodal.collab.me', JSON.stringify({ name: 'Ada Lovelace', color: 'url(https://attacker.example/beacon)' }));
+    try {
+      const a = await person();
+      const me = a.session.useCollab.getState().me;
+      expect(me.name).toBe('Ada Lovelace');
+      expect(a.session.PEER_COLORS).toContain(me.color);
+      expect(JSON.parse(mem.get('nodal.collab.me')!)).toEqual({ name: 'Ada Lovelace', color: me.color });
+    } finally {
+      mem.delete('nodal.collab.me');
+    }
+  });
+
   it('seeds the room as host; guests replace their doc with the stored snapshot', async () => {
     const a = await person();
     people.push(a);
@@ -333,6 +346,54 @@ describe('session orchestration (fake relay)', () => {
     );
     const peerA = Object.values(b.session.useCollab.getState().peers)[0];
     expect(peerA.name).toBe(a.session.useCollab.getState().me.name);
+  }, 30000);
+
+  it('sanitises peer-supplied presence before it can reach CSS or SVG', async () => {
+    const a = await person();
+    people.push(a);
+    const link = await a.session.startSession();
+    await until('A live', () => a.session.useCollab.getState().status === 'live');
+
+    // an attacker with the room link opens a raw connection: no client-side setter to stop them
+    const room = a.session.parseLink(link)!.room;
+    const attacker = new FakeSocket(`wss://test/room/${room}`);
+    await until('A sees the attacker', () => Object.keys(a.session.useCollab.getState().peers).length === 1);
+    const peerId = Object.keys(a.session.useCollab.getState().peers)[0];
+
+    const parsed = a.session.parseLink(link)!;
+    const { importRoomKey, seal } = await import('../collab/crypto');
+    const key = await importRoomKey(parsed.key);
+    const sendPresence = async (d: unknown) => attacker.send(JSON.stringify({ t: 'p', d: await seal(key, d) }));
+
+    // a guest can hand-craft any presence payload: none of it may become a colour, point or viewport
+    await sendPresence({
+      name: 'Mallory',
+      color: 'url(https://attacker.example/beacon)',
+      cursor: { x: '1', y: 2 },
+      view: { cx: 0, cy: 0, zoom: '1' },
+      selection: ['keep', 7],
+    });
+    await until('A sees the crafted presence', () => a.session.useCollab.getState().peers[peerId]?.name === 'Mallory');
+    const crafted = a.session.useCollab.getState().peers[peerId];
+    expect(crafted.color).toBe('#868e96');
+    expect(crafted.cursor).toBeUndefined();
+    expect(crafted.view).toBeUndefined();
+    expect(crafted.selection).toEqual(['keep']);
+
+    // plain hex colours, finite points and a real viewport still get through
+    await sendPresence({
+      name: 'Mallory',
+      color: '#ff0000',
+      cursor: { x: 12, y: 34 },
+      view: { cx: 1, cy: 2, zoom: 1 },
+      selection: ['keep', 'also'],
+    });
+    await until('A sees the valid presence', () => a.session.useCollab.getState().peers[peerId]?.color === '#ff0000');
+    const valid = a.session.useCollab.getState().peers[peerId];
+    expect(valid.cursor).toEqual({ x: 12, y: 34 });
+    expect(valid.view).toEqual({ cx: 1, cy: 2, zoom: 1 });
+    expect(valid.selection).toEqual(['keep', 'also']);
+    attacker.close();
   }, 30000);
 
   it('guests can only watch, and get their own circuit back when they leave', async () => {

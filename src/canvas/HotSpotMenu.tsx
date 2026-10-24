@@ -273,17 +273,30 @@ const ROW_H = 34; // row height + gap in the order list
 function OrderList({ doc, data, wires, names, onHold }: { doc: CircuitDoc; data: SceneData; wires: string[]; names: string[]; onHold: (hold: boolean) => void }) {
   // pointer-driven dragging (native drag-and-drop fires pointer-leave on the menu and is flaky in webviews)
   const [drag, setDrag] = useState<{ from: number; startY: number; dy: number } | null>(null);
+  const lockedAt = (i: number) => !!doc.items[wires[i]]?.locked;
+  // A locked wire is a fixed anchor: no row may move across it.
+  const crossesLocked = (from: number, to: number) => {
+    const lo = Math.min(from, to);
+    const hi = Math.max(from, to);
+    for (let i = lo; i <= hi; i++) if (i !== from && lockedAt(i)) return true;
+    return false;
+  };
   const target = drag ? Math.max(0, Math.min(wires.length - 1, drag.from + Math.round(drag.dy / ROW_H))) : null;
   const reorder = (from: number, to: number) => {
-    if (from === to || to < 0 || to >= wires.length) return;
+    if (from === to || to < 0 || to >= wires.length || lockedAt(from) || crossesLocked(from, to)) return;
     const order = [...wires];
     const [moved] = order.splice(from, 1);
     order.splice(to, 0, moved);
     const layers = restack(order, data.layers);
+    // Never leave a locked wire's layer out of step with the new order.
+    for (const [id, layer] of layers) {
+      const w = doc.items[id] as WireItem | undefined;
+      if (w?.locked && (w.hopLayer ?? 0) !== layer) return;
+    }
     mutate((d) => {
       for (const [id, layer] of layers) {
         const w = d.items[id] as WireItem | undefined;
-        if (!w) continue;
+        if (!w || w.locked) continue;
         if (layer) w.hopLayer = layer;
         else delete w.hopLayer;
       }
@@ -298,6 +311,7 @@ function OrderList({ doc, data, wires, names, onHold }: { doc: CircuitDoc; data:
     <ol className="cross-pop-list">
       {wires.map((id, i) => {
         const w = doc.items[id] as WireItem | undefined;
+        const locked = !!w?.locked;
         const color = w ? inkColor(wireStyle(doc, w).color, EDITOR_PALETTE) : 'currentColor';
         const dragging = drag?.from === i;
         // rows between the dragged one and its target slide out of the way
@@ -308,7 +322,7 @@ function OrderList({ doc, data, wires, names, onHold }: { doc: CircuitDoc; data:
             className={dragging ? 'cross-pop-row dragging' : 'cross-pop-row'}
             style={{ transform: `translateY(${dragging ? drag!.dy : shift}px)` }}
             onPointerDown={(e) => {
-              if ((e.target as HTMLElement).closest('button')) return;
+              if (locked || (e.target as HTMLElement).closest('button')) return;
               e.currentTarget.setPointerCapture(e.pointerId);
               onHold(true);
               setDrag({ from: i, startY: e.clientY, dy: 0 });
@@ -326,10 +340,22 @@ function OrderList({ doc, data, wires, names, onHold }: { doc: CircuitDoc; data:
               {names[i]}
             </span>
             <span className="cross-pop-tag">{i === 0 ? 'over' : i === wires.length - 1 ? 'under' : ''}</span>
-            <button type="button" className="cross-pop-btn" title="Move up (hop over)" disabled={i === 0} onClick={() => reorder(i, i - 1)}>
+            <button
+              type="button"
+              className="cross-pop-btn"
+              title="Move up (hop over)"
+              disabled={locked || i === 0 || crossesLocked(i, i - 1)}
+              onClick={() => reorder(i, i - 1)}
+            >
               <ChevronUp size={14} />
             </button>
-            <button type="button" className="cross-pop-btn" title="Move down (stay under)" disabled={i === wires.length - 1} onClick={() => reorder(i, i + 1)}>
+            <button
+              type="button"
+              className="cross-pop-btn"
+              title="Move down (stay under)"
+              disabled={locked || i === wires.length - 1 || crossesLocked(i, i + 1)}
+              onClick={() => reorder(i, i + 1)}
+            >
               <ChevronDown size={14} />
             </button>
           </li>
