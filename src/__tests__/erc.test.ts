@@ -108,6 +108,26 @@ describe('electrical rules check', () => {
     expect(computeNets(doc).filter((n) => n.name === 'SDA')).toHaveLength(1);
     expect(runErc(doc).some((i) => i.rule === 'single-label')).toBe(false);
   });
+
+  it('treats a wire end naming a missing part as a loose end instead of crashing', () => {
+    const doc = createDoc();
+    const r = place(doc, 'resistor', 0, 0);
+    const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'port', comp: 'missing', port: '1' }, b: { kind: 'port', comp: r.id, port: '1' }, pts: [] };
+    doc.items[w.id] = w;
+    const loaded = normalizeDoc(JSON.parse(JSON.stringify(doc)));
+    expect(() => computeNets(loaded)).not.toThrow();
+    expect(() => runErc(loaded)).not.toThrow();
+    const net = computeNets(loaded).find((n) => n.wires.includes(w.id))!;
+    expect(net.pins).toEqual([{ comp: r.id, ref: r.ref, port: '1', portName: expect.any(String) }]);
+  });
+
+  it('ignores a no-connect flag wired to a missing part', () => {
+    const doc = createDoc();
+    const nc = place(doc, 'no-connect', 0, 0);
+    const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'port', comp: nc.id, port: 'NC' }, b: { kind: 'port', comp: 'missing', port: '1' }, pts: [] };
+    doc.items[w.id] = w;
+    expect(() => runErc(doc)).not.toThrow();
+  });
 });
 
 describe('splitIgnored', () => {
