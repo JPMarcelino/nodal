@@ -509,7 +509,8 @@ export function rotateSelection(deg: 90 | -90) {
     set({ placing: { ...p, rot: ((((p.rot + deg) % 360) + 360) % 360) as 0 | 90 | 180 | 270 } });
     return;
   }
-  const ids = new Set(editable());
+  // like a move, a turn carries whatever sits inside a selected container
+  const ids = withContents(vdoc(), editable());
   if (ids.size) mutate((d) => rotateItems(d as CircuitDoc, ids, deg));
 }
 
@@ -524,7 +525,7 @@ export function flipSelection(axis: 'x' | 'y') {
     });
     return;
   }
-  const ids = new Set(editable());
+  const ids = withContents(vdoc(), editable());
   if (ids.size) mutate((d) => flipItems(d as CircuitDoc, ids, axis));
 }
 

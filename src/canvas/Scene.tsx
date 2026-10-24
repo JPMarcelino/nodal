@@ -18,7 +18,7 @@ import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
 import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
 import { polyPath } from '../model/path';
 import { connectorD, isConnector, resolveConnector, type ConnectorPath } from '../model/connectors';
-import { shapeBox, shapeTransform } from '../model/rotation';
+import { rotateDeg, shapeBox, shapeTransform } from '../model/rotation';
 import { gradientLine } from '../model/style';
 
 export interface Palette {
@@ -350,6 +350,36 @@ export function labelBox(at: LabelPos, look: LabelLook): Rect {
   return { x, y: at.y - look.size, w: m.w, h: Math.max(look.size * 1.3, m.h) };
 }
 
+
+/** World boxes of a part's shown name and value text (turned text: the box around it), e.g. for alignment guides. */
+export function partLabelRects(doc: CircuitDoc, c: ComponentItem): { which: 'ref' | 'value'; rect: Rect }[] {
+  const def = instanceSymbol(doc, c);
+  const L = labelLayout(c, def);
+  const shown = labelsShown(doc.settings, c, def);
+  const out: { which: 'ref' | 'value'; rect: Rect }[] = [];
+  for (const which of ['ref', 'value'] as const) {
+    const at = L[which];
+    if (!at || !shown[which] || !c[which]) continue;
+    const look = labelLook(c, which, def);
+    const b = labelBox(at, look);
+    const deg = look.st.rotate ?? 0;
+    if (!deg) {
+      out.push({ which, rect: b });
+      continue;
+    }
+    // text turns about its anchor
+    const pts = [
+      { x: b.x, y: b.y },
+      { x: b.x + b.w, y: b.y },
+      { x: b.x + b.w, y: b.y + b.h },
+      { x: b.x, y: b.y + b.h },
+    ].map((p) => rotateDeg(p, deg, at));
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    out.push({ which, rect: { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } });
+  }
+  return out;
+}
 
 function PartLabel({ at, look, fill, bg, className, children }: { at: LabelPos; look: LabelLook; fill: string; bg: string; className: string; children?: ReactNode }) {
   const { st, text, size, weight } = look;

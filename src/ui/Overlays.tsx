@@ -1,4 +1,5 @@
-import { CheckCircle2, Info, XCircle } from 'lucide-react';
+import { CheckCircle2, Columns3, Crosshair, Grid3x3, Info, Magnet, Type, XCircle } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { Tool } from '../model/types';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { useStore } from '../store/store';
@@ -36,8 +37,6 @@ export function StatusBar() {
   const selection = useStore((s) => s.selection.length);
   const tool = useStore((s) => s.tool);
   const placing = useStore((s) => s.placing);
-  const snapOn = useStore((s) => s.doc.settings.snap);
-  const grid = useStore((s) => s.doc.settings.grid);
   const zoom = useStore((s) => s.view.zoom);
   const scope = useStore((s) => s.scope);
   const filePath = useStore((s) => s.filePath);
@@ -51,14 +50,45 @@ export function StatusBar() {
       {filePath && <span className="status-item path" title={filePath}>{filePath.split(/[\\/]/).pop()}</span>}
       {scope && <span className="status-item accent">in group</span>}
       {selection > 0 && <span className="status-item">{selection} selected</span>}
-      <button className="status-item btn" onClick={() => COMMAND_MAP.get('view.snap')!.run()} title={`Toggle snap (${keyOf('view.snap')})`}>
-        snap {snapOn ? `${grid}px` : 'off'}
-      </button>
+      <SnapToggles />
       <span className="status-item mono">
         {cx}, {cy}
       </span>
       <span className="status-item mono">{Math.round(zoom * 100)}%</span>
     </footer>
+  );
+}
+
+/** One-click toggles for the grid, snapping and the kinds of guide, without going through menus. */
+function SnapToggles() {
+  const showGrid = useStore((s) => s.doc.settings.showGrid);
+  const snapOn = useStore((s) => s.doc.settings.snap);
+  const grid = useStore((s) => s.doc.settings.grid);
+  const align = useStore((s) => s.prefs.alignGuides);
+  const spacing = useStore((s) => s.prefs.spacingGuides);
+  const labels = useStore((s) => s.prefs.labelGuides);
+  const viewOnly = useStore((s) => s.viewOnly);
+  const toggle = (id: string, on: boolean, label: string, icon: ReactNode, text?: string) => (
+    <button
+      className={`status-toggle${on ? ' on' : ''}`}
+      onClick={() => COMMAND_MAP.get(id)!.run()}
+      title={`${label}: ${on ? 'on' : 'off'}${keyOf(id) ? ` (${keyOf(id)})` : ''}`}
+      aria-pressed={on}
+      disabled={viewOnly && (id === 'view.grid' || id === 'view.snap')}
+    >
+      {icon}
+      {text && <span>{text}</span>}
+    </button>
+  );
+  return (
+    <span className="status-toggles">
+      {toggle('view.grid', showGrid, 'Show grid', <Grid3x3 size={13} />)}
+      {toggle('view.snap', snapOn, 'Snap to grid', <Magnet size={13} />, snapOn ? `${grid}px` : 'off')}
+      <span className="status-sep" />
+      {toggle('view.alignGuides', align, 'Alignment guides', <Crosshair size={13} />)}
+      {toggle('view.spacingGuides', spacing, 'Equal-spacing guides', <Columns3 size={13} />)}
+      {toggle('view.labelGuides', labels, 'Part names and values follow guides', <Type size={13} />)}
+    </span>
   );
 }
 

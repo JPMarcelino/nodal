@@ -186,6 +186,8 @@ export const COMMANDS: Command[] = [
   { id: 'view.values', label: 'Show part values', category: 'View', keys: ['Alt+U'], run: () => toggleSetting('hideValues', 'Part values'), checked: () => !vdoc().settings.hideValues },
   { id: 'view.wireLabels', label: 'Show wire names', category: 'View', keys: ['Alt+W'], run: () => toggleSetting('hideWireLabels', 'Wire names'), checked: () => !vdoc().settings.hideWireLabels },
   { id: 'view.alignGuides', label: 'Alignment guides while moving', category: 'View', keys: ['Alt+G'], run: () => { setPrefs({ alignGuides: !S().prefs.alignGuides }); toast(S().prefs.alignGuides ? 'Alignment guides on' : 'Alignment guides off'); }, checked: () => S().prefs.alignGuides },
+  { id: 'view.spacingGuides', label: 'Equal-spacing guides while moving', category: 'View', keys: ['Alt+Shift+G'], run: () => togglePref('spacingGuides', 'Spacing guides'), checked: () => S().prefs.spacingGuides, keywords: 'equispaced distribute gap smart' },
+  { id: 'view.labelGuides', label: 'Guides for part names and values', category: 'View', keys: ['Alt+Shift+N'], run: () => togglePref('labelGuides', 'Label guides'), checked: () => S().prefs.labelGuides, keywords: 'text label ref value align' },
   { id: 'view.grid', label: 'Toggle grid', category: 'View', keys: ['G'], run: () => mutateSettings((s) => (s.showGrid = !s.showGrid)), checked: () => vdoc().settings.showGrid },
   { id: 'view.snap', label: 'Toggle snap to grid', category: 'View', keys: ["Mod+'"], run: () => mutateSettings((s) => (s.snap = !s.snap)), checked: () => vdoc().settings.snap },
   { id: 'view.library', label: 'Toggle library panel', category: 'View', keys: ['Mod+B'], run: () => set((s) => ({ leftPanel: !s.leftPanel })), checked: () => S().leftPanel },
@@ -271,6 +273,11 @@ export const COMMAND_MAP = new Map(COMMANDS.map((c) => [c.id, c]));
 
 function mutateSettings(fn: (s: import('../model/types').DocSettings) => void) {
   mutate((d) => fn(d.settings));
+}
+
+function togglePref(key: 'spacingGuides' | 'labelGuides', what: string) {
+  setPrefs({ [key]: !S().prefs[key] });
+  toast(`${what} ${S().prefs[key] ? 'on' : 'off'}`);
 }
 
 function toggleSetting(key: 'hideRefs' | 'hideValues' | 'hideWireLabels', what: string) {

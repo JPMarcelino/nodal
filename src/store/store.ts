@@ -68,6 +68,10 @@ export interface Prefs {
   wireAvoid: boolean;
   /** Alignment guides (and snapping to them) while moving. */
   alignGuides: boolean;
+  /** Equal-spacing guides (and snapping to them) while moving. */
+  spacingGuides: boolean;
+  /** Part names and values line up with guides too, and get guides when dragged. */
+  labelGuides: boolean;
   /** Widths of the library (left) and properties (right) panels, in px. */
   leftWidth: number;
   rightWidth: number;
@@ -180,6 +184,8 @@ const DEFAULT_PREFS: Prefs = {
   shortcuts: 'nodal',
   wireAvoid: true,
   alignGuides: true,
+  spacingGuides: true,
+  labelGuides: true,
   leftWidth: 280,
   rightWidth: 290,
   wireAngle: 'ortho',
