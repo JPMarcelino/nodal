@@ -349,8 +349,8 @@ function DocumentPanel() {
         <button
           className="secondary-btn full"
           onClick={() => {
-            mutate((d) => Object.values(d.items).forEach((i) => i.type === 'wire' && delete (i as WireItem).style), undefined, { allPages: true });
-            toast('All wires now use the default style');
+            mutate((d) => Object.values(d.items).forEach((i) => i.type === 'wire' && !i.locked && delete (i as WireItem).style), undefined, { allPages: true });
+            toast('Wires now use the default style');
           }}
         >
           Reset all wires to default style
@@ -406,7 +406,7 @@ function DocumentPanel() {
 function PartDetails({ c }: { c: ComponentItem }) {
   const doc = useStore((s) => s.doc);
   const def = getSymbol(doc, c.symbol);
-  const upd = (fn: (c: ComponentItem) => void) => mutate((d) => fn(d.items[c.id] as ComponentItem));
+  const upd = (fn: (c: ComponentItem) => void) => A.updateItems([c.id], (it) => fn(it as ComponentItem));
   const [adding, setAdding] = useState(false);
   const custom = customFieldKeys(c, def);
   const setProp = (k: string, v: string) =>
@@ -504,7 +504,7 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
   const key = which === 'ref' ? 'refStyle' : 'valueStyle';
   const st: LabelStyle = c[key] ?? {};
   const look = labelLook(c, which, def);
-  const upd = (fn: (c: ComponentItem) => void) => mutate((d) => fn(d.items[c.id] as ComponentItem));
+  const upd = (fn: (c: ComponentItem) => void) => A.updateItems([c.id], (it) => fn(it as ComponentItem));
   const docSettings = useStore((s) => s.doc.settings);
   const refOff = !!docSettings.hideRefs;
   const valueOff = !!docSettings.hideValues && !def.valueIsLabel;
@@ -634,7 +634,7 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
 function ComponentPanel({ c }: { c: ComponentItem }) {
   const doc = useStore((s) => s.doc);
   const def = getSymbol(doc, c.symbol);
-  const upd = (fn: (c: ComponentItem) => void) => mutate((d) => fn(d.items[c.id] as ComponentItem));
+  const upd = (fn: (c: ComponentItem) => void) => A.updateItems([c.id], (it) => fn(it as ComponentItem));
   const nets = useMemo(() => computeNets(doc), [doc]);
   return (
     <>
@@ -726,17 +726,13 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
   const style = wireStyleFor(doc.settings, first);
   const ids = wires.map((w) => w.id);
   const upd = (p: Partial<WireStyle>) =>
-    mutate((d) =>
-      ids.forEach((id) => {
-        const w = d.items[id] as WireItem | undefined;
-        if (w?.type === 'wire') w.style = { ...w.style, ...p };
-      }),
-    );
+    A.updateItems(ids, (it) => {
+      if (it.type === 'wire') it.style = { ...it.style, ...p };
+    });
   const net = useMemo(() => netOfWire(computeNets(doc), first.id), [doc, first.id]);
   const updLabel = (fn: (w: WireItem) => void) =>
-    mutate((d) => {
-      const w = d.items[first.id] as WireItem | undefined;
-      if (w?.type === 'wire') fn(w);
+    A.updateItems([first.id], (it) => {
+      if (it.type === 'wire') fn(it);
     });
   return (
     <>
@@ -756,11 +752,11 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
             ]}
             onChange={(v) =>
               mutate((d) => {
-                const layers = Object.values(d.items).flatMap((it) => (it.type === 'wire' && !ids.includes(it.id) && it.hopLayer ? [it.hopLayer] : []));
+                const layers = Object.values(d.items).flatMap((it) => (it.type === 'wire' && !ids.includes(it.id) && !it.locked && it.hopLayer ? [it.hopLayer] : []));
                 const layer = v > 0 ? Math.max(0, ...layers) + 1 : v < 0 ? Math.min(0, ...layers) - 1 : 0;
                 for (const id of ids) {
                   const w = d.items[id] as WireItem | undefined;
-                  if (w?.type !== 'wire') continue;
+                  if (w?.type !== 'wire' || w.locked) continue;
                   if (layer) w.hopLayer = layer;
                   else delete w.hopLayer;
                 }
@@ -769,10 +765,9 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           />
         </Field>
         <div className="btn-row">
-          <button className="secondary-btn" onClick={() => mutate((d) => ids.forEach((id) => {
-            const w = d.items[id] as WireItem | undefined;
-            if (w?.type === 'wire') delete w.style;
-          }))}>
+          <button className="secondary-btn" onClick={() => A.updateItems(ids, (it) => {
+            if (it.type === 'wire') delete it.style;
+          })}>
             Use default
           </button>
           <button
@@ -790,8 +785,11 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           className="secondary-btn full"
           onClick={() => {
             if (!net) return;
-            mutate((d) => net.wires.forEach((id) => d.items[id] && ((d.items[id] as WireItem).style = { ...first.style })), undefined, { allPages: true });
-            toast(`Applied to all ${net.wires.length} wires of net ${net.name}`);
+            const targets = net.wires.filter((id) => !doc.items[id]?.locked);
+            A.updateItems(targets, (it) => {
+              if (it.type === 'wire') it.style = { ...first.style };
+            }, { allPages: true });
+            toast(`Applied to ${targets.length} of ${net.wires.length} wires of net ${net.name}`);
           }}
         >
           Apply style to whole net
@@ -800,10 +798,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
       {wires.length === 1 && (
         <Section title="Label">
           <Field label="Text" hint="Supports maths, e.g. $V_{CC}$">
-            <TextInput value={first.label ?? ''} focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => mutate((d) => {
-              const w = d.items[first.id] as WireItem | undefined;
-              if (w?.type === 'wire') w.label = v || undefined;
-            })} />
+            <TextInput value={first.label ?? ''} focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => updLabel((w) => (w.label = v || undefined))} />
           </Field>
           {first.label && (
             <>
@@ -880,13 +875,11 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   const first = shapes[0];
   const ids = shapes.map((s) => s.id);
   const upd = (fn: (s: ShapeItem) => void) =>
-    mutate((d) =>
-      ids.forEach((id) => {
-        const s = d.items[id] as ShapeItem;
-        fn(s);
-        if (s.kind === 'text') Object.assign(s, measureTextShape(s));
-      }),
-    );
+    A.updateItems(ids, (it) => {
+      if (it.type !== 'shape') return;
+      fn(it);
+      if (it.kind === 'text') Object.assign(it, measureTextShape(it));
+    });
   const isText = first.kind === 'text';
   const isLine = first.kind === 'line' || first.kind === 'arrow';
   // boxy shapes store a free rotation (0–360°, like a part's); point-based ones are turned by rewriting their points
@@ -1066,7 +1059,7 @@ function AttachFields({ s }: { s: ShapeItem }) {
   const detach = (end: 'from' | 'to') =>
     mutate((d) => {
       const c = d.items[s.id] as ShapeItem | undefined;
-      if (c) detachConnector(d as CircuitDoc, c, { [end]: true });
+      if (c && !c.locked) detachConnector(d as CircuitDoc, c, { [end]: true });
     });
   return (
     <>
@@ -1108,6 +1101,7 @@ function SizeField({ ids }: { ids: string[] }) {
     }
     mutate((d) =>
       comps.forEach((c) => {
+        if (c.locked) return;
         // a lone part snaps to the nearest size that keeps its pins on the grid
         const k = gridScale(getSymbol(d, c.symbol), s);
         (d.items[c.id] as ComponentItem).scale = k === 1 ? undefined : k;
@@ -1147,13 +1141,9 @@ function PartLabelsFields({ comps }: { comps: ComponentItem[] }) {
   const defs = comps.map((c) => getSymbol(doc, c.symbol));
   // net labels show their net name only (their value); other parts a name and a value
   const named = comps.filter((_, i) => !defs[i].valueIsLabel);
-  const upd = (fn: (c: ComponentItem) => void) =>
-    mutate((d) =>
-      ids.forEach((id) => {
-        const c = d.items[id] as ComponentItem | undefined;
-        if (c?.type === 'component' && !c.locked) fn(c);
-      }),
-    );
+  const upd = (fn: (c: ComponentItem) => void) => A.updateItems(ids, (it) => {
+    if (it.type === 'component') fn(it);
+  });
   const all = (list: ComponentItem[], k: 'showRef' | 'showValue') => list.length > 0 && list.every((c) => c[k]);
   const some = (list: ComponentItem[], k: 'showRef' | 'showValue') => list.some((c) => c[k]) && !all(list, k);
   const spot = comps.every((c) => (c.labelSpot ?? '') === (comps[0].labelSpot ?? '')) ? (comps[0].labelSpot ?? '') : null;
@@ -1271,10 +1261,9 @@ function MultiPanel({ ids }: { ids: string[] }) {
           <WireStyleEditor
             style={wireStyleFor(doc.settings, wires[0])}
             corners
-            onChange={(p) => mutate((d) => wires.forEach((w) => {
-              const it = d.items[w.id] as WireItem | undefined;
-              if (it?.type === 'wire') it.style = { ...it.style, ...p };
-            }))}
+            onChange={(p) => A.updateItems(wires.map((w) => w.id), (it) => {
+              if (it.type === 'wire') it.style = { ...it.style, ...p };
+            })}
           />
         </Section>
       )}
