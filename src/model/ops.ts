@@ -1058,10 +1058,14 @@ export type StackMove = 'forward' | 'backward' | 'front' | 'back';
  * parts. Front / back move the whole selection to an end (keeping its
  * internal order); forward / backward step each selected item past the next
  * unselected item it overlaps (or simply the next one when nothing overlaps).
- * Every item's z is rewritten to its rank. Returns false when nothing moved.
+ * Locked items are fixed anchors: a move that would cross one is refused and
+ * their z is left untouched. Otherwise every item's z is rewritten to its
+ * rank. Returns false when nothing moved.
  */
 export function restackItems(doc: CircuitDoc, ids: Iterable<string>, dir: StackMove): boolean {
-  const sel = new Set([...ids].filter((id) => doc.items[id] && doc.items[id].type !== 'junction'));
+  const sel = new Set(
+    [...ids].filter((id) => doc.items[id] && doc.items[id].type !== 'junction' && !doc.items[id].locked),
+  );
   if (!sel.size) return false;
   const rank = drawOrder(doc);
   let order = Object.values(doc.items)
@@ -1069,6 +1073,9 @@ export function restackItems(doc: CircuitDoc, ids: Iterable<string>, dir: StackM
     .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
     .map((i) => i.id);
   const before = order.join();
+  const initial = [...order];
+  const lockedAt = new Map<string, number>();
+  order.forEach((id, i) => doc.items[id].locked && lockedAt.set(id, i));
   if (dir === 'front') order = [...order.filter((id) => !sel.has(id)), ...order.filter((id) => sel.has(id))];
   else if (dir === 'back') order = [...order.filter((id) => sel.has(id)), ...order.filter((id) => !sel.has(id))];
   else {
@@ -1084,6 +1091,8 @@ export function restackItems(doc: CircuitDoc, ids: Iterable<string>, dir: StackM
       let target = -1;
       for (let j = i + 1; j < order.length; j++) {
         if (sel.has(order[j])) continue;
+        // A locked item is a fixed anchor: never step across it.
+        if (doc.items[order[j]].locked) break;
         if (next < 0) next = j;
         const o = bounds(order[j]);
         if (b && o && rectsIntersect(b, o)) {
@@ -1098,9 +1107,33 @@ export function restackItems(doc: CircuitDoc, ids: Iterable<string>, dir: StackM
     }
     if (dir === 'backward') order.reverse();
   }
+  // A locked item keeps its place: refuse any move that would shift one.
+  for (const [id, i] of lockedAt) if (order[i] !== id) return false;
   if (order.join() === before) return false;
-  order.forEach((id, i) => {
-    if (doc.items[id].z !== i) doc.items[id].z = i;
-  });
+  if (!lockedAt.size) {
+    order.forEach((id, i) => {
+      if (doc.items[id].z !== i) doc.items[id].z = i;
+    });
+  } else {
+    // Keep locked items' z untouched: permute the z slots of each unlocked
+    // run (locked items split the order, and no move crosses one).
+    const all = Object.values(doc.items);
+    const top = Math.max(0, ...all.map((it) => it.z ?? 0)) + 1;
+    const key = new Map(all.map((it, i) => [it.id, it.z ?? top + i]));
+    for (let start = 0; start < order.length; ) {
+      if (doc.items[order[start]].locked) {
+        start++;
+        continue;
+      }
+      let end = start;
+      while (end < order.length && !doc.items[order[end]].locked) end++;
+      const slots = initial.slice(start, end).map((id) => key.get(id)!);
+      for (let i = start; i < end; i++) {
+        const z = slots[i - start];
+        if (doc.items[order[i]].z !== z) doc.items[order[i]].z = z;
+      }
+      start = end;
+    }
+  }
   return true;
 }

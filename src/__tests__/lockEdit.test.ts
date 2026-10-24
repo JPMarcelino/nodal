@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent } from '../model/doc';
-import { reorderItem } from '../model/ops';
+import { reorderItem, restackItems } from '../model/ops';
 import type { ComponentItem, WireItem } from '../model/types';
 
 // the store touches window / localStorage when it loads
@@ -85,6 +85,54 @@ describe('lock-aware edits', () => {
 
     expect(S().doc.items[locked].hidden).toBeFalsy();
     expect(S().doc.items[free].hidden).toBe(true);
+  });
+
+  it('restackItems treats locked items as fixed anchors', () => {
+    const doc = createDoc();
+    const parts = [0, 1, 2, 3].map((z, i) => {
+      const c = makeComponent(doc, 'resistor', i * 200, 0);
+      c.z = z;
+      doc.items[c.id] = c;
+      return c;
+    });
+    const [a, b, locked, c] = parts;
+    locked.locked = true;
+
+    // it may still move within the segment below the lock
+    expect(restackItems(doc, [a.id], 'forward')).toBe(true);
+    expect([a.z, b.z, locked.z, c.z]).toEqual([1, 0, 2, 3]);
+    // but not across it
+    expect(restackItems(doc, [a.id], 'forward')).toBe(false);
+    expect([a.z, b.z, locked.z, c.z]).toEqual([1, 0, 2, 3]);
+    // front / back must not shift the locked item either
+    expect(restackItems(doc, [a.id], 'front')).toBe(false);
+    expect(restackItems(doc, [c.id], 'back')).toBe(false);
+    expect([a.z, b.z, locked.z, c.z]).toEqual([1, 0, 2, 3]);
+    // a locked id in the selection is ignored
+    expect(restackItems(doc, [locked.id], 'front')).toBe(false);
+  });
+
+  it('restackItems leaves a locked item’s z untouched', () => {
+    const doc = createDoc();
+    const add = (z: number, i: number) => {
+      const c = makeComponent(doc, 'resistor', i * 200, 0);
+      c.z = z;
+      doc.items[c.id] = c;
+      return c;
+    };
+    const a = add(0, 0);
+    const b = add(1, 1);
+    const locked = add(10, 2);
+    const c = add(11, 3);
+    const d = add(12, 4);
+    locked.locked = true;
+
+    // moving within the unlocked run below the lock leaves its z alone
+    expect(restackItems(doc, [a.id], 'forward')).toBe(true);
+    expect([a.z, b.z, locked.z, c.z, d.z]).toEqual([1, 0, 10, 11, 12]);
+    // and so does moving within the run above it
+    expect(restackItems(doc, [d.id], 'backward')).toBe(true);
+    expect([a.z, b.z, locked.z, c.z, d.z]).toEqual([1, 0, 10, 12, 11]);
   });
 
   it('reorderItem treats a locked item as a fixed anchor', () => {
