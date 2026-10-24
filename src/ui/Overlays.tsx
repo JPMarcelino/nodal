@@ -1,6 +1,7 @@
-import { CheckCircle2, Columns3, Crosshair, Grid3x3, Info, Magnet, Type, XCircle } from 'lucide-react';
+import { CheckCircle2, Columns3, Crosshair, Grid2x2, Grid3x3, Grip, Hash, Info, Magnet, Plus, Type, XCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { Tool } from '../model/types';
+import type { GridStyle, Tool } from '../model/types';
+import { GRID_STYLE_NAMES } from '../model/doc';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { useStore } from '../store/store';
 import { isExplainTool } from '../store/explain';
@@ -59,7 +60,9 @@ export function StatusBar() {
   );
 }
 
-/** One-click toggles for the grid, snapping and the kinds of guide, without going through menus. */
+const GRID_STYLE_ICONS: Record<GridStyle, ReactNode> = { dots: <Grip size={13} />, lines: <Hash size={13} />, crosses: <Plus size={13} />, major: <Grid2x2 size={13} /> };
+
+/** One-click toggles for the grid (and its style), snapping, the kinds of guide and part names / values, without going through menus. */
 function SnapToggles() {
   const showGrid = useStore((s) => s.doc.settings.showGrid);
   const snapOn = useStore((s) => s.doc.settings.snap);
@@ -68,13 +71,18 @@ function SnapToggles() {
   const spacing = useStore((s) => s.prefs.spacingGuides);
   const labels = useStore((s) => s.prefs.labelGuides);
   const viewOnly = useStore((s) => s.viewOnly);
+  const gridStyle = useStore((s) => s.doc.settings.gridStyle ?? 'dots');
+  const refs = useStore((s) => !s.doc.settings.hideRefs);
+  const values = useStore((s) => !s.doc.settings.hideValues);
+  const wireNames = useStore((s) => !s.doc.settings.hideWireLabels);
+  const docSetting = (id: string) => ['view.grid', 'view.snap', 'view.gridStyle', 'view.refs', 'view.values', 'view.wireLabels'].includes(id);
   const toggle = (id: string, on: boolean, label: string, icon: ReactNode, text?: string) => (
     <button
       className={`status-toggle${on ? ' on' : ''}`}
       onClick={() => COMMAND_MAP.get(id)!.run()}
       title={`${label}: ${on ? 'on' : 'off'}${keyOf(id) ? ` (${keyOf(id)})` : ''}`}
       aria-pressed={on}
-      disabled={viewOnly && (id === 'view.grid' || id === 'view.snap')}
+      disabled={viewOnly && docSetting(id)}
     >
       {icon}
       {text && <span>{text}</span>}
@@ -83,11 +91,23 @@ function SnapToggles() {
   return (
     <span className="status-toggles">
       {toggle('view.grid', showGrid, 'Show grid', <Grid3x3 size={13} />)}
+      <button
+        className="status-toggle"
+        onClick={() => COMMAND_MAP.get('view.gridStyle')!.run()}
+        title={`Grid style: ${GRID_STYLE_NAMES[gridStyle]} (click for the next)`}
+        disabled={viewOnly}
+      >
+        {GRID_STYLE_ICONS[gridStyle]}
+      </button>
       {toggle('view.snap', snapOn, 'Snap to grid', <Magnet size={13} />, snapOn ? `${grid}px` : 'off')}
       <span className="status-sep" />
       {toggle('view.alignGuides', align, 'Alignment guides', <Crosshair size={13} />)}
       {toggle('view.spacingGuides', spacing, 'Equal-spacing guides', <Columns3 size={13} />)}
       {toggle('view.labelGuides', labels, 'Part names and values follow guides', <Type size={13} />)}
+      <span className="status-sep" />
+      {toggle('view.refs', refs, 'Show part names', null, 'R1')}
+      {toggle('view.values', values, 'Show part values', null, '10k')}
+      {toggle('view.wireLabels', wireNames, 'Show wire names', null, 'net')}
     </span>
   );
 }

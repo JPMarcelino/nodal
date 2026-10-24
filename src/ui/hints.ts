@@ -59,7 +59,7 @@ export function hintFor(s: HintState): string | null {
     return key ? `View mode — ${key} to edit` : 'View mode — click “View mode” at the top to edit';
   }
 
-  if (s.editingText) return join([`${k('Mod+Enter')} or click outside to finish`, `${esc} stops editing`, 'write $…$ for maths']);
+  if (s.editingText) return join([`${k('Enter')} or click outside to finish`, `${k('Shift+Enter')} new line`, `${esc} stops editing`, 'write $…$ for maths']);
 
   switch (s.gesture) {
     case 'wire':

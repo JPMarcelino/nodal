@@ -5,7 +5,7 @@ import { measureTextShape } from './shapeText';
 import { rotatedBounds, shapeBox, shapeRot } from './rotation';
 import { normalizePages } from './pages';
 import { getSymbol, instanceSymbol } from './registry';
-import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, Item, Rect, ShapeItem, ShapeKind, SymbolDef } from './types';
+import type { CircuitDoc, ComponentItem, DocSettings, Endpoint, GridStyle, Item, Rect, ShapeItem, ShapeKind, SymbolDef } from './types';
 import { wirePolyline } from './wires';
 
 let counter = 0;
@@ -13,6 +13,9 @@ export function uid(prefix = 'i'): string {
   counter = (counter + 1) % 1e6;
   return `${prefix}${Date.now().toString(36)}${counter.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
+
+export const GRID_STYLES: GridStyle[] = ['dots', 'lines', 'crosses', 'major'];
+export const GRID_STYLE_NAMES: Record<GridStyle, string> = { dots: 'Dots', lines: 'Lines', crosses: 'Crosses', major: 'Major lines' };
 
 export const DEFAULT_SETTINGS: DocSettings = {
   grid: 10,

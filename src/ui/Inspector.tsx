@@ -40,7 +40,7 @@ import { getSymbol, stateSymbol } from '../model/registry';
 import { gridScale } from '../model/symbols/scale';
 import type { CircuitDoc, ConnectorRoute, ComponentItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
-import { docBounds, selectedGroup } from '../model/doc';
+import { GRID_STYLES, GRID_STYLE_NAMES, docBounds, selectedGroup } from '../model/doc';
 import { scaleItems, selectionPivot } from '../model/ops';
 import { normDeg, ROT_KINDS, setShapeSize, shapeRot } from '../model/rotation';
 import { detachConnector } from '../model/connectors';
@@ -375,6 +375,13 @@ function DocumentPanel() {
         </Field>
         <Field label="Show grid">
           <Toggle checked={settings.showGrid} onChange={(v) => upd((s) => (s.showGrid = v))} />
+        </Field>
+        <Field label="Grid style">
+          <Segmented
+            value={settings.gridStyle ?? 'dots'}
+            options={GRID_STYLES.map((v) => ({ value: v, label: v === 'major' ? 'Major' : GRID_STYLE_NAMES[v], title: GRID_STYLE_NAMES[v] }))}
+            onChange={(v) => upd((s) => (s.gridStyle = v))}
+          />
         </Field>
         <Field label="Snap to grid">
           <Toggle checked={settings.snap} onChange={(v) => upd((s) => (s.snap = v))} />

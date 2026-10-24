@@ -1862,6 +1862,23 @@ select.input {
   fill: var(--grid-major);
 }
 
+.grid-line,
+.grid-line-major {
+  fill: none;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.grid-line {
+  stroke: var(--grid);
+  opacity: 0.55;
+}
+
+.grid-line-major {
+  stroke: var(--grid-major);
+  opacity: 0.6;
+}
+
 .comp text,
 .wire-label,
 .shape text {
