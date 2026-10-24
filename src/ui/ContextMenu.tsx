@@ -16,6 +16,7 @@ import {
   Command,
   Copy,
   CopyPlus,
+  Columns3,
   Crosshair,
   Download,
   Eye,
@@ -126,6 +127,8 @@ function canvasMenu(menu: ContextMenuState): { strip: Entry[]; list: Row[] } {
           cmd('view.grid', 'Grid', <Grid3x3 size={I} />),
           cmd('view.snap', 'Snap to grid', <Magnet size={I} />),
           cmd('view.alignGuides', 'Alignment guides', <Crosshair size={I} />),
+          cmd('view.spacingGuides', 'Spacing guides', <Columns3 size={I} />),
+          cmd('view.labelGuides', 'Label guides', <Type size={I} />),
           cmd('view.minimap', 'Minimap', <Scan size={I} />),
         ),
       },
@@ -143,7 +146,6 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
   const multi = selection.length > 1;
   const grouped = items.some((i) => i.group);
   const t = doc.items[target];
-  const transformable = types.has('component') || types.has('shape');
   const locked = items.length > 0 && items.every((i) => i.locked);
   const convertible = items.some((i) => i.type === 'shape' && !i.locked && canConvertToPath(i));
   return {
@@ -155,7 +157,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
       cmd('edit.delete', 'Delete', <Trash2 size={15} />, { danger: true })!,
     ].filter(Boolean),
     list: rows(
-      transformable && {
+      !locked && {
         label: 'Transform',
         icon: <RotateCw size={I} />,
         sub: rows(

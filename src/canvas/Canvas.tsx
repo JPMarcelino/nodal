@@ -10,7 +10,7 @@ import { cleanup, deleteWirePart, rotateShapeBy, scaleItems, selectionPivot, tra
 import { dragRotation, fromShapeFrame, HANDLE_ROT_KINDS, rectCentre, resizeInFrame, rotateDeg, shapeBox, shapeRot, shapeTransform, toShapeFrame } from '../model/rotation';
 import { getSymbol, instanceSymbol } from '../model/registry';
 import { gridScale, scaleStep } from '../model/symbols/scale';
-import type { CircuitDoc, ComponentItem, Endpoint, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
+import type { CircuitDoc, ComponentItem, Endpoint, Item, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireStyle, wireStyleFor } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
 import { buildAngledPreview, buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd, wireRouter } from '../model/wireCommit';
@@ -21,9 +21,9 @@ import * as A from '../store/actions';
 import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, readOnly, rebaseGesture, select, set, toast, useStore, useViewDoc, vdoc, withGestureMutate } from '../store/store';
 import { viewDoc } from '../model/pages';
 import { pageCrossRefs } from '../model/pageRefs';
-import { alignAnchors, alignMove, type AlignIndex, type Guide } from '../model/align';
+import { alignAnchors, alignMove, rectPoints, spaceMove, type AlignIndex, type Guide, type SpaceGuide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, shapeTitle, useSceneData, wireLabelAt, wireLabelLook, type SceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, partLabelRects, shapeTitle, useSceneData, wireLabelAt, wireLabelLook, type SceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
@@ -200,8 +200,9 @@ export function Canvas() {
   const [hover, setHover] = useState<{ item: string | null; port: PortInfo | null }>({ item: null, port: null });
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 });
   const [guides, setGuides] = useState<Guide[]>([]);
-  /** Alignment anchors of the running move, keyed by its id set. */
-  const alignRef = useRef<{ ids: Set<string>; moving: Point[]; index: AlignIndex } | null>(null);
+  const [spaceGuides, setSpaceGuides] = useState<SpaceGuide[]>([]);
+  /** Alignment anchors of the running move (or label drag), keyed by its id set (or gesture). */
+  const alignRef = useRef<{ ids: Set<string> | object; moving: Point[]; index: AlignIndex; box: Rect | null; others: Rect[] } | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
   const [fileDrag, setFileDrag] = useState(false);
   const [editingText, setEditingText] = useState<string | null>(null);
@@ -1608,14 +1609,37 @@ export function Canvas() {
         const step = snapOn ? grid : 1;
         dx = snap(dx, step);
         dy = snap(dy, step);
-        if (S().prefs.alignGuides) {
-          if (alignRef.current?.ids !== g.ids) alignRef.current = { ids: g.ids, ...alignAnchors(viewDoc(gestureBaseDoc() ?? S().doc, S().page), g.ids) };
+        const { alignGuides, spacingGuides, labelGuides } = S().prefs;
+        if (alignGuides || spacingGuides) {
+          if (alignRef.current?.ids !== g.ids) {
+            const base = viewDoc(gestureBaseDoc() ?? S().doc, S().page);
+            const labels = labelGuides ? (it: Item) => (it.type === 'component' ? partLabelRects(base, it).map((l) => l.rect) : []) : undefined;
+            alignRef.current = { ids: g.ids, ...alignAnchors(base, g.ids, labels) };
+          }
+          const { moving, index, box, others } = alignRef.current;
+          const tol = 6 / S().view.zoom;
           // off the grid, guides also pull the selection onto them; on it they just show what lines up
-          const a = alignMove(alignRef.current.moving, alignRef.current.index, dx, dy, 6 / S().view.zoom, !snapOn);
-          if (!e.shiftKey || dx) dx = a.dx;
-          if (!e.shiftKey || dy) dy = a.dy;
-          setGuides(a.guides);
-        } else if (guides.length) setGuides([]);
+          const magnet = !snapOn;
+          const hold = { x: e.shiftKey && !dx, y: e.shiftKey && !dy };
+          let pulled = { x: false, y: false };
+          if (alignGuides) {
+            const a = alignMove(moving, index, dx, dy, tol, magnet);
+            if (!hold.x) dx = a.dx;
+            if (!hold.y) dy = a.dy;
+            pulled = { x: a.guides.some((gd) => gd.axis === 'x'), y: a.guides.some((gd) => gd.axis === 'y') };
+          }
+          if (spacingGuides) {
+            // a line-up wins over an even spacing on the same axis
+            const sp = spaceMove(box, others, dx, dy, tol, magnet, { x: hold.x || pulled.x, y: hold.y || pulled.y });
+            dx = sp.dx;
+            dy = sp.dy;
+            setSpaceGuides(sp.guides);
+          } else setSpaceGuides([]);
+          setGuides(alignGuides ? alignMove(moving, index, dx, dy, tol, false).guides : []);
+        } else if (guides.length || spaceGuides.length) {
+          setGuides([]);
+          setSpaceGuides([]);
+        }
         gestureUpdate((d, base) => (g.detach ? translateDetached : translateItems)(base, d as CircuitDoc, g.ids, dx, dy));
         if (!g.moved || dx !== g.dx || dy !== g.dy) setGesture({ ...g, moved: true, dx, dy });
         break;
@@ -1877,8 +1901,24 @@ export function Canvas() {
         break;
       }
       case 'label': {
-        const dx = Math.round(w.x - g.start.x);
-        const dy = Math.round(w.y - g.start.y);
+        let dx = Math.round(w.x - g.start.x);
+        let dy = Math.round(w.y - g.start.y);
+        const { alignGuides, labelGuides } = S().prefs;
+        if (alignGuides && labelGuides) {
+          // the dragged text lines up with every part, shape and other label that stays put
+          if (alignRef.current?.ids !== g.frozen) {
+            const base = viewDoc(gestureBaseDoc() ?? S().doc, S().page);
+            const c = base.items[g.id] as ComponentItem;
+            const own = c && partLabelRects(base, c).find((l) => l.which === g.which)?.rect;
+            const others = (it: Item) => (it.type === 'component' ? partLabelRects(base, it).filter((l) => it.id !== g.id || l.which !== g.which).map((l) => l.rect) : []);
+            alignRef.current = { ids: g.frozen, ...alignAnchors(base, new Set(), others), moving: own ? rectPoints(own) : [] };
+          }
+          const a = alignMove(alignRef.current.moving, alignRef.current.index, dx, dy, 6 / S().view.zoom, true);
+          dx = a.dx;
+          dy = a.dy;
+          setGuides(a.guides);
+        } else if (guides.length) setGuides([]);
+        if (spaceGuides.length) setSpaceGuides([]);
         gestureUpdate((d) => {
           const c = d.items[g.id] as ComponentItem;
           // first drag: pin both labels where they are drawn now, so neither jumps
@@ -2500,13 +2540,26 @@ export function Canvas() {
             const r = rectFromPoints(g.start, g.cur);
             return <rect x={r.x} y={r.y} width={r.w} height={r.h} className="marquee crossing" strokeWidth={1.5 / z} strokeDasharray={`${5 / z} ${4 / z}`} />;
           })()}
-          {g?.kind === 'move' && g.moved && prefs.alignGuides &&
+          {((g?.kind === 'move' && g.moved) || g?.kind === 'label') &&
             guides.map((gd) =>
               gd.axis === 'x' ? (
                 <line key={`x${gd.v}`} x1={gd.v} x2={gd.v} y1={gd.from - 12 / z} y2={gd.to + 12 / z} className="align-guide" strokeWidth={1 / z} strokeDasharray={`${4 / z} ${3 / z}`} />
               ) : (
                 <line key={`y${gd.v}`} y1={gd.v} y2={gd.v} x1={gd.from - 12 / z} x2={gd.to + 12 / z} className="align-guide" strokeWidth={1 / z} strokeDasharray={`${4 / z} ${3 / z}`} />
               ),
+            )}
+          {g?.kind === 'move' && g.moved &&
+            spaceGuides.flatMap((sg) =>
+              sg.gaps.map((gp, n) => {
+                const t = 4 / z;
+                // a measured gap, just past the items: a line along the axis with a tick at each end
+                const at = gp.at + 8 / z;
+                const d =
+                  sg.axis === 'x'
+                    ? `M${gp.from} ${at}H${gp.to}M${gp.from} ${at - t}v${2 * t}M${gp.to} ${at - t}v${2 * t}`
+                    : `M${at} ${gp.from}V${gp.to}M${at - t} ${gp.from}h${2 * t}M${at - t} ${gp.to}h${2 * t}`;
+                return <path key={`s${sg.axis}${n}`} d={d} className="space-guide" strokeWidth={1.25 / z} />;
+              }),
             )}
           {g?.kind === 'wire' && (() => {
             const pts = wirePreview(g);

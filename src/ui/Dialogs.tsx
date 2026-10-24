@@ -317,7 +317,9 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
               ['Wire bend direction', 'Follows the way you first move the pointer off the last point; Space or / flips it (Cadence keys: right click)'],
               ['Wire routing', 'New wires route around parts and stay off pins they don\'t connect to (Settings to turn off)'],
               ['Move with the pointer', 'Cadence keys: M (or S) carries the selection, Shift+M leaves its wires behind, C places a copy; click to drop, R or right click rotates, Esc cancels'],
-              ['Alignment guides', 'Lines show what a moved part lines up with (Guides in the top bar, Alt+G); with snap off they pull it into line'],
+              ['Alignment guides', 'Lines show what a moved part lines up with (guide buttons in the status bar, Alt+G); with snap off they pull it into line'],
+              ['Spacing guides', 'Pink gap marks show when a moved item sits as far from its neighbour as they sit from each other (Alt+Shift+G)'],
+              ['Label guides', 'Part names and values line up with guides too, also when dragged on their own (Alt+Shift+N)'],
               ['Remove last bend', 'Backspace while wiring'],
               ['Reshape a wire', 'Select it, then drag a segment'],
               ['Delete a segment', 'Select a wire, click a segment again to select it, then Del removes just that segment'],
@@ -438,6 +440,12 @@ export function SettingsDialog() {
           </Field>
           <Field label="Alignment guides">
             <Toggle checked={prefs.alignGuides} onChange={(alignGuides) => setPrefs({ alignGuides })} />
+          </Field>
+          <Field label="Equal-spacing guides">
+            <Toggle checked={prefs.spacingGuides} onChange={(spacingGuides) => setPrefs({ spacingGuides })} />
+          </Field>
+          <Field label="Part names and values follow guides">
+            <Toggle checked={prefs.labelGuides} onChange={(labelGuides) => setPrefs({ labelGuides })} />
           </Field>
           <Field label="Unconnected pin markers">
             <Toggle checked={prefs.showPortMarkers} onChange={(showPortMarkers) => setPrefs({ showPortMarkers })} />

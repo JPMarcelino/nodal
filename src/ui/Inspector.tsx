@@ -81,26 +81,22 @@ function HeadIcon({ kind, flip }: { kind: HeadKind; flip?: boolean }) {
 const headOptions = (flip: boolean) =>
   (Object.keys(HEAD_TITLES) as HeadKind[]).map((k) => ({ value: k, label: <HeadIcon kind={k} flip={flip} />, title: HEAD_TITLES[k] }));
 
-function ArrangeBar({ count, transform = true }: { count: number; transform?: boolean }) {
+function ArrangeBar({ count }: { count: number }) {
   return (
     <div className="arrange-bar">
-      {transform && (
-        <>
-          <button title="Rotate counter-clockwise (Alt+R)" onClick={() => A.rotateSelection(-90)}>
-            <RotateCcw size={15} />
-          </button>
-          <button title="Rotate clockwise (R)" onClick={() => A.rotateSelection(90)}>
-            <RotateCw size={15} />
-          </button>
-          <button title="Flip horizontally (X)" onClick={() => A.flipSelection('x')}>
-            <FlipHorizontal2 size={15} />
-          </button>
-          <button title="Flip vertically (Y)" onClick={() => A.flipSelection('y')}>
-            <FlipVertical2 size={15} />
-          </button>
-          <span className="sep" />
-        </>
-      )}
+      <button title="Rotate counter-clockwise (Alt+R)" onClick={() => A.rotateSelection(-90)}>
+        <RotateCcw size={15} />
+      </button>
+      <button title="Rotate clockwise (R)" onClick={() => A.rotateSelection(90)}>
+        <RotateCw size={15} />
+      </button>
+      <button title="Flip horizontally (X)" onClick={() => A.flipSelection('x')}>
+        <FlipHorizontal2 size={15} />
+      </button>
+      <button title="Flip vertically (Y)" onClick={() => A.flipSelection('y')}>
+        <FlipVertical2 size={15} />
+      </button>
+      <span className="sep" />
       <button title="Bring to front (Ctrl+Shift+])" onClick={() => A.reorder('front')}>
         <BringToFront size={15} />
       </button>
@@ -899,7 +895,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   return (
     <>
       <div className="panel-title">{shapes.length > 1 ? `${shapes.length} shapes` : title}</div>
-      <ArrangeBar count={shapes.length} transform={false} />
+      <ArrangeBar count={shapes.length} />
       <StyleSection
         ids={ids}
         extras={{
