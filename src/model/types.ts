@@ -345,9 +345,13 @@ export interface Group {
   group?: string;
 }
 
+export type GridStyle = 'dots' | 'lines' | 'crosses' | 'major';
+
 export interface DocSettings {
   grid: number;
   showGrid: boolean;
+  /** How the grid is drawn: dots (default), lines, small crosses, or only every fifth line. */
+  gridStyle?: GridStyle;
   snap: boolean;
   wire: WireStyle;
   hops: 'arc' | 'gap' | 'none';

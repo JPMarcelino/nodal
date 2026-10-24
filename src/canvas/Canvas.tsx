@@ -10,7 +10,7 @@ import { cleanup, deleteWirePart, rotateShapeBy, scaleItems, selectionPivot, tra
 import { dragRotation, fromShapeFrame, HANDLE_ROT_KINDS, rectCentre, resizeInFrame, rotateDeg, shapeBox, shapeRot, shapeTransform, toShapeFrame } from '../model/rotation';
 import { getSymbol, instanceSymbol } from '../model/registry';
 import { gridScale, scaleStep } from '../model/symbols/scale';
-import type { CircuitDoc, ComponentItem, Endpoint, Item, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
+import type { CircuitDoc, ComponentItem, Endpoint, GridStyle, Item, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireStyle, wireStyleFor } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
 import { buildAngledPreview, buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd, wireRouter } from '../model/wireCommit';
@@ -2171,6 +2171,7 @@ export function Canvas() {
   const showGrid = doc.settings.showGrid;
   const majorEvery = 5;
   const dotGrid = gs >= 7;
+  const gridStyle = doc.settings.gridStyle ?? 'dots';
 
   const g = gesture;
   // a lone wire shows its box too: pressing anywhere inside moves the whole wire
@@ -2276,16 +2277,16 @@ export function Canvas() {
       <svg className="canvas" width="100%" height="100%">
         <defs>
           <pattern id="grid-minor" width={gs} height={gs} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
-            {dotGrid ? <circle cx={0.75} cy={0.75} r={0.85} className="grid-dot" /> : null}
+            {dotGrid && <GridMark style={gridStyle} size={gs} />}
           </pattern>
           <pattern id="grid-major" width={gs * majorEvery} height={gs * majorEvery} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
-            <circle cx={1} cy={1} r={1.4} className="grid-dot-major" />
+            <GridMark style={gridStyle} size={gs * majorEvery} major />
           </pattern>
         </defs>
         <rect width="100%" height="100%" className="canvas-bg" style={doc.settings.background ? { fill: doc.settings.background } : undefined} />
         {showGrid && (
           <>
-            {dotGrid && <rect width="100%" height="100%" fill="url(#grid-minor)" />}
+            {dotGrid && gridStyle !== 'major' && <rect width="100%" height="100%" fill="url(#grid-minor)" />}
             <rect width="100%" height="100%" fill="url(#grid-major)" />
           </>
         )}
@@ -2913,7 +2914,8 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
         if (e.key === 'Escape') {
           if (value === (it.text ?? '')) cancel();
           else commit();
-        } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || (!isText && !e.shiftKey))) {
+        } else if (e.key === 'Enter' && !e.shiftKey) {
+          // Enter finishes; Shift+Enter starts a new line
           e.preventDefault();
           commit();
         }
@@ -3051,4 +3053,18 @@ function LabelEditor({ id, which, onDone }: { id: string; which: 'ref' | 'value'
       }}
     />
   );
+}
+
+/**
+ * One tile's mark of the canvas grid, at the tile's top-left corner. Lines run
+ * along the tile's top and left edges; a cross's arms are split across the
+ * corners so neighbouring tiles join them up.
+ */
+function GridMark({ style, size, major }: { style: GridStyle; size: number; major?: boolean }) {
+  if (style === 'dots') return major ? <circle cx={1} cy={1} r={1.4} className="grid-dot-major" /> : <circle cx={0.75} cy={0.75} r={0.85} className="grid-dot" />;
+  if (style === 'crosses') {
+    const a = major ? 5 : 3;
+    return <path d={`M0 0.5H${a}M${size - a} 0.5H${size}M0.5 0V${a}M0.5 ${size - a}V${size}`} className={major ? 'grid-line-major' : 'grid-line'} />;
+  }
+  return <path d={`M0 0.5H${size}M0.5 0V${size}`} className={major ? 'grid-line-major' : 'grid-line'} />;
 }

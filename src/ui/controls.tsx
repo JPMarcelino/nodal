@@ -50,7 +50,11 @@ export function TextInput({
         onChange={(e) => setV(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commit();
+          // Enter finishes (like the canvas editors); Shift+Enter starts a new line
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            (e.target as HTMLElement).blur();
+          }
           if (e.key === 'Escape') (e.target as HTMLElement).blur();
         }}
       />

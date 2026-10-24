@@ -2,7 +2,7 @@ import { copyAsPng, copyAsSvg, exportSelection, fileNew, fileOpen, filePrint, fi
 import { importFile } from '../io/importFiles';
 import { exportLibraryFile, exportTemplateFile } from '../io/sharing';
 import { selectionToDrawing } from '../model/fromSelection';
-import { selectedGroup } from '../model/doc';
+import { GRID_STYLES, GRID_STYLE_NAMES, selectedGroup } from '../model/doc';
 import { computeNets, netOfWire } from '../model/netlist';
 import * as A from './actions';
 import { clearExplainOverlays } from './explain';
@@ -189,6 +189,7 @@ export const COMMANDS: Command[] = [
   { id: 'view.spacingGuides', label: 'Equal-spacing guides while moving', category: 'View', keys: ['Alt+Shift+G'], run: () => togglePref('spacingGuides', 'Spacing guides'), checked: () => S().prefs.spacingGuides, keywords: 'equispaced distribute gap smart' },
   { id: 'view.labelGuides', label: 'Guides for part names and values', category: 'View', keys: ['Alt+Shift+N'], run: () => togglePref('labelGuides', 'Label guides'), checked: () => S().prefs.labelGuides, keywords: 'text label ref value align' },
   { id: 'view.grid', label: 'Toggle grid', category: 'View', keys: ['G'], run: () => mutateSettings((s) => (s.showGrid = !s.showGrid)), checked: () => vdoc().settings.showGrid },
+  { id: 'view.gridStyle', label: 'Grid style: dots → lines → crosses → major lines', category: 'View', keys: [], run: () => cycleGridStyle(), keywords: 'grid dots lines crosses major look' },
   { id: 'view.snap', label: 'Toggle snap to grid', category: 'View', keys: ["Mod+'"], run: () => mutateSettings((s) => (s.snap = !s.snap)), checked: () => vdoc().settings.snap },
   { id: 'view.library', label: 'Toggle library panel', category: 'View', keys: ['Mod+B'], run: () => set((s) => ({ leftPanel: !s.leftPanel })), checked: () => S().leftPanel },
   { id: 'view.inspector', label: 'Toggle properties panel', category: 'View', keys: ['Mod+I'], run: () => set((s) => ({ rightPanel: !s.rightPanel })), checked: () => S().rightPanel },
@@ -273,6 +274,17 @@ export const COMMAND_MAP = new Map(COMMANDS.map((c) => [c.id, c]));
 
 function mutateSettings(fn: (s: import('../model/types').DocSettings) => void) {
   mutate((d) => fn(d.settings));
+}
+
+
+function cycleGridStyle() {
+  const cur = vdoc().settings.gridStyle ?? 'dots';
+  const next = GRID_STYLES[(GRID_STYLES.indexOf(cur) + 1) % GRID_STYLES.length];
+  mutateSettings((s) => {
+    s.gridStyle = next;
+    s.showGrid = true;
+  });
+  toast(`Grid: ${GRID_STYLE_NAMES[next].toLowerCase()}`);
 }
 
 function togglePref(key: 'spacingGuides' | 'labelGuides', what: string) {

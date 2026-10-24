@@ -72,7 +72,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   },
   {
     label: 'View',
-    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.viewMode', 'view.stats', '-', 'view.grid', 'view.snap', 'view.minimap', 'view.alignGuides', 'view.spacingGuides', 'view.labelGuides', '-', 'view.refs', 'view.values', 'view.wireLabels', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
+    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.viewMode', 'view.stats', '-', 'view.grid', 'view.gridStyle', 'view.snap', 'view.minimap', 'view.alignGuides', 'view.spacingGuides', 'view.labelGuides', '-', 'view.refs', 'view.values', 'view.wireLabels', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
   },
   { label: 'Help', items: ['help.palette', 'help.shortcuts', '-', 'help.about'] },
 ];
