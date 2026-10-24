@@ -756,7 +756,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
             ]}
             onChange={(v) =>
               mutate((d) => {
-                const layers = Object.values(d.items).flatMap((it) => (it.type === 'wire' && !ids.includes(it.id) && !it.locked && it.hopLayer ? [it.hopLayer] : []));
+                const layers = Object.values(d.items).flatMap((it) => (it.type === 'wire' && !ids.includes(it.id) && it.hopLayer ? [it.hopLayer] : []));
                 const layer = v > 0 ? Math.max(0, ...layers) + 1 : v < 0 ? Math.min(0, ...layers) - 1 : 0;
                 for (const id of ids) {
                   const w = d.items[id] as WireItem | undefined;
