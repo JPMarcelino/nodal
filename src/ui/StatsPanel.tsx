@@ -1,10 +1,11 @@
 import { X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { docStats, selectionStats, type Counts } from '../model/stats';
 import { viewDoc } from '../model/pages';
 import * as A from '../store/actions';
 import { keysFor, prettyKey } from '../store/commands';
 import { useStore } from '../store/store';
+import { useSettledDoc } from './useSettledDoc';
 
 const n = (v: number) => Math.round(v).toLocaleString();
 
@@ -40,19 +41,13 @@ export function StatsPanel() {
 }
 
 function StatsBody() {
-  const doc = useStore((s) => s.doc);
   const page = useStore((s) => s.page);
   const selection = useStore((s) => s.selection);
   const grid = useStore((s) => s.doc.settings.grid);
   useStore((s) => s.prefs.keymap);
   useStore((s) => s.prefs.keymapCadence);
   // recount once edits settle (like the nets panel): not on every drag frame
-  const [settled, setSettled] = useState(doc);
-  useEffect(() => {
-    if (doc === settled) return;
-    const t = setTimeout(() => setSettled(doc), 200);
-    return () => clearTimeout(t);
-  }, [doc, settled]);
+  const settled = useSettledDoc(200);
   const stats = useMemo(() => docStats(settled, page), [settled, page]);
   const sel = useMemo(() => (selection.length ? selectionStats(viewDoc(settled, page), selection) : null), [settled, page, selection]);
   const multi = stats.all.pages > 1;

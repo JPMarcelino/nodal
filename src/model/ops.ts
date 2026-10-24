@@ -1035,7 +1035,7 @@ export function boundsOfIds(doc: CircuitDoc, ids: Iterable<string>): Rect | null
 export function reorderItem(doc: CircuitDoc, id: string, targetId: string, place: 'before' | 'after'): boolean {
   const it = doc.items[id];
   const target = doc.items[targetId];
-  if (!it || !target || id === targetId || it.group !== target.group) return false;
+  if (!it || !target || id === targetId || it.locked || it.group !== target.group) return false;
   const rank = drawOrder(doc);
   const siblings = Object.values(doc.items)
     .filter((i) => i.type !== 'junction' && i.group === it.group)
@@ -1044,6 +1044,8 @@ export function reorderItem(doc: CircuitDoc, id: string, targetId: string, place
   const moved = siblings.filter((s) => s.id !== id);
   const at = moved.findIndex((i) => i.id === targetId) + (place === 'after' ? 1 : 0);
   moved.splice(at, 0, it);
+  // A locked item keeps its place: refuse any move that would shift one.
+  if (siblings.some((s, i) => s.id !== moved[i].id && s.locked)) return false;
   moved.forEach((s, i) => rank.set(s.id, slots[i]));
   for (const [iid, r] of rank) if (doc.items[iid].z !== r) doc.items[iid].z = r;
   return true;
