@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { createDoc, makeComponent } from '../model/doc';
+import { reorderItem } from '../model/ops';
 import type { ComponentItem, WireItem } from '../model/types';
 
 // the store touches window / localStorage when it loads
@@ -83,5 +85,29 @@ describe('lock-aware edits', () => {
 
     expect(S().doc.items[locked].hidden).toBeFalsy();
     expect(S().doc.items[free].hidden).toBe(true);
+  });
+
+  it('reorderItem treats a locked item as a fixed anchor', () => {
+    const doc = createDoc();
+    const parts = [0, 100, 200, 300].map((x, i) => {
+      const c = makeComponent(doc, 'resistor', x, 0);
+      c.z = i;
+      doc.items[c.id] = c;
+      return c;
+    });
+    const [a, locked, c, d] = parts;
+    locked.locked = true;
+
+    // moving the locked row itself is refused
+    expect(reorderItem(doc, locked.id, d.id, 'before')).toBe(false);
+    // moving another row across it is refused
+    expect(reorderItem(doc, a.id, d.id, 'before')).toBe(false);
+    // and moving onto it would shift it, so that is refused too
+    expect(reorderItem(doc, c.id, locked.id, 'after')).toBe(false);
+    expect(doc.items[locked.id].z).toBe(1);
+
+    // unlocked rows may still be reordered within their segment
+    expect(reorderItem(doc, c.id, d.id, 'before')).toBe(true);
+    expect(doc.items[locked.id].z).toBe(1);
   });
 });
