@@ -264,6 +264,19 @@ afterAll(async () => {
 /* ------------------------------------------------------------------ */
 
 describe('session orchestration (fake relay)', () => {
+  it('keeps the saved display name when only its stored colour is invalid', async () => {
+    mem.set('nodal.collab.me', JSON.stringify({ name: 'Ada Lovelace', color: 'url(https://attacker.example/beacon)' }));
+    try {
+      const a = await person();
+      const me = a.session.useCollab.getState().me;
+      expect(me.name).toBe('Ada Lovelace');
+      expect(a.session.PEER_COLORS).toContain(me.color);
+      expect(JSON.parse(mem.get('nodal.collab.me')!)).toEqual({ name: 'Ada Lovelace', color: me.color });
+    } finally {
+      mem.delete('nodal.collab.me');
+    }
+  });
+
   it('seeds the room as host; guests replace their doc with the stored snapshot', async () => {
     const a = await person();
     people.push(a);

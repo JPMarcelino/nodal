@@ -89,7 +89,13 @@ const ME_KEY = 'nodal.collab.me';
 function loadMe(): Me {
   try {
     const raw = JSON.parse(localStorage.getItem(ME_KEY) ?? 'null') as Me | null;
-    if (raw && typeof raw.name === 'string' && typeof raw.color === 'string' && PEER_COLOR.test(raw.color)) return raw;
+    if (raw && typeof raw.name === 'string') {
+      if (typeof raw.color === 'string' && PEER_COLOR.test(raw.color)) return raw;
+      // keep the person's name; only the unusable colour is replaced
+      const me = { ...raw, color: pick(PEER_COLORS) };
+      localStorage.setItem(ME_KEY, JSON.stringify(me));
+      return me;
+    }
   } catch {
     /* fall through */
   }
