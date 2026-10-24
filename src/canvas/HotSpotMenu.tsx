@@ -283,7 +283,7 @@ function OrderList({ doc, data, wires, names, onHold }: { doc: CircuitDoc; data:
     mutate((d) => {
       for (const [id, layer] of layers) {
         const w = d.items[id] as WireItem | undefined;
-        if (!w) continue;
+        if (!w || w.locked) continue;
         if (layer) w.hopLayer = layer;
         else delete w.hopLayer;
       }
