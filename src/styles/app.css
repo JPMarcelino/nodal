@@ -987,6 +987,16 @@ body.is-resizing-panel .stage {
   width: 100%;
 }
 
+.net-row-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
 .layer-row {
   position: relative;
   user-select: none;
@@ -1094,6 +1104,28 @@ body.is-resizing-panel .stage {
 .layer-tag {
   font-size: 0.75em;
   color: var(--text-faint);
+}
+
+.net-page {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+
+.net-page:hover,
+.net-page:focus-visible {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.net-page:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .layer-act {

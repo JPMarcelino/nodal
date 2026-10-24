@@ -1,6 +1,6 @@
 import { toWorld } from './geometry';
 import { stripMath } from './latex';
-import { docPages, itemPage, multiPage } from './pages';
+import { docPages, itemPage, multiPage, resolvePage } from './pages';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, SymbolDef } from './types';
 
@@ -255,6 +255,20 @@ export function netPages(doc: CircuitDoc, net: Net): string[] {
   return docPages(doc)
     .filter((p) => pages.has(p.id))
     .map((p) => p.id);
+}
+
+/**
+ * Ids of the net's items on one page: its wires first, then the components its
+ * pins belong to. Missing ids are skipped and unset/unknown pages resolve to
+ * the first page, like every other page lookup.
+ */
+export function netItemsOnPage(doc: CircuitDoc, net: Net, page?: string | null): string[] {
+  const p = resolvePage(doc, page);
+  const on = (id: string) => {
+    const item = doc.items[id];
+    return !!item && itemPage(doc, item) === p;
+  };
+  return [...net.wires.filter(on), ...net.pins.map((pin) => pin.comp).filter(on)];
 }
 
 /** Net that contains a given wire. */
