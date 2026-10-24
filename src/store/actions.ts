@@ -641,15 +641,20 @@ export async function renameNet(from: string, to: string) {
   const f = from.trim();
   const t = to.trim();
   if (!f || !t || f === t) return;
-  if (readOnly()) return readOnlyNotice();
-  const doc = S().doc;
-  const matches = netLabelsNamed(doc, f);
-  if (!matches.length) return;
-  const locked = matches.filter((id) => doc.items[id]?.locked).length;
-  if (locked) {
-    return toast(`“${f}” has ${locked === 1 ? 'a locked label' : `${locked} locked labels`}. Unlock ${locked === 1 ? 'it' : 'them'} first.`, 'info');
-  }
-  if (computeNets(doc).some((n) => n.names.includes(t))) {
+  const warnLocked = (locked: number) =>
+    toast(`“${f}” has ${locked === 1 ? 'a locked label' : `${locked} locked labels`}. Unlock ${locked === 1 ? 'it' : 'them'} first.`, 'info');
+  // The merge question is a live-session pause: peers can lock or rename items
+  // while it is up, so re-check the document it will actually edit afterwards.
+  let joined = false;
+  for (;;) {
+    if (readOnly()) return readOnlyNotice();
+    const doc = S().doc;
+    const matches = netLabelsNamed(doc, f);
+    if (!matches.length) return;
+    const locked = matches.filter((id) => doc.items[id]?.locked).length;
+    if (locked) return warnLocked(locked);
+    if (!computeNets(doc).some((n) => n.names.includes(t))) break;
+    if (joined) break;
     const ok = await ask(
       'Rename and join?',
       `“${t}” already names another net. Renaming “${f}” joins the two nets.`,
@@ -660,6 +665,7 @@ export async function renameNet(from: string, to: string) {
       false,
     );
     if (!ok) return;
+    joined = true;
   }
   let changed = 0;
   const applied = mutate((d) => {

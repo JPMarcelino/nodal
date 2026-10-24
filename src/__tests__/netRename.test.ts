@@ -151,7 +151,7 @@ describe('renameNet action', () => {
 
   it('touches nothing and asks the user to unlock a locked match', async () => {
     const doc = createDoc();
-    const free = freeWire(doc, 'SDA');
+    freeWire(doc, 'SDA');
     freeWire(doc, 'SDA', undefined, { locked: true });
 
     const { S, A } = await setup(doc);
@@ -179,6 +179,67 @@ describe('renameNet action', () => {
 
     expect(JSON.stringify(S().doc)).toBe(before);
     expect(S().past).toHaveLength(0);
+  });
+
+  it('joins an existing net after confirmation', async () => {
+    const doc = createDoc();
+    const sda = freeWire(doc, 'SDA');
+    const scl = freeWire(doc, 'SCL');
+
+    const { S, A } = await setup(doc);
+    const pending = A.renameNet('SDA', 'SCL');
+    const askMod = await import('../ui/Ask');
+    expect(askMod.useAsk.getState().q?.title).toBe('Rename and join?');
+    askMod.useAsk.getState().q!.resolve(true);
+    askMod.useAsk.setState({ q: null });
+    await pending;
+
+    expect((S().doc.items[sda.id] as WireItem).label).toBe('SCL');
+    expect((S().doc.items[scl.id] as WireItem).label).toBe('SCL');
+    expect(S().past).toHaveLength(1);
+    expect(S().toasts.some((t) => /Renamed 1 label/.test(t.text))).toBe(true);
+  });
+
+  it('re-checks locks after the merge prompt and aborts if a peer locks a label', async () => {
+    const doc = createDoc();
+    const sda = freeWire(doc, 'SDA');
+    freeWire(doc, 'SCL');
+
+    const { S, A, set } = await setup(doc);
+    const pending = A.renameNet('SDA', 'SCL');
+    const askMod = await import('../ui/Ask');
+    expect(askMod.useAsk.getState().q?.title).toBe('Rename and join?');
+    // a peer locks the matching label while the question is up
+    set({ doc: { ...S().doc, items: { ...S().doc.items, [sda.id]: { ...S().doc.items[sda.id], locked: true } } } });
+    askMod.useAsk.getState().q!.resolve(true);
+    askMod.useAsk.setState({ q: null });
+    await pending;
+
+    expect((S().doc.items[sda.id] as WireItem).label).toBe('SDA');
+    expect((S().doc.items[sda.id] as WireItem).locked).toBe(true);
+    expect(S().past).toHaveLength(0);
+    expect(S().toasts.some((t) => /locked/i.test(t.text))).toBe(true);
+  });
+
+  it('re-checks the target after the prompt: deleting it during the dialog still renames', async () => {
+    const doc = createDoc();
+    const sda = freeWire(doc, 'SDA');
+    const scl = freeWire(doc, 'SCL');
+
+    const { S, A, set } = await setup(doc);
+    const pending = A.renameNet('SDA', 'SCL');
+    const askMod = await import('../ui/Ask');
+    expect(askMod.useAsk.getState().q?.title).toBe('Rename and join?');
+    // a peer removes the other net while the question is up, so no merge remains
+    const items = { ...S().doc.items };
+    delete items[scl.id];
+    set({ doc: { ...S().doc, items } });
+    askMod.useAsk.getState().q!.resolve(true);
+    askMod.useAsk.setState({ q: null });
+    await pending;
+
+    expect((S().doc.items[sda.id] as WireItem).label).toBe('SCL');
+    expect(S().past).toHaveLength(1);
   });
 
   it('cannot rename in a view-only live session', async () => {
