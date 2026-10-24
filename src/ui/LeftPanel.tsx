@@ -435,7 +435,7 @@ function Layers() {
         onPointerEnter={() => !drag && hover([it.id])}
         onPointerLeave={() => !drag && hover([])}
         onPointerDown={(e) => {
-          if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+          if (it.locked || e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
           e.currentTarget.setPointerCapture(e.pointerId);
           setDrag({ id: it.id, startY: e.clientY, moved: false });
         }}
@@ -447,7 +447,7 @@ function Layers() {
           const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-layer-id]') as HTMLElement | null;
           const tid = el?.dataset.layerId;
           const target = tid ? doc.items[tid] : null;
-          if (!el || !target || tid === it.id || target.group !== it.group) return setDrop(null);
+          if (!el || !target || tid === it.id || target.locked || target.group !== it.group) return setDrop(null);
           const r = el.getBoundingClientRect();
           setDrop({ id: tid!, place: e.clientY < r.top + r.height / 2 ? 'before' : 'after' });
         }}
