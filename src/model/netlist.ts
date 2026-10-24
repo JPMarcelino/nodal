@@ -2,7 +2,7 @@ import { toWorld } from './geometry';
 import { stripMath } from './latex';
 import { docPages, itemPage, multiPage } from './pages';
 import { instanceSymbol } from './registry';
-import type { CircuitDoc, ComponentItem, Endpoint } from './types';
+import type { CircuitDoc, ComponentItem, Endpoint, SymbolDef } from './types';
 
 export interface Net {
   name: string;
@@ -338,13 +338,55 @@ export function exportRefs(doc: CircuitDoc): Map<string, string> {
   return out;
 }
 
+/**
+ * Makes identifiers unique for a SPICE export. Sanitising can map two distinct
+ * nets to the same node (silently shorting them) or two refs to the same
+ * element, so like exportRefs this keeps names that are already unique (and
+ * reserves them against suffixes) and gives clashes `-2`, `-3`… for the export
+ * only. SPICE compares names without case.
+ */
+function uniqueSpiceNames(names: string[], reserved: Iterable<string> = [], separator = '-'): string[] {
+  const key = (s: string) => s.toUpperCase();
+  const count = new Map<string, number>();
+  for (const name of names) count.set(key(name), (count.get(key(name)) ?? 0) + 1);
+  const reservedKeys = new Set([...reserved].map(key));
+  const used = new Set(reservedKeys);
+  for (const [name, n] of count) if (n === 1) used.add(name);
+  return names.map((name) => {
+    if (count.get(key(name)) === 1 && !reservedKeys.has(key(name))) return name;
+    let out = name;
+    let n = 2;
+    while (used.has(key(out))) out = `${name}${separator}${n++}`;
+    used.add(key(out));
+    return out;
+  });
+}
+
+/**
+ * The text a net name stands for: maths is replaced by its TeX source (as in
+ * the other exports), and simple font/text wrappers are unwrapped so a label
+ * typeset as "0" names the same node as one typed "0".
+ */
+const plainName = (name: string) =>
+  stripMath(name)
+    .replace(/\\(?:mathsf|mathrm|mathbf|mathit|mathtt|text|textrm|textsf|texttt|operatorname)\s*\{([^{}]*)\}/g, '$1')
+    .trim();
+const isGroundName = (name: string) => /^(gnd|0|ground|0v|agnd|dgnd)$/i.test(plainName(name));
+const sanitizeNode = (name: string) => plainName(name).replace(/[^\w.+-]+/g, '_');
+
 export function toSpiceNetlist(doc: CircuitDoc): string {
   const nets = computeNets(doc);
   const refs = exportRefs(doc);
   const refOf = (c: ComponentItem) => refs.get(c.id) ?? c.ref;
+  // ground aliases all mean node 0; every other net is sanitised, then made unique
+  const signal = nets.filter((n) => !isGroundName(n.name));
+  const nodeNames = uniqueSpiceNames(signal.map((n) => sanitizeNode(n.name)), ['0']);
+  const nodeOf = new Map<Net, string>();
+  for (const n of nets) if (isGroundName(n.name)) nodeOf.set(n, '0');
+  signal.forEach((n, i) => nodeOf.set(n, nodeNames[i]));
   const pinNet = new Map<string, string>();
   for (const n of nets) {
-    const name = /^(gnd|0|ground|0v|agnd|dgnd)$/i.test(n.name) ? '0' : stripMath(n.name).replace(/[^\w.+-]+/g, '_');
+    const name = nodeOf.get(n)!;
     for (const p of n.pins) pinNet.set(`${p.comp}:${p.port}`, name);
   }
   const lines = [`* ${doc.name} — exported from Nodal`, '* Semiconductors and subcircuits need their .model / .subckt definitions (.include your vendor libraries).', ''];
@@ -352,6 +394,7 @@ export function toSpiceNetlist(doc: CircuitDoc): string {
   const comps = Object.values(doc.items)
     .filter((c): c is ComponentItem => c.type === 'component')
     .sort((a, b) => refOf(a).localeCompare(refOf(b), undefined, { numeric: true }));
+  const parts: { c: ComponentItem; def: SymbolDef; kind: NonNullable<SpiceKind> }[] = [];
   for (const c of comps) {
     const def = instanceSymbol(doc, c);
     if (def.prefix.startsWith('#') || !def.ports.length) continue;
@@ -364,10 +407,21 @@ export function toSpiceNetlist(doc: CircuitDoc): string {
       skipped.push(`${refOf(c)} (${def.name})`);
       continue;
     }
+    parts.push({ c, def, kind });
+  }
+  // sanitising a ref can also make two distinct refs equal ("R1-2" and "R1_2")
+  const elementNames = uniqueSpiceNames(
+    parts.map(({ c, kind }) => {
+      const ref = refOf(c).replace(/[^\w]+/g, '_');
+      return ref.toUpperCase().startsWith(kind.letter) ? ref : `${kind.letter}${ref}`;
+    }),
+    [],
+    '_',
+  );
+  parts.forEach(({ c, def, kind }, i) => {
     const order = kind.order ?? def.ports.map((p) => p.id);
     const nodes = order.map((id) => pinNet.get(`${c.id}:${id}`) ?? `NC_${refOf(c)}_${id}`.replace(/[^\w]+/g, '_'));
-    const ref = refOf(c).replace(/[^\w]+/g, '_');
-    const name = ref.toUpperCase().startsWith(kind.letter) ? ref : `${kind.letter}${ref}`;
+    const name = elementNames[i];
     const raw = stripMath(c.value || def.value || '').trim();
     let value: string;
     switch (kind.letter) {
@@ -388,7 +442,7 @@ export function toSpiceNetlist(doc: CircuitDoc): string {
         value = (raw || def.name).replace(/\s+/g, '_');
     }
     lines.push(`${name} ${nodes.join(' ')} ${value}`);
-  }
+  });
   if (skipped.length) lines.push('', `* Not simulated: ${skipped.join(', ')}`);
   lines.push('', '.end', '');
   return lines.join('\n');
