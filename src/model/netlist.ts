@@ -362,8 +362,17 @@ function uniqueSpiceNames(names: string[], reserved: Iterable<string> = [], sepa
   });
 }
 
-const isGroundName = (name: string) => /^(gnd|0|ground|0v|agnd|dgnd)$/i.test(name);
-const sanitizeNode = (name: string) => stripMath(name).replace(/[^\w.+-]+/g, '_');
+/**
+ * The text a net name stands for: maths is replaced by its TeX source (as in
+ * the other exports), and simple font/text wrappers are unwrapped so a label
+ * typeset as "0" names the same node as one typed "0".
+ */
+const plainName = (name: string) =>
+  stripMath(name)
+    .replace(/\\(?:mathsf|mathrm|mathbf|mathit|mathtt|text|textrm|textsf|texttt|operatorname)\s*\{([^{}]*)\}/g, '$1')
+    .trim();
+const isGroundName = (name: string) => /^(gnd|0|ground|0v|agnd|dgnd)$/i.test(plainName(name));
+const sanitizeNode = (name: string) => plainName(name).replace(/[^\w.+-]+/g, '_');
 
 export function toSpiceNetlist(doc: CircuitDoc): string {
   const nets = computeNets(doc);
