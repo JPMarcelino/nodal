@@ -8,7 +8,7 @@ import { S, imageExportOptions, newDoc, replaceDoc, set, toast, vdoc, type Expor
 
 export { imageExportOptions };
 import { fitView } from '../store/actions';
-import { exportDxf, exportPng, exportSvg, printDoc, selectionDoc, type SvgOptions } from './export';
+import { exportDxf, exportPng, exportSvg, pageTitle, printDoc, selectionDoc, type SvgOptions } from './export';
 import { writePictureClipboard } from './clipboardCopy';
 import { extractFragment } from '../model/ops';
 import { openAnyFile, sanitizeName, saveFile } from './files';
@@ -143,6 +143,18 @@ export function openExport(scope: ExportScope = {}) {
   set({ dialog: 'export', exportScope: scope, exportArea: null });
 }
 
+/**
+ * File name (without extension) for an export: the current page's own name
+ * when the circuit has pages, the circuit's name when it has only one, and a
+ * suffix that says what part of the page it is.
+ */
+export function exportBaseName(scope: ExportScope = {}): string {
+  let base = sanitizeName(pageTitle(vdoc()));
+  if (scope.ids?.length) base += ' (selection)';
+  if (scope.clip) base += ` (area ${Math.round(scope.clip.x)},${Math.round(scope.clip.y)})`;
+  return base;
+}
+
 /** SVG options for exporting (and previewing) a scope as `kind`; areas are cropped tight, the page and selections get a margin. */
 export function scopeSvgOptions(scope: ExportScope, kind: 'png' | 'svg', look: { theme: 'light' | 'dark'; background: boolean }): SvgOptions {
   if (scope.clip) return { ...look, padding: kind === 'png' ? 0 : 4, clip: scope.clip };
@@ -204,7 +216,7 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
   const src = drawing ? vdoc() : full;
   // images crop to the ids themselves; data formats get the reduced circuit
   const doc = part && kind !== 'svg' && kind !== 'png' ? selectionDoc(src, opts.ids!) : src;
-  const base = sanitizeName(full.name) + (part ? '-selection' : '');
+  const base = drawing ? exportBaseName({ ids: opts.ids }) : sanitizeName(full.name) + (part ? ' (selection)' : '');
   const img = imageExportOptions();
   const svgOpts: SvgOptions = { theme: img.theme, background: img.background, padding: 20, ...opts };
   try {
@@ -245,9 +257,11 @@ export async function filePrint() {
   printDoc(S().doc);
 }
 
-/** Exports an arbitrary world-space window; wires are cut at the boundary. */
+/**
+ * Exports an arbitrary world-space window; wires are cut at the boundary.
+ */
 export async function doClipExport(kind: 'png' | 'svg', rect: Rect, opts: Partial<SvgOptions> & { scale?: number; scene?: boolean }) {
-  const base = `${sanitizeName(S().doc.name)}-area`;
+  const base = exportBaseName({ clip: rect });
   const img = imageExportOptions();
   const svgOpts: SvgOptions = { theme: img.theme, background: img.background, padding: 8, ...opts, clip: rect };
   const doc = vdoc();

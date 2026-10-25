@@ -2,6 +2,7 @@ import { Clapperboard } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { sanitizeName, saveFile } from '../io/files';
 import { renderVideo, videoSupported } from '../io/video';
+import { pageTitle } from '../io/export';
 import { timeline } from '../model/presentation';
 import { set, toast, useStore, useViewDoc, vdoc } from '../store/store';
 import { Field, Segmented, Toggle } from './controls';
@@ -36,7 +37,7 @@ export function VideoDialog() {
       const [width, height] = SIZES[size];
       const t0 = performance.now();
       const { blob, ext } = await renderVideo(vdoc(), { width, height, fps, theme, captions, signal: ctl.signal, onProgress: setProgress });
-      const name = `${sanitizeName(vdoc().name)}.${ext}`;
+      const name = `${sanitizeName(pageTitle(vdoc()))}.${ext}`;
       const res = await saveFile(blob, name, [{ name: ext === 'mp4' ? 'MP4 video' : 'WebM video', extensions: [ext] }]);
       if (res !== false) toast(`Video saved (${(blob.size / 1e6).toFixed(1)} MB, rendered in ${((performance.now() - t0) / 1000).toFixed(0)}s)`, 'success');
       set({ dialog: null });

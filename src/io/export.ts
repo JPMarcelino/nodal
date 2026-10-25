@@ -31,6 +31,8 @@ export interface SvgOptions {
   clip?: Rect;
   /** Keep symbol interiors filled with the theme's page colour even without a background (the picture lands on that colour anyway: paper, video frames). */
   opaqueSymbols?: boolean;
+  /** Name in the file's <title>; the page's own name by default. */
+  title?: string;
 }
 
 /** Builds a document reduced to a rectangular window; wires running out of it are split and cut. */
@@ -60,6 +62,8 @@ export function clipAreaDoc(doc: CircuitDoc, rect: Rect): CircuitDoc {
         b: same(last, poly[poly.length - 1]) ? it.b : { kind: 'free', x: last.x, y: last.y },
         pts: run.slice(1, -1).map((p) => ({ x: p.x, y: p.y })),
         routing: 'straight',
+        // a cut piece keeps the wire's place in the stack (without it, every cut wire would jump in front)
+        ...(it.z !== undefined ? { z: it.z } : {}),
         ...(it.style ? { style: { ...it.style } } : {}),
         ...(it.label ? { label: it.label, ...(it.labelStyle ? { labelStyle: it.labelStyle } : {}) } : {}),
         ...(it.hopLayer ? { hopLayer: it.hopLayer } : {}),
@@ -116,8 +120,16 @@ export function selectionDoc(doc: CircuitDoc, ids: string[]): CircuitDoc {
 
 const FONT = `'Inter', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-serif`;
 
+/** A page view's own name; the circuit's when it is a whole document (one page, or no page view). */
+export function pageTitle(doc: CircuitDoc): string {
+  const pages = docPages(doc);
+  if (pages.length < 2 || !viewSource(doc)) return doc.name;
+  return pages.find((p) => p.id === viewPage(doc))?.name.trim() || doc.name;
+}
+
 export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bounds: Rect } {
   const palette = EXPORT_THEMES[opts.theme];
+  const title = opts.title ?? pageTitle(doc);
   // cross-page references come from the whole document, before any clip or selection narrowing
   const xrefs = pageCrossRefs(viewSource(doc) ?? doc, viewPage(doc));
   // presentation frames are editor-only
@@ -145,14 +157,15 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
     }
   }
   const data = computeSceneData(d);
-  // without a background, symbol interiors stay see-through: filled with the canvas colour they'd be dark (or white) blobs on whatever page they land on
+  // without a background, symbol interiors stay see-through: filled with the canvas colour they'd be dark (or white) blobs on whatever page they land on. Where such an interior sits over another item, a mask still erases that item behind it, so the picture is not more transparent than the canvas.
   const scenePalette = opts.background || opts.opaqueSymbols ? palette : { ...palette, symBg: 'none' };
-  const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette: scenePalette, xrefs }));
+  const knockout = !opts.background && !opts.opaqueSymbols;
+  const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette: scenePalette, xrefs, knockout, knockoutBox: box }));
   // the label rules of styles/app.css, which a standalone file doesn't have
   const css = `text{font-family:${FONT}}.sym-text{font-weight:500;stroke:none}.ref-label{font-size:11px;font-weight:650}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:${palette.danger}}.page-ref{font-weight:400;font-size:0.85em;opacity:.7}.comp.dnp>g:first-child{opacity:.45}`;
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(box.w)}" height="${Math.ceil(box.h)}" viewBox="${box.x} ${box.y} ${box.w} ${box.h}">
-<title>${escapeXml(doc.name)}</title>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.ceil(box.w)}" height="${Math.ceil(box.h)}" viewBox="${box.x} ${box.y} ${box.w} ${box.h}">
+<title>${escapeXml(title)}</title>
 <style>${css}</style>
 ${opts.background ? `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${escapeXml(d.settings.background || palette.bg)}"/>` : ''}
 <g>${plainColours(inner.replace(/var\(--sym-bg\)/g, scenePalette.symBg), palette.ink)}</g>
@@ -178,11 +191,16 @@ export function plainColours(markup: string, root: string): string {
     let a = attrs
       .replace(/currentColor/gi, colour)
       .replace(/style="([^"]*)"/, (_, css: string) => {
+        // drop custom properties and the `color` declaration the text already inherits;
+        // match declarations rather than splitting on `;`, since an escaped font name
+        // (`&quot;Times New Roman&quot;`) contains semicolons of its own
         const kept = css
-          .split(';')
-          .map((d) => d.trim())
-          .filter((d) => d && !d.startsWith('--') && !/^color\s*:/.test(d))
-          .join(';');
+          .replace(/(^|;)\s*--[\w-]+\s*:[^;]*/g, '')
+          .replace(/(^|;)\s*color\s*:[^;]*/g, '')
+          // a leading separator is left when the first declaration goes; keep every other
+          // semicolon, since `&quot;` and friends end in one
+          .replace(/^;+/, '')
+          .trim();
         return kept ? `style="${kept}"` : '';
       })
       .replace(/\s+color="[^"]*"/, '');
