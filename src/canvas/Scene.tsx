@@ -1,10 +1,10 @@
-import { memo, useMemo, useRef, type ReactNode } from 'react';
+import { Fragment, memo, useMemo, useRef, type ReactNode } from 'react';
 import { componentBounds, measureText, polylineBounds, segmentIntersectsRect, sideVector, toWorld } from '../model/geometry';
 import { drawOrderCached, labelsShown } from '../model/doc';
 import { refreshTouching, touchingCells, touchingFromCells } from '../model/netlist';
 import { isDnp } from '../model/partFields';
 import { instanceSymbol } from '../model/registry';
-import type { CircuitDoc, ComponentItem, DocSettings, HeadKind, LabelSpotName, LabelStyle, Point, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
+import type { CircuitDoc, ComponentItem, DocSettings, HeadKind, Item, LabelSpotName, LabelStyle, Point, Prim, Rect, ShapeItem, SymbolDef, WireItem } from '../model/types';
 import { buildWirePath, wireLabelSpot, endpointInfo, hopLayerMap, hopsFromCrossings, portPosition, wireCrossings, wireCrossingsChanged, wirePolyline, wireStyle, wireStyleFor, type Crossing, type Hop } from '../model/wires';
 import { SheetFrame } from './SheetFrame';
 import { RichText } from './RichText';
@@ -13,7 +13,7 @@ import { layoutRich, measureRich, upperText } from '../model/richText';
 import { dashArray } from '../model/dash';
 import { FONT_STACKS } from '../model/fonts';
 import { defaultAlign, defaultValign, hasHeader, headerHeight, lineCap, lineJoin, measureTextShape, shapeText, textFaceStyle, textSize, textWeight, titleWidth } from '../model/shapeText';
-import { SymbolBody } from './SymbolGraphic';
+import { SymbolBody, PrimEl } from './SymbolGraphic';
 import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
 import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
 import { polyPath } from '../model/path';
@@ -414,6 +414,7 @@ export const ComponentView = memo(function ComponentView({
   palette,
   ghost,
   xref,
+  knockout,
 }: {
   c: ComponentItem;
   def: SymbolDef;
@@ -422,6 +423,8 @@ export const ComponentView = memo(function ComponentView({
   ghost?: boolean;
   /** Cross-page reference ("[2, 3]"), shown after the value when it is drawn. */
   xref?: string;
+  /** See-through export: label backdrops erase what is behind them with a mask instead of painting the page colour. */
+  knockout?: boolean;
 }) {
   const shown = labelsShown(settings, c, def);
   if (shown.ref !== c.showRef || shown.value !== c.showValue) c = { ...c, showRef: shown.ref, showValue: shown.value };
@@ -450,7 +453,7 @@ export const ComponentView = memo(function ComponentView({
         );
       })}
       {c.showRef && labels.ref && (
-        <PartLabel at={labels.ref} look={labelLook(c, 'ref', def)} className="ref-label" fill={c.refStyle?.color || labelColor} bg={palette.bg} />
+        <PartLabel at={labels.ref} look={labelLook(c, 'ref', def)} className="ref-label" fill={c.refStyle?.color || labelColor} bg={knockout ? 'none' : palette.bg} />
       )}
       {c.showValue && c.value && labels.value && (
         <PartLabel
@@ -458,7 +461,7 @@ export const ComponentView = memo(function ComponentView({
           look={labelLook(c, 'value', def)}
           className={def.valueIsLabel ? 'net-label' : 'value-label'}
           fill={c.valueStyle?.color || (def.valueIsLabel ? color : settings.labelColor || palette.value)}
-          bg={palette.bg}
+          bg={knockout ? 'none' : palette.bg}
         >
           {dnp && <tspan className="dnp-tag"> DNP</tspan>}
           {xref && <tspan className="page-ref"> {xref}</tspan>}
@@ -724,7 +727,7 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number, con
       return (
         <g className="shape" data-id={s.id}>
           <g transform={s.flipX ? `translate(${2 * s.x + s.w} 0) scale(-1 1)` : undefined}>
-            <image href={s.src} x={Math.min(s.x, s.x + s.w)} y={Math.min(s.y, s.y + s.h)} width={Math.abs(s.w)} height={Math.abs(s.h)} preserveAspectRatio="none" />
+            <image href={s.src} xlinkHref={s.src} x={Math.min(s.x, s.x + s.w)} y={Math.min(s.y, s.y + s.h)} width={Math.abs(s.w)} height={Math.abs(s.h)} preserveAspectRatio="none" />
           </g>
           {s.strokeWidth > 0 && <rect x={s.x} y={s.y} width={s.w} height={s.h} fill="none" stroke={stroke} strokeWidth={s.strokeWidth} strokeDasharray={da} {...line} />}
         </g>
@@ -808,11 +811,145 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number, con
 export { measureText };
 
 /* ------------------------------------------------------------------ */
+/* See-through exports                                                 */
+/* ------------------------------------------------------------------ */
+
+/** The two canvas colours that mean "the page": a shape filled with one hides what is behind it. */
+const isPageColour = (c?: string) => !!c && /^#(0f0e0c|fffdf9)$/i.test(c);
+
+/** Whether a symbol primitive closes its outline (only those can have a fill). */
+const isClosedPrim = (p: Prim) => p.t === 'poly' || p.t === 'rect' || p.t === 'circle' || p.t === 'ellipse' || (p.t === 'path' && /z/i.test(p.d));
+
+/** A shape that paints the page colour, as a mask silhouette (null for anything that does not). */
+function shapeKnockout(s: ShapeItem): ReactNode {
+  if (!(s.fillOpacity > 0) || !isPageColour(s.fill) || hasGradient(s)) return null;
+  // a see-through fill lets that much of what is behind through, like the canvas does
+  const opacity = s.fillOpacity * (s.opacity ?? 1);
+  let body: ReactNode = null;
+  if (s.kind === 'rect' || s.kind === 'zone') body = <rect x={s.x} y={s.y} width={s.w} height={s.h} rx={s.radius} fill="#000000" fillOpacity={opacity} />;
+  else if (s.kind === 'ellipse') body = <ellipse cx={s.x + s.w / 2} cy={s.y + s.h / 2} rx={Math.abs(s.w / 2)} ry={Math.abs(s.h / 2)} fill="#000000" fillOpacity={opacity} />;
+  else if (s.kind === 'polygon') body = <path d={polyPath(s)} fill="#000000" fillOpacity={opacity} />;
+  else if (s.kind === 'text' && (s.text ?? '').trim()) {
+    const m = measureTextShape(s);
+    body = <rect x={s.x - 6} y={s.y - 4} width={m.w + 12} height={m.h + 8} rx={4} fill="#000000" fillOpacity={opacity} />;
+  }
+  if (!body) return null;
+  const tf = shapeTransform(s);
+  return tf ? <g transform={tf}>{body}</g> : body;
+}
+
+/** A part's page-coloured body and its label backdrops, as mask silhouettes. */
+function componentKnockout(c: ComponentItem, def: SymbolDef, settings: DocSettings): ReactNode[] {
+  const out: ReactNode[] = [];
+  // a part fill colour is painted opaquely, so it already hides what is behind it
+  if (!c.fill || c.fill === 'none') {
+    const bg = def.prims.filter((p): p is Prim & { fill: 'bg' } => 'fill' in p && p.fill === 'bg' && isClosedPrim(p));
+    if (bg.length) {
+      const tf = `translate(${c.x} ${c.y}) rotate(${c.rot}) scale(${c.flipX ? -1 : 1} 1) translate(${-def.w / 2} ${-def.h / 2})`;
+      // a DNP part is dimmed by the stylesheet, so its body hides that much less
+      const dim = isDnp(c) ? 0.45 : 1;
+      out.push(
+        <g key="body" transform={tf} stroke="none">
+          {bg.map((p, i) => (
+            <PrimEl key={i} p={p} sw={0} look={{ sw: 0, fill: '#000000', fillOpacity: dim }} />
+          ))}
+        </g>,
+      );
+    }
+  }
+  const shown = labelsShown(settings, c, def);
+  const shownC = { ...c, showRef: shown.ref, showValue: shown.value };
+  const labels = labelLayout(c, def);
+  for (const which of ['ref', 'value'] as const) {
+    if (!shownC[which === 'ref' ? 'showRef' : 'showValue'] || !c[which]) continue;
+    const at = labels[which];
+    if (!at) continue;
+    const look = labelLook(shownC, which, def);
+    if (!look.st.backdrop) continue;
+    const b = labelBox(at, look);
+    const rect = <rect x={b.x - 2} y={b.y - 1} width={b.w + 4} height={b.h + 1} rx={2} fill="#000000" fillOpacity={look.st.opacity ?? 1} />;
+    out.push(look.st.rotate ? <g key={which} transform={`rotate(${look.st.rotate} ${at.x} ${at.y})`}>{rect}</g> : <Fragment key={which}>{rect}</Fragment>);
+  }
+  return out;
+}
+
+/** The mask that makes an item hide what is behind it, without painting a colour into a transparent export. */
+function knockoutMask(doc: CircuitDoc, it: Item, key: string, index: number, box: Rect): { id: string; node: ReactNode } | null {
+  const nodes =
+    it.type === 'component'
+      ? componentKnockout(it, instanceSymbol(doc, it), doc.settings)
+      : it.type === 'shape'
+        ? [shapeKnockout(it)].filter((n): n is ReactNode => !!n).map((n, i) => <Fragment key={`s${i}`}>{n}</Fragment>)
+        : [];
+  if (!nodes.length) return null;
+  const id = `nodal-knockout-${key}-${index}`;
+  return {
+    id,
+    node: (
+      <mask key={id} id={id} maskUnits="userSpaceOnUse" x={box.x} y={box.y} width={box.w} height={box.h}>
+        <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#ffffff" />
+        {nodes}
+      </mask>
+    ),
+  };
+}
+
+/** How many see-through scenes have been rendered; keeps mask ids apart when several pages print into one document. */
+let knockoutSeq = 0;
+
+/**
+ * Back-to-front stack where every item that paints the page colour erases the
+ * items behind it through a mask. The page itself stays transparent, so the
+ * export still composites without a background, but overlapping items hide
+ * each other exactly as they do on the canvas (a symbol body over a wire, a
+ * zone over a picture, a label backdrop over a trace).
+ */
+function knockoutStack(doc: CircuitDoc, stack: (WireItem | ComponentItem | ShapeItem)[], els: ReactNode[], box: Rect): { masks: ReactNode[]; content: ReactNode[] } {
+  const key = String(++knockoutSeq);
+  const masks: ReactNode[] = [];
+  let content: ReactNode[] = [];
+  stack.forEach((it, i) => {
+    // everything drawn so far is behind this item, so one mask hides all of it
+    const mask = content.length ? knockoutMask(doc, it, key, i, box) : null;
+    if (mask) {
+      masks.push(mask.node);
+      content = [
+        <g key={`knockout-${i}`} mask={`url(#${mask.id})`}>
+          {content}
+        </g>,
+      ];
+    }
+    content.push(els[i]);
+  });
+  return { masks, content };
+}
+
+/* ------------------------------------------------------------------ */
 /* Whole scene                                                         */
 /* ------------------------------------------------------------------ */
 
 /** Memoised: the editor re-renders on every pointer move, the drawing only when what it shows changes. */
-export const Scene = memo(function Scene({ doc, data, palette, highlight, frames = false, xrefs }: { doc: CircuitDoc; data: SceneData; palette: Palette; highlight?: Set<string> | null; frames?: boolean; xrefs?: ReadonlyMap<string, string> }) {
+export const Scene = memo(function Scene({
+  doc,
+  data,
+  palette,
+  highlight,
+  frames = false,
+  xrefs,
+  knockout = false,
+  knockoutBox,
+}: {
+  doc: CircuitDoc;
+  data: SceneData;
+  palette: Palette;
+  highlight?: Set<string> | null;
+  frames?: boolean;
+  xrefs?: ReadonlyMap<string, string>;
+  /** See-through image export: page-coloured parts erase the items behind them instead of painting a colour. */
+  knockout?: boolean;
+  /** The exported area, for the knockout masks' extent. */
+  knockoutBox?: Rect;
+}) {
   // presentation frames are only drawn while editing
   const items = Object.values(doc.items).filter((i) => !i.hidden && (frames || !(i.type === 'shape' && i.kind === 'frame')));
   // one back-to-front stack for shapes, wires and parts (the layers panel order, z else creation order)
@@ -825,6 +962,16 @@ export const Scene = memo(function Scene({ doc, data, palette, highlight, frames
     // lines and arrows are drawn along their resolved path (glued ends follow their targets)
     return <ShapeView key={s.id} s={s} palette={palette} ax={a?.x} ay={a?.y} path={isConnector(s) ? resolveConnector(doc, s) : undefined} />;
   };
+  const stackEls = stack.map((it) =>
+    it.type === 'wire' ? (
+      <WireView key={it.id} w={it} pts={data.polys.get(it.id) ?? []} hops={data.hops.get(it.id)} settings={doc.settings} palette={palette} dim={!!highlight && !highlight.has(it.id)} />
+    ) : it.type === 'component' ? (
+      <ComponentView key={it.id} c={it} def={instanceSymbol(doc, it)} settings={doc.settings} palette={palette} xref={xrefs?.get(it.id)} knockout={knockout} />
+    ) : (
+      shapeEl(it)
+    ),
+  );
+  const knockoutScene = knockout && knockoutBox ? knockoutStack(doc, stack, stackEls, knockoutBox) : null;
   const dots: { x: number; y: number; color: string; key: string }[] = [];
   const js = doc.settings.junctionSize;
   // the first wire at each junction gives its dot colour
@@ -862,19 +1009,10 @@ export const Scene = memo(function Scene({ doc, data, palette, highlight, frames
   return (
     <>
       <ShapeDefs shapes={items.filter((i): i is ShapeItem => i.type === 'shape')} palette={palette} />
+      {knockoutScene && knockoutScene.masks.length > 0 && <defs>{knockoutScene.masks}</defs>}
       <SheetFrame doc={doc} ink={palette.sym} dim={palette.value} />
       {/* shapes, wires and parts share one stack, so the layers panel order is what you see */}
-      <g className="layer-stack">
-        {stack.map((it) =>
-          it.type === 'wire' ? (
-            <WireView key={it.id} w={it} pts={data.polys.get(it.id) ?? []} hops={data.hops.get(it.id)} settings={doc.settings} palette={palette} dim={!!highlight && !highlight.has(it.id)} />
-          ) : it.type === 'component' ? (
-            <ComponentView key={it.id} c={it} def={instanceSymbol(doc, it)} settings={doc.settings} palette={palette} xref={xrefs?.get(it.id)} />
-          ) : (
-            shapeEl(it)
-          ),
-        )}
-      </g>
+      <g className="layer-stack">{knockoutScene ? knockoutScene.content : stackEls}</g>
       <g className="layer-dots">
         {dots.map((d) => (
           <circle key={d.key} cx={d.x} cy={d.y} r={js} fill={inkColor(d.color, palette)} />
@@ -883,3 +1021,4 @@ export const Scene = memo(function Scene({ doc, data, palette, highlight, frames
     </>
   );
 });
+

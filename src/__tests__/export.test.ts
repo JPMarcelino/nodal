@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createDoc, makeComponent, uid } from '../model/doc';
+import { createDoc, makeComponent, makeShape, uid } from '../model/doc';
 import type { WireItem } from '../model/types';
 import { wirePolyline } from '../model/wires';
-import { selectionDoc, exportSvg, exportDxf } from '../io/export';
-import { makeShape } from '../model/doc';
+import { clipAreaDoc, exportSvg, exportDxf, pageTitle, plainColours, selectionDoc } from '../io/export';
+import { addPage, viewDoc } from '../model/pages';
 import { scrubMathSvg } from '../model/latex';
 
 function twoResistors() {
@@ -108,6 +108,54 @@ describe('selectionDoc', () => {
     const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: 0, y: 0 }, b: { kind: 'free', x: 50, y: 0 }, pts: [], style: { color: '#000000' } } as WireItem;
     doc.items[w.id] = w;
     expect(exportDxf(doc)).not.toMatch(/\n62\n8\n/);
+  });
+
+  it('keeps a cut wire in its place in the stack in an area export', () => {
+    const doc = createDoc();
+    const shape = makeShape(doc, 'rect', 0, 0, 200, 100);
+    shape.z = 7;
+    doc.items[shape.id] = shape;
+    const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: -50, y: 50 }, b: { kind: 'free', x: 250, y: 50 }, pts: [], z: 2 };
+    doc.items[w.id] = w;
+    const cut = Object.values(clipAreaDoc(doc, { x: 0, y: 0, w: 100, h: 100 }).items).find((it) => it.type === 'wire');
+    expect(cut?.z).toBe(2);
+  });
+
+  it('hides what is behind a page-coloured body in a transparent export, without painting a colour', () => {
+    const doc = createDoc();
+    const pane = makeShape(doc, 'rect', 0, 0, 200, 100);
+    Object.assign(pane, { fill: '#0f0e0c', fillOpacity: 1, z: 0 });
+    doc.items[pane.id] = pane;
+    const gate = makeComponent(doc, 'not-gate', 60, 20);
+    gate.z = 5;
+    doc.items[gate.id] = gate;
+    const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: 20, y: 20 }, b: { kind: 'free', x: 200, y: 20 }, pts: [], z: 1 };
+    doc.items[w.id] = w;
+    const clear = exportSvg(doc, { theme: 'dark', background: false, padding: 10 }).svg;
+    // the part's page-coloured triangle and bubble become a mask over everything behind it
+    expect(clear).toMatch(/<mask[^>]*>/);
+    expect(clear).toMatch(/<g mask="url\(#nodal-knockout-/);
+    expect(clear).not.toContain('#0f0e0c');
+    // the wire outside the part is still drawn
+    expect(clear).toContain(`data-id="${w.id}"`);
+    // with a background the opaque interiors already hide what is behind them
+    expect(exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg).not.toContain('<mask');
+  });
+
+  it('keeps a quoted font name intact when stripping colour declarations', () => {
+    const out = plainColours('<g style="font-family:&quot;Times New Roman&quot;;color:red"><text>x</text></g>', '#000000');
+    expect(out).toContain('style="font-family:&quot;Times New Roman&quot;"');
+    expect(out).not.toContain('color:red');
+  });
+
+  it('names a page export after its page, and a one-page circuit after itself', () => {
+    const one = createDoc('SBR_DTC');
+    expect(pageTitle(one)).toBe('SBR_DTC');
+    expect(exportSvg(one, { theme: 'light', background: false, padding: 10 }).svg).toContain('<title>SBR_DTC</title>');
+    const doc = createDoc('SBR_DTC');
+    const second = addPage(doc, 'Power supply');
+    expect(pageTitle(viewDoc(doc, second))).toBe('Power supply');
+    expect(pageTitle(viewDoc(doc, second))).not.toBe(doc.name);
   });
 
   it('escapes & and < in formula attributes so the SVG stays valid XML', () => {
