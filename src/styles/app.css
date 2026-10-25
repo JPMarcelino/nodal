@@ -5977,3 +5977,120 @@ body.is-presenting .stats-panel {
 .share-link-builder .error-text {
   color: var(--danger, #f7768e);
 }
+
+/* The symbol editor fills the window like the schematic does. Its bars keep a fixed height
+   (they scroll sideways when they don't fit), and notes float over the drawing, so selecting
+   something never pushes the canvas around. */
+.modal-backdrop:has(> .symbol-editor) {
+  padding: 12px;
+  align-items: stretch;
+}
+
+.modal.symbol-editor {
+  width: auto !important;
+  flex: 1;
+  max-width: none;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px 16px 14px;
+  position: relative;
+}
+
+.symbol-editor .modal-head {
+  margin-bottom: 8px;
+}
+
+.symbol-editor .se-layout {
+  flex: 1;
+  min-height: 0;
+  gap: 16px;
+}
+
+.symbol-editor .se-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.symbol-editor .se-main > .tabs {
+  flex-shrink: 0;
+}
+
+.symbol-editor .se-side {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.symbol-editor .se-draw {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.symbol-editor .se-toolbar,
+.symbol-editor .se-props {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.symbol-editor .se-props {
+  height: 38px;
+}
+
+.symbol-editor .se-toolbar > *,
+.symbol-editor .se-props > * {
+  flex-shrink: 0;
+}
+
+.symbol-editor .se-canvas {
+  flex: 1;
+  height: auto;
+  min-height: 240px;
+}
+
+.symbol-editor .se-help {
+  flex-shrink: 0;
+}
+
+.symbol-editor .chip-builder,
+.symbol-editor .svg-import,
+.symbol-editor .code-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.symbol-editor .se-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  margin: 0;
+  z-index: 5;
+  box-shadow: var(--shadow);
+}
+
+.symbol-editor .se-seed-hint {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 64px;
+  margin: 0;
+  z-index: 4;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+}
+
+.se-grid {
+  width: auto;
+  height: 28px;
+  padding: 0 6px;
+}
