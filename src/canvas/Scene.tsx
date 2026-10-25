@@ -45,6 +45,9 @@ export const EDITOR_PALETTE: Palette = {
 /** Maps pure black to the palette's ink colour; every other colour is left as chosen. */
 export const inkColor = (c: string, p: Palette) => (/^#(000|000000)$/i.test(c) ? p.ink : c);
 
+/** Shape fills in either theme's page colour (preset shapes start that way) follow the page, like symbol interiors do. */
+const pageFill = (c: string, p: Palette) => (/^#(0f0e0c|fffdf9)$/i.test(c) ? p.symBg : inkColor(c, p));
+
 export { dashArray };
 
 const LABEL_SYMBOLS = /^$/;
@@ -670,7 +673,7 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number, con
   const da = dashArray(s.dash, s.strokeWidth || 1);
   const ink = inkColor(s.stroke, palette);
   const stroke = s.strokeWidth > 0 ? ink : 'none';
-  const fill = s.fillOpacity > 0 ? (hasGradient(s) ? `url(#${gradId(s.id)})` : inkColor(s.fill, palette)) : 'none';
+  const fill = s.fillOpacity > 0 ? (hasGradient(s) ? `url(#${gradId(s.id)})` : pageFill(s.fill, palette)) : 'none';
   // outline details; unset keeps each kind's own default
   const line = { strokeOpacity: s.strokeOpacity, strokeLinecap: lineCap(s), strokeLinejoin: lineJoin(s) };
   const face = textFaceStyle(s);
