@@ -97,7 +97,9 @@ export function scrubMathSvg(body: string): string {
     .replace(/\s(xlink:)?href\s*=\s*("[^"]*"|'[^']*')/gi, (m, _p: string, q: string) => {
       const v = q.slice(1, -1).trim();
       return /^(#|https?:|mailto:)/i.test(v) ? m : '';
-    });
+    })
+    // MathJax escapes only quotes in attributes; a bare & or < (e.g. from \href) makes the exported SVG invalid XML
+    .replace(/="([^"]*)"/g, (_, v: string) => `="${v.replace(/&(?!(?:[a-z][a-z0-9]*|#\d+|#x[0-9a-f]+);)/gi, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}"`);
 }
 
 /** Loads MathJax (once). Resolves when formulas can be typeset synchronously. */

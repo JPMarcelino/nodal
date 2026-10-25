@@ -29,6 +29,8 @@ export interface SvgOptions {
   ids?: string[];
   /** World-space rectangle to export (wires are cut at the boundary). */
   clip?: Rect;
+  /** Keep symbol interiors filled with the theme's page colour even without a background (the picture lands on that colour anyway: paper, video frames). */
+  opaqueSymbols?: boolean;
 }
 
 /** Builds a document reduced to a rectangular window; wires running out of it are split and cut. */
@@ -42,15 +44,20 @@ export function clipAreaDoc(doc: CircuitDoc, rect: Rect): CircuitDoc {
       items[it.id] = it;
       continue;
     }
-    const pieces = clipPolylineToRect(wirePolyline(doc, it), rect);
+    const poly = wirePolyline(doc, it);
+    const pieces = clipPolylineToRect(poly, rect);
+    // a piece that still reaches the wire's own end keeps that end's pin or junction, so its dots are drawn
+    const same = (p: Point, q: Point | undefined) => !!q && Math.abs(p.x - q.x) < 1e-6 && Math.abs(p.y - q.y) < 1e-6;
     for (const run of pieces) {
       if (run.length < 2) continue;
       const id = uid('w');
+      const first = run[0];
+      const last = run[run.length - 1];
       items[id] = {
         id,
         type: 'wire',
-        a: { kind: 'free', x: run[0].x, y: run[0].y },
-        b: { kind: 'free', x: run[run.length - 1].x, y: run[run.length - 1].y },
+        a: same(first, poly[0]) ? it.a : { kind: 'free', x: first.x, y: first.y },
+        b: same(last, poly[poly.length - 1]) ? it.b : { kind: 'free', x: last.x, y: last.y },
         pts: run.slice(1, -1).map((p) => ({ x: p.x, y: p.y })),
         routing: 'straight',
         ...(it.style ? { style: { ...it.style } } : {}),
@@ -138,7 +145,9 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
     }
   }
   const data = computeSceneData(d);
-  const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette, xrefs }));
+  // without a background, symbol interiors stay see-through: filled with the canvas colour they'd be dark (or white) blobs on whatever page they land on
+  const scenePalette = opts.background || opts.opaqueSymbols ? palette : { ...palette, symBg: 'none' };
+  const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette: scenePalette, xrefs }));
   // the label rules of styles/app.css, which a standalone file doesn't have
   const css = `text{font-family:${FONT}}.sym-text{font-weight:500;stroke:none}.ref-label{font-size:11px;font-weight:650}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:${palette.danger}}.page-ref{font-weight:400;font-size:0.85em;opacity:.7}.comp.dnp>g:first-child{opacity:.45}`;
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
@@ -146,7 +155,7 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
 <title>${escapeXml(doc.name)}</title>
 <style>${css}</style>
 ${opts.background ? `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${escapeXml(d.settings.background || palette.bg)}"/>` : ''}
-<g>${plainColours(inner.replace(/var\(--sym-bg\)/g, palette.symBg), palette.ink)}</g>
+<g>${plainColours(inner.replace(/var\(--sym-bg\)/g, scenePalette.symBg), palette.ink)}</g>
 </svg>`;
   return { svg, bounds: box };
 }
@@ -164,7 +173,7 @@ export function plainColours(markup: string, root: string): string {
       if (stack.length > 1) stack.pop();
       return tag;
     }
-    const own = /style="[^"]*?(?:^|[;"\s])color:\s*([^;"]+)/.exec(attrs)?.[1] ?? /\scolor="([^"]+)"/.exec(attrs)?.[1];
+    const own = /style="(?:[^"]*?[;\s])?color:\s*([^;"]+)/.exec(attrs)?.[1] ?? /\scolor="([^"]+)"/.exec(attrs)?.[1];
     const colour = own && !/currentColor/i.test(own) ? own.trim() : stack[stack.length - 1];
     let a = attrs
       .replace(/currentColor/gi, colour)
@@ -232,6 +241,8 @@ function aciColor(hex: string): number {
   const r = n >> 16,
     g = (n >> 8) & 255,
     b = n & 255;
+  // black (the default ink) is ACI 7, which CAD shows as black or white to suit its background, not grey 8
+  if (r < 48 && g < 48 && b < 48) return 7;
   let best = 7,
     bd = Infinity;
   for (const [i, cr, cg, cb] of ACI) {
@@ -445,7 +456,7 @@ export function printDoc(doc: CircuitDoc) {
   host.id = 'print-host';
   host.innerHTML = (pages.length ? pages : views.slice(0, 1))
     // always light: dark-theme ink would be near-white on paper
-    .map((v) => exportSvg(v, { theme: 'light', background: false, padding: 20 }).svg.replace(/^<\?xml[^>]*>/, ''))
+    .map((v) => exportSvg(v, { theme: 'light', background: false, padding: 20, opaqueSymbols: true }).svg.replace(/^<\?xml[^>]*>/, ''))
     .join('');
   for (const el of host.querySelectorAll('svg')) {
     el.removeAttribute('width');

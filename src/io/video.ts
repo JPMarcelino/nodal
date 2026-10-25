@@ -39,7 +39,7 @@ export async function renderVideo(doc: CircuitDoc, opts: VideoOptions): Promise<
   const palette = EXPORT_THEMES[opts.theme];
 
   // the whole scene once; each video frame only swaps the viewBox
-  const { svg } = exportSvg(doc, { theme: opts.theme, background: false, padding: 0 });
+  const { svg } = exportSvg(doc, { theme: opts.theme, background: false, padding: 0, opaqueSymbols: true });
   const open = /<svg [^>]*>/.exec(svg)!;
   const head = svg.slice(0, open.index);
   const body = svg.slice(open.index + open[0].length);
