@@ -119,6 +119,38 @@ export function mergeView(full: CircuitDoc, view: CircuitDoc, next: CircuitDoc, 
 }
 
 /**
+ * The document as a picture should carry it: only the pages that hold items,
+ * in tab order (a page view is therefore just that page). Empty pages are left
+ * out and items on the first kept page lose their tag, so the result opens as a
+ * clean document with each drawing on its page.
+ */
+export function pagesWithItems(doc: CircuitDoc): CircuitDoc {
+  if (!multiPage(doc)) return doc;
+  const pages = docPages(doc);
+  const used = new Set<string>();
+  for (const it of Object.values(doc.items)) used.add(itemPage(doc, it));
+  const keep = pages.filter((p) => used.has(p.id));
+  // an empty document (an empty page export) still names the page it is on
+  const only = viewSource(doc) ? viewPage(doc) : pages[0].id;
+  const kept = keep.length ? keep : [pages.find((p) => p.id === only) ?? pages[0]];
+  const first = kept[0].id;
+  const items: Record<string, Item> = {};
+  for (const [id, it] of Object.entries(doc.items)) {
+    if (itemPage(doc, it) === first) {
+      if (it.page === undefined) items[id] = it;
+      else {
+        const copy = { ...it };
+        delete copy.page;
+        items[id] = copy;
+      }
+    } else {
+      items[id] = it;
+    }
+  }
+  return { ...doc, items, pages: kept };
+}
+
+/**
  * Applies an edit to one page of the document only (what the canvas does): it
  * cannot see or touch the other pages. `after` post-processes the edited page
  * (e.g. settling connections) before it is folded back.

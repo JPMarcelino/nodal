@@ -1,6 +1,7 @@
 import { itemBounds, normalizeDoc, uid } from '../model/doc';
 import { rectsIntersect } from '../model/geometry';
 import { prepareMath } from '../model/latex';
+import { normalizePages, pagesWithItems } from '../model/pages';
 import { sampleDoc } from '../model/sample';
 import { toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
 import type { CircuitDoc, Rect } from '../model/types';
@@ -69,7 +70,7 @@ export async function fileOpen() {
 /** Opens a circuit kept in version history (one that was closed or replaced). */
 export async function openFromHistory(doc: CircuitDoc) {
   if (!(await confirmDiscard('Opening another circuit'))) return;
-  replaceDoc(doc, null);
+  replaceDoc(normalizePages(doc), null);
   // it only exists on this device until it is saved to a file
   set({ dirty: true });
   setTimeout(() => fitView(), 0);
@@ -121,11 +122,20 @@ export async function openSessionCopy(doc: CircuitDoc): Promise<boolean> {
   return true;
 }
 
+/**
+ * A circuit as it is written to a `.nodal` file: every page and every item's
+ * page, with stale page ids repaired (an item pointing nowhere, or at the first
+ * page, carries no page). The document in memory is left as it is.
+ */
+export function circuitToText(doc: CircuitDoc): string {
+  return JSON.stringify(normalizePages(doc), null, 1);
+}
+
 /** Saves the circuit to a file; resolves true once it is saved. */
 export async function fileSave(saveAs = false): Promise<boolean> {
   const { doc, filePath } = S();
   try {
-    const res = await saveFile(JSON.stringify(doc, null, 1), `${sanitizeName(doc.name)}.nodal`, NODAL_FILTER, saveAs ? null : filePath);
+    const res = await saveFile(circuitToText(doc), `${sanitizeName(doc.name)}.nodal`, NODAL_FILTER, saveAs ? null : filePath);
     if (res === false) return false;
     // edits made while the save dialog was open are still unsaved
     set({ dirty: S().doc !== doc, filePath: res || filePath });
@@ -178,12 +188,14 @@ export async function copyScope(scope: ExportScope, look: { theme: 'light' | 'da
 export type ExportKind = 'svg' | 'png' | 'dxf' | 'spice' | 'kicad' | 'bom' | 'json';
 
 /**
- * The circuit an exported picture carries: the whole circuit (every page) for
- * a page export, the selected items (and the wires between them) for a
- * selection, and the items an area touches, whole and uncut, for an area.
+ * The circuit an exported picture carries: only what the picture shows — the
+ * page on screen for a page export, the selected items (and the wires between
+ * them) for a selection, and the items an area touches, whole and uncut, for
+ * an area. Other pages stay out, so opening or importing the picture cannot
+ * pile their drawings on top of this one.
  */
 export function sceneForScope(scope: ExportScope): string {
-  if (!scope.clip && !scope.ids?.length) return sceneJson(S().doc);
+  if (!scope.clip && !scope.ids?.length) return sceneJson(pagesWithItems(vdoc()));
   const doc = vdoc();
   const c = scope.clip;
   const ids = c
@@ -194,7 +206,7 @@ export function sceneForScope(scope: ExportScope): string {
         })
         .map((it) => it.id)
     : scope.ids!;
-  return sceneJson(selectionDoc(doc, ids));
+  return sceneJson(pagesWithItems(selectionDoc(doc, ids)));
 }
 
 /** The picture, with the circuit inside when `scene`. */
@@ -243,7 +255,7 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
         res = await saveFile(toBomCsv(doc), `${base}-bom.csv`, [{ name: 'CSV', extensions: ['csv'] }]);
         break;
       case 'json':
-        res = await saveFile(JSON.stringify(doc, null, 2), `${base}.json`, [{ name: 'JSON', extensions: ['json'] }]);
+        res = await saveFile(JSON.stringify(normalizePages(doc), null, 2), `${base}.json`, [{ name: 'JSON', extensions: ['json'] }]);
         break;
     }
     if (res !== false) toast(`Exported ${part ? 'selection as ' : ''}${kind === 'bom' ? 'BOM' : kind.toUpperCase()}`, 'success');

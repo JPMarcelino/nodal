@@ -127,6 +127,17 @@ export function pageTitle(doc: CircuitDoc): string {
   return pages.find((p) => p.id === viewPage(doc))?.name.trim() || doc.name;
 }
 
+/** The world-space window an export covers: the drawing frame when it is on, else the items plus a margin (a selection crops to its items, an area to its rectangle). */
+export function exportBox(doc: CircuitDoc, opts: SvgOptions): Rect {
+  const p = opts.padding;
+  if (opts.clip) return { x: opts.clip.x - p, y: opts.clip.y - p, w: opts.clip.w + 2 * p, h: opts.clip.h + 2 * p };
+  const sheet = opts.ids?.length ? null : sheetRect(doc.settings);
+  if (sheet) return { x: sheet.x, y: sheet.y, w: sheet.w, h: sheet.h };
+  // extra margin so labels that overhang the item bounds are not cut off
+  const b = docBounds(doc) ?? { x: 0, y: 0, w: 100, h: 100 };
+  return { x: b.x - p - 30, y: b.y - p - 20, w: b.w + 2 * p + 60, h: b.h + 2 * p + 40 };
+}
+
 export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bounds: Rect } {
   const palette = EXPORT_THEMES[opts.theme];
   const title = opts.title ?? pageTitle(doc);
@@ -139,23 +150,8 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
     // a selection is exported on its own, without the drawing frame
     d = { ...d, settings: { ...d.settings, titleBlock: false } };
   }
-  const p = opts.padding;
-  let box: Rect;
-  if (opts.clip) {
-    const c = opts.clip;
-    d = clipAreaDoc(d, c);
-    box = { x: c.x - p, y: c.y - p, w: c.w + 2 * p, h: c.h + 2 * p };
-  } else {
-    const sheet = opts.ids?.length ? null : sheetRect(d.settings);
-    if (sheet) {
-      // with a drawing frame the page is exactly the sheet
-      box = { x: sheet.x, y: sheet.y, w: sheet.w, h: sheet.h };
-    } else {
-      // extra margin so labels that overhang the item bounds are not cut off
-      const b = docBounds(d) ?? { x: 0, y: 0, w: 100, h: 100 };
-      box = { x: b.x - p - 30, y: b.y - p - 20, w: b.w + 2 * p + 60, h: b.h + 2 * p + 40 };
-    }
-  }
+  if (opts.clip) d = clipAreaDoc(d, opts.clip);
+  const box = exportBox(d, opts);
   const data = computeSceneData(d);
   // without a background, symbol interiors stay see-through: filled with the canvas colour they'd be dark (or white) blobs on whatever page they land on. Where such an interior sits over another item, a mask still erases that item behind it, so the picture is not more transparent than the canvas.
   const scenePalette = opts.background || opts.opaqueSymbols ? palette : { ...palette, symBg: 'none' };

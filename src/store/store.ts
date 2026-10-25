@@ -6,7 +6,7 @@ import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
 import type { CircuitDoc, Dash, Item, Point, Rect, SymbolDef, Tool, WireAngle } from '../model/types';
 import { settleEdit } from '../model/settle';
-import { editPage, itemPage, mergeView, multiPage, resolvePage, viewDoc } from '../model/pages';
+import { editPage, itemPage, mergeView, multiPage, normalizePages, resolvePage, viewDoc } from '../model/pages';
 
 export interface View {
   x: number;
@@ -630,7 +630,7 @@ function autosaveNow() {
   // never overwrite the last good autosave with something that isn't a circuit
   if (!doc || typeof doc !== 'object' || doc.format !== 'nodal' || typeof doc.items !== 'object' || !doc.settings) return;
   try {
-    localStorage.setItem(LS.doc, JSON.stringify(doc));
+    localStorage.setItem(LS.doc, JSON.stringify(normalizePages(doc)));
     autosaveFailed = false;
   } catch {
     // quota exceeded (big pictures): say so once, and let the unload guard warn

@@ -2,7 +2,7 @@ import { Bookmark, ChevronDown, ChevronRight, Download, FolderOpen, History, Rot
 import { useEffect, useMemo, useState } from 'react';
 import { exportSvg } from '../io/export';
 import { viewDoc } from '../model/pages';
-import { NODAL_FILTER, openFromHistory } from '../io/fileActions';
+import { circuitToText, NODAL_FILTER, openFromHistory } from '../io/fileActions';
 import { sanitizeName, saveFile } from '../io/files';
 import { defaultLabel, deleteVersion, listOtherCircuits, listVersions, onVersionsChanged, renameVersion, restoreVersion, saveNamedVersion } from '../io/versionStore';
 import { countParts, diffDocs, type Version } from '../model/versions';
@@ -105,7 +105,7 @@ function Preview({ v }: { v: Version }) {
 
   const saveAsFile = async () => {
     try {
-      const res = await saveFile(JSON.stringify({ ...v.doc, id: undefined }, null, 1), `${sanitizeName(`${v.doc.name} (${v.label || defaultLabel(v.t)})`)}.nodal`, NODAL_FILTER);
+      const res = await saveFile(circuitToText({ ...v.doc, id: undefined }), `${sanitizeName(`${v.doc.name} (${v.label || defaultLabel(v.t)})`)}.nodal`, NODAL_FILTER);
       if (res !== false && res !== null) toast('Saved a copy of this version', 'success');
     } catch (e) {
       toast(`Save failed: ${(e as Error).message}`, 'error');
