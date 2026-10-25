@@ -2,6 +2,9 @@ import { ArrowDownToLine, ArrowUpToLine, Circle, Copy, Magnet, Maximize2, Minus,
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 import { PrimEl } from '../canvas/SymbolGraphic';
 import { inferSide, type SymbolSource } from '../model/symbols/dsl';
+import { movePrim, primBounds, scalePrim } from '../model/symbols/primGeometry';
+import { resizeInFrame, type BoxHandle } from '../model/rotation';
+import { S } from '../store/store';
 import type { Fill, PortDef, Prim, PrimStyle } from '../model/types';
 import { eventToCombo } from '../store/commands';
 import { ColorInput, NumberInput, Segmented, TextInput } from './controls';
@@ -16,63 +19,51 @@ export type Tool = 'select' | 'line' | 'poly' | 'rect' | 'circle' | 'ellipse' | 
 type P = { x: number; y: number };
 
 const TOOL_KEYS: Record<Tool, string> = { select: 'V', line: 'L', poly: 'P', rect: 'R', circle: 'C', ellipse: 'E', text: 'T', pin: 'N' };
-/** The one grid everything in the symbol editor snaps to (same as the schematic). */
-const GRID = 10;
-const r10 = (v: number) => Math.max(20, Math.round(v / GRID) * GRID);
-const s10 = (v: number) => Math.round(v / GRID) * GRID;
+/** Pins and the outline sit on the schematic's grid so wires meet them; the drawing can use a finer one. */
+const PIN_GRID = 10;
+const GRIDS = [10, 5, 2, 1];
+/** Largest outline the editor allows (the old 400 cap cut real ICs short). */
+const MAX_SIZE = 2000;
+const r10 = (v: number) => Math.min(MAX_SIZE, Math.max(PIN_GRID, Math.round(v / PIN_GRID) * PIN_GRID));
+const s10 = (v: number) => Math.round(v / PIN_GRID) * PIN_GRID;
+const r2 = (v: number) => +v.toFixed(2);
+/** Drawing grid; kept between editor sessions like the new-shape style. */
+let lastGrid = 5;
+/** Screen pixels a press must travel before it counts as a drag (as on the schematic). */
+const DRAG_SLOP = 3;
 
-/* ------------------------------------------------------------------ */
-/* Primitive geometry                                                  */
-/* ------------------------------------------------------------------ */
+const mapRect = (r: { x: number; y: number; w: number; h: number }) => ({ x: r2(r.x), y: r2(r.y), w: r2(r.w), h: r2(r.h) });
 
-export function primBounds(p: Prim): { x: number; y: number; w: number; h: number } {
-  const pts: number[] = [];
-  switch (p.t) {
-    case 'line':
-    case 'poly':
-      pts.push(...p.pts);
-      break;
-    case 'rect':
-      pts.push(p.x, p.y, p.x + p.w, p.y + p.h);
-      break;
-    case 'circle':
-    case 'arc':
-      pts.push(p.cx - p.r, p.cy - p.r, p.cx + p.r, p.cy + p.r);
-      break;
-    case 'ellipse':
-      pts.push(p.cx - p.rx, p.cy - p.ry, p.cx + p.rx, p.cy + p.ry);
-      break;
-    case 'text': {
-      const w = p.text.length * p.size * 0.6;
-      const x0 = p.anchor === 'start' ? p.x : p.anchor === 'end' ? p.x - w : p.x - w / 2;
-      pts.push(x0, p.y - p.size, x0 + w, p.y + p.size * 0.2);
-      break;
-    }
-    case 'path':
-      return { x: 0, y: 0, w: 0, h: 0 };
-  }
-  const xs = pts.filter((_, i) => i % 2 === 0);
-  const ys = pts.filter((_, i) => i % 2 === 1);
-  const x = Math.min(...xs);
-  const y = Math.min(...ys);
-  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+/** Box around several primitives. */
+function unionBounds(list: Prim[]) {
+  const bs = list.map(primBounds);
+  const x = Math.min(...bs.map((b) => b.x));
+  const y = Math.min(...bs.map((b) => b.y));
+  return { x, y, w: Math.max(...bs.map((b) => b.x + b.w)) - x, h: Math.max(...bs.map((b) => b.y + b.h)) - y };
 }
 
-export function movePrim(p: Prim, dx: number, dy: number): Prim {
-  switch (p.t) {
-    case 'line':
-    case 'poly':
-      return { ...p, pts: p.pts.map((v, i) => v + (i % 2 ? dy : dx)) };
-    case 'rect':
-    case 'text':
-      return { ...p, x: p.x + dx, y: p.y + dy };
-    case 'circle':
-    case 'ellipse':
-    case 'arc':
-      return { ...p, cx: p.cx + dx, cy: p.cy + dy };
-    case 'path':
-      return p;
-  }
+const BOX_KEYS: BoxHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+const boxHandles = (b: { x: number; y: number; w: number; h: number }) =>
+  BOX_KEYS.map((key) => ({
+    key,
+    x: b.x + (key.includes('w') ? 0 : key.includes('e') ? b.w : b.w / 2),
+    y: b.y + (key.includes('n') ? 0 : key.includes('s') ? b.h : b.h / 2),
+  }));
+const HANDLE_CURSOR: Record<BoxHandle, string> = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
+
+/**
+ * The outline resized to w × h with its top-left corner moved by (ox, oy):
+ * the drawing shifts so it stays put, pins on a dragged edge follow it, the rest stay inside.
+ */
+function resizeOutline(s: Snap, base: { w: number; h: number; prims: Prim[]; ports: PortDef[] }, ox: number, oy: number, w: number, h: number) {
+  s.src.w = w;
+  s.src.h = h;
+  s.prims = ox || oy ? base.prims.map((p) => movePrim(p, -ox, -oy)) : base.prims;
+  s.ports = base.ports.map((q) => {
+    const x = q.x === 0 ? 0 : q.x === base.w ? w : Math.min(w, Math.max(0, q.x - ox));
+    const y = q.y === 0 ? 0 : q.y === base.h ? h : Math.min(h, Math.max(0, q.y - oy));
+    return { ...q, x, y };
+  });
 }
 
 /** The primitive a drag from a to b draws with the given tool, or null for click-only tools. */
@@ -199,12 +190,13 @@ function primHit(p: Prim, q: P, tol: number): boolean {
 
 type Gesture =
   | { kind: 'draw'; start: P; cur: P }
-  | { kind: 'move'; start: P; base: Prim[]; ids: number[]; moved: boolean }
-  | { kind: 'handle'; idx: number; key: string; base: Prim; moved: boolean }
+  | { kind: 'move'; start: P; client: P; base: Prim[]; ids: number[]; moved: boolean }
+  | { kind: 'handle'; idx: number; key: string; base: Prim; client: P; moved: boolean }
+  | { kind: 'scale'; key: BoxHandle; box: { x: number; y: number; w: number; h: number }; base: Prim[]; ids: number[]; client: P; moved: boolean }
   | { kind: 'marquee'; start: P; cur: P; add: boolean }
   | { kind: 'pan'; client: P; view: View }
   | { kind: 'pin'; idx: number; moved: boolean }
-  | { kind: 'size'; key: 'e' | 's' | 'se'; base: { w: number; h: number }; ports: PortDef[]; moved: boolean };
+  | { kind: 'size'; key: BoxHandle; base: { w: number; h: number; prims: Prim[]; ports: PortDef[] }; view: View; client: P; moved: boolean };
 
 interface View {
   x: number;
@@ -244,7 +236,11 @@ export function SymbolDrawPane({
   const [style, setStyleState] = useState<NewStyle>(lastStyle);
   const setStyle = (patch: Partial<NewStyle>) => setStyleState((st) => (lastStyle = { ...st, ...patch }));
   const [snapOn, setSnapOn] = useState(true);
+  const [grid, setGridState] = useState(lastGrid);
+  const setGrid = (v: number) => setGridState((lastGrid = v));
   const [cursor, setCursor] = useState<P>({ x: 0, y: 0 });
+  /** Unsnapped pointer, for hover hit tests. */
+  const [hover, setHover] = useState<P>({ x: -1e9, y: -1e9 });
   const [view, setView] = useState<View>({ x: 40, y: 40, zoom: 4 });
   const [space, setSpace] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -284,11 +280,20 @@ export function SymbolDrawPane({
   // wheel zooms at the cursor (non-passive so the dialog doesn't scroll)
   useEffect(() => {
     const el = wrapRef.current!;
+    // the same rules as the schematic: the wheel preference, Ctrl / pinch zooms, Shift scrolls sideways
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const r = el.getBoundingClientRect();
-      if (e.shiftKey) return setView((v) => ({ ...v, x: v.x - e.deltaY }));
-      zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - r.left, e.clientY - r.top);
+      const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? r.height : 1;
+      const deltaX = e.deltaX * unit;
+      const deltaY = e.deltaY * unit;
+      if ((e.ctrlKey || e.metaKey || S().prefs.wheel === 'zoom') && !e.shiftKey) {
+        zoomAt(Math.exp(-deltaY * (e.ctrlKey && Math.abs(deltaY) < 50 ? 0.01 : 0.0015)), e.clientX - r.left, e.clientY - r.top);
+        return;
+      }
+      const dx = e.shiftKey && !deltaX ? deltaY : deltaX;
+      const dy = e.shiftKey && !deltaX ? 0 : deltaY;
+      setView((v) => ({ ...v, x: v.x - dx, y: v.y - dy }));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -299,9 +304,11 @@ export function SymbolDrawPane({
     return { x: (e.clientX - r.left - view.x) / view.zoom, y: (e.clientY - r.top - view.y) / view.zoom };
   };
   const snap = (p: P, free = false): P => {
-    const step = free || !snapOn ? 1 : GRID;
+    const step = free || !snapOn ? 1 : grid;
     return { x: Math.round(p.x / step) * step, y: Math.round(p.y / step) * step };
   };
+  /** Grid step for a gesture: 1 with snapping off or Alt held. */
+  const stepFor = (alt: boolean) => (alt || !snapOn ? 1 : grid);
 
   /* -------------------------- editing --------------------------- */
 
@@ -431,7 +438,7 @@ export function SymbolDrawPane({
       if (combo === 'Mod+[') return take(), restack(false);
       if (combo === '=' || combo === '+' || combo === 'Shift+=') return take(), zoomAt(1.25);
       if (combo === '-') return take(), zoomAt(0.8);
-      if (combo === '0') return take(), fit();
+      if (combo === '0' || combo === 'F' || combo === 'Shift+1') return take(), fit();
       if (combo === 'Enter' && poly) return take(), finishPoly();
       if (poly && (combo === 'Delete' || combo === 'Backspace')) {
         take();
@@ -443,10 +450,12 @@ export function SymbolDrawPane({
       const hot = (Object.keys(TOOL_KEYS) as Tool[]).find((k) => TOOL_KEYS[k] === combo);
       if (hot) return take(), selectTool(hot);
       const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-      const base = combo.replace('Shift+', '');
+      const base = combo.replace(/^(Mod\+)?(Shift\+)?/, '');
       if (arrows[base]) {
         take();
-        const step = combo.startsWith('Shift+') || !snapOn ? 1 : GRID;
+        // as on the schematic: one grid step, Shift five, Ctrl one unit
+        const one = snapOn ? grid : 1;
+        const step = combo.startsWith('Mod+') ? 1 : combo.includes('Shift+') ? one * 5 : one;
         const [dx, dy] = [arrows[base][0] * step, arrows[base][1] * step];
         if (poly) return setPoly([...poly.slice(0, -2), poly[poly.length - 2] + dx, poly[poly.length - 1] + dy]);
         updSel((p) => movePrim(p, dx, dy), `nudge-${valid.join(',')}`);
@@ -470,12 +479,13 @@ export function SymbolDrawPane({
   };
   const hitHandle = (q: P) => (single ? primHandles(single).find((h) => Math.hypot(h.x - q.x, h.y - q.y) <= 6 / view.zoom) : undefined);
   const hitPin = (q: P) => ports.findIndex((p) => Math.hypot(p.x - q.x, p.y - q.y) <= 6 / view.zoom);
-  const sizeHandles: { key: 'e' | 's' | 'se'; x: number; y: number }[] = [
-    { key: 'e', x: src.w, y: src.h / 2 },
-    { key: 's', x: src.w / 2, y: src.h },
-    { key: 'se', x: src.w, y: src.h },
-  ];
+  const sizeHandles = boxHandles({ x: 0, y: 0, w: src.w, h: src.h });
   const hitSize = (q: P) => sizeHandles.find((h) => Math.hypot(h.x - q.x, h.y - q.y) <= 7 / view.zoom);
+  /** Several shapes, or one without handles of its own (text, arc, path), scale by a box around them. */
+  const selBox = tool === 'select' && valid.length && (valid.length > 1 || !primHandles(prims[valid[0]]).length) ? unionBounds(valid.map((i) => prims[i])) : null;
+  const scaleHandles = selBox ? boxHandles({ x: selBox.x - 2, y: selBox.y - 2, w: selBox.w + 4, h: selBox.h + 4 }) : [];
+  const hitScale = (q: P) => scaleHandles.find((h) => Math.hypot(h.x - q.x, h.y - q.y) <= 6 / view.zoom);
+  const client = (e: { clientX: number; clientY: number }): P => ({ x: e.clientX, y: e.clientY });
 
   const onDown = (e: React.PointerEvent) => {
     wrapRef.current!.setPointerCapture(e.pointerId);
@@ -488,11 +498,13 @@ export function SymbolDrawPane({
     const p = snap(raw, e.altKey);
     if (tool === 'select') {
       const h = hitHandle(raw);
-      if (h && valid.length === 1) return setG({ kind: 'handle', idx: valid[0], key: h.key, base: prims[valid[0]], moved: false });
+      if (h && valid.length === 1) return setG({ kind: 'handle', idx: valid[0], key: h.key, base: prims[valid[0]], client: client(e), moved: false });
+      const sc = hitScale(raw);
+      if (sc && selBox) return setG({ kind: 'scale', key: sc.key, box: selBox, base: prims, ids: valid, client: client(e), moved: false });
       const pin = hitPin(raw);
       if (pin >= 0) return setG({ kind: 'pin', idx: pin, moved: false });
       const sh = hitSize(raw);
-      if (sh) return setG({ kind: 'size', key: sh.key, base: { w: src.w, h: src.h }, ports: ports.map((q) => ({ ...q })), moved: false });
+      if (sh) return setG({ kind: 'size', key: sh.key, base: { w: src.w, h: src.h, prims, ports: ports.map((q) => ({ ...q })) }, view, client: client(e), moved: false });
       const i = hitPrim(raw);
       if (i === null) {
         if (!e.shiftKey) setSel([]);
@@ -501,7 +513,7 @@ export function SymbolDrawPane({
       if (e.shiftKey) return setSel(valid.includes(i) ? valid.filter((k) => k !== i) : [...valid, i]);
       const ids = valid.includes(i) ? valid : [i];
       setSel(ids);
-      return setG({ kind: 'move', start: p, base: prims.map((q) => q), ids, moved: false });
+      return setG({ kind: 'move', start: raw, client: client(e), base: prims.map((q) => q), ids, moved: false });
     }
     if (tool === 'pin') {
       const x = Math.min(src.w, Math.max(0, s10(raw.x)));
@@ -539,6 +551,7 @@ export function SymbolDrawPane({
     const raw = toWorld(e);
     const p = snap(raw, e.altKey);
     setCursor(p);
+    setHover(raw);
     if (!g) return;
     switch (g.kind) {
       case 'pan':
@@ -551,8 +564,15 @@ export function SymbolDrawPane({
         setG({ ...g, cur: raw });
         return;
       case 'move': {
-        const dx = p.x - g.start.x;
-        const dy = p.y - g.start.y;
+        // as on the schematic: a small slop before it counts, the distance (not the cursor) snaps, Shift keeps to one axis
+        if (!g.moved && Math.hypot(e.clientX - g.client.x, e.clientY - g.client.y) < DRAG_SLOP) return;
+        const step = stepFor(e.altKey);
+        let dx = Math.round((raw.x - g.start.x) / step) * step;
+        let dy = Math.round((raw.y - g.start.y) / step) * step;
+        if (e.shiftKey) {
+          if (Math.abs(raw.x - g.start.x) > Math.abs(raw.y - g.start.y)) dy = 0;
+          else dx = 0;
+        }
         if (!g.moved && !dx && !dy) return;
         const ids = new Set(g.ids);
         // the first real movement records the undo step; the rest of the drag updates in place
@@ -560,10 +580,31 @@ export function SymbolDrawPane({
         if (!g.moved) setG({ ...g, moved: true });
         return;
       }
-      case 'handle':
-        apply((s) => void (s.prims[g.idx] = applyHandle(g.base, g.key, p)), !g.moved);
+      case 'handle': {
+        if (!g.moved && Math.hypot(e.clientX - g.client.x, e.clientY - g.client.y) < DRAG_SLOP) return;
+        const b = g.base;
+        // a rectangle resizes like a schematic shape: Shift keeps its proportions, Ctrl grows it about its centre
+        const next =
+          b.t === 'rect'
+            ? { ...b, ...mapRect(resizeInFrame(b, 0, g.key as BoxHandle, raw, 1, stepFor(e.altKey), { aspect: e.shiftKey, centre: e.ctrlKey || e.metaKey })) }
+            : applyHandle(b, g.key, p);
+        apply((s) => void (s.prims[g.idx] = next), !g.moved);
         if (!g.moved) setG({ ...g, moved: true });
         return;
+      }
+      case 'scale': {
+        if (!g.moved && Math.hypot(e.clientX - g.client.x, e.clientY - g.client.y) < DRAG_SLOP) return;
+        const b0 = g.box;
+        const nb = resizeInFrame(b0, 0, g.key, raw, 1, stepFor(e.altKey), { aspect: e.shiftKey, centre: e.ctrlKey || e.metaKey });
+        const kx = b0.w ? nb.w / b0.w : 1;
+        const ky = b0.h ? nb.h / b0.h : 1;
+        const ids = new Set(g.ids);
+        apply((s) => {
+          s.prims = g.base.map((q, i) => (ids.has(i) ? movePrim(scalePrim(q, b0.x, b0.y, kx, ky), r2(nb.x - b0.x), r2(nb.y - b0.y)) : q));
+        }, !g.moved);
+        if (!g.moved) setG({ ...g, moved: true });
+        return;
+      }
       case 'pin': {
         // pins slide along the outline on the 10px schematic grid
         const x = Math.min(src.w, Math.max(0, s10(raw.x)));
@@ -578,19 +619,20 @@ export function SymbolDrawPane({
         return;
       }
       case 'size': {
-        const w = g.key === 's' ? g.base.w : r10(raw.x);
-        const h = g.key === 'e' ? g.base.h : r10(raw.y);
-        if (w === src.w && h === src.h) return;
-        apply((s) => {
-          s.src.w = Math.min(400, w);
-          s.src.h = Math.min(400, h);
-          // pins on the right / bottom edge follow it; others stay inside the outline
-          s.ports = g.ports.map((q) => ({
-            ...q,
-            x: q.x === g.base.w ? s.src.w : Math.min(q.x, s.src.w),
-            y: q.y === g.base.h ? s.src.h : Math.min(q.y, s.src.h),
-          }));
-        }, !g.moved);
+        // any edge or corner; the outline stays on the pin grid so wires still meet the pins
+        if (!g.moved && Math.hypot(e.clientX - g.client.x, e.clientY - g.client.y) < DRAG_SLOP) return;
+        const k = g.key;
+        const { w: bw, h: bh } = g.base;
+        // the top-left of the outline is the symbol's origin, so dragging it moves the origin
+        const ox = k.includes('w') ? Math.min(bw - PIN_GRID, s10(raw.x)) : 0;
+        const oy = k.includes('n') ? Math.min(bh - PIN_GRID, s10(raw.y)) : 0;
+        const w = k.includes('w') ? Math.min(MAX_SIZE, bw - ox) : k.includes('e') ? r10(raw.x) : bw;
+        const h = k.includes('n') ? Math.min(MAX_SIZE, bh - oy) : k.includes('s') ? r10(raw.y) : bh;
+        const fx = k.includes('w') ? bw - w : 0;
+        const fy = k.includes('n') ? bh - h : 0;
+        apply((s) => resizeOutline(s, g.base, fx, fy, w, h), !g.moved);
+        // ...and the view shifts with it, so nothing jumps on screen
+        setView({ ...g.view, x: g.view.x + fx * g.view.zoom, y: g.view.y + fy * g.view.zoom });
         if (!g.moved) setG({ ...g, moved: true });
         return;
       }
@@ -633,9 +675,11 @@ export function SymbolDrawPane({
   const draftEnd = polyClose ?? cursor;
   const rawDraft: Prim | null = poly ? { t: 'line', pts: [...poly, draftEnd.x, draftEnd.y] } : g?.kind === 'draw' ? dragShape(tool, g.start, g.cur, fill) : null;
   const draft = rawDraft && withStyle(rawDraft, style);
-  const hoverHandle = tool === 'select' && !g ? hitHandle(cursor) ?? hitSize(cursor) : undefined;
+  const activeKey = g?.kind === 'scale' || g?.kind === 'size' ? g.key : g?.kind === 'handle' ? g.key : undefined;
+  const hoverKey = tool === 'select' && !g ? (hitHandle(hover) ?? hitScale(hover) ?? hitSize(hover))?.key : activeKey;
+  const handleCursor = hoverKey && hoverKey in HANDLE_CURSOR ? HANDLE_CURSOR[hoverKey as BoxHandle] : hoverKey ? 'crosshair' : undefined;
   const cursorStyle =
-    g?.kind === 'pan' ? 'grabbing' : space ? 'grab' : g?.kind === 'move' ? 'move' : hoverHandle ? 'nwse-resize' : tool === 'select' ? (hitPrim(cursor) !== null || hitPin(cursor) >= 0 ? 'move' : 'default') : 'crosshair';
+    g?.kind === 'pan' ? 'grabbing' : space ? 'grab' : g?.kind === 'move' ? 'move' : handleCursor ? handleCursor : tool === 'select' ? (hitPrim(hover) !== null || hitPin(hover) >= 0 ? 'move' : 'default') : 'crosshair';
 
   const tools: [Tool, JSX.Element, string][] = [
     ['select', <MousePointer2 size={15} />, 'Select & move · drag handles to resize · drag pins along the outline'],
@@ -654,7 +698,7 @@ export function SymbolDrawPane({
       : tool === 'poly'
         ? 'Click to add points · click the first point to close · Enter or double-click to finish · Backspace removes the last point · Esc cancels.'
         : tool === 'select'
-          ? 'Click / Shift+click / drag a box to select · drag to move · handles resize · drag the outline’s corner to resize the symbol.'
+          ? 'Click / Shift+click / drag a box to select · drag to move (Shift: one axis) · handles resize (Shift: keep proportions, Ctrl: from the centre) · drag any edge or corner of the dashed outline to resize the symbol.'
           : tool === 'text'
             ? 'Click to place text, then type it in the bar above.'
             : 'Drag to draw · hold Alt to draw off-grid.';
@@ -676,9 +720,16 @@ export function SymbolDrawPane({
           <Redo2 size={15} />
         </button>
         <span className="rail-sep v" />
-        <button className={snapOn ? 'tool-btn active-soft' : 'tool-btn'} title={`Snap to the ${GRID}px grid: ${snapOn ? 'on' : 'off'} (hold Alt to ignore)`} onClick={() => setSnapOn(!snapOn)}>
+        <button className={snapOn ? 'tool-btn active-soft' : 'tool-btn'} title={`Snap to the ${grid}px grid: ${snapOn ? 'on' : 'off'} (hold Alt to ignore)`} onClick={() => setSnapOn(!snapOn)}>
           <Magnet size={15} />
         </button>
+        <select className="input se-grid" value={grid} title="Drawing grid (pins and the outline always use the 10px schematic grid)" onChange={(e) => setGrid(Number(e.target.value))}>
+          {GRIDS.map((v) => (
+            <option key={v} value={v}>
+              {v}px grid
+            </option>
+          ))}
+        </select>
         <span className="grow" />
         <span className="se-zoom">
           <button className="tool-btn" title="Zoom out (−)" onClick={() => zoomAt(0.8)}>
@@ -695,8 +746,8 @@ export function SymbolDrawPane({
           </button>
         </span>
         <span className="se-size">
-          <NumberInput value={src.w} min={20} max={400} step={GRID} suffix="w" onChange={(v) => apply((s) => void (s.src.w = r10(v)))} />
-          <NumberInput value={src.h} min={20} max={400} step={GRID} suffix="h" onChange={(v) => apply((s) => void (s.src.h = r10(v)))} />
+          <NumberInput value={src.w} min={PIN_GRID} max={MAX_SIZE} step={PIN_GRID} suffix="w" onChange={(v) => apply((s) => resizeOutline(s, { w: src.w, h: src.h, prims, ports }, 0, 0, r10(v), src.h))} />
+          <NumberInput value={src.h} min={PIN_GRID} max={MAX_SIZE} step={PIN_GRID} suffix="h" onChange={(v) => apply((s) => resizeOutline(s, { w: src.w, h: src.h, prims, ports }, 0, 0, src.w, r10(v)))} />
         </span>
       </div>
 
@@ -783,14 +834,14 @@ export function SymbolDrawPane({
       <div ref={wrapRef} className="se-canvas" style={{ cursor: cursorStyle }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => setG(null)} onDoubleClick={() => poly && finishPoly()}>
         <svg width="100%" height="100%">
           <defs>
-            <pattern id="se-grid" width={GRID * z} height={GRID * z} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
+            <pattern id="se-grid" width={grid * z} height={grid * z} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
               <circle cx={0.6} cy={0.6} r={0.6} className="grid-dot" />
             </pattern>
-            <pattern id="se-grid10" width={2 * GRID * z} height={2 * GRID * z} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
+            <pattern id="se-grid10" width={PIN_GRID * z} height={PIN_GRID * z} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
               <circle cx={1} cy={1} r={1.2} className="grid-dot-major" />
             </pattern>
           </defs>
-          {GRID * z >= 7 && <rect width="100%" height="100%" fill="url(#se-grid)" />}
+          {grid < PIN_GRID && grid * z >= 7 && <rect width="100%" height="100%" fill="url(#se-grid)" />}
           <rect width="100%" height="100%" fill="url(#se-grid10)" />
           <g transform={`translate(${view.x} ${view.y}) scale(${z})`}>
             <rect x={0} y={0} width={src.w} height={src.h} className="se-bounds" strokeWidth={1 / z} strokeDasharray={`${3 / z} ${3 / z}`} />
@@ -819,6 +870,9 @@ export function SymbolDrawPane({
               primHandles(single).map((h) => (
                 <rect key={h.key} x={h.x - 3.5 / z} y={h.y - 3.5 / z} width={7 / z} height={7 / z} rx={1.5 / z} className="se-handle" strokeWidth={1.4 / z} />
               ))}
+            {scaleHandles.map((h) => (
+              <rect key={`scale-${h.key}`} x={h.x - 3.5 / z} y={h.y - 3.5 / z} width={7 / z} height={7 / z} rx={1.5 / z} className="se-handle" strokeWidth={1.4 / z} />
+            ))}
             {tool === 'select' &&
               sizeHandles.map((h) => (
                 <rect key={h.key} x={h.x - 4 / z} y={h.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className="se-size-handle" strokeWidth={1.4 / z}>
@@ -847,7 +901,7 @@ export function SymbolDrawPane({
       </div>
       <div className="se-help muted small">
         <div className="se-tool-note">{toolNote}</div>
-        Wheel zooms · Space / middle-drag pans · <kbd>0</kbd> fit · <kbd>Esc</kbd> cancels, then deselects · <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd> copy/paste/duplicate · arrows nudge (Shift: 1px). Everything — the drawing, the pins and the dashed outline — snaps to the same 10px grid.
+        Wheel and Space / middle-drag work as on the schematic · <kbd>F</kbd> fit · <kbd>Esc</kbd> cancels, then deselects · <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>/<kbd>D</kbd> copy/paste/duplicate · arrows nudge (Shift: ×5, Ctrl: 1px) · <kbd>Alt</kbd> ignores the grid. Pins and the outline stay on the 10px schematic grid.
       </div>
     </div>
   );
