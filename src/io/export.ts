@@ -146,9 +146,41 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
 <title>${escapeXml(doc.name)}</title>
 <style>${css}</style>
 ${opts.background ? `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${escapeXml(d.settings.background || palette.bg)}"/>` : ''}
-<g style="--sym-bg:${palette.symBg}">${inner.replace(/var\(--sym-bg\)/g, palette.symBg)}</g>
+<g>${plainColours(inner.replace(/var\(--sym-bg\)/g, palette.symBg), palette.ink)}</g>
 </svg>`;
   return { svg, bounds: box };
+}
+
+/**
+ * Resolves `currentColor` to the colour it stands for and drops CSS custom
+ * properties, so the file looks the same outside a browser: many SVG tools
+ * (Inkscape, Figma, image viewers) ignore a style holding `--sym-bg:…` or don't
+ * support currentColor, and draw the parts black — invisible on a dark export.
+ */
+export function plainColours(markup: string, root: string): string {
+  const stack: string[] = [root];
+  return markup.replace(/<(\/?)([a-zA-Z][\w:-]*)([^>]*?)(\/?)>/g, (tag, close: string, name: string, attrs: string, self: string) => {
+    if (close) {
+      if (stack.length > 1) stack.pop();
+      return tag;
+    }
+    const own = /style="[^"]*?(?:^|[;"\s])color:\s*([^;"]+)/.exec(attrs)?.[1] ?? /\scolor="([^"]+)"/.exec(attrs)?.[1];
+    const colour = own && !/currentColor/i.test(own) ? own.trim() : stack[stack.length - 1];
+    let a = attrs
+      .replace(/currentColor/gi, colour)
+      .replace(/style="([^"]*)"/, (_, css: string) => {
+        const kept = css
+          .split(';')
+          .map((d) => d.trim())
+          .filter((d) => d && !d.startsWith('--') && !/^color\s*:/.test(d))
+          .join(';');
+        return kept ? `style="${kept}"` : '';
+      })
+      .replace(/\s+color="[^"]*"/, '');
+    if (a.trim() === '') a = '';
+    if (!self) stack.push(colour);
+    return `<${name}${a}${self}>`;
+  });
 }
 
 export async function exportPng(doc: CircuitDoc, opts: SvgOptions & { scale: number }): Promise<Blob> {

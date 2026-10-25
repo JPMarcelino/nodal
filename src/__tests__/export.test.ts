@@ -54,4 +54,11 @@ describe('selectionDoc', () => {
     const { svg } = exportSvg(doc, { theme: 'light', background: false, padding: 10, ids: [w.id] });
     expect(svg).toContain(`data-id="${w.id}"`);
   });
+
+  it('writes concrete colours for a dark export (no currentColor or CSS variables)', () => {
+    const { doc } = twoResistors();
+    const { svg } = exportSvg(doc, { theme: 'dark', background: true, padding: 10 });
+    expect(svg).not.toMatch(/currentColor|--sym-bg|var\(/);
+    expect(svg).toContain('stroke="#e6dfcf"');
+  });
 });
