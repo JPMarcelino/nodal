@@ -1,5 +1,6 @@
+import { normalizePages } from '../model/pages';
 import type { CircuitDoc } from '../model/types';
-import { extractPngText, insertPngText, isPng } from './pngMeta';
+import { extractPngText, insertPngText, isPng, pngSize } from './pngMeta';
 
 /**
  * Exported PNG and SVG pictures can carry the circuit they show (the same JSON
@@ -11,6 +12,23 @@ import { extractPngText, insertPngText, isPng } from './pngMeta';
 export const SCENE_TYPE = 'application/vnd.nodal+json';
 
 const SVG_RE = /<metadata id="nodal-scene"[^>]*>([A-Za-z0-9+/=\s]*)<\/metadata>/;
+const TITLE_RE = /<title[^>]*>([\s\S]*?)<\/title>/i;
+
+/** The text of an exported SVG's <title>; the page name, on a multi-page circuit. */
+export function svgTitle(text: string | null | undefined): string | null {
+  const raw = text ? TITLE_RE.exec(text)?.[1] : null;
+  if (!raw) return null;
+  const decoded = raw
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .trim();
+  return decoded || null;
+}
 
 function toBase64(text: string): string {
   const bytes = new TextEncoder().encode(text);
@@ -35,8 +53,11 @@ function circuitJson(json: string | null): string | null {
   }
 }
 
-/** The circuit as stored in a picture. */
-export const sceneJson = (doc: CircuitDoc) => JSON.stringify(doc);
+/**
+ * The circuit as stored in a picture: every page and every item's page, with
+ * stale page ids repaired exactly as a `.nodal` file is written.
+ */
+export const sceneJson = (doc: CircuitDoc) => JSON.stringify(normalizePages(doc));
 
 /** The SVG with the circuit stored in it. */
 export function svgWithScene(svg: string, json: string): string {
@@ -67,11 +88,26 @@ export function sceneFromPng(bytes: Uint8Array): string | null {
 
 /** The circuit stored in a PNG or SVG file or blob; null for anything else. */
 export async function sceneFromFile(file: Blob & { name?: string }): Promise<string | null> {
+  return (await sceneFromPicture(file))?.json ?? null;
+}
+
+/**
+ * The circuit a picture carries, and a PNG's pixel size, so an older picture
+ * of a page can be matched to that page.
+ */
+export async function sceneFromPicture(
+  file: Blob & { name?: string },
+): Promise<{ json: string; width?: number; height?: number } | null> {
   const name = file.name ?? '';
   if (file.type === 'image/png' || /\.png$/i.test(name)) {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    return isPng(bytes) ? sceneFromPng(bytes) : null;
+    const json = isPng(bytes) ? sceneFromPng(bytes) : null;
+    const size = pngSize(bytes);
+    return json ? { json, width: size?.w, height: size?.h } : null;
   }
-  if (file.type === 'image/svg+xml' || /\.svg$/i.test(name)) return sceneFromSvgText(await file.text());
+  if (file.type === 'image/svg+xml' || /\.svg$/i.test(name)) {
+    const json = sceneFromSvgText(await file.text());
+    return json ? { json } : null;
+  }
   return null;
 }

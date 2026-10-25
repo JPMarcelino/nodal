@@ -156,11 +156,13 @@ export async function restoreVersion(v: Version) {
   mutate((d) => {
     d.name = v.doc.name;
     d.settings = v.doc.settings;
-    // versions saved before shapes shared the one stacking order
-    d.items = migrateItems(structuredClone(v.doc.items));
+    // versions saved before shapes shared the one stacking order, and older
+    // page lists may point nowhere: bring items and pages together
+    const restored = normalizePages({ ...v.doc, items: migrateItems(structuredClone(v.doc.items)) });
+    d.items = restored.items;
     d.groups = v.doc.groups;
     d.symbols = v.doc.symbols;
-    d.pages = normalizePages({ ...v.doc, items: {} }).pages;
+    d.pages = restored.pages;
   }, [], { allPages: true });
   // the group you were inside may not exist in the restored version
   set({ scope: undefined });

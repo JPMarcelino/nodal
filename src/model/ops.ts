@@ -223,6 +223,8 @@ export function cleanup(doc: CircuitDoc) {
     }
     for (const it of Object.values(doc.items)) {
       if (it.type !== 'junction' || !doc.items[it.id]) continue;
+      // a locked junction is an anchor: nothing here may fold it away or drop it
+      if (it.locked) continue;
       // count wire *ends*: a loop with both ends here counts twice
       const ws = attachedWires(doc, it.id);
       const ends = ws.reduce((n, id) => {
@@ -775,6 +777,9 @@ export function extractFragment(doc: CircuitDoc, ids: Set<string>): Fragment {
     const it = doc.items[id];
     if (!it) continue;
     const c = clone(it);
+    // pages belong to the document the items come from: copies, templates and
+    // imported circuits land on the page they are inserted into
+    delete c.page;
     if (c.type === 'wire') {
       for (const end of ['a', 'b'] as const) {
         const o = endpointOwner(c[end]);
@@ -806,12 +811,16 @@ export function extractFragment(doc: CircuitDoc, ids: Set<string>): Fragment {
 }
 
 /**
- * Inserts a fragment with fresh ids, offset by (dx, dy). Returns the new item ids.
- * Parts keep their references unless one is already in `taken` (by default the
- * references in `doc`, which during a page edit is just that page).
+ * Inserts a fragment with fresh ids, offset by (dx, dy). Returns the new item
+ * ids, one for each fragment item and in the same order (so callers can pair a
+ * copy with its original). Parts keep their references unless one is already
+ * in `taken` (by default the references in `doc`, which during a page edit is
+ * just that page).
  */
 export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: number, scope?: string, taken?: Iterable<string>): string[] {
   const idMap = new Map<string, string>();
+  const orderOf = new Map<string, number>();
+  frag.items.forEach((it, i) => orderOf.set(it.id, i));
   for (const it of frag.items) idMap.set(it.id, uid(it.id[0] ?? 'i'));
   const gMap = new Map<string, string>();
   for (const g of frag.groups) gMap.set(g.id, uid('g'));
@@ -822,7 +831,7 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
   // a symbol this circuit already defines keeps its own (possibly edited) definition
   for (const [k, v] of Object.entries(frag.symbols ?? {})) if (!doc.symbols[k]) doc.symbols[k] = v;
   const refs = new Set(taken ?? Object.values(doc.items).flatMap((i) => (i.type === 'component' ? [i.ref] : [])));
-  const out: string[] = [];
+  const out: string[] = new Array(frag.items.length).fill('');
   const remapEp = (ep: Endpoint): Endpoint => {
     if (ep.kind === 'port') return idMap.has(ep.comp) ? { ...ep, comp: idMap.get(ep.comp)! } : { kind: 'free', x: 0, y: 0 };
     if (ep.kind === 'junction') return idMap.has(ep.id) ? { kind: 'junction', id: idMap.get(ep.id)! } : { kind: 'free', x: 0, y: 0 };
@@ -833,6 +842,8 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
     it.id = idMap.get(src.id)!;
     it.group = src.group ? gMap.get(src.group) : scope;
     it.locked = false;
+    // a fragment carries no page: its items land on the page they are inserted into
+    delete it.page;
     if (it.type === 'component') {
       it.x += dx;
       it.y += dy;
@@ -865,7 +876,7 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
       it.pts = it.pts.map((p) => ({ x: p.x + dx, y: p.y + dy }));
     }
     doc.items[it.id] = it;
-    out.push(it.id);
+    out[orderOf.get(src.id)!] = it.id;
   }
   // fragments copied / saved by older versions still carry shape layers
   migrateShapeLayers(doc.items);

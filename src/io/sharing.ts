@@ -1,5 +1,6 @@
 import { docBounds, uid } from '../model/doc';
 import { extractFragment, insertFragment, type Fragment } from '../model/ops';
+import { docPages, pageItemIds } from '../model/pages';
 import { snap } from '../model/geometry';
 import type { CircuitDoc, Point, SymbolDef } from '../model/types';
 import { S, mergeUserSymbols, mutate, set, toast } from '../store/store';
@@ -78,9 +79,39 @@ export function importTemplateText(text: string, at?: Point): string[] {
 /**
  * Adds a whole circuit to the open one (instead of replacing it), centred on
  * `at`, as one group named after it. Its symbols come along. One undo step.
+ *
+ * A picture carries one drawing: `opts.onePage` says which page the picture
+ * shows (`opts.pageId` from the picture's geometry, else `opts.page` its name,
+ * else the first page with something on it), so an older export of a whole
+ * circuit — before scenes were scoped to their page — adds only that drawing,
+ * not every page on top of each other. Without it (a `.nodal` file) every page
+ * is added, as before.
  */
-export function insertCircuit(src: CircuitDoc, at?: Point): string[] {
-  const frag = extractFragment(src, new Set(Object.keys(src.items)));
+export function insertCircuit(
+  src: CircuitDoc,
+  at?: Point,
+  opts: { onePage?: boolean; page?: string | null; pageId?: string | null } = {},
+): string[] {
+  const name = (opts.page ?? '').trim();
+  let ids: string[];
+  if (opts.onePage || name || opts.pageId) {
+    const pages = docPages(src);
+    const withItems = (p: string) => pageItemIds(src, p).length;
+    // file names carry the page name with characters a file system refuses
+    // replaced (and Windows ignores case), so match that form too
+    const norm = (s: string) => sanitizeName(s).toLowerCase();
+    const wanted = name
+      ? pages.find((p) => p.name.trim().toLowerCase() === name.toLowerCase()) ?? pages.find((p) => norm(p.name) === norm(name))
+      : undefined;
+    // an older picture's own geometry says which page it shows; then its name;
+    // then the first page with a drawing, so nothing lands on top of anything
+    const shown = opts.pageId ? pages.find((p) => p.id === opts.pageId && withItems(p.id)) : undefined;
+    const page = shown ?? (wanted && withItems(wanted.id) ? wanted : pages.find((p) => withItems(p.id)));
+    ids = page ? pageItemIds(src, page.id) : Object.keys(src.items);
+  } else {
+    ids = Object.keys(src.items);
+  }
+  const frag = extractFragment(src, new Set(ids));
   if (!frag.items.length) throw new Error('This circuit is empty.');
   return insertFragmentAt(frag, at, src.name);
 }

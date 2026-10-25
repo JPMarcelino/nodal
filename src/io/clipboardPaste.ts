@@ -4,7 +4,7 @@ import { pasteFragment } from '../store/actions';
 import { importFileText, viewCentre } from './importFiles';
 import { insertPictures, rasterToPicture, type Picture } from './imageImport';
 import { fragmentFromText } from './clipboardCopy';
-import { sceneFromFile } from './embeddedScene';
+import { sceneFromPicture } from './embeddedScene';
 
 export type ClipboardPasteKind = 'fragment' | 'circuit' | 'image' | 'svg' | 'none';
 
@@ -48,9 +48,9 @@ export async function pasteClipboardContent(
     return 'fragment';
   }
   // an exported PNG that carries its circuit (most apps drop the chunk when copying, but not all)
-  const scene = imageBlob ? await sceneFromFile(imageBlob).catch(() => null) : null;
+  const scene = imageBlob ? await sceneFromPicture(imageBlob).catch(() => null) : null;
   if (scene) {
-    await importFileText('Pasted circuit.png', scene, at);
+    await importFileText('Pasted circuit.png', scene.json, at, undefined, { width: scene.width, height: scene.height });
     return 'circuit';
   }
   if (imageBlob) {

@@ -27,6 +27,16 @@ export function isPng(bytes: Uint8Array): boolean {
   return bytes.length >= 8 && SIGNATURE.every((b, i) => bytes[i] === b);
 }
 
+/** The pixel size in a PNG's header; null when it is not a PNG (or is truncated). */
+export function pngSize(bytes: Uint8Array): { w: number; h: number } | null {
+  // IHDR is the first chunk: length (4) + type (4) + width (4) + height (4), from byte 8
+  if (!isPng(bytes) || bytes.length < 24) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const w = dv.getUint32(16);
+  const h = dv.getUint32(20);
+  return w && h ? { w, h } : null;
+}
+
 interface Chunk {
   type: string;
   /** Offset of the length field. */

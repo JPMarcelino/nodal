@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { crc32, extractPngText, insertPngText, isPng } from '../io/pngMeta';
+import { crc32, extractPngText, insertPngText, isPng, pngSize } from '../io/pngMeta';
 import { SCENE_TYPE, pngWithScene, sceneFromFile, sceneFromPng, sceneFromSvgText, sceneJson, svgWithScene } from '../io/embeddedScene';
 import { exportSvg } from '../io/export';
 import { createDoc, makeComponent, normalizeDoc } from '../model/doc';
@@ -19,6 +19,11 @@ describe('pngMeta', () => {
     expect(crc32(new TextEncoder().encode('123456789'))).toBe(0xcbf43926);
     expect(crc32(new TextEncoder().encode('IEND'))).toBe(0xae426082);
     expect(crc32(new Uint8Array())).toBe(0);
+  });
+
+  it('reads the pixel size from the header', () => {
+    expect(pngSize(PNG)).toEqual({ w: 1, h: 1 });
+    expect(pngSize(new Uint8Array([1, 2, 3]))).toBeNull();
   });
 
   it('round-trips UTF-8 text and keeps the image valid', () => {

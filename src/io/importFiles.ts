@@ -1,7 +1,8 @@
 import { normalizeDoc } from '../model/doc';
 import { snap } from '../model/geometry';
+import { docPages, viewDoc } from '../model/pages';
 import { insertSvgDrawing, type SvgImportOptions } from '../model/svgDrawing';
-import type { CircuitDoc, Point } from '../model/types';
+import type { CircuitDoc, Point, Rect } from '../model/types';
 import { S, mutate, toast } from '../store/store';
 import { askSvgImport } from '../ui/SvgImportDialog';
 import { openAnyFile } from './files';
@@ -9,7 +10,62 @@ import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from 
 import { importLibraryText, importTemplateText, insertCircuit } from './sharing';
 import { svgToDrawing } from './svgImport';
 import { fragmentFromText } from './clipboardCopy';
-import { sceneFromFile, sceneFromSvgText } from './embeddedScene';
+import { sceneFromPicture, sceneFromSvgText, svgTitle } from './embeddedScene';
+import { exportBox } from './export';
+
+interface PictureSize {
+  width?: number;
+  height?: number;
+}
+
+/** The world rectangle an exported SVG covers, from its viewBox. */
+function svgViewBox(text: string): Rect | null {
+  const m = /<svg\b[^>]*\bviewBox\s*=\s*"([^"]+)"/i.exec(text);
+  const n = m ? m[1].trim().split(/[\s,]+/).map(Number) : [];
+  return n.length === 4 && n.every(Number.isFinite) && n[2] > 0 && n[3] > 0 ? { x: n[0], y: n[1], w: n[2], h: n[3] } : null;
+}
+
+const sameBox = (a: Rect, b: Rect) =>
+  Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1 && Math.abs(a.w - b.w) <= 1 && Math.abs(a.h - b.h) <= 1;
+
+/**
+ * Which page an older picture shows, judged by what the picture covers: the
+ * SVG viewBox (or a PNG's proportions) against each page's export window. An
+ * export made before pictures were scoped to their page still carried the
+ * whole circuit, and may be named after the circuit rather than the page, so
+ * the picture's own geometry is the reliable clue.
+ */
+function picturePageId(doc: CircuitDoc, text: string, size?: PictureSize): string | undefined {
+  const viewBox = text.trimStart().startsWith('<') ? svgViewBox(text) : null;
+  const box: Rect | null =
+    viewBox ?? (size?.width && size.height ? { x: 0, y: 0, w: size.width, h: size.height } : null);
+  if (!box) return undefined;
+  const pages = docPages(doc);
+  const windows: { id: string; box: Rect }[] = [];
+  for (const p of pages) {
+    const view = viewDoc(doc, p.id);
+    if (!Object.keys(view.items).length) continue;
+    windows.push({ id: p.id, box: exportBox(view, { theme: 'light', background: false, padding: 20 }) });
+  }
+  if (!windows.length) return undefined;
+  if (viewBox) {
+    const exact = windows.filter((w) => sameBox(w.box, viewBox));
+    if (exact.length === 1) return exact[0].id;
+  }
+  // the picture's shape: only a clear winner counts (pages often look alike)
+  const aspect = box.w / box.h;
+  const scored = windows
+    .map((w) => ({ id: w.id, err: Math.abs(w.box.w / w.box.h - aspect) / aspect }))
+    .sort((a, b) => a.err - b.err);
+  const [best, next] = scored;
+  return best && best.err <= 0.01 && (!next || next.err >= best.err + 0.01) ? best.id : undefined;
+}
+
+/** The page name an exported picture was of: its SVG title, else its file name. */
+function scenePageHint(name: string, text: string): string | undefined {
+  const title = text.trimStart().startsWith('<') ? svgTitle(text) : null;
+  return title ?? (name.replace(/\.(nodal|json|png|svg)$/i, '').trim() || undefined);
+}
 
 /** Everything "Import file…" and drag & drop understand. */
 export const IMPORT_FILTER = [
@@ -26,7 +82,7 @@ export const viewCentre = (): Point => {
  * merges into "My symbols", a template / copied selection is inserted at `at`,
  * and an SVG becomes editable wires and shapes placed at `at` (asking how, unless `svg` says).
  */
-export async function importFileText(name: string, text: string, at?: Point, svg?: SvgImportOptions): Promise<void> {
+export async function importFileText(name: string, text: string, at?: Point, svg?: SvgImportOptions, picture?: PictureSize): Promise<void> {
   try {
     const trimmed = text.trimStart();
     // a picture copied from Nodal (Ctrl+C, Export → Copy) carries its items: bring them back editable
@@ -42,6 +98,9 @@ export async function importFileText(name: string, text: string, at?: Point, svg
       await importSvgDrawing(name, text, at ?? viewCentre(), svg);
       return;
     }
+    // a picture carries one page; an older one may still carry the whole circuit
+    const fromPicture = !!embedded || /\.png$/i.test(name);
+    const page = fromPicture ? scenePageHint(name, text) : undefined;
     let data: { format?: unknown };
     try {
       data = JSON.parse(embedded ?? text);
@@ -51,7 +110,9 @@ export async function importFileText(name: string, text: string, at?: Point, svg
     switch (data?.format) {
       case 'nodal': {
         // dropped or imported circuits are added to this one; File → Open replaces it
-        const ids = insertCircuit(normalizeDoc(data), at);
+        const src = normalizeDoc(data);
+        const pageId = fromPicture ? picturePageId(src, text, picture) : undefined;
+        const ids = insertCircuit(src, at, { onePage: fromPicture, page, pageId });
         toast(`Added “${name.replace(/\.(nodal|json|png|svg)$/i, '')}” (${ids.length} items, grouped; double-click to edit inside)`, 'success');
         return;
       }
@@ -97,8 +158,9 @@ async function importSvgDrawing(fileName: string, text: string, at: Point, opts?
 /** Imports one file of any supported kind; text formats go through `importFileText`. */
 async function importOneFile(file: File, at?: Point) {
   // a PNG exported with its circuit inside is that circuit, not a picture
-  const embedded = /\.png$/i.test(file.name) || file.type === 'image/png' ? await sceneFromFile(file).catch(() => null) : null;
-  if (embedded) return importFileText(file.name, embedded, at);
+  const embedded =
+    /\.png$/i.test(file.name) || file.type === 'image/png' ? await sceneFromPicture(file).catch(() => null) : null;
+  if (embedded) return importFileText(file.name, embedded.json, at, undefined, { width: embedded.width, height: embedded.height });
   if (isRaster(file) || isPdf(file)) {
     try {
       let pictures;
