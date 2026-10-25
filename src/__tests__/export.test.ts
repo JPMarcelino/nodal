@@ -81,7 +81,7 @@ describe('selectionDoc', () => {
     Object.assign(box, { fill: '#0f0e0c', fillOpacity: 1 });
     doc.items[box.id] = box;
     const solid = exportSvg(doc, { theme: 'light', background: true, padding: 10 }).svg;
-    expect(solid).toContain('fill="#fffdf9"');
+    expect(solid).toContain('fill="#ffffff"');
     expect(solid).not.toContain('#0f0e0c');
     const clear = exportSvg(doc, { theme: 'dark', background: false, padding: 10 }).svg;
     expect(clear).not.toContain('#0f0e0c');

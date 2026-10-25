@@ -16,9 +16,9 @@ import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 import { withoutFrames } from '../model/presentation';
 import { shapeOutline } from '../model/path';
 
-/** The editor's colours (styles/app.css) as plain values, so an export looks like the canvas in that theme. */
+/** The editor's colours (styles/app.css) as plain values, so an export looks like the canvas in that theme; the light page is pure white rather than the canvas's warm off-white, since exports land on white pages. */
 export const EXPORT_THEMES: Record<'light' | 'dark', Palette & { grid: string; danger: string }> = {
-  light: { sym: '#1f1c16', symBg: '#fffdf9', label: '#1f1c16', value: '#6b6355', bg: '#fffdf9', selection: '#9a7429', ink: '#000000', grid: '#e6e8ee', danger: '#c4483c' },
+  light: { sym: '#1f1c16', symBg: '#ffffff', label: '#1f1c16', value: '#6b6355', bg: '#ffffff', selection: '#9a7429', ink: '#000000', grid: '#e6e8ee', danger: '#c4483c' },
   dark: { sym: '#e6dfcf', symBg: '#0f0e0c', label: '#ece6d8', value: '#9c9483', bg: '#0f0e0c', selection: '#d4af6a', ink: '#e6dfcf', grid: '#2a2722', danger: '#e5786d' },
 };
 
