@@ -1613,7 +1613,8 @@ export function Canvas() {
         if (alignGuides || spacingGuides) {
           if (alignRef.current?.ids !== g.ids) {
             const base = viewDoc(gestureBaseDoc() ?? S().doc, S().page);
-            const labels = labelGuides ? (it: Item) => (it.type === 'component' ? partLabelRects(base, it).map((l) => l.rect) : []) : undefined;
+            // label rects only feed alignMove, so they are wasted work without alignment guides
+            const labels = alignGuides && labelGuides ? (it: Item) => (it.type === 'component' ? partLabelRects(base, it).map((l) => l.rect) : []) : undefined;
             alignRef.current = { ids: g.ids, ...alignAnchors(base, g.ids, labels) };
           }
           const { moving, index, box, others } = alignRef.current;
@@ -1903,8 +1904,8 @@ export function Canvas() {
       case 'label': {
         let dx = Math.round(w.x - g.start.x);
         let dy = Math.round(w.y - g.start.y);
-        const { alignGuides, labelGuides } = S().prefs;
-        if (alignGuides && labelGuides) {
+        const { labelGuides } = S().prefs;
+        if (labelGuides) {
           // the dragged text lines up with every part, shape and other label that stays put
           if (alignRef.current?.ids !== g.frozen) {
             const base = viewDoc(gestureBaseDoc() ?? S().doc, S().page);
