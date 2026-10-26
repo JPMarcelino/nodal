@@ -150,12 +150,14 @@ function insertCircuitPages(src: CircuitDoc, pages: Page[], at?: Point): string[
     const gid = uid('g');
     d.groups[gid] = { id: gid, name: src.name, group: scope };
     const current = resolvePage(d, wantedPage);
-    // an empty circuit takes the imported first page's name instead of
-    // keeping a blank "Page 1" beside the new pages
+    // an empty circuit with a default page name takes the imported first
+    // page's name instead of keeping a blank "Page 1" beside the new pages
     if (empty) {
-      if (!d.pages?.length) d.pages = docPages(d).map((p) => ({ ...p }));
-      const target = d.pages.find((p) => p.id === current) ?? d.pages[0];
-      target.name = pages[0].name;
+      const implicit = !d.pages?.length;
+      if (implicit) d.pages = docPages(d).map((p) => ({ ...p }));
+      const list = d.pages ?? [];
+      const target = list.find((p) => p.id === current) ?? list[0];
+      if (target && (implicit || /^Page \d+$/.test(target.name.trim()))) target.name = pages[0].name;
     }
     let after = current;
     pages.forEach((source, i) => {
