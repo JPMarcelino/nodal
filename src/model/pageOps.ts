@@ -1,9 +1,9 @@
 import { connectorsOf, detachConnector, isConnector } from './connectors';
 import { groupChain } from './doc';
-import { deleteItems, extractFragment, insertFragment, pruneGroups } from './ops';
+import { cleanup, deleteItems, extractFragment, insertFragment, pruneGroups } from './ops';
 import { addPage, docPages, itemPage, pageItemIds, resolvePage } from './pages';
 import type { CircuitDoc, Endpoint, Item } from './types';
-import { endpointInfo } from './wires';
+import { endpointInfo, wirePolyline } from './wires';
 
 /* Page edits that need the item operations (kept apart from model/pages so ops can use that one). */
 
@@ -77,7 +77,10 @@ export function moveItemsToPage(d: CircuitDoc, ids: Iterable<string>, page: stri
       const o = owner(it[end]);
       if (!o || move.has(o) === move.has(it.id)) continue;
       const info = endpointInfo(d, it[end]);
-      if (info) it[end] = { kind: 'free', x: info.pt.x, y: info.pt.y };
+      if (!info) continue;
+      // keep the route as drawn: a loose end has no pin direction to elbow by
+      it.pts = wirePolyline(d, it).slice(1, -1);
+      it[end] = { kind: 'free', x: info.pt.x, y: info.pt.y };
     }
   }
   for (const s of connectorsOf(d, move)) {
@@ -101,6 +104,8 @@ export function moveItemsToPage(d: CircuitDoc, ids: Iterable<string>, page: stri
     if (first) delete d.items[id].page;
     else d.items[id].page = target;
   }
+  // junctions that lost wires to the other page: dropped, or merged into one wire
+  cleanup(d);
   pruneGroups(d);
-  return [...move];
+  return [...move].filter((id) => d.items[id]);
 }

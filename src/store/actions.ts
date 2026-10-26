@@ -1,3 +1,4 @@
+import { current } from 'immer';
 import { docBounds, groupChain, makeComponent, makeShape, topGroup } from '../model/doc';
 import { withContents } from '../model/containers';
 import { PRESET_SIZE, getPreset, makePresetShape } from '../model/shapePresets';
@@ -9,17 +10,21 @@ import { commitWire } from '../model/wireCommit';
 import {
   alignItems,
   annotate,
+  cleanup,
   deleteItems,
   deleteWirePart,
   distributeItems,
   matchSizes,
   extractFragment,
   flipItems,
+  followParts,
   groupItems,
   insertFragment,
   restackItems,
   rotateItems,
+  routeWireAround,
   translateItems,
+  turnPivot,
   ungroupItems,
   type AlignMode,
   type SizeMode,
@@ -416,7 +421,8 @@ export const pastePoint = () => (S().pointerOnCanvas ? S().cursor : viewCentre()
 export function pasteFragment(frag: Fragment, at?: { x: number; y: number }) {
   const g = vdoc().settings.grid;
   let dx: number, dy: number;
-  const tmp = { ...vdoc(), items: Object.fromEntries(frag.items.map((i) => [i.id, i])) } as CircuitDoc;
+  // the fragment's own symbols, so parts from another circuit measure (and their wires resolve) as they will look
+  const tmp = { ...vdoc(), symbols: { ...frag.symbols, ...vdoc().symbols }, items: Object.fromEntries(frag.items.map((i) => [i.id, i])) } as CircuitDoc;
   const b = docBounds(tmp);
   if (at && b) {
     dx = snap(at.x - (b.x + b.w / 2), g);
@@ -427,12 +433,24 @@ export function pasteFragment(frag: Fragment, at?: { x: number; y: number }) {
   }
   let ids: string[] = [];
   if (
-    !mutate((d) => {
-      ids = insertFragment(d as CircuitDoc, frag, dx, dy, S().scope);
-    })
+    !mutate(
+      (d) => {
+        ids = placeFragment(d as CircuitDoc, frag, dx, dy);
+      },
+      undefined,
+      // a paste stepped off the original must not wire itself into it; one dropped at the pointer is placed on purpose
+      { settle: !!at },
+    )
   )
     return;
   set({ selection: ids });
+}
+
+/** Inserts a fragment and tidies its junctions (ones that came without all their wires); returns the ids still there. */
+function placeFragment(d: CircuitDoc, frag: Fragment, dx: number, dy: number): string[] {
+  const ids = insertFragment(d, frag, dx, dy, S().scope);
+  cleanup(d);
+  return ids.filter((id) => d.items[id]);
 }
 
 export function duplicateSelection() {
@@ -440,10 +458,15 @@ export function duplicateSelection() {
   const frag = extractFragment(vdoc(), sel());
   const g = vdoc().settings.grid * 2;
   let ids: string[] = [];
+  // the copy lands next to the original: it must not connect to it
   if (
-    !mutate((d) => {
-      ids = insertFragment(d as CircuitDoc, frag, g, g, S().scope);
-    })
+    !mutate(
+      (d) => {
+        ids = placeFragment(d as CircuitDoc, frag, g, g);
+      },
+      undefined,
+      { settle: false },
+    )
   )
     return;
   set({ selection: ids });
@@ -457,10 +480,14 @@ export function duplicateIncrementSelection() {
   let ids: string[] = [];
   let bumped = false;
   if (
-    !mutate((d) => {
-      ids = insertFragment(d as CircuitDoc, frag, 0, g, S().scope);
-      bumped = incrementLabels(d, ids);
-    })
+    !mutate(
+      (d) => {
+        ids = placeFragment(d as CircuitDoc, frag, 0, g);
+        bumped = incrementLabels(d, ids);
+      },
+      undefined,
+      { settle: false },
+    )
   )
     return;
   set({ selection: ids });
@@ -470,10 +497,11 @@ export function duplicateIncrementSelection() {
 /** Stages an exact copy of the selection on top of the original (no undo step) and selects it; for placing with the pointer. */
 export function copyInPlace(): string[] {
   if (!S().selection.length || readOnly()) return [];
-  const frag = extractFragment(vdoc(), sel());
+  // a container is copied with what sits inside it, like a move carries it
+  const frag = extractFragment(vdoc(), withContents(vdoc(), sel()));
   let ids: string[] = [];
   const next = editPage(S().doc, S().page, (d) => {
-    ids = insertFragment(d as CircuitDoc, frag, 0, 0, S().scope);
+    ids = placeFragment(d as CircuitDoc, frag, 0, 0);
   });
   set({ doc: next, selection: ids });
   return ids;
@@ -503,6 +531,18 @@ export function nudge(dx: number, dy: number) {
 /* Arrange                                                             */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The last turn or flip: pressing R / X / Y again on what it left keeps the
+ * same pivot, so four turns or two flips always come back to the start.
+ */
+let lastTurn: { key: string; doc: CircuitDoc; pivot: Point } | null = null;
+
+function turnSelection(ids: Set<string>, apply: (d: CircuitDoc, pivot: Point) => void) {
+  const key = [...ids].sort().join(' ');
+  const pivot = lastTurn && lastTurn.key === key && lastTurn.doc === S().doc ? lastTurn.pivot : turnPivot(vdoc(), ids);
+  if (mutate((d) => apply(d as CircuitDoc, pivot))) lastTurn = { key, doc: S().doc, pivot };
+}
+
 export function rotateSelection(deg: 90 | -90) {
   const p = S().placing;
   if (p) {
@@ -511,22 +551,18 @@ export function rotateSelection(deg: 90 | -90) {
   }
   // like a move, a turn carries whatever sits inside a selected container
   const ids = withContents(vdoc(), editable());
-  if (ids.size) mutate((d) => rotateItems(d as CircuitDoc, ids, deg));
+  if (ids.size) turnSelection(ids, (d, pivot) => rotateItems(d, ids, deg, pivot));
 }
 
 export function flipSelection(axis: 'x' | 'y') {
   const p = S().placing;
   if (p) {
-    set({
-      placing:
-        axis === 'x'
-          ? { ...p, flipX: !p.flipX }
-          : { ...p, flipX: !p.flipX, rot: ((p.rot + 180) % 360) as 0 | 90 | 180 | 270 },
-    });
+    // the same mirror on screen as flipping a placed part: parts are drawn mirrored first, then turned
+    set({ placing: { ...p, flipX: !p.flipX, rot: (((axis === 'x' ? 360 : 540) - p.rot) % 360) as 0 | 90 | 180 | 270 } });
     return;
   }
   const ids = withContents(vdoc(), editable());
-  if (ids.size) mutate((d) => flipItems(d as CircuitDoc, ids, axis));
+  if (ids.size) turnSelection(ids, (d, pivot) => flipItems(d, ids, axis, pivot));
 }
 
 export function groupSelection() {
@@ -612,7 +648,19 @@ export function rerouteWires() {
   const wires = S().selection.filter((id) => vdoc().items[id]?.type === 'wire');
   const ids = wires.filter((id) => !vdoc().items[id]?.locked);
   if (!ids.length) return toast(wires.length ? 'Locked wires can’t be re-routed' : 'Select wires to re-route');
-  mutate((d) => ids.forEach((id) => d.items[id].type === 'wire' && ((d.items[id] as Extract<Item, { type: 'wire' }>).pts = [])));
+  // square runs around parts and other wires; with no clean route, a plain elbow as before
+  mutate((d) => {
+    const pending = new Set(ids);
+    for (const id of ids) {
+      const w = d.items[id];
+      pending.delete(id);
+      if (w?.type !== 'wire') continue;
+      if (!routeWireAround(d as CircuitDoc, w as Extract<Item, { type: 'wire' }>, pending)) {
+        w.pts = [];
+        delete w.routing;
+      }
+    }
+  });
 }
 
 export function annotateAll() {
@@ -622,11 +670,15 @@ export function annotateAll() {
 
 /** Applies a patch to each given item that isn't locked, as one undo step. */
 export function updateItems(ids: Iterable<string>, patch: (it: Item) => void, opts?: { allPages?: boolean }) {
+  const list = [...ids];
   mutate((d) => {
-    for (const id of ids) {
+    const base = current(d) as CircuitDoc;
+    for (const id of list) {
       const it = d.items[id];
       if (it && !it.locked) patch(it as Item);
     }
+    // parts moved, turned, flipped or resized by a field take their wires along
+    followParts(base, d as CircuitDoc, new Set(list));
   }, undefined, opts);
 }
 

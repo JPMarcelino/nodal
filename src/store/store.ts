@@ -346,7 +346,7 @@ export function withGestureMutate<T>(fn: () => T): T {
  * `allPages` is set: page edits and document-wide changes such as renumbering.
  * Returns false when the edit was refused (View mode, read-only session, running gesture).
  */
-export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: string[], opts?: { allPages?: boolean }): boolean {
+export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: string[], opts?: { allPages?: boolean; settle?: boolean }): boolean {
   const s = S();
   if (readOnly(s)) {
     if (selection) set({ selection });
@@ -363,7 +363,7 @@ export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: strin
         recipe(d);
       })
     : // parts placed or moved onto wires connect to them (not mid-drag: only when the edit is committed)
-      editPage(s.doc, s.page, (d) => recipe(d), gestureBase ? undefined : settleEdit);
+      editPage(s.doc, s.page, (d) => recipe(d), gestureBase || opts?.settle === false ? undefined : settleEdit);
   if (next === s.doc) {
     if (selection) set({ selection });
     return true;
