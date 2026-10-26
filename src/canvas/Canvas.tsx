@@ -6,7 +6,7 @@ import { withContents } from '../model/containers';
 import { getPreset, makePresetShape } from '../model/shapePresets';
 import { PresetShape } from './PresetShape';
 import { componentBounds, dist, eq, measureText, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
-import { cleanup, deleteWirePart, rotateShapeBy, scaleItems, selectionPivot, translateDetached, translateItems } from '../model/ops';
+import { cleanup, deleteWirePart, followParts, rotateShapeBy, scaleItems, selectionPivot, translateDetached, translateItems } from '../model/ops';
 import { dragRotation, fromShapeFrame, HANDLE_ROT_KINDS, rectCentre, resizeInFrame, rotateDeg, shapeBox, shapeRot, shapeTransform, toShapeFrame } from '../model/rotation';
 import { getSymbol, instanceSymbol } from '../model/registry';
 import { gridScale, scaleStep } from '../model/symbols/scale';
@@ -964,8 +964,9 @@ export function Canvas() {
       select([hit]);
     }
     const before = S().doc; // the whole document: the undo point
+    // like a drag, the move carries whatever sits inside a selected container (a copy copies it along)
     if (copy) A.copyInPlace();
-    const ids = new Set(S().selection.filter((id) => !vdoc().items[id]?.locked));
+    const ids = copy ? new Set(S().selection) : withContents(vdoc(), S().selection.filter((id) => !vdoc().items[id]?.locked));
     if (!ids.size) {
       setGesture(null);
       toast('The selection is locked');
@@ -1350,7 +1351,8 @@ export function Canvas() {
       return;
     }
     if (groupHandles().some((h) => dist(h, w) < 7 / v.zoom)) {
-      const ids = new Set(S().selection);
+      // locked items keep their size and place (and so do the wire ends on them)
+      const ids = new Set(S().selection.filter((id) => !vdoc().items[id]?.locked));
       const pivot = selectionPivot(vdoc(), ids);
       beginGesture();
       setGesture({ kind: 'groupScale', ids, pivot, d0: Math.max(1, dist(w, pivot)) });
@@ -1802,8 +1804,10 @@ export function Canvas() {
         // only sizes that keep every pin on the grid (quarter steps for single-pin parts)
         const def = getSymbol(vdoc(), c.symbol);
         const k = scaleStep(def) ? gridScale(def, raw) : Math.max(0.25, Math.round(raw * 4) / 4);
-        gestureUpdate((d) => {
+        gestureUpdate((d, base) => {
           (d.items[g.id] as ComponentItem).scale = k === 1 ? undefined : k;
+          // the wires on its pins stretch along
+          followParts(base, d as CircuitDoc, new Set([g.id]), false);
         });
         break;
       }
@@ -1972,8 +1976,9 @@ export function Canvas() {
       case 'label':
       case 'wireLabel':
       case 'shapeTitle':
+        // a moved segment's cleanup belongs to the same undo step
+        if (g.kind === 'segment' && g.moved) withGestureMutate(() => mutate((d) => cleanup(d as CircuitDoc)));
         endGesture(true);
-        if (g.kind === 'segment' && g.moved) mutate((d) => cleanup(d as CircuitDoc));
         if (g.kind === 'segment' && !g.moved && g.pick) select([g.pick]);
         setGesture(null);
         break;

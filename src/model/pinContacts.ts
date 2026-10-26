@@ -18,6 +18,7 @@ function landedParts(prev: CircuitDoc, next: CircuitDoc): ComponentItem[] {
 }
 
 const onPort = (ep: Endpoint, comp: string, port: string) => ep.kind === 'port' && ep.comp === comp && ep.port === port;
+const onPart = (ep: Endpoint, comp: string) => ep.kind === 'port' && ep.comp === comp;
 
 /**
  * Connects the pins of parts that were just placed or moved to wires they now
@@ -44,6 +45,9 @@ export function attachLandedPins(prev: CircuitDoc, next: CircuitDoc): CircuitDoc
   const wires = Object.values(next.items).filter((i): i is WireItem => i.type === 'wire' && !i.hidden);
   if (!pins.some((pin) => wires.some((w) => touches(next, w, pin.pt)))) return next;
 
+  // wires already on a landed part before this settle (not the pieces split off here)
+  const leads = new Set(wires.filter((w) => parts.some((c) => onPart(w.a, c.id) || onPart(w.b, c.id))).map((w) => w.id));
+  const ownLead = (w: WireItem, comp: string) => leads.has(w.id) && (onPart(w.a, comp) || onPart(w.b, comp));
   return produce(next, (d) => {
     const doc = d as CircuitDoc;
     /** Wire pieces created here, to drop the ones that end up shorting a part. */
@@ -52,17 +56,17 @@ export function attachLandedPins(prev: CircuitDoc, next: CircuitDoc): CircuitDoc
       const port: Endpoint = { kind: 'port', comp: pin.comp, port: pin.port };
       for (const w of Object.values(doc.items)) {
         if (w.type !== 'wire' || w.hidden || w.locked) continue;
-        if (onPort(w.a, pin.comp, pin.port) || onPort(w.b, pin.comp, pin.port)) continue;
+        // the part's own wires: a turn or flip can lay a lead across another of its pins, which must not swap its nets
+        if (onPort(w.a, pin.comp, pin.port) || onPort(w.b, pin.comp, pin.port) || ownLead(w, pin.comp)) continue;
         const full = wirePolyline(doc, w);
         if (full.length < 2) continue;
-        if (w.a.kind === 'free' && eq(full[0], pin.pt)) {
-          w.a = port;
-          continue;
+        for (const end of ['a', 'b'] as const) {
+          if (w[end].kind !== 'free' || !eq(end === 'a' ? full[0] : full[full.length - 1], pin.pt)) continue;
+          // keep the drawn route: only the end's connection changes
+          w.pts = full.slice(1, -1);
+          w[end] = port;
         }
-        if (w.b.kind === 'free' && eq(full[full.length - 1], pin.pt)) {
-          w.b = port;
-          continue;
-        }
+        if (onPort(w.a, pin.comp, pin.port) || onPort(w.b, pin.comp, pin.port)) continue;
         if (eq(full[0], pin.pt) || eq(full[full.length - 1], pin.pt)) continue; // an end attached elsewhere
         const seg = full.findIndex((q, i) => i < full.length - 1 && projectOnSegment(pin.pt, q, full[i + 1]).d < 0.01);
         if (seg < 0) continue;

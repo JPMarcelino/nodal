@@ -43,6 +43,19 @@ function segOverlap(a1: Point, a2: Point, b1: Point, b2: Point): [Point, Point] 
   return [at(lo), at(hi)];
 }
 
+/**
+ * Two wires on different pins of the same part: when a move or turn lays one
+ * lead along the other, joining them would short the part, so they are left
+ * as they are (they only look connected until rerouted).
+ */
+function leadsOfOnePart(w: WireItem, o: WireItem): boolean {
+  for (const p of [w.a, w.b]) {
+    if (p.kind !== 'port') continue;
+    for (const q of [o.a, o.b]) if (q.kind === 'port' && q.comp === p.comp && q.port !== p.port) return true;
+  }
+  return false;
+}
+
 function findOverlap(doc: CircuitDoc, changed: Set<string>): Overlap | null {
   const wires = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire' && !i.hidden);
   const polys = new Map(wires.map((w) => [w.id, wirePolyline(doc, w)]));
@@ -50,7 +63,7 @@ function findOverlap(doc: CircuitDoc, changed: Set<string>): Overlap | null {
     if (!changed.has(w.id)) continue;
     const pw = polys.get(w.id)!;
     for (const o of wires) {
-      if (o.id === w.id) continue;
+      if (o.id === w.id || leadsOfOnePart(w, o)) continue;
       const po = polys.get(o.id)!;
       for (let i = 0; i < pw.length - 1; i++) {
         for (let j = 0; j < po.length - 1; j++) {

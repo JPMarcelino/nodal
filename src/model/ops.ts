@@ -1,15 +1,18 @@
 import { current, isDraft } from 'immer';
 import { withContents } from './containers';
-import { connectorsOf, detachConnector, isConnector, resolveConnector } from './connectors';
+import { connectorsOf, detachConnector, fromLocal, isConnector, isFixed, resolveConnector, targetFrame, toLocal } from './connectors';
 import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
-import { eq, projectOnSegment, rectsIntersect, rotate, simplify, snap, unionRects } from './geometry';
+import { componentBounds, eq, pointInRect, projectOnSegment, rectsIntersect, rotate, segmentIntersectsRect, simplify, snap, unionRects } from './geometry';
+import { routeLeg, routeObstacles } from './route';
 import { inkPoints, packInk } from './ink';
 import { mapNodes, pathNodes, setPathNodes } from './path';
 import { mapShapeFrame, normDeg, rectCentre, ROT_KINDS, rotateDeg, shapeBox, shapeRot } from './rotation';
 import { touchingPins } from './netlist';
 import { docPages, itemPage } from './pages';
 import { instanceSymbol } from './registry';
-import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, Point, Rect, ShapeItem, WireItem } from './types';
+import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, LabelSide, LabelSpotName, Point, Rect, ShapeItem, WireItem } from './types';
+// label placement is shared with the renderer, so a turned part's labels land where they are drawn
+import { labelBox, labelLayout, labelLook } from '../canvas/Scene';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
 import type { TouchTarget } from './hotspots';
 
@@ -24,6 +27,12 @@ function setFullPolyline(w: WireItem, full: Point[]) {
   w.pts = simplify(full).slice(1, -1);
 }
 
+/** A wire piece split off another one: the name stays on the original piece only, so it isn't drawn twice. */
+function withoutLabel(w: WireItem): WireItem {
+  for (const k of ['label', 'labelAt', 'labelSide', 'labelHidden', 'labelStyle'] as const) delete w[k];
+  return w;
+}
+
 /** Splits a wire at a point on segment `seg` at a junction (a new one unless `jid` is given). Returns the junction id. */
 export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Point, jid = uid('j')): string {
   const w = doc.items[wireId] as WireItem;
@@ -32,7 +41,7 @@ export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Poin
   const first = full.slice(0, seg + 1);
   const second = full.slice(seg + 1);
   const w2: WireItem = {
-    ...clone(w),
+    ...withoutLabel(clone(w)),
     id: uid('w'),
     a: { kind: 'junction', id: jid },
     pts: simplify([pt, ...second]).slice(1, -1),
@@ -208,18 +217,22 @@ export function cleanup(doc: CircuitDoc) {
     let changed = false;
     // degenerate wires
     for (const it of Object.values(doc.items)) {
-      if (it.type !== 'wire') continue;
+      if (it.type !== 'wire' || !doc.items[it.id]) continue;
       const a = endpointInfo(doc, it.a);
       const b = endpointInfo(doc, it.b);
       if (!a || !b) {
-        delete doc.items[it.id];
+        // an end whose pin or junction is gone lets go where the wire last ran, keeping the rest of it
+        const keep = a ?? b;
+        const end = a ? 'b' : 'a';
+        const at = it.pts.length ? (end === 'a' ? it.pts[0] : it.pts[it.pts.length - 1]) : null;
+        if (keep && at) {
+          it[end] = { kind: 'free', x: at.x, y: at.y };
+          it.pts = end === 'a' ? it.pts.slice(1) : it.pts.slice(0, -1);
+        } else delete doc.items[it.id];
         changed = true;
         continue;
       }
-      if (eq(a.pt, b.pt) && it.pts.length === 0) {
-        delete doc.items[it.id];
-        changed = true;
-      }
+      if (eq(a.pt, b.pt) && wirePolyline(doc, it).length < 2 && collapseWire(doc, it)) changed = true;
     }
     for (const it of Object.values(doc.items)) {
       if (it.type !== 'junction' || !doc.items[it.id]) continue;
@@ -250,6 +263,31 @@ export function cleanup(doc: CircuitDoc) {
     }
     if (!changed) break;
   }
+}
+
+/**
+ * Removes a zero-length wire. When it joins a junction to a pin or another
+ * junction (a pin set down on a junction, two junctions dragged together)
+ * the junction is folded into the other end, so whatever met there stays
+ * connected instead of losing the link with the wire. Returns false when the
+ * wire has to stay (it holds a pin to a locked junction).
+ */
+function collapseWire(doc: CircuitDoc, w: WireItem): boolean {
+  const same = endpointOwner(w.a) === endpointOwner(w.b) && (w.a.kind !== 'port' || (w.b.kind === 'port' && w.a.port === w.b.port));
+  const loose = (ep: Endpoint) => ep.kind === 'junction' && !doc.items[ep.id]?.locked;
+  // a locked junction is an anchor: fold the other end into it, never it away
+  const [from, to] = loose(w.b) ? [w.b, w.a] : loose(w.a) ? [w.a, w.b] : [null, null];
+  const linked = w.a.kind !== 'free' && w.b.kind !== 'free' && !same;
+  // two pins on one spot touch (connected without the wire); a locked junction on a pin keeps its short wire
+  if (linked && (!from || to!.kind === 'free') && !(w.a.kind === 'port' && w.b.kind === 'port')) return false;
+  delete doc.items[w.id];
+  if (!linked || !from || !to || from.kind !== 'junction') return true;
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'wire') continue;
+    for (const end of ['a', 'b'] as const) if (refersTo(it[end], from.id)) it[end] = { ...to };
+  }
+  delete doc.items[from.id];
+  return true;
 }
 
 function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: string) {
@@ -349,7 +387,7 @@ export function deleteWirePart(doc: CircuitDoc, part: { wire: string; kind: 'nod
     const first = full.slice(0, seg + 1);
     const second = full.slice(seg + 1);
     const w2: WireItem = {
-      ...clone(w),
+      ...withoutLabel(clone(w)),
       id: uid('w'),
       a: { kind: 'free', x: second[0].x, y: second[0].y },
       pts: simplify(second).slice(1, -1),
@@ -424,6 +462,10 @@ export function transformItems(
 ) {
   transformNonWires(base, doc, ids, map, rotateBy, flip);
   transformWires(base, doc, ids, map);
+  if (rotateBy || flip) {
+    turnWireLabels(base, doc, ids, rotateBy, flip);
+    turnGlue(base, doc, ids, map);
+  }
   bridgeTouchingPins(base, doc, ids);
 }
 
@@ -468,6 +510,7 @@ function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
         if (b.rot === 90 || b.rot === 270) it.rot = ((b.rot + 180) % 360) as ComponentItem['rot'];
       }
       if (rotateBy) it.rot = ((((it.rot + rotateBy) % 360) + 360) % 360) as ComponentItem['rot'];
+      if (rotateBy || flip) turnLabels(base, b, it, map, rotateBy, flip);
     } else if (b.type === 'junction' && it.type === 'junction') {
       const p = map(b);
       it.x = p.x;
@@ -502,8 +545,10 @@ function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
         it.h = p2.y - p1.y;
         if (b.pts) it.pts = b.pts.map(map);
       } else if (b.kind === 'callout') {
-        it.x = p1.x;
-        it.y = p1.y;
+        // the note's box keeps its size and upright text: its centre goes with the map
+        const c = map({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+        it.x = c.x - b.w / 2;
+        it.y = c.y - b.h / 2;
         // a loose leader end travels with the note; one pinned to a part stays on the part
         if (b.anchor && it.anchor && !(b.anchor.id && base.items[b.anchor.id])) {
           const a = map({ x: b.anchor.x, y: b.anchor.y });
@@ -526,8 +571,86 @@ function transformNonWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
   }
 }
 
+const MIRROR_X: Partial<Record<LabelSpotName, LabelSpotName>> = { left: 'right', right: 'left', topLeft: 'topRight', topRight: 'topLeft', bottomLeft: 'bottomRight', bottomRight: 'bottomLeft' };
+const MIRROR_Y: Partial<Record<LabelSpotName, LabelSpotName>> = { above: 'below', below: 'above', topLeft: 'bottomLeft', bottomLeft: 'topLeft', topRight: 'bottomRight', bottomRight: 'topRight' };
+
+/**
+ * A part's labels turn and mirror with it: a chosen spot swaps sides on a
+ * flip, and labels dragged off their spot are carried by the same transform
+ * (the text itself stays upright), so they stay next to the same end.
+ */
+function turnLabels(base: CircuitDoc, b: ComponentItem, it: ComponentItem, map: (p: Point) => Point, rotateBy: number, flip: boolean) {
+  if (flip && b.labelSpot) {
+    // a vertical flip is a mirror plus a half turn: top and bottom swap, left and right stay
+    const swap = rotateBy ? MIRROR_Y : MIRROR_X;
+    it.labelSpot = swap[b.labelSpot] ?? b.labelSpot;
+  }
+  if (b.labelDx == null && b.labelDy == null && b.valueDx == null && b.valueDy == null) return;
+  const def = instanceSymbol(base, b);
+  const was = labelLayout(b, def);
+  // the offsets are measured from the fixed spot (what the layout gives with zero offsets)
+  const spot = labelLayout({ ...it, labelDx: 0, labelDy: 0, valueDx: 0, valueDy: 0 } as ComponentItem, instanceSymbol(base, it));
+  // the middle of the text goes with the map (text reads left to right, so a mirrored label must not run back over the part)
+  const off = (which: 'ref' | 'value') => {
+    const p = was[which];
+    const q = spot[which];
+    if (!p || !q) return null;
+    const look = labelLook(b, which, def);
+    const box = labelBox(p, look);
+    const m = map({ x: box.x + box.w / 2, y: box.y + box.h / 2 });
+    const anchor = look.st.align ?? q.anchor;
+    const x = anchor === 'start' ? m.x - box.w / 2 : anchor === 'end' ? m.x + box.w / 2 : m.x;
+    const y = m.y - box.h / 2 + look.size;
+    return { x: Math.round((x - q.x) * 100) / 100, y: Math.round((y - q.y) * 100) / 100 };
+  };
+  const ref = off('ref');
+  const value = off('value');
+  if (ref) Object.assign(it, { labelDx: ref.x, labelDy: ref.y });
+  if (value) Object.assign(it, { valueDx: value.x, valueDy: value.y });
+}
+
+/**
+ * Connector ends glued to a spot of a turned or mirrored target stay on that
+ * same spot of the drawing: a shape's frame doesn't mirror (and a polygon's
+ * is rebuilt from its turned points), so the spot is mapped and measured again.
+ */
+function turnGlue(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map: (p: Point) => Point) {
+  for (const b of Object.values(base.items)) {
+    if (!isConnector(b) || b.locked) continue;
+    const s = doc.items[b.id] as ShapeItem | undefined;
+    if (!s) continue;
+    for (const end of ['from', 'to'] as const) {
+      const a = b[end];
+      if (!a || !isFixed(a) || !ids.has(a.id) || base.items[a.id]?.locked) continue;
+      const was = targetFrame(base, base.items[a.id]);
+      const now = targetFrame(doc, doc.items[a.id]);
+      if (!was || !now) continue;
+      const l = toLocal(now, map(fromLocal(was, 2 * a.fx! - 1, 2 * a.fy! - 1)));
+      const r = (v: number) => Math.round(Math.min(1, Math.max(0, (v + 1) / 2)) * 1e4) / 1e4;
+      const fx = r(l.x);
+      const fy = r(l.y);
+      if (Math.abs(fx - a.fx!) > 1e-3 || Math.abs(fy - a.fy!) > 1e-3) s[end] = { ...a, fx, fy };
+    }
+  }
+}
+
+const TURN_SIDE: Record<LabelSide, LabelSide> = { above: 'right', right: 'below', below: 'left', left: 'above' };
+
+/** A turned or mirrored wire keeps its name on the same side of the run (above a run that is now vertical would sit on it). */
+function turnWireLabels(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, rotateBy: number, flip: boolean) {
+  for (const id of ids) {
+    const b = base.items[id];
+    const w = doc.items[id];
+    if (b?.type !== 'wire' || w?.type !== 'wire' || b.locked || !b.labelSide) continue;
+    let side = b.labelSide;
+    if (flip) side = side === 'left' ? 'right' : side === 'right' ? 'left' : side;
+    for (let k = ((rotateBy % 360) + 360) % 360; k > 0; k -= 90) side = TURN_SIDE[side];
+    w.labelSide = side;
+  }
+}
+
 /** Wires follow whatever they are attached to (rubber-banding the free side). */
-function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map: (p: Point) => Point) {
+function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map: (p: Point) => Point, rigid = true) {
   // loose wire ends resting exactly on a moving pin come along too, like real connections
   const movingPins = new Set<string>();
   for (const id of ids) {
@@ -543,15 +666,17 @@ function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map
     if (b.type !== 'wire') continue;
     const w = doc.items[b.id] as WireItem | undefined;
     if (!w || b.locked) continue;
+    // a locked part or junction stays put even when it is selected, and so do the wire ends on it
     const ownA = endpointOwner(b.a);
     const ownB = endpointOwner(b.b);
+    const stays = (o: string) => !!base.items[o]?.locked;
     const selfSel = ids.has(b.id);
-    const movesA = (ownA && ids.has(ownA)) || (!ownA && (selfSel || onMovingPin(b.a)));
-    const movesB = (ownB && ids.has(ownB)) || (!ownB && (selfSel || onMovingPin(b.b)));
+    const movesA = (ownA && ids.has(ownA) && !stays(ownA)) || (!ownA && (selfSel || onMovingPin(b.a)));
+    const movesB = (ownB && ids.has(ownB) && !stays(ownB)) || (!ownB && (selfSel || onMovingPin(b.b)));
     if (!movesA && !movesB) continue;
     const full = wirePolyline(base, b);
     if (full.length < 2) continue;
-    if (movesA && movesB && (selfSel || (ownA && ownB))) {
+    if (rigid && movesA && movesB && (selfSel || (ownA && ownB))) {
       const mapped = full.map(map);
       w.pts = mapped.slice(1, -1);
       if (b.a.kind === 'free') w.a = { kind: 'free', ...mapped[0] };
@@ -563,11 +688,31 @@ function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map
     const dA = movesA ? { x: newA.x - full[0].x, y: newA.y - full[0].y } : null;
     const last = full[full.length - 1];
     const dB = movesB ? { x: newB.x - last.x, y: newB.y - last.y } : null;
-    const adj = adjustWireForMove(full, dA, dB, w.routing !== 'straight');
+    // bends next to a moved end slide along its straight runs (drawn diagonals stay as they are)
+    const adj = adjustWireForMove(full, dA, dB, true);
     if (b.a.kind === 'free' && movesA) w.a = { kind: 'free', ...adj[0] };
     if (b.b.kind === 'free' && movesB) w.b = { kind: 'free', ...adj[adj.length - 1] };
     w.pts = simplify(adj).slice(1, -1);
   }
+}
+
+/**
+ * Brings wires up to date after parts were edited directly (position, turn,
+ * flip, size or symbol typed into the Inspector, or a part's resize handle):
+ * the ends on their pins follow, the bends next to them slide along, and a
+ * wire left running through a turned part is routed around it.
+ */
+export function followParts(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, reroute = true) {
+  const changed = new Set(
+    [...ids].filter((id) => {
+      const b = base.items[id];
+      const it = doc.items[id];
+      return b?.type === 'component' && it?.type === 'component' && (b.x !== it.x || b.y !== it.y || b.rot !== it.rot || !!b.flipX !== !!it.flipX || (b.scale ?? 1) !== (it.scale ?? 1) || b.symbol !== it.symbol);
+    }),
+  );
+  if (!changed.size) return;
+  transformWires(base, doc, changed, (p) => p, false);
+  if (reroute) rerouteTurnedWires(base, doc, changed);
 }
 
 function endpointNow(doc: CircuitDoc, ep: Endpoint, fallback: Point): Point {
@@ -668,7 +813,8 @@ export function scaleItems(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
     const k = c.scale ?? 1;
     r = Math.min(Math.max(r, 0.1 / k), 10 / k);
   }
-  transformItems(base, doc, ids, (p) => ({ x: pivot.x + (p.x - pivot.x) * r, y: pivot.y + (p.y - pivot.y) * r }));
+  const map = (p: Point) => ({ x: pivot.x + (p.x - pivot.x) * r, y: pivot.y + (p.y - pivot.y) * r });
+  transformItems(base, doc, ids, map);
   for (const id of ids) {
     const b = base.items[id];
     const it = doc.items[id];
@@ -684,17 +830,65 @@ export function scaleItems(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, 
       if (b.wrapW) it.wrapW = b.wrapW * r;
     }
   }
+  // parts only take sizes that keep their pins on the grid, so a pin can sit a little off where
+  // a scaled wire ends: those ends go onto the pins, the bends next to them sliding along
+  const moves = (o: string | null) => !!o && ids.has(o) && !base.items[o]?.locked;
+  for (const b of Object.values(base.items)) {
+    if (b.type !== 'wire' || b.locked) continue;
+    const w = doc.items[b.id] as WireItem | undefined;
+    if (!w || (b.a.kind !== 'port' && b.b.kind !== 'port')) continue;
+    const ownA = endpointOwner(b.a);
+    const ownB = endpointOwner(b.b);
+    const sel = ids.has(b.id);
+    const rigid = (ownA ? moves(ownA) : sel) && (ownB ? moves(ownB) : sel) && (sel || (!!ownA && !!ownB));
+    if (!rigid) continue;
+    const full = wirePolyline(base, b).map(map);
+    if (full.length < 2) continue;
+    const last = full[full.length - 1];
+    const nowA = endpointNow(doc, w.a, full[0]);
+    const nowB = endpointNow(doc, w.b, last);
+    const dA = eq(nowA, full[0]) ? null : { x: nowA.x - full[0].x, y: nowA.y - full[0].y };
+    const dB = eq(nowB, last) ? null : { x: nowB.x - last.x, y: nowB.y - last.y };
+    if (!dA && !dB) continue;
+    w.pts = simplify(adjustWireForMove(full, dA, dB, true)).slice(1, -1);
+  }
   return r;
 }
 
-export function rotateItems(doc: CircuitDoc, ids: Set<string>, deg: 90 | -90) {
-  const base = clone(doc);
-  const single = [...ids].filter((id) => doc.items[id]?.type !== 'wire');
+/**
+ * Pivot of a turn or flip: a lone part turns about its origin and a lone shape
+ * about its own centre; a selection about the middle of its bounds, rounded so
+ * grid points land on grid points again (both coordinates on the grid or both
+ * half way between), and so the same turn or flip repeated comes back to the start.
+ */
+export function turnPivot(doc: CircuitDoc, ids: Set<string>): Point {
+  const single = [...ids].filter((id) => doc.items[id] && doc.items[id].type !== 'wire');
   const lone = single.length === 1 ? doc.items[single[0]] : null;
-  // a lone part turns about its origin, a lone shape about its own centre
-  const piv =
-    lone?.type === 'component' ? { x: lone.x, y: lone.y } : lone?.type === 'shape' ? rectCentre(shapeBox(lone)) : selectionPivot(doc, ids);
+  if (lone?.type === 'component') return { x: lone.x, y: lone.y };
+  if (lone?.type === 'shape') return rectCentre(shapeBox(lone));
+  const rects: Rect[] = [];
+  for (const id of ids) {
+    const it = doc.items[id];
+    const r = it && itemBounds(doc, it);
+    if (r) rects.push(r);
+  }
+  const b = unionRects(rects);
+  if (!b) return { x: 0, y: 0 };
+  const h = doc.settings.grid / 2;
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+  const x = Math.round(cx / h);
+  let y = Math.round(cy / h);
+  // a quarter turn about (x, y) maps the grid onto itself only when x and y are both whole or both half steps
+  if ((((x + y) % 2) + 2) % 2) y += cy / h > y ? 1 : -1;
+  return { x: x * h, y: y * h };
+}
+
+export function rotateItems(doc: CircuitDoc, ids: Set<string>, deg: 90 | -90, pivot?: Point) {
+  const base = clone(doc);
+  const piv = pivot ?? turnPivot(doc, ids);
   transformItems(base, doc, ids, (p) => rotate({ x: p.x - piv.x, y: p.y - piv.y }, deg === 90 ? 90 : 270, piv), deg);
+  rerouteTurnedWires(base, doc, ids);
 }
 
 /**
@@ -704,7 +898,10 @@ export function rotateItems(doc: CircuitDoc, ids: Set<string>, deg: 90 | -90) {
  */
 export function rotateShapeBy(base: CircuitDoc, doc: CircuitDoc, id: string, deg: number, pivot: Point) {
   if (base.items[id]?.type !== 'shape') return;
-  transformItems(base, doc, new Set([id]), (p) => rotateDeg(p, deg, pivot));
+  const map = (p: Point) => rotateDeg(p, deg, pivot);
+  transformItems(base, doc, new Set([id]), map);
+  // a turned polygon or drawing gets a new box from its turned points: glued ends keep their spot
+  turnGlue(base, doc, new Set([id]), map);
 }
 
 export type SizeMode = 'width' | 'height' | 'both';
@@ -741,15 +938,82 @@ export function matchSizes(doc: CircuitDoc, ids: string[], mode: SizeMode): numb
   return n;
 }
 
-export function flipItems(doc: CircuitDoc, ids: Set<string>, axis: 'x' | 'y') {
+export function flipItems(doc: CircuitDoc, ids: Set<string>, axis: 'x' | 'y', pivot?: Point) {
   const base = clone(doc);
-  const piv = selectionPivot(doc, ids);
+  const piv = pivot ?? turnPivot(doc, ids);
   if (axis === 'x') {
     transformItems(base, doc, ids, (p) => ({ x: 2 * piv.x - p.x, y: p.y }), 0, true);
   } else {
     // vertical flip = horizontal flip + 180° rotation
     transformItems(base, doc, ids, (p) => ({ x: p.x, y: 2 * piv.y - p.y }), 180, true);
   }
+  rerouteTurnedWires(base, doc, ids);
+}
+
+/**
+ * After a turn or flip, a wire from a turned part to something that stayed
+ * can end up running back through the part's body or over its other pins
+ * (a lone diode flipped: each lead now crosses the diode to reach its old
+ * net). Such wires are routed afresh around the parts, so the drawing shows
+ * the connections the netlist has.
+ */
+function rerouteTurnedWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>) {
+  const parts = [...ids].map((id) => doc.items[id]).filter((it): it is ComponentItem => it?.type === 'component' && !base.items[it.id]?.locked);
+  if (!parts.length) return;
+  const bodies = parts.map((c) => {
+    const r = componentBounds(c, instanceSymbol(doc, c));
+    return { id: c.id, r: { x: r.x + 0.5, y: r.y + 0.5, w: r.w - 1, h: r.h - 1 } };
+  });
+  const pins = parts.flatMap((c) => instanceSymbol(doc, c).ports.map((p) => endpointInfo(doc, { kind: 'port', comp: c.id, port: p.id })!.pt));
+  const moving = (ep: Endpoint) => {
+    const o = endpointOwner(ep);
+    return !!o && ids.has(o) && !base.items[o]?.locked;
+  };
+  const bad: { w: WireItem; end: 'a' | 'b' }[] = [];
+  for (const w of Object.values(doc.items)) {
+    if (w.type !== 'wire' || w.locked || ids.has(w.id)) continue;
+    const ma = moving(w.a) && w.a.kind === 'port';
+    const mb = moving(w.b) && w.b.kind === 'port';
+    if (ma === mb || moving(ma ? w.b : w.a)) continue;
+    const full = wirePolyline(doc, w);
+    if (full.length < 2) continue;
+    const ends = [full[0], full[full.length - 1]];
+    // a pin drawn inside its own outline necessarily starts there
+    const own = (w[ma ? 'a' : 'b'] as Extract<Endpoint, { kind: 'port' }>).comp;
+    const pinAt = ma ? full[0] : full[full.length - 1];
+    const crosses = full.some((q, i) => i > 0 && bodies.some((b) => !(b.id === own && pointInRect(pinAt, b.r)) && segmentIntersectsRect(full[i - 1], q, b.r)));
+    const overPin = pins.some((p) => !ends.some((e) => eq(e, p)) && full.some((q, i) => i > 0 && projectOnSegment(p, full[i - 1], q).d < 0.01));
+    if (crosses || overPin) bad.push({ w, end: ma ? 'a' : 'b' });
+  }
+  const pending = new Set(bad.map((b) => b.w.id));
+  for (const { w, end } of bad) {
+    routeWireAround(doc, w, pending, end);
+    pending.delete(w.id);
+  }
+}
+
+/**
+ * Routes a wire afresh between its ends, square and around parts and other
+ * wires (`skip`: wires not to avoid, such as others still to be routed).
+ * Starts from end `from` (its pin direction leads). Returns false when no
+ * clean route was found and the wire was left as it was.
+ */
+export function routeWireAround(doc: CircuitDoc, w: WireItem, skip: Set<string> = new Set(), from: 'a' | 'b' = 'a'): boolean {
+  const s = endpointInfo(doc, w[from]);
+  const t = endpointInfo(doc, w[from === 'a' ? 'b' : 'a']);
+  if (!s || !t) return false;
+  const dir = (d: Point) => (d.x || d.y ? d : undefined);
+  const route = routeLeg(routeObstacles(doc, new Set([...skip, w.id])), s.pt, t.pt, {
+    grid: doc.settings.grid,
+    hFirst: s.dir.x !== 0 || (!s.dir.y && Math.abs(t.pt.x - s.pt.x) >= Math.abs(t.pt.y - s.pt.y)),
+    startDir: dir(s.dir),
+    endDir: dir(t.dir),
+  });
+  if (!route || route.length < 2) return false;
+  const inner = route.slice(1, -1);
+  w.pts = from === 'a' ? inner : inner.reverse();
+  delete w.routing;
+  return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -766,12 +1030,22 @@ export interface Fragment {
 export function extractFragment(doc: CircuitDoc, ids: Set<string>): Fragment {
   const items: Item[] = [];
   const all = new Set(ids);
+  // a junction two or more selected parts meet at comes along, so they stay connected through it
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'junction' || all.has(it.id)) continue;
+    const into = attachedWires(doc, it.id).filter((wid) => {
+      const w = doc.items[wid] as WireItem;
+      const other = endpointOwner(refersTo(w.a, it.id) ? w.b : w.a);
+      return !!other && ids.has(other);
+    });
+    if (into.length >= 2) all.add(it.id);
+  }
   // include wires whose both ends are within the selection
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'wire') continue;
     const oa = endpointOwner(it.a);
     const ob = endpointOwner(it.b);
-    if ((!oa || all.has(oa)) && (!ob || all.has(ob)) && (oa || ob) && (ids.has(oa ?? '') || ids.has(ob ?? ''))) all.add(it.id);
+    if ((!oa || all.has(oa)) && (!ob || all.has(ob)) && (oa || ob) && (all.has(oa ?? '') || all.has(ob ?? ''))) all.add(it.id);
   }
   for (const id of all) {
     const it = doc.items[id];
@@ -823,8 +1097,11 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
   frag.items.forEach((it, i) => orderOf.set(it.id, i));
   for (const it of frag.items) idMap.set(it.id, uid(it.id[0] ?? 'i'));
   const gMap = new Map<string, string>();
-  for (const g of frag.groups) gMap.set(g.id, uid('g'));
+  // the group being edited (and the ones around it) is where the copies land, not a group to copy again
+  const around = new Set(groupChain(doc, scope));
+  for (const g of frag.groups) if (!around.has(g.id)) gMap.set(g.id, uid('g'));
   for (const g of frag.groups) {
+    if (around.has(g.id)) continue;
     const parent = g.group && gMap.get(g.group);
     doc.groups[gMap.get(g.id)!] = { id: gMap.get(g.id)!, name: g.name, group: parent || scope };
   }
@@ -837,11 +1114,15 @@ export function insertFragment(doc: CircuitDoc, frag: Fragment, dx: number, dy: 
     if (ep.kind === 'junction') return idMap.has(ep.id) ? { kind: 'junction', id: idMap.get(ep.id)! } : { kind: 'free', x: 0, y: 0 };
     return { kind: 'free', x: ep.x + dx, y: ep.y + dy };
   };
-  for (const src of frag.items) {
+  // copies go in front of everything, in the order the originals were drawn
+  const rank = drawOrder({ items: Object.fromEntries(frag.items.map((i) => [i.id, i])) } as CircuitDoc);
+  const order = [...frag.items].sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  for (const src of order) {
     const it = clone(src) as Item;
     it.id = idMap.get(src.id)!;
-    it.group = src.group ? gMap.get(src.group) : scope;
+    it.group = (src.group && gMap.get(src.group)) || scope;
     it.locked = false;
+    delete it.z;
     // a fragment carries no page: its items land on the page they are inserted into
     delete it.page;
     if (it.type === 'component') {

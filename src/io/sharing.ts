@@ -1,5 +1,5 @@
 import { docBounds, uid } from '../model/doc';
-import { extractFragment, insertFragment, type Fragment } from '../model/ops';
+import { cleanup, extractFragment, insertFragment, type Fragment } from '../model/ops';
 import { docPages, pageItemIds } from '../model/pages';
 import { snap } from '../model/geometry';
 import type { CircuitDoc, Point, SymbolDef } from '../model/types';
@@ -135,6 +135,9 @@ function insertFragmentAt(frag: Fragment, at?: Point, groupName?: string): strin
       scope = g;
     }
     ids = insertFragment(d, frag, dx, dy, scope);
+    // junctions that came without all their wires are dropped or merged
+    cleanup(d);
+    ids = ids.filter((id) => d.items[id]);
   });
   if (!ok) return [];
   set({ selection: ids });
