@@ -21,6 +21,7 @@ import { polyPath } from '../model/path';
 import { connectorD, isConnector, resolveConnector, type ConnectorPath } from '../model/connectors';
 import { rotateDeg, shapeBox, shapeTransform } from '../model/rotation';
 import { gradientLine } from '../model/style';
+import { colourLightness } from '../model/colour';
 
 export interface Palette {
   sym: string;
@@ -43,15 +44,6 @@ export const EDITOR_PALETTE: Palette = {
   ink: 'var(--ink)',
 };
 
-/** #rgb / #rrggbb → 0..1 perceived lightness; null for anything else. */
-function pageLightness(colour: string): number | null {
-  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(colour.trim());
-  if (!m) return null;
-  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
 /**
  * A document can set its own page colour (Inspector → Background), which need
  * not match the app theme. The default part / wire / label colours then follow
@@ -62,17 +54,18 @@ function pageLightness(colour: string): number | null {
 export function pagePalette(settings: Pick<DocSettings, 'background'>, base: Palette): Palette {
   const bg = settings.background?.trim();
   if (!bg) return base;
-  const light = pageLightness(bg);
+  const light = colourLightness(bg);
+  // An unreadable colour keeps the theme's whole palette: overriding only the page
+  // colours would leave the parts and labels chosen for the wrong page.
+  if (light === null) return base;
   return {
     ...base,
     // a see-through export keeps its transparent interiors
     symBg: base.symBg === 'none' ? 'none' : bg,
     bg,
-    ...(light === null
-      ? {}
-      : light > 0.5
-        ? { sym: '#1f1c16', label: '#1f1c16', value: '#6b6355', ink: '#000000' }
-        : { sym: '#e6dfcf', label: '#ece6d8', value: '#9c9483', ink: '#e6dfcf' }),
+    ...(light > 0.5
+      ? { sym: '#1f1c16', label: '#1f1c16', value: '#6b6355', ink: '#000000' }
+      : { sym: '#e6dfcf', label: '#ece6d8', value: '#9c9483', ink: '#e6dfcf' }),
   };
 }
 
