@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { frozenLabelOffsets, labelBox, labelLayout, labelLook } from '../canvas/Scene';
+import { labelBox as modelLabelBox, labelLayout as modelLabelLayout, labelLook as modelLabelLook } from '../model/labels';
 import { createDoc, makeComponent } from '../model/doc';
 import { instanceSymbol } from '../model/registry';
 import type { ComponentItem } from '../model/types';
@@ -11,6 +12,12 @@ const part = (over: Partial<ComponentItem> = {}) => {
 };
 
 describe('part label styles', () => {
+  it('keeps the canvas re-exports pointing at the model layer', () => {
+    expect(labelBox).toBe(modelLabelBox);
+    expect(labelLayout).toBe(modelLabelLayout);
+    expect(labelLook).toBe(modelLabelLook);
+  });
+
   it('uses the defaults when unstyled', () => {
     const { c, def } = part();
     expect(labelLook(c, 'ref', def)).toMatchObject({ text: 'R1', size: 11, weight: 650 });
