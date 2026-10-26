@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDoc, makeComponent, makeShape, uid } from '../model/doc';
+import { createDoc, makeComponent, makeShape, normalizeDoc, uid } from '../model/doc';
 import type { WireItem } from '../model/types';
 import { wirePolyline } from '../model/wires';
 import { clipAreaDoc, exportSvg, exportDxf, EXPORT_THEMES, pageTitle, plainColours, selectionDoc } from '../io/export';
@@ -140,6 +140,27 @@ describe('selectionDoc', () => {
     const clear = exportSvg(doc, { theme: 'dark', background: false, padding: 10 }).svg;
     expect(clear).not.toContain('fill="#ffffff"');
     expect(clear).toContain('stroke="#1f1c16"');
+  });
+
+  it('escapes a crafted page colour instead of injecting markup into the SVG', () => {
+    const doc = createDoc();
+    const op = makeComponent(doc, 'opamp', 100, 100);
+    doc.items[op.id] = op;
+    doc.settings.background = 'x"><img src=x onerror=alert(1)><z fill="';
+    const svg = exportSvg(doc, { theme: 'light', background: true, padding: 10 }).svg;
+    expect(svg).not.toMatch(/<img\b/);
+    expect(svg).not.toMatch(/<z\b/);
+    expect(svg).not.toContain('"><img');
+    // the same value is escaped in the page rect and in symbol interiors
+    expect(svg).toContain('fill="x&#34;&#62;&#60;img');
+  });
+
+  it('drops a page colour that is not a plain CSS colour when a circuit is loaded', () => {
+    const doc = createDoc();
+    doc.settings.background = 'rgba(1, 2, 3, 0.5)';
+    expect(normalizeDoc(JSON.parse(JSON.stringify(doc))).settings.background).toBe('rgba(1, 2, 3, 0.5)');
+    doc.settings.background = 'x"><img src=x onerror=alert(1)><z fill="';
+    expect(normalizeDoc(JSON.parse(JSON.stringify(doc))).settings.background).toBe('');
   });
 
   it('draws junction dots in an area export', () => {
