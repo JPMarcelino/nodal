@@ -12,7 +12,7 @@ import { docPages, itemPage } from './pages';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, LabelSide, LabelSpotName, Point, Rect, ShapeItem, WireItem } from './types';
 // label placement is shared with the renderer, so a turned part's labels land where they are drawn
-import { labelBox, labelLayout, labelLook } from '../canvas/Scene';
+import { labelBox, labelLayout, labelLook } from './labels';
 import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
 import type { TouchTarget } from './hotspots';
 
