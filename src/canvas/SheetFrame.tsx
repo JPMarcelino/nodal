@@ -17,7 +17,7 @@ export function fitText(text: string, size: number, max: number, weight = 400): 
 }
 
 /** Drawing frame: paper outline, border with zone markers, and the title block. */
-export function SheetFrame({ doc, ink, dim }: { doc: CircuitDoc; ink: string; dim: string }) {
+export function SheetFrame({ doc, ink, dim, bg = 'var(--sym-bg)' }: { doc: CircuitDoc; ink: string; dim: string; bg?: string }) {
   const r = sheetRect(doc.settings);
   if (!r) return null;
   const s = sheetOf(doc);
@@ -86,7 +86,7 @@ export function SheetFrame({ doc, ink, dim }: { doc: CircuitDoc; ink: string; di
           </g>
         );
       })}
-      <rect x={tb.x} y={tb.y} width={tb.w} height={tb.h} fill="var(--sym-bg)" stroke={ink} strokeWidth={1.5} />
+      <rect x={tb.x} y={tb.y} width={tb.w} height={tb.h} fill={bg} stroke={ink} strokeWidth={1.5} />
       {cell(tb.x, tb.y, tb.w, 34, 'Company', s.company || '—')}
       {cell(tb.x, tb.y + 34, tb.w, 46, 'Title', doc.name || 'Untitled circuit', 17, 700)}
       {s.description && (

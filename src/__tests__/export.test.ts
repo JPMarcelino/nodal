@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, makeShape, uid } from '../model/doc';
 import type { WireItem } from '../model/types';
 import { wirePolyline } from '../model/wires';
-import { clipAreaDoc, exportSvg, exportDxf, pageTitle, plainColours, selectionDoc } from '../io/export';
+import { clipAreaDoc, exportSvg, exportDxf, EXPORT_THEMES, pageTitle, plainColours, selectionDoc } from '../io/export';
+import { pagePalette } from '../canvas/Scene';
 import { addPage, viewDoc } from '../model/pages';
 import { scrubMathSvg } from '../model/latex';
 
@@ -86,6 +87,59 @@ describe('selectionDoc', () => {
     const clear = exportSvg(doc, { theme: 'dark', background: false, padding: 10 }).svg;
     expect(clear).not.toContain('#0f0e0c');
     expect(exportSvg(doc, { theme: 'dark', background: false, padding: 10, opaqueSymbols: true }).svg).toContain('#0f0e0c');
+  });
+
+  it('fills part interiors with the document page colour in an export', () => {
+    const doc = createDoc();
+    const op = makeComponent(doc, 'opamp', 100, 100);
+    doc.items[op.id] = op;
+    doc.settings.background = '#eeeeee';
+    const svg = exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg;
+    // the page rect, the op-amp body and its label backdrop all use the page colour
+    expect((svg.match(/fill="#eeeeee"/g) ?? []).length).toBeGreaterThan(1);
+    expect(svg).not.toContain('fill="#0f0e0c"');
+  });
+
+  it('keeps black parts readable: black ink follows the page, not the literal colour', () => {
+    const { doc, c1 } = twoResistors();
+    c1.color = '#000000';
+    const dark = exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg;
+    expect(dark).toContain('stroke="#e6dfcf"');
+    expect(dark).not.toContain('stroke="#000000"');
+    const light = exportSvg(doc, { theme: 'light', background: true, padding: 10 }).svg;
+    expect(light).toContain('stroke="#000000"');
+    // on a page with its own white background, black stays black even in dark theme
+    doc.settings.background = '#ffffff';
+    expect(exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg).toContain('stroke="#000000"');
+  });
+
+  it('follows the document background, not the theme, when the drawing sets one', () => {
+    // dark theme on a white page: parts, wires and labels must stay dark
+    const { doc } = twoResistors();
+    doc.settings.background = '#ffffff';
+    const white = exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg;
+    expect(white).toContain('stroke="#1f1c16"');
+    expect(white).not.toContain('stroke="#e6dfcf"');
+    expect(white).toContain('fill="#ffffff"');
+    // light theme on a dark page: the other way round
+    doc.settings.background = '#112233';
+    const dark = exportSvg(doc, { theme: 'light', background: true, padding: 10 }).svg;
+    expect(dark).toContain('stroke="#e6dfcf"');
+    expect(dark).toContain('fill="#112233"');
+    // without a page colour the chooser's theme still decides
+    doc.settings.background = '';
+    expect(pagePalette(doc.settings, EXPORT_THEMES.dark)).toBe(EXPORT_THEMES.dark);
+    expect(exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg).toContain('stroke="#e6dfcf"');
+  });
+
+  it('keeps symbol interiors see-through on a custom page when the export has no background', () => {
+    const doc = createDoc();
+    const op = makeComponent(doc, 'opamp', 100, 100);
+    doc.items[op.id] = op;
+    doc.settings.background = '#ffffff';
+    const clear = exportSvg(doc, { theme: 'dark', background: false, padding: 10 }).svg;
+    expect(clear).not.toContain('fill="#ffffff"');
+    expect(clear).toContain('stroke="#1f1c16"');
   });
 
   it('draws junction dots in an area export', () => {

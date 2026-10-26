@@ -9,7 +9,7 @@ import { instanceSymbol } from '../model/registry';
 import type { CircuitDoc, WireItem } from '../model/types';
 import { crossingStack, restack, wireStyle } from '../model/wires';
 import { S, goToItems, mutate, select, set, toast } from '../store/store';
-import { EDITOR_PALETTE, inkColor, type SceneData } from './Scene';
+import { EDITOR_PALETTE, inkColor, pagePalette, type SceneData } from './Scene';
 
 /**
  * Menu shown after the pointer rests on a hot spot: a wire crossing (reorder /
@@ -312,7 +312,7 @@ function OrderList({ doc, data, wires, names, onHold }: { doc: CircuitDoc; data:
       {wires.map((id, i) => {
         const w = doc.items[id] as WireItem | undefined;
         const locked = !!w?.locked;
-        const color = w ? inkColor(wireStyle(doc, w).color, EDITOR_PALETTE) : 'currentColor';
+        const color = w ? inkColor(wireStyle(doc, w).color, pagePalette(doc.settings, EDITOR_PALETTE)) : 'currentColor';
         const dragging = drag?.from === i;
         // rows between the dragged one and its target slide out of the way
         const shift = drag && !dragging && target !== null ? (i > drag.from && i <= target ? -ROW_H : i < drag.from && i >= target ? ROW_H : 0) : 0;

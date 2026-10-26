@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { resolveConnector } from '../model/connectors';
 import { createElement } from 'react';
-import { Scene, computeSceneData, type Palette } from '../canvas/Scene';
+import { Scene, computeSceneData, pagePalette, type Palette } from '../canvas/Scene';
 import { docBounds, drawOrder, itemBounds, uid } from '../model/doc';
 import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
 import { fromShapeFrame, normDeg, shapeRot } from '../model/rotation';
@@ -153,8 +153,10 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
   if (opts.clip) d = clipAreaDoc(d, opts.clip);
   const box = exportBox(d, opts);
   const data = computeSceneData(d);
+  // a document's own page colour wins over the theme for part interiors, labels and ink
+  const page = pagePalette(d.settings, palette);
   // without a background, symbol interiors stay see-through: filled with the canvas colour they'd be dark (or white) blobs on whatever page they land on. Where such an interior sits over another item, a mask still erases that item behind it, so the picture is not more transparent than the canvas.
-  const scenePalette = opts.background || opts.opaqueSymbols ? palette : { ...palette, symBg: 'none' };
+  const scenePalette = opts.background || opts.opaqueSymbols ? page : { ...page, symBg: 'none' };
   const knockout = !opts.background && !opts.opaqueSymbols;
   const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette: scenePalette, xrefs, knockout, knockoutBox: box }));
   // the label rules of styles/app.css, which a standalone file doesn't have
@@ -164,7 +166,7 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
 <title>${escapeXml(title)}</title>
 <style>${css}</style>
 ${opts.background ? `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${escapeXml(d.settings.background || palette.bg)}"/>` : ''}
-<g>${plainColours(inner.replace(/var\(--sym-bg\)/g, scenePalette.symBg), palette.ink)}</g>
+<g>${plainColours(inner.replace(/var\(--sym-bg\)/g, scenePalette.symBg), page.ink)}</g>
 </svg>`;
   return { svg, bounds: box };
 }

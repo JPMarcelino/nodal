@@ -23,7 +23,7 @@ import { viewDoc } from '../model/pages';
 import { pageCrossRefs } from '../model/pageRefs';
 import { alignAnchors, alignMove, rectPoints, spaceMove, type AlignIndex, type Guide, type SpaceGuide } from '../model/align';
 import { canvasActions } from '../store/canvasActions';
-import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, partLabelRects, shapeTitle, useSceneData, wireLabelAt, wireLabelLook, type SceneData } from './Scene';
+import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, dashArray, hasMovableTitle, frameTag, frozenLabelOffsets, inkColor, labelBox, labelLayout, labelLook, pagePalette, partLabelRects, shapeTitle, useSceneData, wireLabelAt, wireLabelLook, type SceneData } from './Scene';
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
@@ -2573,7 +2573,7 @@ export function Canvas() {
             const st = wireStyleFor(doc.settings, { style: S().wireBrush ?? undefined });
             return (
               <g className="wire-preview">
-                <path d={buildWirePath(pts, st.radius)} fill="none" stroke={inkColor(st.color, EDITOR_PALETTE)} strokeWidth={st.width} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} strokeDasharray={dashArray(st.dash, st.width)} />
+                <path d={buildWirePath(pts, st.radius)} fill="none" stroke={inkColor(st.color, pagePalette(doc.settings, EDITOR_PALETTE))} strokeWidth={st.width} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} strokeDasharray={dashArray(st.dash, st.width)} />
                 <path d={buildWirePath(pts, st.radius)} fill="none" className="wire-preview-glow" strokeWidth={st.width + 6 / z} />
                 <TargetMarker t={g.cur} z={z} />
                 <TargetMarker t={g.start} z={z} />
@@ -2595,7 +2595,7 @@ export function Canvas() {
           {tool === 'wire' && !g && <TargetMarker t={findTarget(cursor)} z={z} subtle />}
           {ghost && (
             <g opacity={0.55} pointerEvents="none">
-              <ComponentView c={ghost} def={instanceSymbol(doc, ghost)} settings={doc.settings} palette={EDITOR_PALETTE} ghost />
+              <ComponentView c={ghost} def={instanceSymbol(doc, ghost)} settings={doc.settings} palette={pagePalette(doc.settings, EDITOR_PALETTE)} ghost />
             </g>
           )}
           <RemotePresence doc={doc} polys={data.polys} z={z} />
