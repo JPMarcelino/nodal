@@ -6,7 +6,7 @@ import { cleanup, extractFragment, flipItems, followParts, insertFragment, rotat
 import { moveItemsToPage } from '../model/pageOps';
 import { addPage } from '../model/pages';
 import { settleEdit } from '../model/settle';
-import { componentBounds, segmentIntersectsRect } from '../model/geometry';
+import { componentBounds, rectsIntersect, rotate, segmentIntersectsRect } from '../model/geometry';
 import { instanceSymbol } from '../model/registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Item, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline } from '../model/wires';
@@ -264,6 +264,54 @@ describe('glued connectors', () => {
 });
 
 describe('review follow-ups', () => {
+  const boxCentre = (r: { x: number; y: number; w: number; h: number }) => ({
+    x: r.x + r.w / 2,
+    y: r.y + r.h / 2,
+  });
+  const labelAt = (doc: CircuitDoc, c: ComponentItem, which: 'ref' | 'value') => {
+    const def = instanceSymbol(doc, c);
+    const box = labelBox(labelLayout(c, def)[which]!, labelLook(c, which, def));
+    return { box, body: componentBounds(c, def) };
+  };
+  const turn = (doc: CircuitDoc, id: string, deg: 90 | 180 | 270) => {
+    const ids = new Set([id]);
+    if (deg === 180) {
+      const half = produce(doc, (x) => rotateItems(x as CircuitDoc, ids, 90));
+      return produce(half, (x) => rotateItems(x as CircuitDoc, ids, 90));
+    }
+    return produce(doc, (x) => rotateItems(x as CircuitDoc, ids, deg === 90 ? 90 : -90));
+  };
+  const turnedLabelLayouts: { what: string; extra: Partial<ComponentItem> }[] = [
+    {
+      what: 'dragged reference and value offsets',
+      extra: { labelDx: 6, labelDy: 0, valueDx: 6, valueDy: 12 },
+    },
+    {
+      what: 'end-aligned dragged labels',
+      extra: { labelSpot: 'left', labelDx: -6, labelDy: 0, valueDx: -6, valueDy: 12 },
+    },
+  ];
+
+  for (const { what, extra } of turnedLabelLayouts) {
+    for (const deg of [90, 180, 270] as const) {
+      it(`carries ${what} through a ${deg}° turn`, () => {
+        const d = createDoc();
+        const r = add(d, { ...makeComponent(d, 'resistor', 0, 0), ...extra, showValue: true });
+        const piv = turnPivot(d, new Set([r.id]));
+        const was = { ref: labelAt(d, r, 'ref').box, value: labelAt(d, r, 'value').box };
+        const n = turn(d, r.id, deg);
+        const c = n.items[r.id] as ComponentItem;
+        for (const which of ['ref', 'value'] as const) {
+          const { box, body } = labelAt(n, c, which);
+          const want = rotate(boxCentre(was[which]), deg, piv);
+          const got = boxCentre(box);
+          expect(Math.hypot(got.x - want.x, got.y - want.y)).toBeLessThan(0.02);
+          expect(rectsIntersect(box, body)).toBe(false);
+        }
+      });
+    }
+  }
+
   it('a dragged label of a mirrored part stays off the part', () => {
     const d = createDoc();
     const r = add(d, { ...makeComponent(d, 'resistor', 0, 0, 90), labelDx: 6, labelDy: 0 });
