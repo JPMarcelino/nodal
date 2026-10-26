@@ -1,4 +1,4 @@
-import { itemBounds, normalizeDoc, uid } from '../model/doc';
+import { itemBounds, normalizeDoc, safeColour, uid } from '../model/doc';
 import { rectsIntersect } from '../model/geometry';
 import { prepareMath } from '../model/latex';
 import { normalizePages, pagesWithItems } from '../model/pages';
@@ -70,7 +70,8 @@ export async function fileOpen() {
 /** Opens a circuit kept in version history (one that was closed or replaced). */
 export async function openFromHistory(doc: CircuitDoc) {
   if (!(await confirmDiscard('Opening another circuit'))) return;
-  replaceDoc(normalizePages(doc), null);
+  // history entries can predate the loader's page-colour sanitising
+  replaceDoc(normalizePages({ ...doc, settings: { ...doc.settings, background: safeColour(doc.settings.background) } }), null);
   // it only exists on this device until it is saved to a file
   set({ dirty: true });
   setTimeout(() => fitView(), 0);

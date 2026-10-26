@@ -94,15 +94,16 @@ export function migrateShapeLayers(items: Record<string, Item>): Record<string, 
 }
 
 /**
- * A page colour from a file is data, not stylesheet text: accept plain colours
- * only (hex, names, rgb/hsl), never `url(…)`, extra declarations or markup.
- * Anything else falls back to the theme, so a crafted `.nodal` cannot put
- * content into the exported SVG.
+ * A colour from a file is data, not markup or stylesheet text. The Inspector
+ * accepts anything `CSS.supports('color', …)` does (including oklch(), lab(),
+ * color-mix() and var()), so don't enumerate colour syntaxes here: reject only
+ * characters that could break out of an attribute or add a CSS declaration, and
+ * `url(…)` references, which could make an export fetch something.
  */
-const PLAIN_COLOUR = /^(#[0-9a-f]{3,8}|[a-z]{3,30}|(rgb|hsl)a?\([\d\s.,%a-z/+-]{1,60}\))$/i;
+const UNSAFE_COLOUR = /[<>&"'`\\;{}]|url\s*\(/i;
 
-function plainColour(v: unknown): string {
-  return typeof v === 'string' && PLAIN_COLOUR.test(v.trim()) ? v.trim() : '';
+export function safeColour(v: unknown): string {
+  return typeof v === 'string' && !UNSAFE_COLOUR.test(v) ? v.trim() : '';
 }
 
 /** Makes loaded documents safe to use (fills in settings added in later versions). */
@@ -114,7 +115,7 @@ export function normalizeDoc(raw: unknown): CircuitDoc {
   const items = migrateItems(d.items ?? {});
   freeDanglingWireEnds(items);
   const settings: DocSettings = { ...structuredClone(DEFAULT_SETTINGS), ...d.settings, wire: { ...DEFAULT_SETTINGS.wire, ...d.settings?.wire }, ercIgnored: Array.isArray(d.settings?.ercIgnored) ? d.settings.ercIgnored : undefined };
-  settings.background = plainColour(settings.background);
+  settings.background = safeColour(settings.background);
   return normalizePages({
     format: 'nodal',
     version: 1,

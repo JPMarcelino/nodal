@@ -1,5 +1,5 @@
 import { normalizePages } from '../model/pages';
-import { migrateItems, uid } from '../model/doc';
+import { migrateItems, safeColour, uid } from '../model/doc';
 import type { CircuitDoc } from '../model/types';
 import { pruneAutos, sameContent, type Version } from '../model/versions';
 import { S, inGesture, mutate, set, toast, useStore } from '../store/store';
@@ -155,7 +155,9 @@ export async function restoreVersion(v: Version) {
   }
   mutate((d) => {
     d.name = v.doc.name;
-    d.settings = v.doc.settings;
+    // a version saved before the loader sanitised page colours may still carry
+    // a crafted background: clean it here as well as in normalizeDoc
+    d.settings = { ...v.doc.settings, background: safeColour(v.doc.settings.background) };
     // versions saved before shapes shared the one stacking order, and older
     // page lists may point nowhere: bring items and pages together
     const restored = normalizePages({ ...v.doc, items: migrateItems(structuredClone(v.doc.items)) });

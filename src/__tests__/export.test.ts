@@ -155,12 +155,34 @@ describe('selectionDoc', () => {
     expect(svg).toContain('fill="x&#34;&#62;&#60;img');
   });
 
-  it('drops a page colour that is not a plain CSS colour when a circuit is loaded', () => {
+  it('keeps colours CSS.supports accepts but drops unsafe page colours when loading', () => {
     const doc = createDoc();
-    doc.settings.background = 'rgba(1, 2, 3, 0.5)';
-    expect(normalizeDoc(JSON.parse(JSON.stringify(doc))).settings.background).toBe('rgba(1, 2, 3, 0.5)');
-    doc.settings.background = 'x"><img src=x onerror=alert(1)><z fill="';
-    expect(normalizeDoc(JSON.parse(JSON.stringify(doc))).settings.background).toBe('');
+    const loaded = (background: string) => {
+      doc.settings.background = background;
+      return normalizeDoc(JSON.parse(JSON.stringify(doc))).settings.background;
+    };
+    for (const ok of [
+      '#112233',
+      'rgba(1, 2, 3, 0.5)',
+      'oklch(0.55 0.1 200)',
+      'lab(50% 40 59)',
+      'color-mix(in srgb, red, blue)',
+      'var(--canvas)',
+    ]) {
+      expect(loaded(ok)).toBe(ok);
+    }
+    for (const bad of [
+      'x"><img src=x onerror=alert(1)><z fill="',
+      'red;background:url(http://evil)',
+      'url(http://evil/x)',
+      'red}',
+      'red&blue',
+      "red'blue",
+      'red`blue',
+      'red\\blue',
+    ]) {
+      expect(loaded(bad)).toBe('');
+    }
   });
 
   it('draws junction dots in an area export', () => {
