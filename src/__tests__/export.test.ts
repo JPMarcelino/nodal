@@ -132,6 +132,30 @@ describe('selectionDoc', () => {
     expect(exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg).toContain('stroke="#e6dfcf"');
   });
 
+  it('reads named, rgb and alpha hex page colours, not only #rgb / #rrggbb', () => {
+    // dark theme on a page named white: parts must still turn dark, not stay light
+    for (const background of ['white', 'rgb(255 255 255)', 'rgb(255, 255, 255)', '#ffffffff']) {
+      const page = pagePalette({ background }, EXPORT_THEMES.dark);
+      expect(page.bg).toBe(background);
+      expect(page.symBg).toBe(background);
+      expect(page.sym).toBe('#1f1c16');
+      expect(page.label).toBe('#1f1c16');
+      expect(page.ink).toBe('#000000');
+    }
+    // and the other way round: a dark named / rgba page under the light theme
+    for (const background of ['black', 'rgb(17 34 51)', 'hsla(210, 50%, 13%, 1)']) {
+      const page = pagePalette({ background }, EXPORT_THEMES.light);
+      expect(page.sym).toBe('#e6dfcf');
+      expect(page.ink).toBe('#e6dfcf');
+    }
+  });
+
+  it('leaves the theme palette intact when a page colour cannot be read', () => {
+    // no DOM in a node test, so var() cannot be resolved here; the whole palette must stay the theme's
+    expect(pagePalette({ background: 'var(--canvas)' }, EXPORT_THEMES.dark)).toBe(EXPORT_THEMES.dark);
+    expect(pagePalette({ background: 'transparent' }, EXPORT_THEMES.light)).toBe(EXPORT_THEMES.light);
+  });
+
   it('keeps symbol interiors see-through on a custom page when the export has no background', () => {
     const doc = createDoc();
     const op = makeComponent(doc, 'opamp', 100, 100);
