@@ -1,8 +1,8 @@
 import { docBounds, uid } from '../model/doc';
 import { cleanup, extractFragment, insertFragment, type Fragment } from '../model/ops';
-import { docPages, pageItemIds } from '../model/pages';
+import { addPage, docPages, pageItemIds, resolvePage, viewDoc } from '../model/pages';
 import { snap } from '../model/geometry';
-import type { CircuitDoc, Point, SymbolDef } from '../model/types';
+import type { CircuitDoc, Page, Point, SymbolDef } from '../model/types';
 import { S, mergeUserSymbols, mutate, set, toast } from '../store/store';
 import { isDesktop, sanitizeName, saveFile } from './files';
 import { checkLibraryUrl, fetchLibraryText, parseAddLibraryHash, parseRemoteLibrary } from './libraryUrl';
@@ -80,12 +80,16 @@ export function importTemplateText(text: string, at?: Point): string[] {
  * Adds a whole circuit to the open one (instead of replacing it), centred on
  * `at`, as one group named after it. Its symbols come along. One undo step.
  *
+ * A `.nodal` file with several pages keeps them: the first drawing is added
+ * where it was dropped, and the others each get their own page after the one
+ * in view. (Before, every page was flattened onto the current page, so the
+ * drawings landed on top of each other.)
+ *
  * A picture carries one drawing: `opts.onePage` says which page the picture
  * shows (`opts.pageId` from the picture's geometry, else `opts.page` its name,
  * else the first page with something on it), so an older export of a whole
  * circuit — before scenes were scoped to their page — adds only that drawing,
- * not every page on top of each other. Without it (a `.nodal` file) every page
- * is added, as before.
+ * not every page on top of each other.
  */
 export function insertCircuit(
   src: CircuitDoc,
@@ -93,12 +97,17 @@ export function insertCircuit(
   opts: { onePage?: boolean; page?: string | null; pageId?: string | null } = {},
 ): string[] {
   const name = (opts.page ?? '').trim();
+  const pages = docPages(src);
+  const withItems = (p: string) => pageItemIds(src, p).length;
+  // a dropped circuit with several pages keeps each drawing on its own page
+  if (!opts.onePage && !name && !opts.pageId) {
+    const drawn = pages.filter((p) => withItems(p.id));
+    if (drawn.length > 1) return insertCircuitPages(src, drawn, at);
+  }
   let ids: string[];
   if (opts.onePage || name || opts.pageId) {
-    const pages = docPages(src);
-    const withItems = (p: string) => pageItemIds(src, p).length;
     // file names carry the page name with characters a file system refuses
-    // replaced (and Windows ignores case), so match that form too
+    // (and Windows ignores case), so match that form too
     const norm = (s: string) => sanitizeName(s).toLowerCase();
     const wanted = name
       ? pages.find((p) => p.name.trim().toLowerCase() === name.toLowerCase()) ?? pages.find((p) => norm(p.name) === norm(name))
@@ -114,6 +123,79 @@ export function insertCircuit(
   const frag = extractFragment(src, new Set(ids));
   if (!frag.items.length) throw new Error('This circuit is empty.');
   return insertFragmentAt(frag, at, src.name);
+}
+
+/** A page name not already taken (an imported file's names may clash). */
+function freePageName(doc: CircuitDoc, name: string): string {
+  const base = name.trim() || 'Page';
+  const names = new Set(docPages(doc).map((p) => p.name.trim()));
+  if (!names.has(base)) return base;
+  let n = 2;
+  while (names.has(`${base} (${n})`)) n++;
+  return `${base} (${n})`;
+}
+
+/**
+ * Adds a circuit with several drawings: the first page lands on the page in
+ * view (where it was dropped), every other page becomes its own page right
+ * after it, with the file's page names. One undo step and one group.
+ */
+function insertCircuitPages(src: CircuitDoc, pages: Page[], at?: Point): string[] {
+  const { doc, page: wantedPage, view, canvasSize, scope } = S();
+  const empty = Object.keys(doc.items).length === 0;
+  const grid = doc.settings.grid;
+  const ids: string[] = [];
+  let onFirstPage: string[] = [];
+  const ok = mutate((d) => {
+    const gid = uid('g');
+    d.groups[gid] = { id: gid, name: src.name, group: scope };
+    const current = resolvePage(d, wantedPage);
+    // an empty circuit takes the imported first page's name instead of
+    // keeping a blank "Page 1" beside the new pages
+    if (empty) {
+      if (!d.pages?.length) d.pages = docPages(d).map((p) => ({ ...p }));
+      const target = d.pages.find((p) => p.id === current) ?? d.pages[0];
+      target.name = pages[0].name;
+    }
+    let after = current;
+    pages.forEach((source, i) => {
+      const frag = extractFragment(viewDoc(src, source.id), new Set(pageItemIds(src, source.id)));
+      let dest = current;
+      let dx = 0;
+      let dy = 0;
+      if (i === 0) {
+        // the first drawing lands where it was dropped, as a one-page import does
+        const tmp = { ...d, symbols: { ...d.symbols, ...frag.symbols }, items: Object.fromEntries(frag.items.map((it) => [it.id, it])) } as CircuitDoc;
+        const b = docBounds(tmp);
+        const targetX = at ? at.x : (canvasSize.w / 2 - view.x) / view.zoom;
+        const targetY = at ? at.y : (canvasSize.h / 2 - view.y) / view.zoom;
+        dx = b ? snap(targetX - (b.x + b.w / 2), grid) : 0;
+        dy = b ? snap(targetY - (b.y + b.h / 2), grid) : 0;
+      } else {
+        dest = addPage(d, freePageName(d, source.name), after);
+        after = dest;
+      }
+      // a new page is empty, so its parts keep the names the file gave them;
+      // the page in view may already use some of them
+      const taken: string[] = [];
+      for (const id of pageItemIds(d, dest)) {
+        const it = d.items[id];
+        if (it.type === 'component') taken.push(it.ref);
+      }
+      const added = insertFragment(d, frag, dx, dy, gid, taken);
+      const first = docPages(d)[0].id === dest;
+      for (const id of added) {
+        if (first) delete d.items[id].page;
+        else d.items[id].page = dest;
+      }
+      ids.push(...added);
+      if (i === 0) onFirstPage = added;
+    });
+  }, [], { allPages: true });
+  if (!ok) return [];
+  // the drawing in view is selected, so a drop is visible straight away
+  set({ selection: onFirstPage });
+  return ids;
 }
 
 /** Inserts a fragment centred on `at` (or the view); with `groupName`, inside a new group of that name. */

@@ -226,28 +226,60 @@ describe('importing old pictures that carried every page', () => {
 });
 
 describe('importing circuits with pages', () => {
-  it('puts a whole multi-page circuit on the page it is added to', async () => {
+  it('gives every page of a dropped multi-page circuit its own page', async () => {
     const { S, set } = await import('../store/store');
     const { createDoc } = await import('../model/doc');
-    const { itemPage } = await import('../model/pages');
-    const { insertCircuit } = await import('../io/sharing');
+    const { docPages, itemPage, viewDoc } = await import('../model/pages');
+    const { importFileText } = await import('../io/importFiles');
     const { doc: src } = await twoPages('Imported');
 
-    // a one-page circuit has nowhere for the source's page ids to point
-    set({ doc: createDoc('One page'), page: undefined, past: [], future: [], selection: [] });
-    const ids = insertCircuit(src, { x: 300, y: 300 });
-    expect(ids).toHaveLength(2);
-    for (const id of ids) {
-      expect(S().doc.items[id].page).toBeUndefined();
-      expect(itemPage(S().doc, S().doc.items[id])).toBe('page1');
-    }
+    // into an empty circuit: no blank page is left beside the imported ones
+    set({ doc: createDoc('One page'), page: undefined, past: [], future: [], selection: [], toasts: [] });
+    await importFileText('Imported.nodal', JSON.stringify(src), { x: 300, y: 300 });
+    const pages = docPages(S().doc);
+    expect(pages.map((p) => p.name)).toEqual(['Page 1', 'Power']);
+    const symbolsOn = (page: string) =>
+      Object.keys(viewDoc(S().doc, page).items)
+        .filter((id) => S().doc.items[id].type === 'component')
+        .map((id) => (S().doc.items[id] as ComponentItem).symbol);
+    expect(symbolsOn(pages[0].id)).toEqual(['resistor']);
+    expect(symbolsOn(pages[1].id)).toEqual(['capacitor']);
+    // the dropped page is selected and on view
+    expect(S().selection.length).toBeGreaterThan(0);
+    for (const id of S().selection) expect(itemPage(S().doc, S().doc.items[id])).toBe(pages[0].id);
 
-    // on a multi-page circuit, everything lands on the page in view
+    // into a circuit with content: the first drawing lands on the page in view,
+    // the rest get new pages (with free names) and nothing is piled up
     const { doc: target, power } = await twoPages('Target');
     set({ doc: target, page: power, past: [], future: [], selection: [] });
-    const more = insertCircuit(src, { x: 500, y: 300 });
-    expect(more).toHaveLength(2);
-    for (const id of more) expect(itemPage(S().doc, S().doc.items[id])).toBe(power);
+    const { insertCircuit } = await import('../io/sharing');
+    const ids = insertCircuit(src, { x: 500, y: 300 });
+    expect(ids).toHaveLength(2);
+    const after = docPages(S().doc);
+    expect(after.map((p) => p.name)).toEqual(['Page 1', 'Power', 'Power (2)']);
+    expect(ids.filter((id) => itemPage(S().doc, S().doc.items[id]) === power)).toHaveLength(1);
+    expect(ids.filter((id) => itemPage(S().doc, S().doc.items[id]) === after[2].id)).toHaveLength(1);
+    // the target's own items are untouched
+    expect(Object.values(S().doc.items).filter((it) => it.type === 'component')).toHaveLength(4);
+    // the two imported pages do not share a page
+    expect(new Set(ids.map((id) => itemPage(S().doc, S().doc.items[id]))).size).toBe(2);
+  });
+
+  it('still adds a one-page circuit to the page in view, on top of nothing', async () => {
+    const { S, set } = await import('../store/store');
+    const { createDoc } = await import('../model/doc');
+    const { docPages, itemPage } = await import('../model/pages');
+    const { insertCircuit } = await import('../io/sharing');
+    const single = createDoc('Single');
+    const { makeComponent } = await import('../model/doc');
+    const part = makeComponent(single, 'resistor', 0, 0);
+    single.items[part.id] = part;
+
+    set({ doc: createDoc('One page'), page: undefined, past: [], future: [], selection: [] });
+    const ids = insertCircuit(single, { x: 300, y: 300 });
+    expect(docPages(S().doc)).toHaveLength(1);
+    expect(ids).toHaveLength(1);
+    expect(itemPage(S().doc, S().doc.items[ids[0]])).toBe('page1');
   });
 
   it('copies items without their old page, so pasting cannot scatter them', async () => {
