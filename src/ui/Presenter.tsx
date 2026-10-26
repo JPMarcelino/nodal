@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, Pause, PenLine, Play, Timer, TimerOff, Waypo
 import { useEffect, useMemo } from 'react';
 import { EXPLAIN_COLORS } from '../model/ink';
 import { RichText } from '../canvas/RichText';
-import { inkColor, EDITOR_PALETTE } from '../canvas/Scene';
+import { inkColor, pagePalette, EDITOR_PALETTE } from '../canvas/Scene';
 import { presentationSteps, stepShot, transitionOf } from '../model/presentation';
 import { measureRich } from '../model/richText';
 import type { ShapeItem, Tool } from '../model/types';
@@ -143,7 +143,8 @@ export function Presenter() {
     pause();
     setX({ presenting: i, playT: i < 0 ? 0 : stepTime(Math.min(i, n - 1)) });
   };
-  const color = cur ? inkColor(cur.stroke, EDITOR_PALETTE) : 'var(--accent)';
+  const palette = pagePalette(doc.settings, EDITOR_PALETTE);
+  const color = cur ? inkColor(cur.stroke, palette) : 'var(--accent)';
   const fs = 21;
   const text = cur ? (cur.text ?? '').trim() || `Step ${cur.step ?? idx + 1}` : '';
   const m = cur ? measureRich(text, fs, 500) : { w: 0, h: 0 };
@@ -175,7 +176,7 @@ export function Presenter() {
                 if (tool !== 'pen') A.setTool('pen');
               }}
             >
-              <i style={{ background: inkColor(c, EDITOR_PALETTE) }} />
+              <i style={{ background: inkColor(c, palette) }} />
             </button>
           ))}
           <button className={vanish ? 'active' : ''} title={vanish ? 'Pen strokes fade away (V) — click to keep them' : 'Pen strokes are kept (V) — click to make them fade'} onClick={toggleVanish}>

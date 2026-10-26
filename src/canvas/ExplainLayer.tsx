@@ -12,7 +12,7 @@ import type { CircuitDoc, Item, Point, ShapeItem } from '../model/types';
 import { buildWirePath, hitWire, portPosition } from '../model/wires';
 import { TRACE_COLORS, X, isExplainTool, setX, useExplain, type Trace } from '../store/explain';
 import { S, beginGesture, endGesture, gestureUpdate, inGesture, mutate, useStore, useViewDoc, vdoc } from '../store/store';
-import { EDITOR_PALETTE, inkColor, type SceneData } from './Scene';
+import { EDITOR_PALETTE, inkColor, pagePalette, type SceneData } from './Scene';
 import { gestureSlots } from './touch';
 import { ExplainDock, TracePanel } from '../ui/ExplainDock';
 
@@ -465,7 +465,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
 
   /* ----------------------------- render ----------------------------- */
 
-  const palette = EDITOR_PALETTE;
+  const palette = pagePalette(doc.settings, EDITOR_PALETTE);
   const now = performance.now();
   const flows = useMemo(() => {
     const out: { t: Trace; net: Net; flow: NetFlow }[] = [];

@@ -43,6 +43,39 @@ export const EDITOR_PALETTE: Palette = {
   ink: 'var(--ink)',
 };
 
+/** #rgb / #rrggbb → 0..1 perceived lightness; null for anything else. */
+function pageLightness(colour: string): number | null {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(colour.trim());
+  if (!m) return null;
+  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * A document can set its own page colour (Inspector → Background), which need
+ * not match the app theme. The default part / wire / label colours then follow
+ * the page, not the theme: without this, dark theme on a white page (or light
+ * theme on a dark one) drew parts in the wrong direction, so a part could turn
+ * black on a dark page — or vanish entirely.
+ */
+export function pagePalette(settings: Pick<DocSettings, 'background'>, base: Palette): Palette {
+  const bg = settings.background?.trim();
+  if (!bg) return base;
+  const light = pageLightness(bg);
+  return {
+    ...base,
+    // a see-through export keeps its transparent interiors
+    symBg: base.symBg === 'none' ? 'none' : bg,
+    bg,
+    ...(light === null
+      ? {}
+      : light > 0.5
+        ? { sym: '#1f1c16', label: '#1f1c16', value: '#6b6355', ink: '#000000' }
+        : { sym: '#e6dfcf', label: '#ece6d8', value: '#9c9483', ink: '#e6dfcf' }),
+  };
+}
+
 /** Maps pure black to the palette's ink colour; every other colour is left as chosen. */
 export const inkColor = (c: string, p: Palette) => (/^#(000|000000)$/i.test(c) ? p.ink : c);
 
@@ -289,7 +322,8 @@ export const ComponentView = memo(function ComponentView({
 }) {
   const shown = labelsShown(settings, c, def);
   if (shown.ref !== c.showRef || shown.value !== c.showValue) c = { ...c, showRef: shown.ref, showValue: shown.value };
-  const color = c.color || settings.componentColor || palette.sym;
+  // pure black is the theme's ink (kept readable on a dark page); other colours are as chosen
+  const color = inkColor(c.color || settings.componentColor || palette.sym, palette);
   const tf = `translate(${c.x} ${c.y}) rotate(${c.rot}) scale(${c.flipX ? -1 : 1} 1) translate(${-def.w / 2} ${-def.h / 2})`;
   const labels = labelLayout(c, def);
   const labelColor = c.labelColor || settings.labelColor || palette.label;
@@ -793,7 +827,7 @@ function knockoutStack(doc: CircuitDoc, stack: (WireItem | ComponentItem | Shape
 export const Scene = memo(function Scene({
   doc,
   data,
-  palette,
+  palette: basePalette,
   highlight,
   frames = false,
   xrefs,
@@ -811,6 +845,8 @@ export const Scene = memo(function Scene({
   /** The exported area, for the knockout masks' extent. */
   knockoutBox?: Rect;
 }) {
+  // the page's own colour can differ from the app theme (see pagePalette)
+  const palette = pagePalette(doc.settings, basePalette);
   // presentation frames are only drawn while editing
   const items = Object.values(doc.items).filter((i) => !i.hidden && (frames || !(i.type === 'shape' && i.kind === 'frame')));
   // one back-to-front stack for shapes, wires and parts (the layers panel order, z else creation order)
@@ -871,7 +907,7 @@ export const Scene = memo(function Scene({
     <>
       <ShapeDefs shapes={items.filter((i): i is ShapeItem => i.type === 'shape')} palette={palette} />
       {knockoutScene && knockoutScene.masks.length > 0 && <defs>{knockoutScene.masks}</defs>}
-      <SheetFrame doc={doc} ink={palette.sym} dim={palette.value} />
+      <SheetFrame doc={doc} ink={palette.sym} dim={palette.value} bg={palette.symBg} />
       {/* shapes, wires and parts share one stack, so the layers panel order is what you see */}
       <g className="layer-stack">{knockoutScene ? knockoutScene.content : stackEls}</g>
       <g className="layer-dots">
