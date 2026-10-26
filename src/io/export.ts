@@ -161,12 +161,14 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
   const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette: scenePalette, xrefs, knockout, knockoutBox: box }));
   // the label rules of styles/app.css, which a standalone file doesn't have
   const css = `text{font-family:${FONT}}.sym-text{font-weight:500;stroke:none}.ref-label{font-size:11px;font-weight:650}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:${palette.danger}}.page-ref{font-weight:400;font-size:0.85em;opacity:.7}.comp.dnp>g:first-child{opacity:.45}`;
+  // The page colour also becomes an attribute value (part interiors); a document's
+  // own background is untrusted file data, so escape it like the page rect above.
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${Math.ceil(box.w)}" height="${Math.ceil(box.h)}" viewBox="${box.x} ${box.y} ${box.w} ${box.h}">
 <title>${escapeXml(title)}</title>
 <style>${css}</style>
 ${opts.background ? `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="${escapeXml(d.settings.background || palette.bg)}"/>` : ''}
-<g>${plainColours(inner.replace(/var\(--sym-bg\)/g, scenePalette.symBg), page.ink)}</g>
+<g>${plainColours(inner.replace(/var\(--sym-bg\)/g, () => escapeXml(scenePalette.symBg)), page.ink)}</g>
 </svg>`;
   return { svg, bounds: box };
 }
