@@ -1,6 +1,6 @@
 import { normalizeDoc } from '../model/doc';
 import { snap } from '../model/geometry';
-import { docPages, viewDoc } from '../model/pages';
+import { docPages, pageItemIds, viewDoc } from '../model/pages';
 import { insertSvgDrawing, type SvgImportOptions } from '../model/svgDrawing';
 import type { CircuitDoc, Point, Rect } from '../model/types';
 import { S, mutate, toast } from '../store/store';
@@ -113,7 +113,9 @@ export async function importFileText(name: string, text: string, at?: Point, svg
         const src = normalizeDoc(data);
         const pageId = fromPicture ? picturePageId(src, text, picture) : undefined;
         const ids = insertCircuit(src, at, { onePage: fromPicture, page, pageId });
-        toast(`Added “${name.replace(/\.(nodal|json|png|svg)$/i, '')}” (${ids.length} items, grouped; double-click to edit inside)`, 'success');
+        const drawn = docPages(src).filter((p) => pageItemIds(src, p.id).length).length;
+        const what = !fromPicture && drawn > 1 ? `${drawn} pages` : `${ids.length} item${ids.length === 1 ? '' : 's'}`;
+        toast(`Added “${name.replace(/\.(nodal|json|png|svg)$/i, '')}” (${what}, grouped; double-click to edit inside)`, 'success');
         return;
       }
       case 'nodal-library': {
