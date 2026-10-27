@@ -1370,6 +1370,12 @@ export function Canvas() {
       return;
     }
     if (singleShape && !singleShape.locked && hasMovableTitle(singleShape) && pointInRect(toShapeFrame(singleShape, w), shapeTitle(singleShape).box, 3)) {
+      // the first click selects the shape, so the second one lands on its title:
+      // a double-click there edits the title instead of starting to drag it
+      if (isDouble) {
+        onDoubleClick(singleShape.id, w);
+        return;
+      }
       beginGesture();
       setGesture({ kind: 'shapeTitle', id: singleShape.id, start: w, base: { dx: singleShape.textDx ?? 0, dy: singleShape.textDy ?? 0 } });
       return;
