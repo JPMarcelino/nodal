@@ -564,7 +564,8 @@ describe('session orchestration (fake relay)', () => {
     await a.session.leaveSession();
     expect(a.store.S().doc.name).toBe('Shared');
     await until('B is out', () => b.session.useCollab.getState().status === 'off');
-    expect(b.store.S().doc.name).toBe('Mine');
+    // status and the restored document are separate updates: wait for the one we assert
+    await until('B has its own circuit back', () => b.store.S().doc.name === 'Mine');
     expect(b.store.S().toasts.some((t) => t.text.includes('host ended'))).toBe(true);
     expect(rooms.get(room)!.snapshot).toBeNull();
     expect(JSON.parse(mem.get('nodal.collab.owned') ?? '{}')[room]).toBeUndefined();
