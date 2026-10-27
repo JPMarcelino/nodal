@@ -52,7 +52,7 @@ export function StatusBar() {
       {scope && <span className="status-item accent">in group</span>}
       {selection > 0 && <span className="status-item">{selection} selected</span>}
       <SnapToggles />
-      <span className="status-item mono">
+      <span className="status-item mono status-coords">
         {cx}, {cy}
       </span>
       <span className="status-item mono">{Math.round(zoom * 100)}%</span>

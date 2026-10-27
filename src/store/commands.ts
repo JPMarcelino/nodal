@@ -42,8 +42,8 @@ export const COMMANDS: Command[] = [
   { id: 'file.saveAs', label: 'Save as…', category: 'File', keys: ['Mod+Shift+S'], run: () => fileSave(true) },
   { id: 'file.saveVersion', label: 'Save version…', category: 'File', keys: ['Mod+Alt+V'], run: () => focusVersionName() },
   { id: 'file.history', label: 'Version history', category: 'File', keys: ['Mod+Alt+H'], run: () => set({ leftPanel: true, leftTab: 'history' }) },
-  { id: 'edit.copyStyle', label: 'Copy style', category: 'Edit', keys: ['Mod+Shift+Alt+C'], run: () => copyStyle() },
-  { id: 'edit.pasteStyle', label: 'Paste style onto the selection', category: 'Edit', keys: ['Mod+Shift+Alt+V'], run: () => pasteStyle() },
+  { id: 'edit.copyStyle', label: 'Copy style', category: 'Edit', keys: ['Mod+Alt+Shift+C'], run: () => copyStyle() },
+  { id: 'edit.pasteStyle', label: 'Paste style onto the selection', category: 'Edit', keys: ['Mod+Alt+Shift+V'], run: () => pasteStyle() },
   // every export goes through the Export dialog, which previews it (images, data, templates, libraries, video)
   { id: 'file.export', label: 'Export…', category: 'File', keys: ['Mod+E', 'Mod+Shift+E'], run: () => openExport(), keywords: 'png svg image pdf print dxf cad spice kicad netlist bom csv json template library video area' },
   { id: 'file.copySvg', label: 'Copy selection as SVG', category: 'File', keys: ['Mod+Alt+C'], run: copyAsSvg },
@@ -460,7 +460,9 @@ export function prettyKey(combo: string): string {
             ? '⌥'
             : 'Alt'
           : p === 'Shift'
-            ? '⇧'
+            ? IS_MAC
+              ? '⇧'
+              : 'Shift'
             : p === 'ArrowLeft'
               ? '←'
               : p === 'ArrowRight'
@@ -474,7 +476,9 @@ export function prettyKey(combo: string): string {
                       : p === 'Delete'
                         ? 'Del'
                         : p === 'Backspace'
-                          ? '⌫'
+                          ? IS_MAC
+                            ? '⌫'
+                            : 'Backspace'
                           : p === 'Enter'
                             ? '↵'
                             : p === '/'

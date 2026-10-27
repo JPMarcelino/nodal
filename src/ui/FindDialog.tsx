@@ -91,7 +91,7 @@ export function FindDialog() {
   };
 
   return (
-    <Modal onClose={close} width={600} className="palette">
+    <Modal onClose={close} width={600} className="palette" closeFromInput ariaLabel="Find">
       <input
         className="palette-input"
         autoFocus

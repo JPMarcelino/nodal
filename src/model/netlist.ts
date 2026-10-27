@@ -13,9 +13,10 @@ export interface Net {
 }
 
 /**
- * Pins of different parts that sit on exactly the same spot (a ground symbol
- * dropped straight onto a pin, two parts butted together). They are connected
- * just as if a wire joined them. Returns the "comp:port" keys of each group.
+ * Pins that sit on exactly the same spot (a ground symbol dropped straight
+ * onto a pin, two parts butted together, or two stacked pins of one part).
+ * They are connected just as if a wire joined them. Returns the "comp:port"
+ * keys of each group.
  */
 export function touchingPins(doc: CircuitDoc): string[][] {
   const at = new Map<string, string[]>();
@@ -31,7 +32,7 @@ export function touchingPins(doc: CircuitDoc): string[][] {
       else at.set(k, [`${c.id}:${p.id}`]);
     }
   }
-  return [...at.values()].filter((g) => new Set(g.map((k) => k.split(':')[0])).size > 1);
+  return [...at.values()].filter((g) => new Set(g).size > 1);
 }
 
 /** Pins only touch on the same page: with several pages, cell keys carry the page id. */
@@ -62,7 +63,7 @@ export function touchingCells(doc: CircuitDoc): Map<string, string[]> {
 export function touchingFromCells(cells: Map<string, string[]>): Set<string> {
   const out = new Set<string>();
   for (const keys of cells.values()) {
-    if (new Set(keys.map((k) => k.split(':')[0])).size > 1) for (const k of keys) out.add(k);
+    if (new Set(keys).size > 1) for (const k of keys) out.add(k);
   }
   return out;
 }
@@ -118,7 +119,7 @@ export function refreshTouching(
   for (const [cell, old] of before) {
     for (const key of old ?? []) touching.delete(key);
     const list = cells.get(cell) ?? [];
-    if (new Set(list.map((k) => k.split(':')[0])).size > 1) for (const key of list) touching.add(key);
+    if (new Set(list).size > 1) for (const key of list) touching.add(key);
   }
   return { cells, touching, same: false };
 }

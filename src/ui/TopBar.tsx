@@ -234,6 +234,12 @@ export function TopBar() {
   );
 }
 
+/** The keycap under a tool icon: the key itself, not the modifiers (the tooltip has the whole combo). */
+const railKey = (id: string) => {
+  const k = keysFor(id)[0];
+  return k ? prettyKey(k.split('+').pop() ?? k) : '';
+};
+
 const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string; alt?: boolean }[] = [
   { tool: 'select', icon: <MousePointer2 size={17} />, label: 'Move / select', cmd: 'tool.select' },
   { tool: 'select', alt: true, icon: <Unplug size={17} />, label: 'Alt move (leave wires behind)', cmd: 'tool.altMove' },
@@ -269,7 +275,7 @@ export function ToolRail() {
         {TOOLS.filter((t) => !t.alt && A.VIEW_TOOLS.has(t.tool)).map((t) => (
           <button key={t.cmd} className={tool === t.tool ? 'tool-btn active' : 'tool-btn'} onClick={() => A.setTool(t.tool)} title={`${t.label} (${prettyKey(keysFor(t.cmd)[0] ?? '')})`}>
             {t.icon}
-            <span className="tool-key">{prettyKey(keysFor(t.cmd)[0] ?? '')}</span>
+            <span className="tool-key">{railKey(t.cmd)}</span>
           </button>
         ))}
       </div>
@@ -295,7 +301,7 @@ export function ToolRail() {
             title={`${t.label} (${prettyKey(keysFor(t.cmd)[0] ?? '')})`}
           >
             {t.icon}
-            <span className="tool-key">{prettyKey(keysFor(t.cmd)[0] ?? '')}</span>
+            <span className="tool-key">{railKey(t.cmd)}</span>
           </button>
           {t.tool === 'wire' && <WireAngleButton />}
         </span>
@@ -307,7 +313,7 @@ export function ToolRail() {
         title="Explain tools"
       >
         <Presentation size={17} />
-        <span className="tool-key">{prettyKey(keysFor(`tool.${lastExplain}`)[0] ?? '')}</span>
+        <span className="tool-key">{railKey(`tool.${lastExplain}`)}</span>
       </button>
       <button className={timelineOpen ? 'tool-btn active' : 'tool-btn'} onClick={toggleTimeline} title={`Presentation timeline (${prettyKey(keysFor('present.timeline')[0] ?? '')})`}>
         <Film size={17} />

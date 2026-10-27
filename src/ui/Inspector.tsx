@@ -29,7 +29,7 @@ import {
   StretchHorizontal,
   StretchVertical,
 } from 'lucide-react';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { defaultHeadSize, frozenLabelOffsets, labelLook } from '../canvas/Scene';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { wireStyleFor } from '../model/wires';
@@ -1288,6 +1288,7 @@ interface NavEntry {
 function SectionNav({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement> }) {
   const [list, setList] = useState<NavEntry[]>([]);
   const [active, setActive] = useState('');
+  const chipsRef = useRef<HTMLDivElement>(null);
   // after a jump, keep the chosen chip lit while the smooth scroll settles
   const pinned = useRef(0);
   useLayoutEffect(() => {
@@ -1318,6 +1319,10 @@ function SectionNav({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement> 
       root.removeEventListener('scroll', spy);
     };
   }, [scrollRef]);
+  // the jump bar is one scrolling row: keep the section in view as the inspector scrolls
+  useEffect(() => {
+    chipsRef.current?.querySelector<HTMLElement>('.section-chip.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [active]);
   if (list.length < 3) return null;
   const anyOpen = list.some((e) => e.open);
   const go = (id: string) => {
@@ -1332,7 +1337,7 @@ function SectionNav({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement> 
   };
   return (
     <nav className="section-nav" aria-label="Panel sections">
-      <div className="section-chips">
+      <div className="section-chips" ref={chipsRef}>
         {list.map((e) => (
           <button key={e.id} type="button" className={`section-chip${e.id === active ? ' active' : ''}${e.open ? '' : ' folded'}`} title={e.open ? `Go to ${e.title}` : `Show ${e.title}`} onClick={() => go(e.id)}>
             {e.title}
