@@ -40,7 +40,7 @@ import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { fragmentFromText, writePictureClipboard } from '../io/clipboardCopy';
 import { viewCentre } from '../io/importFiles';
-import { S, activePage, inGesture, mutate, pushRecent, readOnly, viewModeKey, select, set, setPage, setPrefs, toast, vdoc, imageExportOptions } from './store';
+import { S, activePage, inGesture, mutate, pushRecent, readOnly, readOnlyNotice, viewModeKey, select, set, setPage, setPrefs, toast, vdoc, imageExportOptions } from './store';
 import { addPage, docPages, editPage, movePage, pageIndex, pageItemIds, renamePage } from '../model/pages';
 import { deletePage, duplicatePage, moveItemsToPage } from '../model/pageOps';
 import { confirmDelete } from '../ui/Ask';
@@ -60,15 +60,8 @@ const editable = () => S().selection.filter((id) => vdoc().items[id] && !vdoc().
 /** Tools that only look (select, pan, trace a net, laser pointer): the ones View mode keeps. */
 export const VIEW_TOOLS: ReadonlySet<Tool> = new Set<Tool>(['select', 'pan', 'trace', 'laser']);
 
-let lastNotice = 0;
-/** Tells the user why an edit did nothing while the circuit is read-only (at most every few seconds). */
-export function readOnlyNotice() {
-  if (Date.now() - lastNotice < 3000) return;
-  lastNotice = Date.now();
-  if (S().viewOnly) return toast('This live session is view-only. Leave it to work on your own circuit.', 'info');
-  const k = viewModeKey.label();
-  toast(`View mode: the circuit can’t be changed${k ? ` (${k} to edit)` : ''}`, 'info');
-}
+/** Tells the user why an edit did nothing while the circuit is read-only (see store.readOnlyNotice). */
+export { readOnlyNotice } from './store';
 
 /**
  * Turns View mode on or off (toggles without an argument). On: back to the
@@ -355,8 +348,10 @@ export function copySelection() {
   pasteCount = 0;
   // other apps get a picture of the selection; pasting back here restores the items
   const { theme, background } = imageExportOptions();
-  void writePictureClipboard(vdoc(), { theme, background, padding: 10, ids: S().selection, scale: 2 }, clipboard);
-  toast(`Copied ${S().selection.length} item${S().selection.length > 1 ? 's' : ''}`);
+  const count = S().selection.length;
+  void writePictureClipboard(vdoc(), { theme, background, padding: 10, ids: S().selection, scale: 2 }, clipboard).then((ok) =>
+    toast(ok ? `Copied ${count} item${count > 1 ? 's' : ''}` : 'The clipboard is not available here — use Export instead', ok ? 'info' : 'error'),
+  );
 }
 
 export function cutSelection() {
@@ -369,6 +364,8 @@ export function cutSelection() {
 }
 
 export async function paste(at?: { x: number; y: number }) {
+  // nothing pasted could land, so don't ask for clipboard permission either
+  if (readOnly()) return readOnlyNotice();
   let text: string | null = null;
   try {
     text = (await navigator.clipboard?.readText()) ?? null;

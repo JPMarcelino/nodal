@@ -2,6 +2,7 @@ import { prepareMath } from '../model/latex';
 import type { Fragment } from '../model/ops';
 import type { CircuitDoc } from '../model/types';
 import { exportPng, exportSvg, type SvgOptions } from './export';
+import { parseJsonText } from './files';
 
 /**
  * Copied items travel as an SVG picture that carries the items themselves in a
@@ -23,7 +24,7 @@ export function fragmentFromText(text: string | null | undefined): Fragment | nu
   const meta = META_RE.exec(text);
   if (!meta && !text.includes('"nodal-fragment"')) return null;
   try {
-    const frag = JSON.parse(meta ? unescapeXml(meta[1]) : text) as Fragment;
+    const frag = parseJsonText<Fragment>(meta ? unescapeXml(meta[1]) : text);
     const ok = (x: unknown) => !!x && typeof x === 'object' && typeof (x as { id?: unknown }).id === 'string' && typeof (x as { type?: unknown }).type === 'string';
     // pasted text can be anything: only take fragments whose items look like items
     return frag && Array.isArray(frag.items) && frag.items.length && frag.items.every(ok) && (!frag.groups || Array.isArray(frag.groups)) ? frag : null;
@@ -60,8 +61,10 @@ export async function writePictureClipboard(doc: CircuitDoc, opts: SvgOptions & 
       /* unsupported types or no permission (Firefox, WebKitGTK): text only */
     }
   }
+  // without a clipboard at all (an insecure page), `cb?.writeText` would be a no-op that looks like success
+  if (typeof cb?.writeText !== 'function') return false;
   try {
-    await cb?.writeText(await svg);
+    await cb.writeText(await svg);
     return true;
   } catch {
     return false;

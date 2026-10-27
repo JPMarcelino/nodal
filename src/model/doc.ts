@@ -109,22 +109,25 @@ export function safeColour(v: unknown): string {
 /** Makes loaded documents safe to use (fills in settings added in later versions). */
 export function normalizeDoc(raw: unknown): CircuitDoc {
   const d = raw as Partial<CircuitDoc>;
-  if (!d || typeof d !== 'object' || d.format !== 'nodal' || typeof d.items !== 'object') {
+  // `items` must be a plain record: null and arrays would crash while drawing
+  if (!d || typeof d !== 'object' || d.format !== 'nodal' || !d.items || typeof d.items !== 'object' || Array.isArray(d.items)) {
     throw new Error('This file is not a Nodal circuit.');
   }
+  // a damaged file can have a string or array where a record belongs
+  const record = <T,>(v: unknown): Record<string, T> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, T>) : {});
+  const settings = d.settings && typeof d.settings === 'object' && !Array.isArray(d.settings) ? (d.settings as Partial<DocSettings>) : {};
+  settings.background = safeColour(settings.background);
   const items = migrateItems(d.items ?? {});
   freeDanglingWireEnds(items);
-  const settings: DocSettings = { ...structuredClone(DEFAULT_SETTINGS), ...d.settings, wire: { ...DEFAULT_SETTINGS.wire, ...d.settings?.wire }, ercIgnored: Array.isArray(d.settings?.ercIgnored) ? d.settings.ercIgnored : undefined };
-  settings.background = safeColour(settings.background);
   return normalizePages({
     format: 'nodal',
     version: 1,
     id: typeof d.id === 'string' && d.id ? d.id : uid('d'),
     name: d.name || 'Untitled circuit',
-    settings,
+    settings: { ...structuredClone(DEFAULT_SETTINGS), ...settings, wire: { ...DEFAULT_SETTINGS.wire, ...settings.wire }, ercIgnored: Array.isArray(settings.ercIgnored) ? settings.ercIgnored : undefined },
     items,
-    groups: d.groups ?? {},
-    symbols: d.symbols ?? {},
+    groups: record(d.groups),
+    symbols: record<SymbolDef>(d.symbols),
     pages: d.pages,
   });
 }

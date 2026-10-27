@@ -335,7 +335,7 @@ function tryPlace(local: Poly[], scale: number | undefined, seedIndex: number, s
 
 /** Removes texts the symbol draws itself, and adopts a nearby reference ("R3") for the part. */
 function claimTexts(drawing: SvgDrawing, def: SymbolDef, b: Box, cx: number, cy: number, k: number, usedText: Set<number>, part: RecognizedPart) {
-  const own = new Set(def.prims.flatMap((p) => (p.t === 'text' ? [p.text.replace(/;/g, ',').trim()] : [])));
+  const own = new Set(def.prims.flatMap((p) => (p.t === 'text' ? [p.text.trim()] : [])));
   const pad = 4 * k;
   drawing.texts.forEach((t, i) => {
     if (!usedText.has(i) && own.has(t.text) && t.x >= b.x0 - pad - t.size * t.text.length && t.x <= b.x1 + pad + t.size * t.text.length && t.y >= b.y0 - pad && t.y <= b.y1 + pad + t.size) usedText.add(i);

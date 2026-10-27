@@ -470,7 +470,7 @@ function collect(live: SVGSVGElement): { shapes: RawShape[]; texts: RawText[] } 
       const x = t.x.baseVal.numberOfItems ? t.x.baseVal.getItem(0).value : 0;
       const y = t.y.baseVal.numberOfItems ? t.y.baseVal.getItem(0).value : 0;
       const anchor = cs.textAnchor === 'middle' ? 'middle' : cs.textAnchor === 'end' ? 'end' : 'start';
-      texts.push({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f, size: (parseFloat(cs.fontSize) || 16) * scale, anchor, text: text.replace(/;/g, ','), color: hexOf(cs.fill) });
+      texts.push({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f, size: (parseFloat(cs.fontSize) || 16) * scale, anchor, text, color: hexOf(cs.fill) });
       continue;
     }
     const d = elementPathData(el);

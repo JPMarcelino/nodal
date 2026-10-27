@@ -121,10 +121,17 @@ function SvgImportDialog({ q }: { q: Question }) {
           <input type="checkbox" checked={o.symbols} onChange={(e) => set({ symbols: e.target.checked })} /> Recognise library symbols (exact matches)
         </label>
         <div className="btn-row">
-          <button className="secondary-btn" onClick={() => answer(null)}>
+          <button className="secondary-btn" autoFocus={!summary} onClick={() => answer(null)}>
             Cancel
           </button>
-          <button className="primary-btn" autoFocus onClick={() => answer(o)}>
+          <button
+            className="primary-btn"
+            autoFocus={!!summary}
+            disabled={!summary}
+            title={summary ? undefined : 'Nothing drawable found in this SVG, so there is nothing to import'}
+            aria-label={summary ? undefined : 'Import (nothing drawable found)'}
+            onClick={() => answer(o)}
+          >
             Import
           </button>
         </div>

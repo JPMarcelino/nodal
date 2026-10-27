@@ -3,9 +3,9 @@ import { snap } from '../model/geometry';
 import { docPages, pageItemIds, viewDoc } from '../model/pages';
 import { insertSvgDrawing, type SvgImportOptions } from '../model/svgDrawing';
 import type { CircuitDoc, Point, Rect } from '../model/types';
-import { S, mutate, toast } from '../store/store';
+import { S, mutate, readOnly, readOnlyNotice, toast } from '../store/store';
 import { askSvgImport } from '../ui/SvgImportDialog';
-import { openAnyFile } from './files';
+import { openAnyFile, parseJsonText } from './files';
 import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from './imageImport';
 import { importLibraryText, importTemplateText, insertCircuit } from './sharing';
 import { svgToDrawing } from './svgImport';
@@ -20,8 +20,8 @@ interface PictureSize {
 
 /** The world rectangle an exported SVG covers, from its viewBox. */
 function svgViewBox(text: string): Rect | null {
-  const m = /<svg\b[^>]*\bviewBox\s*=\s*"([^"]+)"/i.exec(text);
-  const n = m ? m[1].trim().split(/[\s,]+/).map(Number) : [];
+  const m = /<svg\b[^>]*\bviewBox\s*=\s*(?:"([^"]+)"|'([^']+)')/i.exec(text);
+  const n = m ? (m[1] ?? m[2]).trim().split(/[\s,]+/).map(Number) : [];
   return n.length === 4 && n.every(Number.isFinite) && n[2] > 0 && n[3] > 0 ? { x: n[0], y: n[1], w: n[2], h: n[3] } : null;
 }
 
@@ -61,6 +61,19 @@ function picturePageId(doc: CircuitDoc, text: string, size?: PictureSize): strin
   return best && best.err <= 0.01 && (!next || next.err >= best.err + 0.01) ? best.id : undefined;
 }
 
+/** A file's name without its extension, for messages. */
+const baseName = (name: string) => name.replace(/\.(nodal-lib\.json|nodal-template\.json|[a-z0-9]+)$/i, '').trim() || name;
+
+/**
+ * Whether the open circuit can't take an import (View mode, a view-only live
+ * session); says so. mutate would refuse quietly and the import report 0 items.
+ */
+function refuseReadOnly(): boolean {
+  if (!readOnly()) return false;
+  readOnlyNotice();
+  return true;
+}
+
 /** The page name an exported picture was of: its SVG title, else its file name. */
 function scenePageHint(name: string, text: string): string | undefined {
   const title = text.trimStart().startsWith('<') ? svgTitle(text) : null;
@@ -69,7 +82,7 @@ function scenePageHint(name: string, text: string): string | undefined {
 
 /** Everything "Import file…" and drag & drop understand. */
 export const IMPORT_FILTER = [
-  { name: 'Nodal files, SVG, PDF and images', extensions: ['nodal', 'json', 'svg', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'] },
+  { name: 'Nodal files, SVG, PDF and images', extensions: ['nodal', 'json', 'svg', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'] },
 ];
 
 export const viewCentre = (): Point => {
@@ -88,6 +101,7 @@ export async function importFileText(name: string, text: string, at?: Point, svg
     // a picture copied from Nodal (Ctrl+C, Export → Copy) carries its items: bring them back editable
     const copied = fragmentFromText(text);
     if (copied) {
+      if (refuseReadOnly()) return;
       const ids = importTemplateText(JSON.stringify(copied), at);
       toast(`Inserted ${ids.length} item${ids.length === 1 ? '' : 's'} copied from Nodal`, 'success');
       return;
@@ -95,6 +109,7 @@ export async function importFileText(name: string, text: string, at?: Point, svg
     // an SVG exported with its circuit inside is that circuit, not a drawing
     const embedded = sceneFromSvgText(text);
     if (!embedded && (/\.svg$/i.test(name) || (trimmed.startsWith('<') && /<svg[\s>]/i.test(text)))) {
+      if (refuseReadOnly()) return;
       await importSvgDrawing(name, text, at ?? viewCentre(), svg);
       return;
     }
@@ -103,7 +118,7 @@ export async function importFileText(name: string, text: string, at?: Point, svg
     const page = fromPicture ? scenePageHint(name, text) : undefined;
     let data: { format?: unknown };
     try {
-      data = JSON.parse(embedded ?? text);
+      data = parseJsonText(embedded ?? text);
     } catch {
       throw new Error('Nodal can import circuits (.nodal), symbol libraries, templates, SVG, PDF and images');
     }
@@ -111,20 +126,22 @@ export async function importFileText(name: string, text: string, at?: Point, svg
       case 'nodal': {
         // dropped or imported circuits are added to this one; File → Open replaces it
         const src = normalizeDoc(data);
+        if (refuseReadOnly()) return;
         const pageId = fromPicture ? picturePageId(src, text, picture) : undefined;
         const ids = insertCircuit(src, at, { onePage: fromPicture, page, pageId });
         const drawn = docPages(src).filter((p) => pageItemIds(src, p.id).length).length;
         const what = !fromPicture && drawn > 1 ? `${drawn} pages` : `${ids.length} item${ids.length === 1 ? '' : 's'}`;
-        toast(`Added “${name.replace(/\.(nodal|json|png|svg)$/i, '')}” (${what}, grouped; double-click to edit inside)`, 'success');
+        toast(`Added “${baseName(name)}” (${what}, grouped; double-click to edit inside)`, 'success');
         return;
       }
       case 'nodal-library': {
         const n = importLibraryText(text, { overwrite: false });
-        toast(n ? `Imported ${n} symbol${n > 1 ? 's' : ''}` : 'Every symbol was already in your library', n ? 'success' : 'info');
+        toast(n ? `Imported ${n} symbol${n > 1 ? 's' : ''}` : 'No new symbols to import', n ? 'success' : 'info');
         return;
       }
       case 'nodal-template':
       case 'nodal-fragment': {
+        if (refuseReadOnly()) return;
         const ids = importTemplateText(text, at);
         toast(`Inserted template (${ids.length} items)`, 'success');
         return;
@@ -133,7 +150,7 @@ export async function importFileText(name: string, text: string, at?: Point, svg
         throw new Error('This JSON is not a Nodal circuit, library or template');
     }
   } catch (e) {
-    toast(`Could not import ${name}: ${(e as Error).message}`, 'error');
+    toast(`Could not import “${baseName(name)}”: ${(e as Error).message}`, 'error');
   }
 }
 
@@ -164,21 +181,25 @@ async function importOneFile(file: File, at?: Point) {
     /\.png$/i.test(file.name) || file.type === 'image/png' ? await sceneFromPicture(file).catch(() => null) : null;
   if (embedded) return importFileText(file.name, embedded.json, at, undefined, { width: embedded.width, height: embedded.height });
   if (isRaster(file) || isPdf(file)) {
+    if (refuseReadOnly()) return;
     try {
       let pictures;
       let note = '';
+      let suffix = '';
       if (isPdf(file)) {
         const { pages, total } = await pdfToPictures(file);
         if (!pages.length) throw new Error('The PDF has no pages');
         pictures = pages;
-        note = total > pages.length ? ` (first ${pages.length} of ${total} pages)` : pages.length > 1 ? ` (${pages.length} pages)` : '';
+        const n = pages.length;
+        note = `${n} page${n === 1 ? '' : 's'} from `;
+        suffix = total > n ? ` (first ${n} of ${total} pages)` : '';
       } else {
         pictures = [await rasterToPicture(file)];
       }
       insertPictures(pictures, at ?? viewCentre());
-      toast(`Inserted ${file.name}${note}`, 'success');
+      toast(`Inserted ${note}“${baseName(file.name)}”${suffix}`, 'success');
     } catch (e) {
-      toast(`Could not import ${file.name}: ${(e as Error).message}`, 'error');
+      toast(`Could not import “${baseName(file.name)}”: ${(e as Error).message}`, 'error');
     }
     return;
   }
