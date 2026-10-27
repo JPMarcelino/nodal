@@ -2,9 +2,10 @@ import { docBounds, uid } from '../model/doc';
 import { cleanup, extractFragment, insertFragment, type Fragment } from '../model/ops';
 import { addPage, docPages, pageItemIds, resolvePage, viewDoc } from '../model/pages';
 import { snap } from '../model/geometry';
+import { BUILTIN } from '../model/symbols';
 import type { CircuitDoc, Page, Point, SymbolDef } from '../model/types';
-import { S, mergeUserSymbols, mutate, set, toast } from '../store/store';
-import { isDesktop, sanitizeName, saveFile } from './files';
+import { S, mergeUserSymbols, mutate, readOnly, readOnlyNotice, set, toast } from '../store/store';
+import { isDesktop, parseJsonText, sanitizeName, saveFile } from './files';
 import { checkLibraryUrl, fetchLibraryText, parseAddLibraryHash, parseRemoteLibrary } from './libraryUrl';
 import { ask } from '../ui/Ask';
 
@@ -60,6 +61,8 @@ export function importLibraryText(text: string, opts: { overwrite?: boolean } = 
   const existing = S().userLibrary;
   const toAdd: Record<string, SymbolDef> = {};
   for (const [id, def] of Object.entries(incoming)) {
+    // a library can't shadow a built-in drawing (the same rule the "add by link" path enforces)
+    if (BUILTIN[id]) continue;
     if (!opts.overwrite && existing[id]) continue;
     toAdd[id] = def;
   }
@@ -68,8 +71,16 @@ export function importLibraryText(text: string, opts: { overwrite?: boolean } = 
   return Object.keys(toAdd).length;
 }
 
-/** Inserts a template's items into the current document, centred on `at` (world) or the view. */
+/**
+ * Inserts a template's items into the current document, centred on `at`
+ * (world) or the view. Throws while the circuit is read-only, so no caller
+ * reports an insert that mutate quietly refused.
+ */
 export function importTemplateText(text: string, at?: Point): string[] {
+  if (readOnly()) {
+    readOnlyNotice();
+    throw new Error('the circuit can’t be changed right now');
+  }
   const data = parseTemplate(text);
   const frag = data.fragment;
   if (!frag?.items?.length) throw new Error('This template has no items.');
@@ -260,16 +271,24 @@ export async function copyToClipboard(text: string, what: string) {
 }
 
 export async function pasteLibraryFromClipboard() {
+  let text: string;
   try {
-    const text = await navigator.clipboard.readText();
-    const n = importLibraryText(text, { overwrite: false });
-    toast(n ? `Imported ${n} symbol${n > 1 ? 's' : ''}` : 'Nothing new to import', n ? 'success' : 'info');
+    text = await navigator.clipboard.readText();
   } catch {
     toast('Could not read the clipboard', 'error');
+    return;
+  }
+  try {
+    const n = importLibraryText(text, { overwrite: false });
+    toast(n ? `Imported ${n} symbol${n > 1 ? 's' : ''}` : 'Nothing new to import', n ? 'success' : 'info');
+  } catch (e) {
+    const why = (e as Error).message;
+    toast(/not a nodal symbol library/i.test(why) ? 'The clipboard text is not a Nodal symbol library.' : `Could not import the library: ${why}`, 'error');
   }
 }
 
 export async function pasteTemplateFromClipboard() {
+  if (readOnly()) return readOnlyNotice();
   try {
     const text = await navigator.clipboard.readText();
     const ids = importTemplateText(text);
@@ -352,15 +371,16 @@ export function addLibraryFromLocation() {
 /* ------------------------------------------------------------------ */
 
 function parseLib(text: string): LibraryFile {
-  const raw = JSON.parse(text) as Partial<LibraryFile>;
-  if (raw.format !== 'nodal-library' || !raw.symbols || typeof raw.symbols !== 'object') {
+  const raw = parseJsonText<Partial<LibraryFile> | null>(text);
+  if (!raw || raw.format !== 'nodal-library' || !raw.symbols || typeof raw.symbols !== 'object') {
     throw new Error('Not a Nodal symbol library file.');
   }
   return raw as LibraryFile;
 }
 
 function parseTemplate(text: string): TemplateFile {
-  const raw = JSON.parse(text) as Partial<TemplateFile> & { symbols?: CircuitDoc['symbols'] };
+  const raw = parseJsonText<(Partial<TemplateFile> & { symbols?: CircuitDoc['symbols'] }) | null>(text);
+  if (!raw || typeof raw !== 'object') throw new Error('Not a Nodal template file.');
   // accept a plain copied fragment too (Edit → Copy puts one on the clipboard as JSON)
   if (raw.format === 'nodal-template' && raw.fragment) return raw as TemplateFile;
   const frag = raw as unknown as Fragment;

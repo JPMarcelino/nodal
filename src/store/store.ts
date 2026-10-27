@@ -82,6 +82,8 @@ export interface Prefs {
   exportScale?: number;
   /** PNG and SVG exports carry the circuit so they can be opened again (unset = yes). */
   exportScene?: boolean;
+  /** Theme of every image export (unset = the app's theme). */
+  exportTheme?: 'light' | 'dark';
   /** Tool lock: placing a part keeps the part armed instead of returning to Select. */
   toolLock: boolean;
   /** The quiet hint line at the bottom of the canvas: the next useful action for the tool in hand. */
@@ -263,6 +265,20 @@ export const viewModeKey = { label: () => '' };
 export const readOnly = (s: Pick<AppState, 'viewOnly' | 'viewMode'> = S()) => s.viewOnly || s.viewMode;
 export const set = (p: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => useStore.setState(p);
 
+let lastReadOnlyNotice = 0;
+/**
+ * Tells the user why an edit did nothing while the circuit is read-only (at
+ * most every few seconds). Lives in the store so the file / import code can
+ * use it without importing the action layer (which imports them).
+ */
+export function readOnlyNotice() {
+  if (Date.now() - lastReadOnlyNotice < 3000) return;
+  lastReadOnlyNotice = Date.now();
+  if (S().viewOnly) return toast('This live session is view-only. Leave it to work on your own circuit.', 'info');
+  const k = viewModeKey.label();
+  toast(`View mode: the circuit can’t be changed${k ? ` (${k} to edit)` : ''}`, 'info');
+}
+
 /** The document as the canvas sees it: only the active page's items (see model/pages). */
 export const vdoc = () => viewDoc(S().doc, S().page);
 /** Hook form of vdoc. */
@@ -303,7 +319,7 @@ export function setPage(page: string): boolean {
   if (p === cur) return true;
   pageViews.set(`${s.doc.id}:${cur}`, s.view);
   const seen = pageViews.get(`${s.doc.id}:${p}`);
-  set({ page: p, selection: [], wirePart: null, highlight: null, layerHover: [], contextMenu: null, scope: undefined, placing: null, ...(seen ? { view: seen } : {}) });
+  set({ page: p, selection: [], wirePart: null, highlight: null, layerHover: [], contextMenu: null, scope: undefined, placing: null, exportArea: null, exportScope: null, ...(seen ? { view: seen } : {}) });
   if (!s.doc.id) return !!seen;
   const all = load<Record<string, string>>(LS.pages, {});
   delete all[s.doc.id];
@@ -487,7 +503,7 @@ export function replaceDoc(doc: CircuitDoc, filePath: string | null = null) {
   // the incoming document has nothing to do with a running drag: drop the
   // gesture instead of letting its next update clobber the new document
   if (inGesture()) endGesture(false);
-  set({ doc, page: lastPage(doc), past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null });
+  set({ doc, page: lastPage(doc), past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null, exportArea: null, exportScope: null });
 }
 
 export function newDoc() {
@@ -544,13 +560,13 @@ export function toast(text: string, kind: Toast['kind'] = 'info') {
 
 /**
  * Theme, background and PNG resolution of every image export (dialog, menus,
- * shortcuts, right-click, area, clipboard): the app's current theme, so the
- * picture looks like the canvas, and the background / resolution last chosen
- * in the Export dialog.
+ * shortcuts, right-click, area, clipboard), as last chosen in the Export
+ * dialog; until a theme is chosen there it follows the app's, so the picture
+ * looks like the canvas.
  */
 export function imageExportOptions(): { theme: 'light' | 'dark'; background: boolean; scale: number; scene: boolean } {
   const p = S().prefs;
-  return { theme: p.theme, background: p.exportBackground ?? true, scale: p.exportScale ?? 3, scene: p.exportScene ?? true };
+  return { theme: p.exportTheme ?? p.theme, background: p.exportBackground ?? true, scale: p.exportScale ?? 3, scene: p.exportScene ?? true };
 }
 
 export function setPrefs(p: Partial<Prefs>) {

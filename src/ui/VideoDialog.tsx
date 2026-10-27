@@ -14,10 +14,10 @@ const SIZES = { 720: [1280, 720], 1080: [1920, 1080], 1440: [2560, 1440] } as co
 /** Renders the presentation timeline to an MP4 / WebM file. */
 export function VideoDialog() {
   const doc = useViewDoc();
-  const dark = useStore((s) => s.prefs.theme === 'dark');
+  const exportTheme = useStore((s) => s.prefs.exportTheme ?? s.prefs.theme);
   const [size, setSize] = useState<keyof typeof SIZES>(1080);
   const [fps, setFps] = useState(30);
-  const [theme, setTheme] = useState<'light' | 'dark'>(dark ? 'dark' : 'light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(exportTheme);
   const [captions, setCaptions] = useState(true);
   const [progress, setProgress] = useState<number | null>(null);
   const abort = useRef<AbortController | null>(null);

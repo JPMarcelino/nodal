@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { importFile } from '../io/importFiles';
 import { copyScope, doClipExport, doExport, filePrint, scopeSvgOptions, startAreaExport } from '../io/fileActions';
-import { exportSvg } from '../io/export';
+import { clipAreaDoc, exportSvg, selectionDoc } from '../io/export';
 import { prepareMath } from '../model/latex';
+import { withoutFrames } from '../model/presentation';
 import {
   buildLibraryFile,
   buildTemplateFile,
@@ -26,7 +27,7 @@ import { BUILTIN_SYMBOLS } from '../model/symbols';
 import type { SymbolDef } from '../model/types';
 import * as A from '../store/actions';
 import { COMMANDS, activeKeymap, eventToCombo, keysFor, prettyKey, setActiveKeymap, type Command } from '../store/commands';
-import { S, set, setPrefs, toast, useStore, vdoc, type ExportScope } from '../store/store';
+import { readOnly, set, setPrefs, toast, useStore, vdoc, type ExportScope } from '../store/store';
 import { Field, Kbd, Segmented, Toggle } from './controls';
 import { FindDialog } from './FindDialog';
 import { LiveSession } from './LiveSession';
@@ -66,11 +67,11 @@ export function Modal({
   }, [onClose, onEscape]);
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${className ?? ''}`} style={{ width }} role="dialog">
+      <div className={`modal ${className ?? ''}`} style={{ width }} role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
         {title && (
           <header className="modal-head">
             <h2>{title}</h2>
-            <button className="icon-btn" onClick={onClose}>
+            <button className="icon-btn" onClick={onClose} aria-label="Close">
               <X size={16} />
             </button>
           </header>
@@ -466,12 +467,25 @@ export function SettingsDialog() {
 /* ------------------------------------------------------------------ */
 
 /** Live picture of what the export will look like: colours, background (checkered when transparent) and extent. */
+function scopeIsEmpty(scope: ExportScope): boolean {
+  const view = vdoc();
+  let d = withoutFrames(view);
+  if (scope.ids?.length) d = selectionDoc(view, scope.ids);
+  if (scope.clip) d = clipAreaDoc(d, scope.clip);
+  // a page's drawing frame is still something to export
+  if (!scope.ids?.length && !scope.clip && d.settings.titleBlock) return false;
+  return !Object.values(d.items).some((it) => !it.hidden);
+}
+
 function ExportPreview({ scope, theme, background, scale }: { scope: ExportScope; theme: 'light' | 'dark'; background: boolean; scale: number }) {
   const doc = useStore((s) => s.doc);
   const page = useStore((s) => s.page);
   const [shot, setShot] = useState<{ url: string; w: number; h: number } | null>(null);
   const [error, setError] = useState('');
+  // narrowed the way exportSvg narrows it, so an empty scope says so instead of showing a blank picture
+  const empty = useMemo(() => scopeIsEmpty(scope), [doc, page, scope]);
   useEffect(() => {
+    if (empty) return;
     let url = '';
     let live = true;
     const view = vdoc();
@@ -493,14 +507,25 @@ function ExportPreview({ scope, theme, background, scale }: { scope: ExportScope
       live = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [doc, page, scope, theme, background]);
+  }, [doc, page, scope, theme, background, empty]);
+  const clip = scope.clip;
+  const num = (n: number) => String(Math.round(n)).replace('-', '\u2212');
   return (
     <div className="export-preview-wrap">
-      <div className={`export-preview${background ? '' : ' transparent'}`}>
-        {error ? <span className="muted small">Preview failed: {error}</span> : shot ? <img src={shot.url} alt="Export preview" /> : <span className="muted small">Rendering preview…</span>}
+      <div className={`export-preview${background || empty ? '' : ' transparent'}`}>
+        {empty ? (
+          <span className="muted small">{clip ? 'Nothing to export in this area' : scope.ids?.length ? 'Nothing selected to export' : 'Nothing to export on this page'}</span>
+        ) : error ? (
+          <span className="muted small">Preview failed: {error}</span>
+        ) : shot ? (
+          <img src={shot.url} alt="Export preview" />
+        ) : (
+          <span className="muted small">Rendering preview…</span>
+        )}
       </div>
-      {shot && (
+      {shot && !empty && (
         <span className="muted small">
+          {clip && `Area ${num(clip.x)}, ${num(clip.y)} · ${num(clip.w)} × ${num(clip.h)} px · `}
           {shot.w} × {shot.h} px · PNG at {scale}×: {shot.w * scale} × {shot.h * scale} px{background ? '' : ' · transparent background'}
         </span>
       )}
@@ -509,16 +534,18 @@ function ExportPreview({ scope, theme, background, scale }: { scope: ExportScope
 }
 
 export function ExportDialog() {
-  // the theme starts as the app's own; background and resolution are remembered for every export
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => S().prefs.theme);
+  // theme, background and resolution are prefs, so menus, shortcuts and copying export the same picture
+  const theme = useStore((s) => s.prefs.exportTheme ?? s.prefs.theme);
+  const setTheme = (exportTheme: 'light' | 'dark') => setPrefs({ exportTheme });
   const bg = useStore((s) => s.prefs.exportBackground ?? true);
   const scale = useStore((s) => s.prefs.exportScale ?? 3);
   const setBg = (exportBackground: boolean) => setPrefs({ exportBackground });
   const setScale = (exportScale: number) => setPrefs({ exportScale });
   const withScene = useStore((s) => s.prefs.exportScene ?? true);
   const setWithScene = (exportScene: boolean) => setPrefs({ exportScene });
-  const appTheme = useStore((s) => s.prefs.theme);
   const given = useStore((s) => s.exportScope);
+  const doc = useStore((s) => s.doc);
+  const page = useStore((s) => s.page);
   const clip = given?.clip;
   const selection = useStore((s) => s.selection);
   // items handed in (right-click on a selection) or the current selection
@@ -526,10 +553,13 @@ export function ExportDialog() {
   const [onlySel, setOnlySel] = useState(() => !!given?.ids?.length);
   const ids = !clip && onlySel && pick.length ? pick : undefined;
   const scope = useMemo<ExportScope>(() => (clip ? { clip } : { ids }), [clip, ids?.join()]);
+  const empty = useMemo(() => scopeIsEmpty(scope), [doc, page, scope]);
   const done = () => set({ dialog: null, exportScope: null });
-  const Card = ({ icon, title, desc, onClick }: { icon: ReactNode; title: string; desc: string; onClick: () => void }) => (
+  const Card = ({ icon, title, desc, onClick, disabled }: { icon: ReactNode; title: string; desc: string; onClick: () => void; disabled?: boolean }) => (
     <button
       className="export-card"
+      disabled={disabled}
+      title={disabled ? 'Nothing to export in this scope' : undefined}
       onClick={() => {
         done();
         onClick();
@@ -545,10 +575,10 @@ export function ExportDialog() {
   const image = (kind: 'png' | 'svg') => () =>
     clip ? doClipExport(kind, clip, { ...scopeSvgOptions(scope, kind, { theme, background: bg }), scale }) : doExport(kind, { theme, background: bg, scale, ids });
   return (
-    <Modal title={clip ? 'Export area' : ids ? `Export ${ids.length} item${ids.length > 1 ? 's' : ''}` : 'Export'} onClose={done} width={680}>
+    <Modal title={clip ? 'Export area' : ids ? `Export ${ids.length} item${ids.length > 1 ? 's' : ''}` : 'Export'} onClose={done} width={680} className="export-modal">
       <ExportPreview scope={scope} theme={theme} background={bg} scale={scale} />
       <div className="export-opts">
-        <Field label="Image theme" hint={theme === appTheme ? 'Matches the app' : 'Differs from the app (menu and shortcut exports use the app theme)'}>
+        <Field label="Image theme" hint="Every image export uses it; a page colour set in Inspector → Background wins over it">
           <Segmented
             value={theme}
             options={[
@@ -561,7 +591,7 @@ export function ExportDialog() {
         <Field label="Background" hint="Paint the canvas colour behind the drawing; off leaves it transparent">
           <Toggle checked={bg} onChange={setBg} />
         </Field>
-        <Field label="PNG resolution">
+        <Field label="PNG resolution" hint="PNG only; SVG stays vector">
           <Segmented
             value={scale}
             options={[
@@ -577,7 +607,7 @@ export function ExportDialog() {
           <Toggle checked={withScene} onChange={setWithScene} />
         </Field>
         {!clip && pick.length > 0 && (
-          <Field label="Only selection">
+          <Field label={`Only selection (${pick.length})`}>
             <Toggle checked={onlySel} onChange={setOnlySel} />
           </Field>
         )}
@@ -589,23 +619,30 @@ export function ExportDialog() {
           </Field>
         )}
         <p className="muted small" style={{ gridColumn: '1 / -1', margin: 0 }}>
-          Images follow the app's {appTheme} theme. Background and resolution set here also apply to copying and to exports from the menus, shortcuts and right-click.
+          Theme, background and resolution set here also apply to copying and to exports from the menus, shortcuts and right-click.
         </p>
       </div>
-      <div className="export-group">Image</div>
+      <div className="export-group">Drawing · {clip ? 'this area' : ids ? 'selected items' : 'this page'}</div>
       <div className="export-grid">
-        <Card icon={<FileImage size={20} />} title="PNG image" desc="High-resolution bitmap for documents & chat" onClick={image('png')} />
-        <Card icon={<FileCode2 size={20} />} title="SVG vector" desc="Crisp, editable in Inkscape / Illustrator / Figma" onClick={image('svg')} />
-        <Card icon={<Copy size={20} />} title="Copy to clipboard" desc="The picture above, to paste into any app (or back into Nodal)" onClick={() => copyScope(scope, { theme, background: bg, scale })} />
+        <Card icon={<FileImage size={20} />} title="PNG image" desc="High-resolution bitmap for documents & chat" onClick={image('png')} disabled={empty} />
+        <Card icon={<FileCode2 size={20} />} title="SVG vector" desc="Crisp, editable in Inkscape / Illustrator / Figma" onClick={image('svg')} disabled={empty} />
+        <Card icon={<Copy size={20} />} title="Copy to clipboard" desc="The picture above, to paste into any app (or back into Nodal)" onClick={() => copyScope(scope, { theme, background: bg, scale })} disabled={empty} />
+        {!clip && <Card icon={<Layers3 size={20} />} title="DXF (CAD)" desc={`${ids ? 'The selection' : 'This page'} as layered CAD entities for AutoCAD, LibreCAD, BricsCAD`} onClick={() => doExport('dxf', { ids })} disabled={empty} />}
         {!clip && <Card icon={<Scan size={20} />} title="Area…" desc="Drag a rectangle on the canvas, then preview it here; wires crossing its edge are cut" onClick={() => startAreaExport('png')} />}
-        {!clip && !ids && <Card icon={<Printer size={20} />} title="Print / PDF" desc="Every page; use “Save as PDF” in the print dialog (always light, for paper)" onClick={filePrint} />}
-        {!clip && !ids && <Card icon={<Film size={20} />} title="Presentation video" desc="Your presentation frames as an MP4 / WebM" onClick={() => set({ dialog: 'video' })} />}
       </div>
+      {!clip && !ids && (
+        <>
+          <div className="export-group">Print &amp; video · every page</div>
+          <div className="export-grid">
+            <Card icon={<Printer size={20} />} title="Print / PDF" desc="Every page; use “Save as PDF” in the print dialog (always light, for paper)" onClick={filePrint} />
+            <Card icon={<Film size={20} />} title="Presentation video" desc="Your presentation frames as an MP4 / WebM" onClick={() => set({ dialog: 'video' })} />
+          </div>
+        </>
+      )}
       {!clip && (
         <>
-          <div className="export-group">Data{ids ? ' · selected items only' : ''}</div>
+          <div className="export-group">Data · {ids ? 'selected items only' : 'all pages'}</div>
           <div className="export-grid">
-            <Card icon={<Layers3 size={20} />} title="DXF (CAD)" desc="AutoCAD, LibreCAD, BricsCAD — layered" onClick={() => doExport('dxf', { ids })} />
             <Card icon={<FileText size={20} />} title="SPICE netlist" desc="Simulate in LTspice / ngspice" onClick={() => doExport('spice', { ids })} />
             <Card icon={<FileText size={20} />} title="KiCad netlist" desc="Parts, footprints and nets for PCB layout" onClick={() => doExport('kicad', { ids })} />
             <Card icon={<FileSpreadsheet size={20} />} title="Bill of materials" desc="CSV with footprints, part numbers and DNP" onClick={() => doExport('bom', { ids })} />
@@ -760,6 +797,7 @@ export function ShareDialog() {
               className="secondary-btn"
               disabled={!pasted.trim()}
               onClick={() => {
+                if (!isLib && readOnly()) return A.readOnlyNotice();
                 try {
                   if (isLib) {
                     const n = importLibraryText(pasted, { overwrite: false });
@@ -781,7 +819,7 @@ export function ShareDialog() {
         </Field>
       </div>
       <p className="muted small share-foot">
-        Tip: keep the copied text or the saved <code>.json</code> and send it however you like — importing merges, never overwrites, your library.
+        Tip: keep the copied text or the saved <code>.json</code> and send it however you like. Importing merges symbols into your library and never overwrites one you already have.
       </p>
     </Modal>
   );

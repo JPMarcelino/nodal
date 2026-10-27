@@ -2455,6 +2455,28 @@ select.input {
   gap: 12px;
 }
 
+/* the export modal is long: its header (and Close) stays put while the body scrolls */
+.export-modal > .modal-head {
+  position: sticky;
+  top: -18px;
+  z-index: 2;
+  margin: -18px -22px 14px;
+  padding: 18px 22px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-head .icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* .modal turns selection off; text the user may want to copy (share text, links) stays selectable */
+.modal input,
+.modal textarea {
+  user-select: text;
+}
+
 .palette {
   padding: 0;
   overflow: hidden;
@@ -2672,6 +2694,22 @@ select.input {
 .export-card:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.export-card:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.export-card:disabled:hover {
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+
+.export-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
 }
 
 .export-card b {

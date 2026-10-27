@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createDoc, makeComponent, makeShape, normalizeDoc, uid } from '../model/doc';
 import type { WireItem } from '../model/types';
 import { wirePolyline } from '../model/wires';
-import { clipAreaDoc, exportSvg, exportDxf, EXPORT_THEMES, pageTitle, plainColours, selectionDoc } from '../io/export';
+import { clipAreaDoc, exportSvg, exportDxf, EXPORT_THEMES, pageTitle, plainColours, printPageSvg, selectionDoc } from '../io/export';
+import { DNP } from '../model/partFields';
 import { pagePalette } from '../canvas/Scene';
 import { addPage, viewDoc } from '../model/pages';
 import { scrubMathSvg } from '../model/latex';
@@ -281,5 +282,87 @@ describe('selectionDoc', () => {
 
   it('escapes & and < in formula attributes so the SVG stays valid XML', () => {
     expect(scrubMathSvg('<a href="http://x/?a=1&b=2"><g data-x="1<2 &amp; ok">x</g></a>')).toBe('<a href="http://x/?a=1&amp;b=2"><g data-x="1&lt;2 &amp; ok">x</g></a>');
+  });
+  it('prints a dark page in black ink on white paper', () => {
+    const { doc } = twoResistors();
+    doc.settings.background = '#0f0e0c';
+    const svg = printPageSvg(doc);
+    expect(svg).toContain('#000000');
+    expect(svg).not.toContain('#e6dfcf');
+    expect(svg).not.toContain('#0f0e0c');
+  });
+
+  it('colours the DNP tag for the page, not the theme', () => {
+    const { doc, c1 } = twoResistors();
+    c1.props = { ...c1.props, [DNP]: '1' };
+    doc.settings.background = '#ffffff';
+    const light = exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg;
+    expect(light).toContain('.dnp-tag{font-weight:700;fill:#c4483c}');
+    doc.settings.background = '#0f0e0c';
+    expect(exportSvg(doc, { theme: 'light', background: true, padding: 10 }).svg).toContain('.dnp-tag{font-weight:700;fill:#e5786d}');
+  });
+});
+
+/** The TEXT entities of a DXF file: layer, position and value. */
+function dxfTexts(dxf: string) {
+  const lines = dxf.split('\n');
+  const out: { layer: string; x: number; y: number; text: string; color?: number }[] = [];
+  for (let i = 0; i < lines.length - 1; i += 2) {
+    if (lines[i] !== '0' || lines[i + 1] !== 'TEXT') continue;
+    const t: { layer: string; x: number; y: number; text: string; color?: number } = { layer: '', x: NaN, y: NaN, text: '' };
+    for (let j = i + 2; j < lines.length - 1 && lines[j] !== '0'; j += 2) {
+      const v = lines[j + 1];
+      if (lines[j] === '8') t.layer = v;
+      else if (lines[j] === '10') t.x = +v;
+      else if (lines[j] === '20') t.y = +v;
+      else if (lines[j] === '1') t.text = v;
+      else if (lines[j] === '62') t.color = +v;
+    }
+    out.push(t);
+  }
+  return out;
+}
+
+describe('exportDxf', () => {
+  it('places part labels where a turned part draws them', () => {
+    const labels = (rot: 0 | 90) => {
+      const doc = createDoc();
+      const c = makeComponent(doc, 'resistor', 100, 100);
+      c.rot = rot;
+      c.showRef = true;
+      doc.items[c.id] = c;
+      return dxfTexts(exportDxf(doc)).filter((t) => t.layer === 'LABELS' && t.text === c.ref);
+    };
+    const [flat] = labels(0);
+    const [turned] = labels(90);
+    expect(flat).toBeDefined();
+    expect(turned).toBeDefined();
+    expect([turned.x, turned.y]).not.toEqual([flat.x, flat.y]);
+  });
+
+  it('keeps every group pair intact when a box title has line breaks', () => {
+    const doc = createDoc();
+    const box = makeShape(doc, 'rect', 0, 0, 200, 100);
+    box.text = 'Power\nsupply';
+    doc.items[box.id] = box;
+    const dxf = exportDxf(doc);
+    expect(dxfTexts(dxf).map((t) => t.text)).toEqual(['Power', 'supply']);
+    // every group code line is an integer
+    const lines = dxf.trimEnd().split('\n');
+    for (let i = 0; i < lines.length; i += 2) expect(lines[i]).toMatch(/^-?\d+$/);
+  });
+
+  it('keeps a fill-only shape and explicit text colours', () => {
+    const doc = createDoc();
+    const zone = makeShape(doc, 'zone', 0, 0, 80, 40);
+    Object.assign(zone, { stroke: 'none', fill: '#ff0000' });
+    doc.items[zone.id] = zone;
+    const label = makeShape(doc, 'text', 10, 90, 60, 20);
+    Object.assign(label, { text: 'Power', textColor: '#00ff00' });
+    doc.items[label.id] = label;
+    const dxf = exportDxf(doc);
+    // the zone's outline is red rather than the layer's white
+    expect(dxf).toMatch(/\n62\n1\n/);
+    expect(dxfTexts(dxf).find((t) => t.text === 'Power')?.color).toBe(3);
   });
 });

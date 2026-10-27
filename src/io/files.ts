@@ -137,4 +137,55 @@ function mimeOf(name: string) {
   }
 }
 
-export const sanitizeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'circuit';
+// Windows refuses these as a file's name whatever the extension ("CON.nodal" too)
+const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+
+/** A name every file system takes: no path or control characters, no trailing dots, no device names. */
+export function sanitizeName(s: string): string {
+  const name = s
+    .replace(/\s+/g, ' ')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .trim()
+    // Windows drops trailing dots and spaces, so "v1." would save as "v1"
+    .replace(/[. ]+$/, '');
+  if (!name) return 'circuit';
+  return RESERVED_NAME.test(name) ? `_${name}` : name;
+}
+
+/**
+ * Parses file or clipboard text as JSON. Windows editors often save with a
+ * UTF-8 byte order mark, which JSON.parse rejects, so one is skipped.
+ */
+export function parseJsonText<T = unknown>(text: string): T {
+  try {
+    return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text) as T;
+  } catch (e) {
+    if (e instanceof SyntaxError) throw new Error('this is not valid JSON (the file may be damaged)');
+    throw e;
+  }
+}
+
+export type NodalFileFormat = 'circuit' | 'library' | 'template' | 'fragment' | 'unknown';
+
+/** What kind of Nodal file `text` is, by its `format` field; never throws. */
+export function nodalFileFormat(text: string): NodalFileFormat {
+  let format: unknown;
+  try {
+    format = parseJsonText<{ format?: unknown } | null>(text)?.format;
+  } catch {
+    return 'unknown';
+  }
+  switch (format) {
+    case 'nodal':
+      return 'circuit';
+    case 'nodal-library':
+      return 'library';
+    case 'nodal-template':
+      return 'template';
+    case 'nodal-fragment':
+      return 'fragment';
+    default:
+      return 'unknown';
+  }
+}

@@ -12,7 +12,8 @@ import { fitView } from '../store/actions';
 import { exportDxf, exportPng, exportSvg, pageTitle, printDoc, selectionDoc, type SvgOptions } from './export';
 import { writePictureClipboard } from './clipboardCopy';
 import { extractFragment } from '../model/ops';
-import { openAnyFile, sanitizeName, saveFile } from './files';
+import { isDesktop, nodalFileFormat, openAnyFile, parseJsonText, sanitizeName, saveFile, type NodalFileFormat } from './files';
+import { importFileText } from './importFiles';
 import { pngWithScene, sceneFromFile, sceneJson, svgWithScene } from './embeddedScene';
 import { ask } from '../ui/Ask';
 import { saveVersion } from './versionStore';
@@ -29,7 +30,7 @@ async function confirmDiscard(action: string): Promise<boolean> {
   if (!S().dirty || !Object.keys(S().doc.items).length) return true;
   const choice = await ask(
     `Save changes to “${S().doc.name}”?`,
-    `You have unsaved changes. ${action} replaces this circuit; anything not saved is only kept in the History tab.`,
+    `You have unsaved changes. ${action} replaces this circuit. Save a version first (File → Save version) if you may want it back.`,
     [
       { label: 'Don’t save', value: 'discard', kind: 'danger' },
       { label: 'Keep editing', value: 'cancel' },
@@ -48,23 +49,79 @@ export async function fileNew() {
   setTimeout(() => fitView(), 0);
 }
 
+/**
+ * File → Open: picks a file and reads it first, so cancelling the picker or a
+ * damaged file never asks about unsaved changes or touches the open circuit.
+ * A library, template or copied selection is offered as an import instead.
+ */
 export async function fileOpen() {
-  if (!(await confirmDiscard('Opening a file'))) return;
+  let picked: Awaited<ReturnType<typeof openAnyFile>>;
   try {
-    const f = await openAnyFile(OPEN_FILTER);
-    if (!f) return;
-    const { file, path } = f;
+    picked = await openAnyFile(OPEN_FILTER);
+  } catch (e) {
+    toast(`Could not open the file: ${(e as Error).message}`, 'error');
+    return;
+  }
+  if (!picked) return;
+  const { file, path } = picked;
+  try {
     if (/\.(png|svg)$/i.test(file.name) || /^image\//.test(file.type)) {
       const json = await sceneFromFile(file);
-      if (!json) throw new Error('this picture does not carry a Nodal circuit (export it with “Include circuit” on)');
-      // no path: saving must not write the circuit over the picture
-      loadCircuit(file.name, normalizeDoc(JSON.parse(json)), null);
+      if (!json) {
+        // an SVG is a drawing Import can turn into items; a plain picture is just a picture
+        const text = /\.svg$/i.test(file.name) || /^image\/svg\+xml$/i.test(file.type) ? await file.text() : '';
+        if (text.trimStart().startsWith('<') && /<svg[\s>]/i.test(text)) {
+          const go = await ask(
+            `“${file.name}” is a drawing, not a circuit`,
+            'Import it as editable items instead? The open circuit is kept.',
+            [
+              { label: 'Cancel', value: false },
+              { label: 'Import', value: true, kind: 'primary' },
+            ],
+            false,
+          );
+          if (go) await importFileText(file.name, text);
+          return;
+        }
+        throw new Error('this picture does not carry a Nodal circuit. Use File → Import to place it as an image, or export it with “Include circuit” on');
+      }
+      const doc = normalizeDoc(parseJsonText(json));
+      if (!(await confirmDiscard('Opening a file'))) return;
+      // no path: saving must not write the circuit over the picture, and it is not a .nodal file yet
+      replaceDoc(doc, null);
+      set({ dirty: true });
+      setTimeout(() => fitView(), 0);
+      toast(`Opened the circuit inside the picture: ${doc.name}`, 'success');
       return;
     }
-    loadCircuit(file.name, normalizeDoc(JSON.parse(await file.text())), path);
+    const text = await file.text();
+    const format = nodalFileFormat(text);
+    if (format !== 'circuit' && format !== 'unknown') return await offerImport(file.name, text, format);
+    const doc = normalizeDoc(parseJsonText(text));
+    if (!(await confirmDiscard('Opening a file'))) return;
+    loadCircuit(doc, path);
   } catch (e) {
-    toast(`Could not open file: ${(e as Error).message}`, 'error');
+    toast(`Could not open “${file.name}”: ${(e as Error).message}`, 'error');
   }
+}
+
+/** A file opened that is not a circuit: asks to import it into the open one (which is never replaced). */
+async function offerImport(name: string, text: string, format: Exclude<NodalFileFormat, 'circuit' | 'unknown'>) {
+  const what = { library: 'a symbol library', template: 'a template', fragment: 'a copied selection' }[format];
+  const message =
+    format === 'library'
+      ? 'Import it instead? Its symbols are added to My symbols; the open circuit stays as it is.'
+      : 'Import it into the open circuit instead? Its items are added to the circuit; nothing is replaced.';
+  const go = await ask(
+    `“${name}” is ${what}, not a circuit`,
+    message,
+    [
+      { label: 'Cancel', value: false },
+      { label: 'Import', value: true, kind: 'primary' },
+    ],
+    false,
+  );
+  if (go) await importFileText(name, text);
 }
 
 /** Opens a circuit kept in version history (one that was closed or replaced). */
@@ -75,7 +132,7 @@ export async function openFromHistory(doc: CircuitDoc) {
   // it only exists on this device until it is saved to a file
   set({ dirty: true });
   setTimeout(() => fitView(), 0);
-  toast(`Opened ${doc.name}`, 'success');
+  toast(`Opened “${doc.name}”`, 'success');
 }
 
 /** Opens the built-in example circuit (the 555 LED flasher) as a new, unsaved circuit. */
@@ -84,13 +141,13 @@ export async function openExample() {
   const doc = sampleDoc();
   replaceDoc(doc, null);
   setTimeout(() => fitView(), 0);
-  toast(`Opened the example: ${doc.name}`, 'success');
+  toast(`Opened the example: “${doc.name}”`, 'success');
 }
 
-function loadCircuit(name: string, doc: CircuitDoc, path: string | null) {
+function loadCircuit(doc: CircuitDoc, path: string | null) {
   replaceDoc(doc, path);
   setTimeout(() => fitView(), 0);
-  toast(`Opened ${name}`, 'success');
+  toast(`Opened “${doc.name}”`, 'success');
 }
 
 /**
@@ -129,7 +186,7 @@ export async function openSessionCopy(doc: CircuitDoc): Promise<boolean> {
  * page, carries no page). The document in memory is left as it is.
  */
 export function circuitToText(doc: CircuitDoc): string {
-  return JSON.stringify(normalizePages(doc), null, 1);
+  return JSON.stringify(normalizePages(doc), null, 2);
 }
 
 /** Saves the circuit to a file; resolves true once it is saved. */
@@ -140,7 +197,8 @@ export async function fileSave(saveAs = false): Promise<boolean> {
     if (res === false) return false;
     // edits made while the save dialog was open are still unsaved
     set({ dirty: S().doc !== doc, filePath: res || filePath });
-    toast('Saved', 'success');
+    // a browser hands the file to its downloads; only the desktop app writes it in place
+    toast(isDesktop() ? 'Saved' : 'Downloaded', 'success');
     return true;
   } catch (e) {
     toast(`Save failed: ${(e as Error).message}`, 'error');
@@ -256,7 +314,7 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
         res = await saveFile(toBomCsv(doc), `${base}-bom.csv`, [{ name: 'CSV', extensions: ['csv'] }]);
         break;
       case 'json':
-        res = await saveFile(JSON.stringify(normalizePages(doc), null, 2), `${base}.json`, [{ name: 'JSON', extensions: ['json'] }]);
+        res = await saveFile(circuitToText(doc), `${base}.json`, [{ name: 'JSON', extensions: ['json'] }]);
         break;
     }
     if (res !== false) toast(`Exported ${part ? 'selection as ' : ''}${kind === 'bom' ? 'BOM' : kind.toUpperCase()}`, 'success');
@@ -294,11 +352,12 @@ export function startAreaExport(kind: 'png' | 'svg' = 'png') {
   set({ dialog: null, exportArea: { kind } });
 }
 
-/** Finishes an armed area export by previewing it; rectangles too small to be deliberate just cancel it. */
+/** Finishes an armed area export by previewing it; a rectangle too small to be deliberate cancels it (and says so). */
 export function runAreaExport(rect: Rect) {
   const job = S().exportArea;
   set({ exportArea: null });
-  if (!job || rect.w < 4 || rect.h < 4) return;
+  if (!job) return;
+  if (rect.w < 4 || rect.h < 4) return toast('Drag a larger area to export', 'info');
   openExport({ clip: rect });
 }
 

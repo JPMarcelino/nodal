@@ -2,16 +2,17 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { resolveConnector } from '../model/connectors';
 import { createElement } from 'react';
 import { Scene, computeSceneData, pagePalette, type Palette } from '../canvas/Scene';
-import { docBounds, drawOrder, itemBounds, uid } from '../model/doc';
+import { docBounds, drawOrder, itemBounds, labelsShown, uid } from '../model/doc';
 import { clipPolylineToRect, rectsIntersect, toWorld } from '../model/geometry';
 import { fromShapeFrame, normDeg, shapeRot } from '../model/rotation';
 import { instanceSymbol } from '../model/registry';
 import { shapeText } from '../model/shapeText';
+import { labelLayout } from '../model/labels';
 import { PX_PER_MM, sheetRect } from '../model/sheet';
 import { stripMath } from '../model/latex';
 import { docPages, viewDoc, viewPage, viewSource } from '../model/pages';
 import { pageCrossRefs } from '../model/pageRefs';
-import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, WireItem } from '../model/types';
+import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, ShapeItem, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 import { withoutFrames } from '../model/presentation';
 import { shapeOutline } from '../model/path';
@@ -158,9 +159,11 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
   // without a background, symbol interiors stay see-through: filled with the canvas colour they'd be dark (or white) blobs on whatever page they land on. Where such an interior sits over another item, a mask still erases that item behind it, so the picture is not more transparent than the canvas.
   const scenePalette = opts.background || opts.opaqueSymbols ? page : { ...page, symBg: 'none' };
   const knockout = !opts.background && !opts.opaqueSymbols;
+  // DNP tags follow the page the parts sit on, not the theme: a light page exported in the dark theme keeps the light-page red
+  const danger = page.ink === EXPORT_THEMES.light.ink ? EXPORT_THEMES.light.danger : page.ink === EXPORT_THEMES.dark.ink ? EXPORT_THEMES.dark.danger : palette.danger;
   const inner = renderToStaticMarkup(createElement(Scene, { doc: d, data, palette: scenePalette, xrefs, knockout, knockoutBox: box }));
   // the label rules of styles/app.css, which a standalone file doesn't have
-  const css = `text{font-family:${FONT}}.sym-text{font-weight:500;stroke:none}.ref-label{font-size:11px;font-weight:650}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:${palette.danger}}.page-ref{font-weight:400;font-size:0.85em;opacity:.7}.comp.dnp>g:first-child{opacity:.45}`;
+  const css = `text{font-family:${FONT}}.sym-text{font-weight:500;stroke:none}.ref-label{font-size:11px;font-weight:650}.value-label{font-size:10.5px}.net-label{font-size:11px;font-weight:700}.wire-label{font-size:10px;font-weight:600}.dnp-tag{font-weight:700;fill:${danger}}.page-ref{font-weight:400;font-size:0.85em;opacity:.7}.comp.dnp>g:first-child{opacity:.45}`;
   // The page colour also becomes an attribute value (part interiors); a document's
   // own background is untrusted file data, so escape it like the page rect above.
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
@@ -356,13 +359,16 @@ export function exportDxf(doc: CircuitDoc): string {
     }
   };
   /** `rot`: degrees clockwise on screen (DXF angles run counter-clockwise, with y flipped). */
-  const text = (layer: string, x: number, y: number, h: number, s: string, align: 'start' | 'middle' | 'end' = 'start', rot = 0) => {
+  const text = (layer: string, x: number, y: number, h: number, s: string, align: 'start' | 'middle' | 'end' = 'start', rot = 0, color?: number) => {
     g(0, 'TEXT');
     g(8, layer);
+    // an explicit colour overrides the layer's (shape text keeps the colour chosen for it)
+    if (color) g(62, color);
     g(10, x);
     g(20, Y(y));
     g(40, h);
-    g(1, stripMath(s));
+    // a line break inside a group value would shift every code/value pair after it
+    g(1, stripMath(s).replace(/\r?\n/g, ' '));
     if (rot) g(50, normDeg(-rot));
     if (align !== 'start') {
       g(72, align === 'middle' ? 1 : 2);
@@ -370,6 +376,9 @@ export function exportDxf(doc: CircuitDoc): string {
       g(21, Y(y));
     }
   };
+  /** A shape's outline colour; a fill-only shape keeps its fill instead of turning white. */
+  const shapeColour = (it: ShapeItem) => aciColor(it.stroke && it.stroke !== 'none' ? it.stroke : it.fill && it.fill !== 'none' ? it.fill : '#000000');
+  const titleColour = (it: ShapeItem) => (it.textColor ? aciColor(it.textColor) : undefined);
   const layers = ['WIRES', 'COMPONENTS', 'LABELS', 'JUNCTIONS', 'ZONES', 'ANNOTATIONS'];
   g(0, 'SECTION');
   g(2, 'HEADER');
@@ -404,8 +413,12 @@ export function exportDxf(doc: CircuitDoc): string {
       const def = instanceSymbol(doc, it);
       for (const p of def.prims) {
         if (p.t === 'text') {
-          const w = toWorld(it, def, p.x, p.y);
-          text('COMPONENTS', w.x, w.y, p.size * 0.8, p.text, p.anchor);
+          // placed and anchored as the canvas draws it (ComponentView): upright text, its anchor swapped when the part is turned round
+          const w = toWorld(it, def, p.x, p.y - p.size * 0.35);
+          let anchor = p.anchor;
+          if (anchor !== 'middle' && (it.flipX ? it.rot !== 180 : it.rot === 180)) anchor = anchor === 'start' ? 'end' : 'start';
+          if (it.rot === 90 || it.rot === 270) anchor = 'middle';
+          text('COMPONENTS', w.x, w.y + p.size * 0.35, p.size * 0.8, p.text, anchor);
           continue;
         }
         for (const run of primPolylines(p)) {
@@ -414,9 +427,11 @@ export function exportDxf(doc: CircuitDoc): string {
           poly('COMPONENTS', pts, run.closed, p.color ? aciColor(p.color) : undefined);
         }
       }
-      const b = { x: it.x, y: it.y };
-      if (it.showRef && !def.valueIsLabel) text('LABELS', b.x + def.w / 2 + 6, b.y - 4, 9, it.ref);
-      if (it.showValue && it.value) text('LABELS', b.x + def.w / 2 + 6, b.y + 10, 8, it.value);
+      // the labels' spots as drawn: around the turned/flipped bounds, at the chosen or dragged spot
+      const shown = labelsShown(doc.settings, it, def);
+      const at = labelLayout(it, def);
+      if (shown.ref && it.ref && at.ref) text('LABELS', at.ref.x, at.ref.y, 9, it.ref, at.ref.anchor);
+      if (shown.value && it.value && at.value) text('LABELS', at.value.x, at.value.y, 8, it.value, at.value.anchor);
     } else if (it.type === 'junction') {
       if ((data.junctionDegree.get(it.id) ?? 0) >= 3) {
         g(0, 'CIRCLE');
@@ -431,10 +446,12 @@ export function exportDxf(doc: CircuitDoc): string {
       const rot = shapeRot(it);
       const W = (p: Point) => fromShapeFrame(it, p);
       if (it.kind === 'rect' || it.kind === 'zone') {
-        poly(layer, [{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y }, { x: it.x + it.w, y: it.y + it.h }, { x: it.x, y: it.y + it.h }].map(W), true, aciColor(it.stroke));
+        poly(layer, [{ x: it.x, y: it.y }, { x: it.x + it.w, y: it.y }, { x: it.x + it.w, y: it.y + it.h }, { x: it.x, y: it.y + it.h }].map(W), true, shapeColour(it));
         if (it.text) {
-          const at = W({ x: it.x + 10, y: it.y + 18 });
-          text(layer, at.x, at.y, 10, it.text, 'start', rot);
+          it.text.split(/\r?\n/).forEach((l, i) => {
+            const at = W({ x: it.x + 10, y: it.y + 18 + i * 13 });
+            text(layer, at.x, at.y, 10, l, 'start', rot, titleColour(it));
+          });
         }
       } else if (it.kind === 'ellipse') {
         const pts: Point[] = [];
@@ -442,17 +459,17 @@ export function exportDxf(doc: CircuitDoc): string {
           const a = (i / 48) * Math.PI * 2;
           pts.push({ x: it.x + it.w / 2 + (it.w / 2) * Math.cos(a), y: it.y + it.h / 2 + (it.h / 2) * Math.sin(a) });
         }
-        poly(layer, pts.map(W), true, aciColor(it.stroke));
+        poly(layer, pts.map(W), true, shapeColour(it));
       } else if (it.kind === 'polygon') {
         // curves flattened; an open path stays open
-        poly(layer, shapeOutline(it), !it.open, aciColor(it.stroke));
+        poly(layer, shapeOutline(it), !it.open, shapeColour(it));
       } else if (it.kind === 'line' || it.kind === 'arrow') {
         // the drawn path: bends, elbows and glued ends in, curves flattened
-        poly(layer, resolveConnector(doc, it).flat, false, aciColor(it.stroke));
+        poly(layer, resolveConnector(doc, it).flat, false, shapeColour(it));
       } else if (it.kind === 'text' && it.text) {
-        shapeText(it).split('\n').forEach((l, i) => {
+        shapeText(it).split(/\r?\n/).forEach((l, i) => {
           const at = W({ x: it.x, y: it.y + (it.fontSize ?? 16) * (i + 1) * 1.3 });
-          text(layer, at.x, at.y, (it.fontSize ?? 16) * 0.75, l, 'start', rot);
+          text(layer, at.x, at.y, (it.fontSize ?? 16) * 0.75, l, 'start', rot, titleColour(it));
         });
       }
     }
@@ -466,6 +483,15 @@ export function exportDxf(doc: CircuitDoc): string {
 /* Print                                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * One page drawn for paper. The page's own colour is ignored: paper is white whatever the
+ * page is, and a dark page colour would turn the ink (see pagePalette) near-white on it.
+ */
+export function printPageSvg(view: CircuitDoc): string {
+  const paper = { ...view, settings: { ...view.settings, background: '' } };
+  return exportSvg(paper, { theme: 'light', background: false, padding: 20, opaqueSymbols: true }).svg;
+}
+
 /** Prints every page, one per sheet of paper (empty pages are skipped unless all are empty). */
 export function printDoc(doc: CircuitDoc) {
   const views = docPages(doc).map((p) => viewDoc(doc, p.id));
@@ -473,8 +499,7 @@ export function printDoc(doc: CircuitDoc) {
   const host = document.createElement('div');
   host.id = 'print-host';
   host.innerHTML = (pages.length ? pages : views.slice(0, 1))
-    // always light: dark-theme ink would be near-white on paper
-    .map((v) => exportSvg(v, { theme: 'light', background: false, padding: 20, opaqueSymbols: true }).svg.replace(/^<\?xml[^>]*>/, ''))
+    .map((v) => printPageSvg(v).replace(/^<\?xml[^>]*>/, ''))
     .join('');
   for (const el of host.querySelectorAll('svg')) {
     el.removeAttribute('width');
