@@ -215,9 +215,14 @@ export function hopsOver(s: { wire: string; horiz: boolean }, t: { wire: string;
 /** Hop arcs for a set of crossings; the wire that hops over gets the arc. */
 export function hopsFromCrossings(crossings: Crossing[], hopSize: number, layers?: Map<string, number>): Map<string, Hop[]> {
   const hops = new Map<string, Hop[]>();
+  const fits = (s: CrossSide) => s.d >= hopSize && s.len - s.d >= hopSize;
   for (const c of crossings) {
-    const hopper = hopsOver(c.a, c.b, layers) ? c.a : c.b;
-    if (hopper.d < hopSize || hopper.len - hopper.d < hopSize) continue;
+    // the side that should hop may not have room near its own end; the other
+    // side can still draw it, which is better than a bare crossing
+    const first = hopsOver(c.a, c.b, layers) ? c.a : c.b;
+    const second = first === c.a ? c.b : c.a;
+    const hopper = fits(first) ? first : fits(second) ? second : null;
+    if (!hopper) continue;
     const list = hops.get(hopper.wire) ?? [];
     list.push({ seg: hopper.seg, d: hopper.d });
     hops.set(hopper.wire, list);

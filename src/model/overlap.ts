@@ -64,6 +64,9 @@ function findOverlap(doc: CircuitDoc, changed: Set<string>): Overlap | null {
     const pw = polys.get(w.id)!;
     for (const o of wires) {
       if (o.id === w.id || leadsOfOnePart(w, o)) continue;
+      // a locked wire is an anchor: never cut it, and never let it be the run
+      // another wire is folded onto (that would edit it just the same)
+      if (w.locked || o.locked) continue;
       const po = polys.get(o.id)!;
       for (let i = 0; i < pw.length - 1; i++) {
         for (let j = 0; j < po.length - 1; j++) {

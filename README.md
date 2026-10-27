@@ -174,7 +174,7 @@ Press **?** in the app for the full list. You can rebind any shortcut in Setting
 | Place last used part | `P` | Search library | `/` |
 | Tool lock (keep placing) | `Shift+Q` | Quick add a wired copy of the part | `Ctrl+Shift+←/→/↑/↓` |
 | Zoom in / out / fit / 100% | `=` / `-` / `F` / `Ctrl+0` | Zoom to selection | `Shift+2` |
-| Grid / Snap | `G` / `Ctrl+'` | Minimap | `M` |
+| Grid / Snap | `G` / `Ctrl+'` | Minimap | `Alt+M` |
 | Bring to front / send to back | `Ctrl+Shift+]` / `Ctrl+Shift+[` | Bring forward / back | `Ctrl+]` / `Ctrl+[` |
 | Align left/right/top/bottom | `Alt+←/→/↑/↓` | Distribute H / V | `Alt+Shift+H` / `Alt+Shift+V` |
 | Highlight net | `N` | Re-route wire | `Shift+W` |

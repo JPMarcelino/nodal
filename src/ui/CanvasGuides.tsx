@@ -51,6 +51,8 @@ function useWelcomeShown(): boolean {
  */
 export const HintBar = memo(function HintBar({ gesture, editingText }: { gesture: HintGesture | null; editingText: boolean }) {
   const show = useStore((s) => s.prefs.showHints && !s.viewOnly);
+  // a toast takes the quiet line's place while it is up, rather than covering it
+  const toasting = useStore((s) => s.toasts.length > 0);
   const tool = useStore((s) => s.tool);
   const placing = useStore((s) => !!s.placing);
   const toolLock = useStore((s) => s.prefs.toolLock);
@@ -71,7 +73,7 @@ export const HintBar = memo(function HintBar({ gesture, editingText }: { gesture
   const explainUi = useExplain((s) => s.presenting !== null || s.traces.length > 0);
   const welcome = useWelcomeShown();
 
-  if (!show || explainUi || isExplainTool(tool) || (welcome && !gesture)) return null;
+  if (!show || toasting || explainUi || isExplainTool(tool) || (welcome && !gesture)) return null;
   const text = hintFor({
     tool,
     placing,
@@ -103,7 +105,6 @@ const run = (id: string) => COMMAND_MAP.get(id)?.run();
  */
 export function WelcomeScreen() {
   const shown = useWelcomeShown();
-  const library = useStore((s) => s.leftPanel && s.leftTab === 'library');
   useStore((s) => s.prefs.keymap);
   useStore((s) => s.prefs.keymapCadence);
   if (!shown) return null;
@@ -119,22 +120,6 @@ export function WelcomeScreen() {
   return (
     <div className="welcome" aria-label="Welcome">
       <div className="welcome-inner">
-        <span className="welcome-note to-rail" aria-hidden>
-          <svg width="44" height="64" viewBox="0 0 44 64">
-            <path d="M20 62 C 10 44, 30 28, 22 6" />
-            <path d="M14 15 L 22 4 L 30 14" />
-          </svg>
-          tools
-        </span>
-        {library && (
-          <span className="welcome-note to-library" aria-hidden>
-            <svg width="96" height="40" viewBox="0 0 96 40">
-              <path d="M94 28 C 70 38, 40 8, 6 18" />
-              <path d="M16 9 L 4 18 L 16 27" />
-            </svg>
-            parts library
-          </span>
-        )}
         <div className="welcome-card">
           <div className="welcome-brand">
             <Logo size={34} />

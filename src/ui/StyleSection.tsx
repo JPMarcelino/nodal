@@ -224,10 +224,10 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
   const hint = (k: keyof Look) => (mixed.has(k) ? ' (mixed)' : '');
   const copyPaste = (
     <span className="row-gap">
-      <button className="icon-btn" title="Copy style (Ctrl+Shift+Alt+C)" onClick={copyStyle}>
+      <button className="icon-btn" title="Copy style (Ctrl+Alt+Shift+C)" onClick={copyStyle}>
         <Copy size={13} />
       </button>
-      <button className="icon-btn" title="Paste style (Ctrl+Shift+Alt+V)" onClick={pasteStyle}>
+      <button className="icon-btn" title="Paste style (Ctrl+Alt+Shift+V)" onClick={pasteStyle}>
         <ClipboardPaste size={13} />
       </button>
     </span>

@@ -206,8 +206,10 @@ export function moveWireSegment(doc: CircuitDoc, wireId: string, base: Point[], 
   if (wire.locked) return false;
   if (seg < 0 || seg >= base.length - 1) return false;
   const pts = base.map((p) => ({ ...p }));
-  const jA = !!baseDoc && wire.a.kind === 'junction' && seg === 0 ? wire.a.id : null;
-  const jB = !!baseDoc && wire.b.kind === 'junction' && seg === base.length - 2 ? wire.b.id : null;
+  // a locked junction is an anchor: the segment drag keeps a stub at it rather
+  // than carrying the dot (and the wires on it) along
+  const jA = !!baseDoc && wire.a.kind === 'junction' && !baseDoc.items[wire.a.id]?.locked && seg === 0 ? wire.a.id : null;
+  const jB = !!baseDoc && wire.b.kind === 'junction' && !baseDoc.items[wire.b.id]?.locked && seg === base.length - 2 ? wire.b.id : null;
   const freeA = wire.a.kind === 'free' || !!jA;
   const freeB = wire.b.kind === 'free' || !!jB;
   let s = seg;
@@ -230,12 +232,12 @@ export function moveWireSegment(doc: CircuitDoc, wireId: string, base: Point[], 
 function moveJunction(doc: CircuitDoc, baseDoc: CircuitDoc, id: string, dx: number, dy: number, except: string) {
   const bj = baseDoc.items[id];
   const j = doc.items[id];
-  if (bj?.type !== 'junction' || j?.type !== 'junction') return;
+  if (bj?.type !== 'junction' || j?.type !== 'junction' || bj.locked || j.locked) return;
   j.x = bj.x + dx;
   j.y = bj.y + dy;
   const d = { x: dx, y: dy };
   for (const bw of Object.values(baseDoc.items)) {
-    if (bw.type !== 'wire' || bw.id === except) continue;
+    if (bw.type !== 'wire' || bw.id === except || bw.locked) continue;
     const atA = bw.a.kind === 'junction' && bw.a.id === id;
     const atB = bw.b.kind === 'junction' && bw.b.id === id;
     if (!atA && !atB) continue;
@@ -256,7 +258,9 @@ export function reconnectWireEnd(doc: CircuitDoc, wireId: string, end: 'a' | 'b'
   const wire = doc.items[wireId] as WireItem | undefined;
   if (!wire || wire.type !== 'wire') return false;
   const other = end === 'a' ? wire.b : wire.a;
-  // dropping onto the wire's own other end would make a zero-length loop
+  // dropping onto the wire's own other end would make a zero-length loop (also
+  // when the target names that end as a wireEnd or the wire itself)
+  if ((target.kind === 'wireEnd' || target.kind === 'wire') && target.wire === wireId) return false;
   if (sameWireTarget(target, wireTargetForEndpoint(other))) return false;
   // bake the exact route shown while dragging, so the wire doesn't jump on release
   const shown = wirePolyline(doc, { ...wire, [end]: { kind: 'free', ...target.pt } });

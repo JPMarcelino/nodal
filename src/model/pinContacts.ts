@@ -1,6 +1,6 @@
 import { produce } from 'immer';
 import { eq, projectOnSegment } from './geometry';
-import { splitWire } from './ops';
+import { foldJunctionsAtPins, splitWire } from './ops';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Point, WireItem } from './types';
 import { portPosition, wirePolyline } from './wires';
@@ -80,6 +80,10 @@ export function attachLandedPins(prev: CircuitDoc, next: CircuitDoc): CircuitDoc
         }
       }
     }
+    // a pin that landed exactly on a solder dot is that dot's connection: fold
+    // the dot into the pin first, so a piece left between two pins is seen
+    // (including the one running through the part from the dot to its other pin)
+    foldJunctionsAtPins(doc, made, new Set(pins.map((p) => `${p.comp}:${p.port}`)));
     // a part dropped across a wire: the piece between its own pins would short it
     for (const id of made) {
       const w = doc.items[id];

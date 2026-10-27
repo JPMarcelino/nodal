@@ -42,6 +42,8 @@ export function Modal({
   children,
   width = 560,
   className,
+  closeFromInput = false,
+  ariaLabel,
 }: {
   title?: ReactNode;
   onClose: () => void;
@@ -50,14 +52,18 @@ export function Modal({
   children: ReactNode;
   width?: number;
   className?: string;
+  /** Esc in a text field closes the modal (search dialogs) instead of only leaving the field. */
+  closeFromInput?: boolean;
+  /** Name for a dialog with no visible title. */
+  ariaLabel?: string;
 }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         const t = e.target as HTMLElement;
-        // Esc in a text field just leaves the field
-        if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return t.blur();
+        // Esc in a text field just leaves the field, unless this is a search dialog
+        if ((t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && !closeFromInput) return t.blur();
         if (onEscape?.()) return;
         onClose();
       }
@@ -67,7 +73,7 @@ export function Modal({
   }, [onClose, onEscape]);
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${className ?? ''}`} style={{ width }} role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
+      <div className={`modal ${className ?? ''}`} style={{ width }} role="dialog" aria-modal="true" aria-label={ariaLabel ?? (typeof title === 'string' ? title : undefined)}>
         {title && (
           <header className="modal-head">
             <h2>{title}</h2>
@@ -157,7 +163,7 @@ export function CommandPalette() {
     setPreview({ def, variants: variantsOf(def), anchor: anchorOf(el), pinned: false });
   };
   return (
-    <Modal onClose={close} width={600} className="palette">
+    <Modal onClose={close} width={600} className="palette" closeFromInput ariaLabel="Command palette">
       <input
         className="palette-input"
         autoFocus

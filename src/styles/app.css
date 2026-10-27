@@ -11,8 +11,8 @@
   --border: #2a2722;
   --border-strong: #3a362e;
   --text: #ece6d8;
-  --text-dim: #a69f8f;
-  --text-faint: #6e685c;
+  --text-dim: #b3ab9a;
+  --text-faint: #8f8878;
   --accent: #d4af6a;
   --accent-2: #e6cf9c;
   --accent-soft: rgba(212, 175, 106, 0.13);
@@ -40,13 +40,13 @@
   --border: #e6dfd0;
   --border-strong: #d6ccb8;
   --text: #1d1a14;
-  --text-dim: #6b6355;
-  --text-faint: #a39a88;
-  --accent: #9a7429;
-  --accent-2: #7d5d1d;
-  --accent-soft: rgba(154, 116, 41, 0.1);
-  --danger: #c4483c;
-  --warn: #b07d16;
+  --text-dim: #5f5749;
+  --text-faint: #6f6757;
+  --accent: #85601c;
+  --accent-2: #6d4f15;
+  --accent-soft: rgba(133, 96, 28, 0.1);
+  --danger: #b03a2e;
+  --warn: #8a6108;
   --canvas: #fffdf9;
   --grid: rgba(120, 100, 60, 0.14);
   --grid-major: rgba(120, 100, 60, 0.28);
@@ -166,19 +166,35 @@ kbd {
 }
 
 /* a narrow canvas gets a slimmer tool rail (it wraps to a second row only as a last resort) */
-@container (max-width: 760px) {
-  .tool-rail {
+@container (max-width: 900px) {
+  .stage .tool-rail {
     gap: 0;
   }
-  .tool-rail .tool-btn {
+  .stage .tool-rail .tool-btn {
     width: 29px;
   }
-  .tool-rail .rail-sep {
+  .stage .tool-rail .rail-sep {
     margin: 0 1px;
   }
-  .minimap svg {
+  .stage .minimap svg {
     width: 140px;
     height: 91px;
+  }
+}
+
+/* a phone-width canvas scrolls the rail sideways instead of covering the drawing with a second row */
+@container (max-width: 640px) {
+  .stage .tool-rail {
+    width: auto;
+    max-width: calc(100% - 20px);
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    scrollbar-width: none;
+  }
+  .stage .tool-rail::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -1329,11 +1345,23 @@ body.is-resizing-panel .stage {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-wrap: wrap;
+  /* one neat row: a long section list scrolls sideways instead of pushing the panel down */
+  flex-wrap: nowrap;
   gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  /* when there are more sections than fit, the last chip fades instead of looking cut */
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+}
+
+.section-chips::-webkit-scrollbar {
+  display: none;
 }
 
 .section-chip {
+  flex: none;
   height: 22px;
   padding: 0 8px;
   border-radius: 11px;
@@ -2363,7 +2391,8 @@ select.input {
 
 .toasts {
   position: fixed;
-  bottom: 40px;
+  /* clear of the hint line above the status bar (it can wrap to three lines) */
+  bottom: 64px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -2990,6 +3019,85 @@ select.input {
   .topbar .primary-btn,
   .topbar .share-btn {
     padding: 0 9px;
+  }
+  /* a 1024-wide window leaves too little canvas between two fixed panels:
+     let them float over the drawing, and start with the drawing in view */
+  .workspace {
+    position: relative;
+  }
+  .left-panel,
+  .right-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 30;
+    width: min(300px, 86vw);
+    box-shadow: var(--shadow);
+  }
+  .left-panel {
+    left: 0;
+  }
+  .right-panel {
+    right: 0;
+  }
+}
+
+/* Tablets and small laptops: the bar takes a second line for the circuit name,
+   and the side panels float over the canvas instead of squeezing it. */
+@media (max-width: 900px) {
+  .workspace {
+    position: relative;
+  }
+  .topbar {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: 38px 30px;
+    gap: 0 8px;
+    padding: 3px 8px 4px;
+  }
+  .topbar-left {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    /* never a scroll container: it would clip the menu dropdowns */
+    overflow: visible;
+  }
+  .topbar-center {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    min-width: 0;
+  }
+  .topbar-right {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 2px;
+  }
+  .doc-name {
+    max-width: min(60vw, 420px);
+  }
+  .zoom-chip {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  /* no room for a menu row beside the buttons: the command palette holds every command */
+  .menubar {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .brand {
+    display: none;
+  }
+  .view-pill-label {
+    display: none;
+  }
+  /* keep the zoom readout on the bar: the pointer position is the first to go */
+  .status-coords {
+    display: none;
   }
 }
 
@@ -5783,55 +5891,6 @@ body.is-presenting .welcome {
 .welcome-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
-}
-
-/* faint hand-drawn pointers to the tool rail and the parts library */
-.welcome-note {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-faint);
-  font-size: 0.9em;
-  font-style: italic;
-  white-space: nowrap;
-  opacity: 0.8;
-}
-
-.welcome-note svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.welcome-note.to-rail {
-  bottom: 100%;
-  left: 50%;
-  flex-direction: column;
-  transform: translateX(-50%);
-  margin-bottom: 4px;
-}
-
-.welcome-note.to-library {
-  right: 100%;
-  top: 22%;
-  flex-direction: column;
-  margin-right: 4px;
-}
-
-/* little room: just the card */
-@container (max-width: 700px) {
-  .welcome-note.to-library {
-    display: none;
-  }
-}
-
-@media (max-height: 640px) {
-  .welcome-note.to-rail {
-    display: none;
-  }
 }
 
 @media (pointer: coarse) {

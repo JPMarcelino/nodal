@@ -3,7 +3,7 @@ import { Canvas, canvasKeys } from './canvas/Canvas';
 import { isDesktop } from './io/files';
 import { importDroppedFiles } from './io/importFiles';
 import { eventToCombo, findCommand } from './store/commands';
-import { S, useStore } from './store/store';
+import { S, set, useStore } from './store/store';
 import { Dialogs } from './ui/Dialogs';
 import { Inspector } from './ui/Inspector';
 import { LeftPanel } from './ui/LeftPanel';
@@ -42,6 +42,18 @@ export function App() {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.fontSize = `${13 * uiScale}px`;
   }, [theme, uiScale]);
+
+  // on a tablet or a narrow window the panels float over the canvas, so start
+  // with the drawing in view; they stay a tap away in the top bar
+  useEffect(() => {
+    const narrow = window.matchMedia('(max-width: 1100px)');
+    const fit = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches) set({ leftPanel: false, rightPanel: false });
+    };
+    fit(narrow);
+    narrow.addEventListener('change', fit);
+    return () => narrow.removeEventListener('change', fit);
+  }, []);
 
   useEffect(() => {
     const title = `${dirty ? '• ' : ''}${name} — Nodal`;

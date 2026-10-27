@@ -8,7 +8,7 @@ import { inkPoints, packInk } from './ink';
 import { mapNodes, pathNodes, setPathNodes } from './path';
 import { mapShapeFrame, normDeg, rectCentre, ROT_KINDS, rotateDeg, shapeBox, shapeRot } from './rotation';
 import { touchingPins } from './netlist';
-import { docPages, itemPage } from './pages';
+import { docPages, itemPage, multiPage } from './pages';
 import { instanceSymbol } from './registry';
 import type { CircuitDoc, ComponentItem, Endpoint, Group, Item, LabelSide, LabelSpotName, Point, Rect, ShapeItem, WireItem } from './types';
 // label placement is shared with the renderer, so a turned part's labels land where they are drawn
@@ -17,7 +17,16 @@ import { adjustWireForMove, endpointInfo, wirePolyline } from './wires';
 import type { TouchTarget } from './hotspots';
 
 /** Deep copy that also works on immer drafts. */
-export const clone = <T,>(x: T): T => (isDraft(x) ? current(x) : structuredClone(x));
+export const clone = <T,>(x: T): T => {
+  if (isDraft(x)) return current(x);
+  try {
+    return structuredClone(x);
+  } catch {
+    // a plain object can hold a draft (an endpoint assigned inside a recipe);
+    // structuredClone refuses proxies, so fall back to the document's own shape
+    return JSON.parse(JSON.stringify(x)) as T;
+  }
+};
 
 /* ------------------------------------------------------------------ */
 /* Wires & junctions                                                   */
@@ -27,16 +36,46 @@ function setFullPolyline(w: WireItem, full: Point[]) {
   w.pts = simplify(full).slice(1, -1);
 }
 
+const LABEL_FIELDS = ['label', 'labelAt', 'labelSide', 'labelHidden', 'labelStyle'] as const;
+
 /** A wire piece split off another one: the name stays on the original piece only, so it isn't drawn twice. */
 function withoutLabel(w: WireItem): WireItem {
-  for (const k of ['label', 'labelAt', 'labelSide', 'labelHidden', 'labelStyle'] as const) delete w[k];
+  for (const k of LABEL_FIELDS) delete w[k];
   return w;
+}
+
+/** How far along a polyline the point on segment `seg` at distance `along` lies, as a 0–1 fraction. */
+function fractionAt(full: Point[], seg: number, along: number): number {
+  let before = 0;
+  let total = 0;
+  for (let i = 0; i < full.length - 1; i++) {
+    const len = Math.hypot(full[i + 1].x - full[i].x, full[i + 1].y - full[i].y);
+    if (i < seg) before += len;
+    total += len;
+  }
+  before += along;
+  return total > 0 ? Math.min(1, Math.max(0, before / total)) : 0;
+}
+
+/**
+ * Moves a wire's name onto the other half after a split when the split fell
+ * before it, so the label stays where it is drawn instead of jumping back to
+ * the start of the shortened first piece.
+ */
+function moveLabelPast(w: WireItem, w2: WireItem, split: number) {
+  const at = w.labelAt;
+  if (at === undefined || at <= split || split >= 1) return;
+  for (const k of LABEL_FIELDS) (w2 as unknown as Record<string, unknown>)[k] = w[k];
+  w2.labelAt = (at - split) / (1 - split);
+  for (const k of LABEL_FIELDS) delete w[k];
 }
 
 /** Splits a wire at a point on segment `seg` at a junction (a new one unless `jid` is given). Returns the junction id. */
 export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Point, jid = uid('j')): string {
   const w = doc.items[wireId] as WireItem;
   const full = wirePolyline(doc, w);
+  const along = seg >= 0 && seg < full.length - 1 ? Math.hypot(pt.x - full[seg].x, pt.y - full[seg].y) : 0;
+  const split = fractionAt(full, Math.max(0, seg), along);
   if (!doc.items[jid]) doc.items[jid] = { id: jid, type: 'junction', x: pt.x, y: pt.y, group: w.group };
   const first = full.slice(0, seg + 1);
   const second = full.slice(seg + 1);
@@ -46,6 +85,7 @@ export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Poin
     a: { kind: 'junction', id: jid },
     pts: simplify([pt, ...second]).slice(1, -1),
   };
+  moveLabelPast(w, w2, split);
   w.b = { kind: 'junction', id: jid };
   w.pts = simplify([...first, pt]).slice(1, -1);
   doc.items[w2.id] = w2;
@@ -211,8 +251,113 @@ export function wireDegree(doc: CircuitDoc, id: string) {
   return attachedWires(doc, id).length;
 }
 
+/** Junctions on the same page at the same spot share one key (pins only touch on their own page too). */
+const spotKey = (doc: CircuitDoc, p: Point, page = '') =>
+  `${multiPage(doc) ? page : ''}|${Math.round(p.x * 2)},${Math.round(p.y * 2)}`;
+
+/** Junction `from` becomes junction `to` in every wire (two dots fused into one connection). */
+function repointJunction(doc: CircuitDoc, from: string, to: string): boolean {
+  let changed = false;
+  for (const w of Object.values(doc.items)) {
+    if (w.type !== 'wire') continue;
+    if (w.a.kind === 'junction' && w.a.id === from) {
+      w.a = { kind: 'junction', id: to };
+      changed = true;
+    }
+    if (w.b.kind === 'junction' && w.b.id === from) {
+      w.b = { kind: 'junction', id: to };
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Two junctions left on one spot by an edit become one connection when at
+ * least one of them is a real branch (three or more wires). Two two-way dots
+ * are deliberately left alone: that is how crossing wires stay separate after
+ * unsoldering, with each pair meeting at its own dot.
+ */
+export function fuseCoincidentJunctions(doc: CircuitDoc): boolean {
+  const groups = new Map<string, Item[]>();
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'junction') continue;
+    const key = spotKey(doc, it, itemPage(doc, it));
+    const list = groups.get(key);
+    if (list) list.push(it);
+    else groups.set(key, [it]);
+  }
+  let changed = false;
+  const degree = (id: string) => attachedWires(doc, id).length;
+  for (const list of groups.values()) {
+    if (list.length < 2 || !list.some((j) => degree(j.id) >= 3)) continue;
+    const keep = list.find((j) => j.type === 'junction' && j.locked) ?? list.reduce((a, b) => (degree(a.id) >= degree(b.id) ? a : b));
+    for (const j of list) {
+      if (j === keep) continue;
+      repointJunction(doc, j.id, keep.id);
+      delete doc.items[j.id];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * A junction that sits exactly on a pin is that pin: every wire end on the dot
+ * becomes an end on the port and the dot goes. This keeps a pin dropped onto a
+ * junction connected, and lets the piece-between-two-pins rule see the short
+ * it makes.
+ *
+ * `touched` collects the wires whose ends changed, for callers that need to
+ * look at the pieces they create. `only` restricts the fold to pins of the
+ * parts that just landed; without it, every pin is considered. A locked
+ * junction is left as an anchor.
+ */
+export function foldJunctionsAtPins(doc: CircuitDoc, touched?: Set<string>, only?: Set<string>): boolean {
+  const pins = new Map<string, Endpoint>();
+  for (const c of Object.values(doc.items)) {
+    if (c.type !== 'component' || c.hidden) continue;
+    const page = itemPage(doc, c);
+    for (const p of instanceSymbol(doc, c).ports) {
+      if (only && !only.has(`${c.id}:${p.id}`)) continue;
+      const at = endpointInfo(doc, { kind: 'port', comp: c.id, port: p.id });
+      if (!at) continue;
+      const key = spotKey(doc, at.pt, page);
+      // several stacked pins on one spot: the first in a stable order wins
+      const id = `${c.id}:${p.id}`;
+      const prev = pins.get(key);
+      if (!prev || (prev.kind === 'port' && `${prev.comp}:${prev.port}` > id)) pins.set(key, { kind: 'port', comp: c.id, port: p.id });
+    }
+  }
+  let changed = false;
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'junction' || it.locked) continue;
+    // a two-way dot may be a crossing just unsoldered: leave it off the pin
+    if (!only && attachedWires(doc, it.id).length < 3) continue;
+    const port = pins.get(spotKey(doc, it, itemPage(doc, it)));
+    if (!port) continue;
+    for (const w of Object.values(doc.items)) {
+      if (w.type !== 'wire') continue;
+      if (w.a.kind === 'junction' && w.a.id === it.id) {
+        w.a = { ...port };
+        touched?.add(w.id);
+      }
+      if (w.b.kind === 'junction' && w.b.id === it.id) {
+        w.b = { ...port };
+        touched?.add(w.id);
+      }
+    }
+    delete doc.items[it.id];
+    changed = true;
+  }
+  return changed;
+}
+
 /** Removes orphan junctions and merges junctions that only join two wires. */
 export function cleanup(doc: CircuitDoc) {
+  // dots an edit stacked on one another, and a real branch left on a pin, are one connection
+  fuseCoincidentJunctions(doc);
+  foldJunctionsAtPins(doc);
   for (let pass = 0; pass < 3; pass++) {
     let changed = false;
     // degenerate wires
@@ -248,9 +393,8 @@ export function cleanup(doc: CircuitDoc) {
         delete doc.items[it.id];
         changed = true;
       } else if (ends === 2 && ws.length === 2) {
-        // two wires simply continuing through: join them into one
-        mergeAtJunction(doc, it.id, ws[0], ws[1]);
-        changed = true;
+        // two wires simply continuing through: join them into one (when nothing is lost by it)
+        if (mergeAtJunction(doc, it.id, ws[0], ws[1])) changed = true;
       } else if (ends <= 2) {
         // a dangling junction, or a single loop closing on itself, becomes free wire ends
         const w = doc.items[ws[0]] as WireItem;
@@ -290,9 +434,18 @@ function collapseWire(doc: CircuitDoc, w: WireItem): boolean {
   return true;
 }
 
-function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: string) {
+function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: string): boolean {
   const w1 = doc.items[w1id] as WireItem;
   const w2 = doc.items[w2id] as WireItem;
+  // Joining two wires must never lose what one of them says about itself.
+  // Two different names on one wire would drop a name that other wires use to
+  // join the net, so the (invisible) two-way junction stays; and a lock, a
+  // style, a hop layer or a group belongs to its wire, so those stay apart too.
+  const named = (w: WireItem) => (w.label ?? '').trim();
+  if (named(w1) && named(w2) && named(w1) !== named(w2)) return false;
+  if (!!w1.locked !== !!w2.locked || !!w1.hidden !== !!w2.hidden) return false;
+  if ((w1.hopLayer ?? 0) !== (w2.hopLayer ?? 0) || (w1.group ?? null) !== (w2.group ?? null)) return false;
+  if (JSON.stringify(w1.style ?? null) !== JSON.stringify(w2.style ?? null)) return false;
   let p1 = wirePolyline(doc, w1);
   let p2 = wirePolyline(doc, w2);
   let a1 = w1.a;
@@ -315,6 +468,7 @@ function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: strin
   if (w1.routing === 'straight' || w2.routing === 'straight') w1.routing = 'straight';
   delete doc.items[w2id];
   delete doc.items[jid];
+  return true;
 }
 
 /** Deletes items; wires attached to deleted components keep their shape and become free. */
@@ -461,9 +615,11 @@ export function transformItems(
   flip = false,
 ) {
   transformNonWires(base, doc, ids, map, rotateBy, flip);
-  transformWires(base, doc, ids, map);
+  // wires carried rigidly between two selected parts turn with them, so their
+  // labels must turn too even though the wires themselves were not selected
+  const rigid = transformWires(base, doc, ids, map);
   if (rotateBy || flip) {
-    turnWireLabels(base, doc, ids, rotateBy, flip);
+    turnWireLabels(base, doc, new Set([...ids, ...rigid]), rotateBy, flip);
     turnGlue(base, doc, ids, map);
   }
   bridgeTouchingPins(base, doc, ids);
@@ -649,8 +805,9 @@ function turnWireLabels(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, rot
   }
 }
 
-/** Wires follow whatever they are attached to (rubber-banding the free side). */
-function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map: (p: Point) => Point, rigid = true) {
+/** Wires follow whatever they are attached to (rubber-banding the free side). Returns the wires that moved rigidly. */
+function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map: (p: Point) => Point, rigid = true): Set<string> {
+  const rigidIds = new Set<string>();
   // loose wire ends resting exactly on a moving pin come along too, like real connections
   const movingPins = new Set<string>();
   for (const id of ids) {
@@ -681,6 +838,7 @@ function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map
       w.pts = mapped.slice(1, -1);
       if (b.a.kind === 'free') w.a = { kind: 'free', ...mapped[0] };
       if (b.b.kind === 'free') w.b = { kind: 'free', ...mapped[mapped.length - 1] };
+      rigidIds.add(b.id);
       continue;
     }
     const newA = movesA ? endpointNow(doc, w.a, map(full[0])) : full[0];
@@ -694,6 +852,7 @@ function transformWires(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, map
     if (b.b.kind === 'free' && movesB) w.b = { kind: 'free', ...adj[adj.length - 1] };
     w.pts = simplify(adj).slice(1, -1);
   }
+  return rigidIds;
 }
 
 /**
