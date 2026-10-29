@@ -40,6 +40,7 @@ import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
 import { attachSpots, bendSlots, findGlue, isConnector, isFixed, resolveConnector, type GlueHit } from '../model/connectors';
 import { libraryDrag } from '../ui/dragState';
+import { pulseAt, usePulses } from './pulses';
 
 /* ------------------------------------------------------------------ */
 /* Targets                                                             */
@@ -920,6 +921,8 @@ export function Canvas() {
       });
     });
     if (newId && vdoc().items[newId]) set({ selection: [] });
+    // a wire that ends on something connects there: say so where it landed
+    if (newId !== null && end.kind !== 'grid') pulseAt(end.pt.x, end.pt.y, 'snap');
     return newId !== null;
   };
 
@@ -2608,6 +2611,7 @@ export function Canvas() {
           {g?.kind === 'polygon' && <PolygonPreview g={g} z={z} closing={closesPolygon(g, g.cur) && g.pts.length >= 3} />}
           {g?.kind === 'path' && <PathPreview g={g} z={z} />}
           {tool === 'wire' && !g && <TargetMarker t={findTarget(cursor)} z={z} subtle />}
+          <Pulses z={z} />
           {ghost && (
             <g opacity={0.55} pointerEvents="none">
               <ComponentView c={ghost} def={instanceSymbol(doc, ghost)} settings={doc.settings} palette={pagePalette(doc.settings, EDITOR_PALETTE)} ghost />
@@ -2660,6 +2664,19 @@ export function Canvas() {
         editingText={!!editingText}
       />
     </div>
+  );
+}
+
+/** The confirmation rings (see pulses.ts), in world space. */
+function Pulses({ z }: { z: number }) {
+  const list = usePulses();
+  if (!list.length) return null;
+  return (
+    <g className="pulses" pointerEvents="none">
+      {list.map((p) => (
+        <circle key={p.id} className={`pulse ${p.kind}`} cx={p.x} cy={p.y} r={(p.kind === 'snap' ? 9 : 22) / z} />
+      ))}
+    </g>
   );
 }
 
