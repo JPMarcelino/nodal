@@ -116,17 +116,17 @@ export function hintFor(s: HintState): string | null {
     case 'pan':
       return join(['Drag to pan', `hold ${k('Space')} to pan from any tool`, `${esc} back to select`]);
     case 'pen':
-      return join(['Drag to draw', 'hold still at the end to snap to a line or shape', '1–7 colour', '[ ] size']);
+      return join(['Drag to draw', 'hold still at the end to snap to a line or shape, keep holding to resize it', '1–7 colour', '[ ] size']);
     case 'highlighter':
       return join(['Drag to highlight', 'hold still to straighten', 'Shift straight']);
     case 'laser':
-      return join(['Drag to point', 'the trail fades after a moment']);
+      return join(['Drag to point', 'the marks fade together when you stop']);
     case 'eraser':
       return 'Drag over ink or callouts to erase them';
     case 'trace':
       return join(['Click a wire, pin or part to light up its nets', 'click again to clear']);
     case 'callout':
-      return join(['Click to drop a numbered callout', 'drag a callout to move it']);
+      return join(['Click to drop a numbered callout', 'click a note to edit it', 'drag it to move it', 'drag its pin end to re-point it']);
   }
   return null;
 }

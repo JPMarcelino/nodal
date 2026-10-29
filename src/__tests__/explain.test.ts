@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { calloutAnchor, calloutLayout, makeAnchor, nextStep } from '../model/callout';
+import { CALLOUT_AUTO_WRAP, calloutAnchor, calloutLayout, makeAnchor, nextStep } from '../model/callout';
 import { createDoc, itemBounds, makeComponent, makeShape } from '../model/doc';
-import { inkHit, inkOutline, inkPoints, packInk, recognizeInk, type InkPoint } from '../model/ink';
-import { extractFragment, insertFragment } from '../model/ops';
+import { inkAverageWidth, inkHit, inkOutline, inkPoints, inkShapePath, packInk, recognizeInk, recognizeShape, shapeCentre, shapePoints, type InkPoint } from '../model/ink';
+import { deleteItems, extractFragment, insertFragment } from '../model/ops';
 import type { Net } from '../model/netlist';
 import { netFlow, splitAt } from '../model/trace';
 import type { ComponentItem, ShapeItem } from '../model/types';
@@ -133,5 +133,78 @@ describe('trace flow', () => {
     const [back, fwd] = splitAt([{ x: 0, y: 0 }, { x: 100, y: 0 }], { x: 40, y: 2 })!;
     expect(back).toEqual([{ x: 40, y: 0 }, { x: 0, y: 0 }]);
     expect(fwd).toEqual([{ x: 40, y: 0 }, { x: 100, y: 0 }]);
+  });
+});
+
+describe('snapped ink', () => {
+  const loop = (cx: number, cy: number, rx: number, ry: number, n = 60, p = 0.5): InkPoint[] =>
+    Array.from({ length: n + 1 }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return { x: cx + rx * Math.cos(a) + Math.sin(i * 1.7) * 2, y: cy + ry * Math.sin(a), p };
+    });
+
+  it('keeps the weight the stroke was drawn with', () => {
+    // a stylus pressing lightly draws thinner than its size; the snapped shape keeps that
+    const light = inkAverageWidth(loop(0, 0, 80, 50, 60, 0.2), 4);
+    const firm = inkAverageWidth(loop(0, 0, 80, 50, 60, 0.9), 4);
+    expect(light).toBeLessThan(firm);
+    expect(light).toBeGreaterThan(4 * 0.45 - 1e-9);
+    expect(firm).toBeLessThanOrEqual(4 * 1.25);
+  });
+
+  it('scales, turns and squares up a recognised shape about its centre', () => {
+    const sp = recognizeShape(loop(100, 100, 80, 40))!;
+    expect(sp.kind).toBe('ellipse');
+    const c = shapeCentre(sp);
+    const far = (pts: InkPoint[]) => Math.max(...pts.map((q) => Math.hypot(q.x - c.x, q.y - c.y)));
+    expect(far(shapePoints(sp, { scale: 2 }))).toBeCloseTo(far(shapePoints(sp)) * 2, 0);
+    // a perfect circle: every point the same distance from the centre
+    const circle = shapePoints(sp, { perfect: true, rot: 0.3 });
+    const r = circle.map((q) => Math.hypot(q.x - c.x, q.y - c.y));
+    expect(Math.max(...r) - Math.min(...r)).toBeLessThan(0.01);
+    // a closed shape ends where it starts, so its stroke has no seam
+    expect(circle[0].x).toBeCloseTo(circle[circle.length - 1].x, 6);
+    expect(inkShapePath(circle, 'ellipse').endsWith('Z')).toBe(true);
+  });
+
+  it('draws a snapped shape as an even stroke, a scribble as a tapered outline', () => {
+    expect(inkOutline([P(0, 0), P(100, 0)], 4, { uniform: true })).toMatch(/A2,2/);
+  });
+});
+
+describe('callout notes', () => {
+  it('puts the note on the side away from what it points at', () => {
+    const doc = createDoc();
+    const c = makeShape(doc, 'callout', 100, 100, 24, 24);
+    c.text = 'Note';
+    const right = calloutLayout(c, { x: 300, y: 110 }).card!;
+    const left = calloutLayout(c, { x: 0, y: 110 }).card!;
+    expect(right.x + right.w).toBeLessThanOrEqual(c.x);
+    expect(left.x).toBeGreaterThanOrEqual(c.x + 24);
+  });
+
+  it('wraps long notes, at their own width when they have one', () => {
+    const doc = createDoc();
+    const c = makeShape(doc, 'callout', 0, 0, 24, 24);
+    c.text = 'Limits the LED current to about fifteen milliamps so that it does not burn out';
+    const auto = calloutLayout(c).card!;
+    expect(auto.text).toContain('\n');
+    expect(auto.w).toBeLessThanOrEqual(CALLOUT_AUTO_WRAP + 22);
+    const narrow = calloutLayout({ ...c, wrapW: 120 }).card!;
+    expect(narrow.w).toBe(142);
+    expect(narrow.h).toBeGreaterThan(auto.h);
+  });
+
+  it('keeps pointing where its part was when the part is deleted', () => {
+    const doc = createDoc();
+    const r = makeComponent(doc, 'resistor', 200, 200);
+    doc.items[r.id] = r;
+    const c = makeShape(doc, 'callout', 0, 0, 24, 24);
+    c.anchor = makeAnchor(doc, r, { x: 210, y: 205 });
+    doc.items[c.id] = c;
+    r.x = 400; // the part moved after the note was made
+    const was = calloutAnchor(doc, c)!;
+    deleteItems(doc, [r.id]);
+    expect(calloutAnchor(doc, doc.items[c.id] as ShapeItem)).toEqual(was);
   });
 });

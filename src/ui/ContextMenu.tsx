@@ -57,6 +57,9 @@ import {
   Scaling,
   StretchHorizontal,
   StretchVertical,
+  MessageSquareText,
+  Unlink,
+  ListOrdered,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { openExport } from '../io/fileActions';
@@ -65,6 +68,7 @@ import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { S, activePage, set, useStore, type ContextMenuState, useViewDoc } from '../store/store';
 import { docPages } from '../model/pages';
 import { canConvertToPath } from '../model/path';
+import { setX } from '../store/explain';
 import type { CircuitDoc } from '../model/types';
 
 interface Entry {
@@ -148,6 +152,11 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
   const t = doc.items[target];
   const locked = items.length > 0 && items.every((i) => i.locked);
   const convertible = items.some((i) => i.type === 'shape' && !i.locked && canConvertToPath(i));
+  const lone = items.length === 1 ? items[0] : undefined;
+  const callouts = items.some((i) => i.type === 'shape' && i.kind === 'callout');
+  const anchored = items.some((i) => i.type === 'shape' && i.kind === 'callout' && !!i.anchor?.id && !i.locked);
+  const inkToSnap = A.rawInk(selection).length > 0;
+  const annotations = callouts || inkToSnap;
   return {
     strip: [
       cmd('edit.cut', 'Cut', <Scissors size={15} />)!,
@@ -208,6 +217,16 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
           grouped && cmd('arrange.ungroup', 'Ungroup', <Ungroup size={I} />),
           grouped && cmd('arrange.renameGroup', 'Rename group…', <Pencil size={I} />),
           t?.group && { label: 'Enter group', icon: <LogIn size={I} />, run: () => A.enterGroup(target), key: keysFor('arrange.enterGroup')[0] },
+        ),
+      },
+      annotations && {
+        label: 'Annotation',
+        icon: <MessageSquareText size={I} />,
+        sub: rows(
+          lone?.type === 'shape' && lone.kind === 'callout' && !lone.locked && { label: 'Edit note', icon: <Pencil size={I} />, run: () => setX({ editing: lone.id }), key: keysFor('edit.properties')[0] },
+          inkToSnap && cmd('explain.snapInk', 'Snap ink to shapes', <Shapes size={I} />),
+          anchored && { label: 'Stop following the part', icon: <Unlink size={I} />, run: () => A.detachCallouts(selection) },
+          callouts && cmd('explain.renumber', 'Renumber 1, 2, 3…', <ListOrdered size={I} />),
         ),
       },
       types.has('wire') && {

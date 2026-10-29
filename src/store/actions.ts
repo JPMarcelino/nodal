@@ -1,6 +1,8 @@
 import { current } from 'immer';
 import { docBounds, groupChain, itemBounds, makeComponent, makeShape, topGroup } from '../model/doc';
 import { pulseAt } from '../canvas/pulses';
+import { inkAverageWidth, inkPoints, packInk, recognizeShape, shapePoints } from '../model/ink';
+import { calloutAnchor } from '../model/callout';
 import { withContents } from '../model/containers';
 import { PRESET_SIZE, getPreset, makePresetShape } from '../model/shapePresets';
 import { nextPresentationStep } from '../model/presentation';
@@ -933,4 +935,52 @@ export function moveSelectionToPage(page: string | null) {
     return;
   }
   toast(`Moved ${moved.length} item${moved.length === 1 ? '' : 's'} to ${name}${locked.length ? ` (${locked.length} locked stayed)` : ''}`, 'success');
+}
+
+/* ------------------------------------------------------------------ */
+/* Annotations                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Hand-drawn strokes in `ids` that could still be cleaned up into a shape. */
+export function rawInk(ids: string[]): string[] {
+  const d = vdoc();
+  return ids.filter((id) => {
+    const it = d.items[id];
+    return it?.type === 'shape' && it.kind === 'ink' && !it.inkShape && !it.locked;
+  });
+}
+
+/**
+ * Cleans finished ink strokes up into the line, ellipse or box each looks
+ * like (as holding the pen still does while drawing), keeping their weight.
+ */
+export function snapInkToShapes(ids = S().selection) {
+  if (readOnly()) return readOnlyNotice();
+  const raw = rawInk(ids);
+  if (!raw.length) return toast('Select hand-drawn ink to snap it into a shape');
+  let n = 0;
+  mutate((d) => {
+    for (const id of raw) {
+      const s = d.items[id] as ShapeItem;
+      const pts = inkPoints(s);
+      const shape = recognizeShape(pts);
+      if (!shape) continue;
+      const width = s.highlighter ? s.strokeWidth : inkAverageWidth(pts, s.strokeWidth);
+      Object.assign(s, packInk(shapePoints(shape)), { strokeWidth: Math.round(width * 100) / 100, inkShape: shape.kind });
+      n++;
+    }
+  });
+  toast(n ? `Snapped ${n === 1 ? 'the stroke' : `${n} strokes`} into ${n === 1 ? 'a shape' : 'shapes'}` : 'No clean shape found in that ink', n ? 'success' : 'info');
+}
+
+/** Lets the selected callouts' leaders stop following their parts: they stay where they point now. */
+export function detachCallouts(ids = S().selection) {
+  mutate((d) => {
+    for (const id of ids) {
+      const s = d.items[id];
+      if (s?.type !== 'shape' || s.kind !== 'callout' || !s.anchor?.id) continue;
+      const at = calloutAnchor(d as CircuitDoc, s);
+      if (at) s.anchor = { dx: 0, dy: 0, x: at.x, y: at.y };
+    }
+  });
 }

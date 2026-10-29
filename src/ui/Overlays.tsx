@@ -22,7 +22,7 @@ const TOOL_HINT: Record<Tool, string> = {
   path: 'Click for a corner, drag for a curve · click the first node to close · double-click / Enter ends an open path · Shift 45° · Backspace removes the last node',
   text: 'Click to place text',
   pan: 'Drag to pan',
-  pen: 'Draw freehand · hold still at the end to snap to a clean line or shape',
+  pen: 'Draw freehand · hold still at the end to snap to a clean line or shape, keep holding to resize it',
   highlighter: 'Drag to highlight',
   laser: 'Point with the laser · its trail fades',
   eraser: 'Drag over ink to erase it',

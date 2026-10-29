@@ -1,4 +1,4 @@
-import { calloutLayout } from './callout';
+import { calloutAnchor, calloutLayout } from './callout';
 import { connectorBounds } from './connectors';
 import { componentBounds, polylineBounds, unionRects } from './geometry';
 import { measureTextShape } from './shapeText';
@@ -163,7 +163,7 @@ export function itemBounds(doc: CircuitDoc, it: Item): Rect | null {
       // turned shapes take the bounds of their turned box
       if (shapeRot(it)) return rotatedBounds(shapeBox(it), shapeRot(it));
       if (it.kind === 'text') return { x: it.x, y: it.y, ...measureTextShape(it) };
-      if (it.kind === 'callout') return calloutLayout(it).box;
+      if (it.kind === 'callout') return calloutLayout(it, calloutAnchor(doc, it)).box;
       // lines and arrows: their drawn path, bends and glued ends included
       if (it.kind === 'line' || it.kind === 'arrow') return connectorBounds(doc, it);
       if (it.kind === 'ink') {

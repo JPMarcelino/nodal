@@ -1,5 +1,5 @@
 import { drawOrderCached, itemBounds } from './doc';
-import { measureRich } from './richText';
+import { measureRich, wrapRich } from './richText';
 import type { CircuitDoc, Item, Point, Rect, ShapeItem } from './types';
 
 /** Badge radius of a numbered callout. */
@@ -8,22 +8,39 @@ const GAP = 6;
 
 export interface CalloutLayout {
   badge: { cx: number; cy: number; r: number };
-  /** The note card next to the badge (absent while the note is empty). */
-  card: { x: number; y: number; w: number; h: number; tx: number; ty: number } | null;
+  /** The note card next to the badge (absent while the note is empty), with its text as laid out (wrapped). */
+  card: { x: number; y: number; w: number; h: number; tx: number; ty: number; text: string } | null;
   box: Rect;
 }
 
-export function calloutLayout(s: Pick<ShapeItem, 'x' | 'y' | 'text' | 'fontSize'>): CalloutLayout {
+/** Narrowest a callout's note can be wrapped to. */
+export const CALLOUT_MIN_WRAP = 60;
+/** Where a note wraps when it has no width of its own. */
+export const CALLOUT_AUTO_WRAP = 280;
+
+/**
+ * Badge and note card of a callout. The card sits beside the badge on the
+ * side away from what the leader points at (so the leader never crosses
+ * it); `wrapW` makes long notes wrap at that width.
+ */
+export function calloutLayout(s: Pick<ShapeItem, 'x' | 'y' | 'text' | 'fontSize' | 'wrapW'>, anchor?: Point | null): CalloutLayout {
   const r = CALLOUT_R;
   const badge = { cx: s.x + r, cy: s.y + r, r };
-  const text = (s.text ?? '').trim();
-  if (!text) return { badge, card: null, box: { x: s.x, y: s.y, w: 2 * r, h: 2 * r } };
+  const raw = (s.text ?? '').trim();
+  if (!raw) return { badge, card: null, box: { x: s.x, y: s.y, w: 2 * r, h: 2 * r } };
   const fs = s.fontSize ?? 14;
+  const set = s.wrapW && s.wrapW > 0 ? Math.max(CALLOUT_MIN_WRAP, s.wrapW) : 0;
+  // without a width of its own a note still wraps before it gets too wide, and hugs shorter text
+  const text = wrapRich(raw, fs, 500, set || CALLOUT_AUTO_WRAP);
   const m = measureRich(text, fs, 500);
-  const w = m.w + 22;
+  const w = (set || m.w) + 22;
   const h = Math.max(2 * r, m.h + 12);
-  const card = { x: s.x + 2 * r + GAP, y: s.y, w, h, tx: s.x + 2 * r + GAP + 11, ty: s.y + 6 + fs * 0.92 };
-  return { badge, card, box: { x: s.x, y: s.y, w: 2 * r + GAP + w, h: Math.max(2 * r, h) } };
+  // the leader leaves the badge towards the anchor: put the note on the other side
+  const left = !!anchor && anchor.x > badge.cx + r;
+  const cx = left ? s.x - GAP - w : s.x + 2 * r + GAP;
+  const card = { x: cx, y: s.y, w, h, tx: cx + 11, ty: s.y + 6 + fs * 0.92, text };
+  const bx = Math.min(s.x, cx);
+  return { badge, card, box: { x: bx, y: s.y, w: 2 * r + GAP + w, h: Math.max(2 * r, h) } };
 }
 
 /** Where a callout's leader line ends: on its target item (following it when it moves), else a fixed point. */

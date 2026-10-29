@@ -1,11 +1,13 @@
-import { Clapperboard, Eye, Film, Play } from 'lucide-react';
+import { Clapperboard, Eye, Film, Play, Shapes } from 'lucide-react';
+import { CALLOUT_MIN_WRAP } from '../model/callout';
+import { getSymbol } from '../model/registry';
 import { EXPLAIN_COLORS } from '../model/ink';
 import { DEFAULT_HOLD, DEFAULT_TRANSITION, normRect, presentationSteps } from '../model/presentation';
 import { restackItems } from '../model/ops';
-import type { CircuitDoc, ShapeItem } from '../model/types';
+import type { CircuitDoc, Item, ShapeItem } from '../model/types';
 import * as A from '../store/actions';
 import { X, setX } from '../store/explain';
-import { S, mutate, set, vdoc } from '../store/store';
+import { S, mutate, set, useViewDoc, vdoc } from '../store/store';
 import { ColorInput, Field, NumberInput, Section, TextInput, Toggle } from './controls';
 import { renumberCallouts } from './ExplainDock';
 import { seek, stepTime } from './playback';
@@ -21,6 +23,9 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   });
   const allCallouts = shapes.every((s) => s.kind === 'callout');
   const allInk = shapes.every((s) => s.kind === 'ink');
+  const rawCount = A.rawInk(ids).length;
+  const doc = useViewDoc();
+  const target = first.kind === 'callout' && first.anchor?.id ? doc.items[first.anchor.id] : undefined;
   const title = allCallouts ? (shapes.length > 1 ? `${shapes.length} callouts` : `Callout ${first.step ?? ''}`) : allInk ? (shapes.length > 1 ? `${shapes.length} strokes` : first.highlighter ? 'Highlighter stroke' : 'Ink stroke') : `${shapes.length} annotations`;
   return (
     <>
@@ -36,8 +41,26 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
           <Field label="Font size">
             <NumberInput value={first.fontSize ?? 14} min={8} max={48} suffix="px" onChange={(v) => upd((s) => (s.fontSize = v))} />
           </Field>
+          <Field label="Note width" hint="Notes wrap at this width; Auto fits short notes and wraps long ones at 280 px. Also: drag the note's outer edge on the canvas">
+            <span className="xi-row">
+              <NumberInput value={first.wrapW ?? 0} min={0} max={1200} suffix="px" onChange={(v) => upd((s) => (s.wrapW = v > 0 ? Math.max(CALLOUT_MIN_WRAP, Math.round(v)) : undefined))} />
+              <button className={first.wrapW ? 'secondary-btn' : 'secondary-btn active'} onClick={() => upd((s) => (s.wrapW = undefined))}>
+                Auto
+              </button>
+            </span>
+          </Field>
+          <Field label="Points at" hint="Drag the round handle at the end of the leader onto another part, pin or wire">
+            <span className="xi-row">
+              <span className="xi-target">{target ? targetName(target) : 'A fixed spot'}</span>
+              {target && (
+                <button className="secondary-btn" onClick={() => A.detachCallouts(ids)} title="The leader stays where it points now instead of following the part">
+                  Stop following
+                </button>
+              )}
+            </span>
+          </Field>
           <Field label="Edit on canvas">
-            <button className="secondary-btn" onClick={() => setX({ editing: first.id })}>
+            <button className="secondary-btn" onClick={() => setX({ editing: first.id })} title="Tab and Shift+Tab move on to the next or previous note">
               Type note
             </button>
           </Field>
@@ -54,6 +77,13 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
         </Field>
         {allInk && (
           <>
+            {rawCount > 0 && (
+              <Field label="Shape" hint="Turns the stroke into the clean line, ellipse or box it looks like, keeping its weight (holding the pen still at the end of a stroke does this while drawing)">
+                <button className="secondary-btn" onClick={() => A.snapInkToShapes(ids)}>
+                  <Shapes size={12} /> Snap to shape
+                </button>
+              </Field>
+            )}
             <Field label="Width">
               <NumberInput value={first.strokeWidth} min={0.5} max={80} step={0.5} suffix="px" onChange={(v) => upd((s) => (s.strokeWidth = v))} />
             </Field>
@@ -93,6 +123,16 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
 }
 
 type Upd = (fn: (s: ShapeItem) => void) => void;
+
+/** "R1 · Resistor", "Wire GND", for what a callout points at. */
+function targetName(it: Item): string {
+  if (it.type === 'component') {
+    const def = getSymbol(vdoc(), it.symbol);
+    return [it.ref || it.value, def.name].filter(Boolean).join(' · ');
+  }
+  if (it.type === 'wire') return it.label ? `Wire ${it.label}` : 'A wire';
+  return 'An item';
+}
 
 /** How long the presentation glides to and stays on a step. */
 function TimingSection({ shapes, upd }: { shapes: ShapeItem[]; upd: Upd }) {
