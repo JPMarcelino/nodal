@@ -58,6 +58,7 @@ import {
   StretchHorizontal,
   StretchVertical,
   MessageSquareText,
+  MessageSquarePlus,
   Unlink,
   ListOrdered,
 } from 'lucide-react';
@@ -156,7 +157,8 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
   const callouts = items.some((i) => i.type === 'shape' && i.kind === 'callout');
   const anchored = items.some((i) => i.type === 'shape' && i.kind === 'callout' && !!i.anchor?.id && !i.locked);
   const inkToSnap = A.rawInk(selection).length > 0;
-  const annotations = callouts || inkToSnap;
+  const noteable = items.some((i) => i.type === 'component' || i.type === 'wire');
+  const annotations = callouts || inkToSnap || noteable;
   return {
     strip: [
       cmd('edit.cut', 'Cut', <Scissors size={15} />)!,
@@ -223,6 +225,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
         label: 'Annotation',
         icon: <MessageSquareText size={I} />,
         sub: rows(
+          noteable && cmd('explain.note', 'Add a note', <MessageSquarePlus size={I} />),
           lone?.type === 'shape' && lone.kind === 'callout' && !lone.locked && { label: 'Edit note', icon: <Pencil size={I} />, run: () => setX({ editing: lone.id }), key: keysFor('edit.properties')[0] },
           inkToSnap && cmd('explain.snapInk', 'Snap ink to shapes', <Shapes size={I} />),
           anchored && { label: 'Stop following the part', icon: <Unlink size={I} />, run: () => A.detachCallouts(selection) },
