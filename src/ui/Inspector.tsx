@@ -421,6 +421,7 @@ const TIPS: [string, string, string][] = [
   ['Write $…$ in any text, title or value for maths, e.g. $f_c = \\frac{1}{2\\pi RC}$', '', '.'],
   ['Drop a .nodal file onto the canvas to add it to this circuit as a group', '', '.'],
   ['Right-click anything for what you can do with it', '', '.'],
+  ['Double-click empty canvas to search for a part and put it right there', '', '.'],
 ];
 
 /** One tip, picked afresh each time nothing is selected; keys follow the user's bindings. */

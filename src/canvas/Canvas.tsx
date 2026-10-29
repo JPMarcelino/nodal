@@ -39,7 +39,7 @@ import { gestureSlots, hitSlop, useTouchInput } from './touch';
 import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
 import { attachSpots, bendSlots, findGlue, isConnector, isFixed, resolveConnector, type GlueHit } from '../model/connectors';
-import { libraryDrag } from '../ui/dragState';
+import { libraryDrag, placeHere } from '../ui/dragState';
 import { focusValueField } from '../store/commands';
 import { pulseAt, usePulses } from './pulses';
 
@@ -1520,6 +1520,14 @@ export function Canvas() {
     }
     if (isDouble && S().scope) {
       A.exitGroup();
+      return;
+    }
+    // a double-click on empty canvas asks which part to put there
+    if (isDouble && S().tool === 'select' && !S().placing && !readOnly()) {
+      placeHere.at = sp(w);
+      set({ wirePart: null });
+      // opened once the click is over, so the click's own focus change can't take the search box's focus
+      window.addEventListener('pointerup', () => setTimeout(() => set({ dialog: 'palette' }), 0), { once: true });
       return;
     }
     set({ wirePart: null });

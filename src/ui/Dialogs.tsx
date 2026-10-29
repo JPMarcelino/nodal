@@ -34,6 +34,7 @@ import { LiveSession } from './LiveSession';
 import { Logo } from './Logo';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 import { VideoDialog } from './VideoDialog';
+import { placeHere } from './dragState';
 import { matchRanges, matchScore, pushRecent, queryWords } from './paletteSearch';
 
 export function Modal({
@@ -142,8 +143,15 @@ function Highlight({ text, words }: { text: string; words: string[] }) {
   return <>{out}</>;
 }
 
+/** Parts offered first when the palette was opened to place one (double-click on empty canvas). */
+const COMMON_PARTS = ['resistor', 'capacitor', 'capacitor-polarized', 'inductor', 'diode', 'led', 'npn', 'pnp', 'opamp', 'vcc', 'gnd', 'net-label'];
+
 export function CommandPalette() {
   const [q, setQ] = useState('');
+  // opened by a double-click on the canvas: only parts, and the pick lands where the click was
+  const [at] = useState(() => placeHere.at);
+  useEffect(() => () => void (placeHere.at = null), []);
+  const recentParts = useStore((s) => s.recent);
   const [idx, setIdx] = useState(0);
   const [preview, setPreview] = useState<SymbolPopupState | null>(null);
   const [picker, setPicker] = useState<SymbolPopupState | null>(null);
@@ -162,7 +170,21 @@ export function CommandPalette() {
   const syms = useMemo(() => librarySymbols({ symbols: docSymbols }), [docSymbols]);
   const words = useMemo(() => queryWords(q), [q]);
   const sections = useMemo<PaletteSection[]>(() => {
-    const cmds = COMMANDS.filter((c) => !c.when || c.when());
+    const cmds = at ? [] : COMMANDS.filter((c) => !c.when || c.when());
+    if (at && !words.length) {
+      const byId = new Map(syms.map((d) => [d.id, d]));
+      const seen = new Set<string>();
+      const pick = (ids: string[]) =>
+        ids.flatMap((id) => {
+          const d = byId.get(id);
+          if (!d || seen.has(id)) return [];
+          seen.add(id);
+          return [{ kind: 'sym' as const, def: d, score: 1 }];
+        });
+      const recent = pick(recentParts.slice(0, 6));
+      const common = pick(COMMON_PARTS);
+      return [...(recent.length ? [{ title: 'Recently used', entries: recent }] : []), ...(common.length ? [{ title: 'Common parts', entries: common }] : [])];
+    }
     if (!words.length) {
       // nothing typed: what was used last, then everything by menu
       const byId = new Map(cmds.map((c) => [c.id, c]));
@@ -210,7 +232,7 @@ export function CommandPalette() {
     if (cmdSec && partSec && partSec.entries[0].score > cmdSec.entries[0].score) out.push(partSec, cmdSec);
     else for (const sec of [cmdSec, partSec]) if (sec) out.push(sec);
     return out;
-  }, [words, syms, docSymbols]);
+  }, [words, syms, docSymbols, at, recentParts]);
   const flat = useMemo(() => sections.flatMap((s) => s.entries), [sections]);
   useEffect(() => setIdx(0), [q]);
   useEffect(() => {
@@ -228,7 +250,8 @@ export function CommandPalette() {
     setPicker(null);
     setPreview(null);
     close();
-    A.startPlacing(def.id);
+    if (at) A.placeComponent(def.id, at.x, at.y);
+    else A.startPlacing(def.id);
   };
   const run = (e: PaletteEntry | undefined, el?: Element | null) => {
     if (!e) return;
@@ -259,7 +282,7 @@ export function CommandPalette() {
         <input
           className="palette-input"
           autoFocus
-          placeholder="Search commands and parts — “rotate”, “op amp”, “export png”…"
+          placeholder={at ? 'Place a part here — type its name: “resistor”, “op amp”, “555”…' : 'Search commands and parts — “rotate”, “op amp”, “export png”…'}
           value={q}
           role="combobox"
           aria-expanded="true"
@@ -360,7 +383,7 @@ export function CommandPalette() {
           <kbd>↓</kbd> to move
         </span>
         <span>
-          <kbd>↵</kbd> to run or place
+          <kbd>↵</kbd> {at ? 'to place it there' : 'to run or place'}
         </span>
         <span>
           <kbd>Esc</kbd> to close
