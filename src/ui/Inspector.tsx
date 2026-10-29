@@ -753,9 +753,9 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
           <Segmented
             value={!first.hopLayer ? 0 : first.hopLayer > 0 ? 1 : -1}
             options={[
-              { value: 1, label: 'Hop over', title: 'Hop over every other wire' },
+              { value: 1, label: 'Over', title: 'Hop over every other wire' },
               { value: 0, label: 'Auto', title: 'Horizontal segments hop over vertical ones' },
-              { value: -1, label: 'Go under', title: 'Let every other wire hop over' },
+              { value: -1, label: 'Under', title: 'Let every other wire hop over' },
             ]}
             onChange={(v) =>
               mutate((d) => {
