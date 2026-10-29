@@ -18,7 +18,8 @@ import type { TouchTarget } from './hotspots';
 
 /** Deep copy that also works on immer drafts. */
 export const clone = <T,>(x: T): T => {
-  if (isDraft(x)) return current(x);
+  // current() hands back the frozen original for a draft nothing has touched, so copy that too
+  if (isDraft(x)) x = current(x);
   try {
     return structuredClone(x);
   } catch {
