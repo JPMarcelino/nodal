@@ -1890,6 +1890,43 @@ select.input {
   line-height: 1.6;
 }
 
+.tip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  font-size: 0.86em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.tip-next {
+  font-size: 0.95em;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.tip-next:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.tip-foot {
+  margin-top: 6px;
+  font-size: 0.9em;
+  color: var(--text-faint);
+}
+
+.tip-foot kbd {
+  font-size: 0.82em;
+}
+
 /* ==================================================================== */
 /* Canvas                                                                */
 /* ==================================================================== */
@@ -7050,4 +7087,27 @@ button.crumb:hover {
 
 .crumb-exit:hover {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* side panels slide in when they open */
+.panel.left-panel {
+  animation: panel-in-left 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.panel.right-panel {
+  animation: panel-in-right 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes panel-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+
+@keyframes panel-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
 }
