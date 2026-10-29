@@ -1,9 +1,9 @@
 import { CheckCircle2, Columns3, Crosshair, Grid2x2, Grid3x3, Grip, Hash, Info, Magnet, Plus, Type, XCircle } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { GridStyle, Tool } from '../model/types';
 import { GRID_STYLE_NAMES } from '../model/doc';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
-import { useStore } from '../store/store';
+import { dismissToast, useStore } from '../store/store';
 import { isExplainTool } from '../store/explain';
 
 const DRAG = 'Drag to draw · Esc returns to select';
@@ -115,11 +115,12 @@ function SnapToggles() {
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
   return (
-    <div className="toasts">
+    <div className="toasts" role="status" aria-live="polite">
       {toasts.map((t) => (
-        <div key={t.id} className={`toast ${t.kind}`}>
+        <div key={t.id} className={`toast ${t.kind}`} onClick={() => dismissToast(t.id)} style={{ '--toast-ms': `${t.ms ?? 2600}ms` } as CSSProperties}>
           {t.kind === 'success' ? <CheckCircle2 size={15} /> : t.kind === 'error' ? <XCircle size={15} /> : <Info size={15} />}
           {t.text}
+          <span className="toast-timer" />
         </div>
       ))}
     </div>

@@ -240,22 +240,22 @@ const railKey = (id: string) => {
   return k ? prettyKey(k.split('+').pop() ?? k) : '';
 };
 
-const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string; alt?: boolean }[] = [
-  { tool: 'select', icon: <MousePointer2 size={17} />, label: 'Move / select', cmd: 'tool.select' },
-  { tool: 'select', alt: true, icon: <Unplug size={17} />, label: 'Alt move (leave wires behind)', cmd: 'tool.altMove' },
-  { tool: 'node', icon: <PenTool size={17} />, label: 'Edit points', cmd: 'tool.node' },
-  { tool: 'pan', icon: <Hand size={17} />, label: 'Pan', cmd: 'tool.pan' },
-  { tool: 'wire', icon: <Spline size={17} />, label: 'Wire', cmd: 'tool.wire' },
-  { tool: 'solder', icon: <CircleDot size={17} />, label: 'Solder', cmd: 'tool.solder' },
-  { tool: 'rect', icon: <Square size={17} />, label: 'Rectangle', cmd: 'tool.rect' },
-  { tool: 'zone', icon: <RectangleHorizontal size={17} fill="currentColor" fillOpacity={0.35} />, label: 'Filled zone', cmd: 'tool.zone' },
-  { tool: 'ellipse', icon: <Circle size={17} />, label: 'Ellipse', cmd: 'tool.ellipse' },
-  { tool: 'polygon', icon: <Pentagon size={17} />, label: 'Polygon', cmd: 'tool.polygon' },
-  { tool: 'path', icon: <Route size={17} />, label: 'Path', cmd: 'tool.path' },
-  { tool: 'line', icon: <Minus size={17} style={{ transform: 'rotate(-45deg)' }} />, label: 'Line', cmd: 'tool.line' },
-  { tool: 'arrow', icon: <ArrowUpRight size={17} />, label: 'Arrow', cmd: 'tool.arrow' },
-  { tool: 'text', icon: <Type size={17} />, label: 'Text', cmd: 'tool.text' },
-  { tool: 'frame', icon: <Frame size={17} />, label: 'Presentation frame', cmd: 'tool.frame' },
+const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string; alt?: boolean; desc?: string }[] = [
+  { tool: 'select', icon: <MousePointer2 size={17} />, label: 'Move / select', cmd: 'tool.select', desc: 'Click to select · drag to move · drag empty canvas to box-select' },
+  { tool: 'select', alt: true, icon: <Unplug size={17} />, label: 'Alt move (leave wires behind)', cmd: 'tool.altMove', desc: 'Moves parts without dragging their wires along' },
+  { tool: 'node', icon: <PenTool size={17} />, label: 'Edit points', cmd: 'tool.node', desc: 'Drag bends, wire ends and shape nodes' },
+  { tool: 'pan', icon: <Hand size={17} />, label: 'Pan', cmd: 'tool.pan', desc: 'Drag to look around · or hold Space with any tool' },
+  { tool: 'wire', icon: <Spline size={17} />, label: 'Wire', cmd: 'tool.wire', desc: 'Drag from a pin, or click to add bends' },
+  { tool: 'solder', icon: <CircleDot size={17} />, label: 'Solder', cmd: 'tool.solder', desc: 'Click a crossing or touching end to join it; click a junction to split it' },
+  { tool: 'rect', icon: <Square size={17} />, label: 'Rectangle', cmd: 'tool.rect', desc: 'Outline box · double-click it to add a title' },
+  { tool: 'zone', icon: <RectangleHorizontal size={17} fill="currentColor" fillOpacity={0.35} />, label: 'Filled zone', cmd: 'tool.zone', desc: 'Tinted area with a title, drawn behind the circuit' },
+  { tool: 'ellipse', icon: <Circle size={17} />, label: 'Ellipse', cmd: 'tool.ellipse', desc: 'Drag to draw an ellipse' },
+  { tool: 'polygon', icon: <Pentagon size={17} />, label: 'Polygon', cmd: 'tool.polygon', desc: 'Click for corners · click the first one to close' },
+  { tool: 'path', icon: <Route size={17} />, label: 'Path', cmd: 'tool.path', desc: 'Click for corners, drag for curves' },
+  { tool: 'line', icon: <Minus size={17} style={{ transform: 'rotate(-45deg)' }} />, label: 'Line', cmd: 'tool.line', desc: 'Ends attach to shapes and parts · Shift for 45°' },
+  { tool: 'arrow', icon: <ArrowUpRight size={17} />, label: 'Arrow', cmd: 'tool.arrow', desc: 'Ends attach to shapes and parts · Shift for 45°' },
+  { tool: 'text', icon: <Type size={17} />, label: 'Text', cmd: 'tool.text', desc: 'Click to place text · $…$ typesets maths' },
+  { tool: 'frame', icon: <Frame size={17} />, label: 'Presentation frame', cmd: 'tool.frame', desc: 'Drag an area to show as a step when presenting' },
 ];
 
 export function ToolRail() {
@@ -299,6 +299,7 @@ export function ToolRail() {
             className={tool === t.tool && !!t.alt === altMove && !placing && !(armed && t.tool === 'rect') ? 'tool-btn active' : 'tool-btn'}
             onClick={() => (t.alt ? A.setAltMove() : A.setTool(t.tool))}
             title={`${t.label} (${prettyKey(keysFor(t.cmd)[0] ?? '')})`}
+            data-tip-desc={t.desc}
           >
             {t.icon}
             <span className="tool-key">{railKey(t.cmd)}</span>
@@ -311,6 +312,7 @@ export function ToolRail() {
         className={isExplainTool(tool) ? 'tool-btn explain-btn active' : 'tool-btn explain-btn'}
         onClick={A.toggleExplain}
         title="Explain tools"
+        data-tip-desc="Pen, highlighter, laser, callouts and net tracing"
       >
         <Presentation size={17} />
         <span className="tool-key">{railKey(`tool.${lastExplain}`)}</span>

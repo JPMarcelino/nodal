@@ -1,4 +1,4 @@
-import { ClipboardPaste, Copy, FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, Film, FolderUp, Layers3, LayoutTemplate, Printer, RotateCcw, Scan, Shapes, Share2, Users, X } from 'lucide-react';
+import { CircleHelp, ClipboardPaste, Copy, Cpu, Eye, FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, Files, Film, FolderUp, History, Layers3, LayoutGrid, LayoutTemplate, Pencil, Printer, RotateCcw, Scan, Search, Shapes, Share2, Spline, Users, Wrench, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { importFile } from '../io/importFiles';
@@ -34,6 +34,7 @@ import { LiveSession } from './LiveSession';
 import { Logo } from './Logo';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 import { VideoDialog } from './VideoDialog';
+import { matchRanges, matchScore, pushRecent, queryWords } from './paletteSearch';
 
 export function Modal({
   title,
@@ -94,7 +95,52 @@ const close = () => set({ dialog: null });
 /* Command palette                                                     */
 /* ------------------------------------------------------------------ */
 
-type PaletteEntry = { kind: 'cmd'; cmd: Command } | { kind: 'sym'; def: SymbolDef };
+type PaletteEntry = { kind: 'cmd'; cmd: Command; score: number } | { kind: 'sym'; def: SymbolDef; score: number };
+type PaletteSection = { title: string; entries: PaletteEntry[] };
+
+const CATEGORY_ICON: Record<Command['category'], LucideIcon> = {
+  File: FileText,
+  Edit: Pencil,
+  Tools: Wrench,
+  Arrange: LayoutGrid,
+  Page: Files,
+  View: Eye,
+  Wire: Spline,
+  Symbols: Cpu,
+  Help: CircleHelp,
+};
+
+const RECENT_KEY = 'nodal.palette.recent';
+function loadRecent(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+function rememberRecent(key: string) {
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(pushRecent(loadRecent(), key)));
+  } catch {
+    /* storage blocked: the list just isn't remembered */
+  }
+}
+
+/** The label with the matched stretches marked. */
+function Highlight({ text, words }: { text: string; words: string[] }) {
+  const ranges = words.length ? matchRanges(text, words) : [];
+  if (!ranges.length) return <>{text}</>;
+  const out: ReactNode[] = [];
+  let at = 0;
+  ranges.forEach(([a, b], i) => {
+    if (a > at) out.push(text.slice(at, a));
+    out.push(<mark key={i}>{text.slice(a, b)}</mark>);
+    at = b;
+  });
+  if (at < text.length) out.push(text.slice(at));
+  return <>{out}</>;
+}
 
 export function CommandPalette() {
   const [q, setQ] = useState('');
@@ -103,6 +149,8 @@ export function CommandPalette() {
   const [picker, setPicker] = useState<SymbolPopupState | null>(null);
   const docSymbols = useStore((s) => s.doc.symbols);
   const listRef = useRef<HTMLDivElement>(null);
+  // the keyboard moves the highlight; a pointer only takes it over once it actually moves
+  const pointerMoved = useRef(false);
   // grace period so the pointer can travel from a row into its preview popup
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const clearClose = () => clearTimeout(closeTimer.current);
@@ -112,26 +160,61 @@ export function CommandPalette() {
   };
   useEffect(() => () => clearClose(), []);
   const syms = useMemo(() => librarySymbols({ symbols: docSymbols }), [docSymbols]);
-  const entries = useMemo<PaletteEntry[]>(() => {
-    const query = q.trim().toLowerCase();
+  const words = useMemo(() => queryWords(q), [q]);
+  const sections = useMemo<PaletteSection[]>(() => {
     const cmds = COMMANDS.filter((c) => !c.when || c.when());
-    const match = (s: string) => query.split(/\s+/).every((w) => s.toLowerCase().includes(w));
-    const out: PaletteEntry[] = [];
-    for (const c of cmds) if (!query || match(`${c.category} ${c.label} ${c.keywords ?? ''}`)) out.push({ kind: 'cmd', cmd: c });
-    if (query) {
-      for (const s of syms) {
-        // one row per part; its types are offered by the picker, not as duplicate rows
-        const extra = variantDefs({ symbols: docSymbols }, s)
-          .map((v) => `${v.variantName ?? ''} ${v.keywords ?? ''}`)
-          .join(' ');
-        if (match(`place ${s.name} ${s.keywords ?? ''} ${s.category} ${extra}`)) out.push({ kind: 'sym', def: s });
+    if (!words.length) {
+      // nothing typed: what was used last, then everything by menu
+      const byId = new Map(cmds.map((c) => [c.id, c]));
+      const symById = new Map(syms.map((d) => [d.id, d]));
+      const recent: PaletteEntry[] = [];
+      for (const key of loadRecent()) {
+        if (key.startsWith('s:')) {
+          const def = symById.get(key.slice(2));
+          if (def) recent.push({ kind: 'sym', def, score: 1 });
+        } else {
+          const cmd = byId.get(key);
+          if (cmd) recent.push({ kind: 'cmd', cmd, score: 1 });
+        }
       }
+      const out: PaletteSection[] = recent.length ? [{ title: 'Recent', entries: recent }] : [];
+      const groups = new Map<string, PaletteEntry[]>();
+      for (const c of cmds) {
+        const g = groups.get(c.category) ?? [];
+        g.push({ kind: 'cmd', cmd: c, score: 1 });
+        groups.set(c.category, g);
+      }
+      for (const [title, entries] of groups) out.push({ title, entries });
+      return out;
     }
-    return out.slice(0, 80);
-  }, [q, syms, docSymbols]);
+    const found: PaletteEntry[] = [];
+    for (const c of cmds) {
+      const score = matchScore(c.label, `${c.category} ${c.keywords ?? ''}`, words);
+      if (score > 0) found.push({ kind: 'cmd', cmd: c, score });
+    }
+    const parts: PaletteEntry[] = [];
+    for (const d of syms) {
+      // one row per part; its types are offered by the picker, not as duplicate rows
+      const extra = variantDefs({ symbols: docSymbols }, d)
+        .map((v) => `${v.variantName ?? ''} ${v.keywords ?? ''}`)
+        .join(' ');
+      const score = matchScore(d.name, `place ${d.keywords ?? ''} ${d.category} ${extra}`, words);
+      if (score > 0) parts.push({ kind: 'sym', def: d, score });
+    }
+    found.sort((a, b) => b.score - a.score);
+    parts.sort((a, b) => b.score - a.score);
+    const out: PaletteSection[] = [];
+    const cmdSec = found.length ? { title: 'Commands', entries: found.slice(0, 40) } : null;
+    const partSec = parts.length ? { title: 'Parts', entries: parts.slice(0, 40) } : null;
+    // whichever has the better top match comes first
+    if (cmdSec && partSec && partSec.entries[0].score > cmdSec.entries[0].score) out.push(partSec, cmdSec);
+    else for (const sec of [cmdSec, partSec]) if (sec) out.push(sec);
+    return out;
+  }, [words, syms, docSymbols]);
+  const flat = useMemo(() => sections.flatMap((s) => s.entries), [sections]);
   useEffect(() => setIdx(0), [q]);
   useEffect(() => {
-    listRef.current?.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+    listRef.current?.querySelector('.palette-item.active')?.scrollIntoView({ block: 'nearest' });
   }, [idx]);
   const variantsOf = (def: SymbolDef) => variantDefs({ symbols: docSymbols }, def);
   const openPicker = (def: SymbolDef, el: Element | null) => {
@@ -140,7 +223,8 @@ export function CommandPalette() {
     setPreview(null);
     setPicker({ def, variants: variantsOf(def), anchor: anchorOf(anchorEl), pinned: true });
   };
-  const place = (def: SymbolDef) => {
+  const place = (def: SymbolDef, key = def.id) => {
+    rememberRecent(`s:${key}`);
     setPicker(null);
     setPreview(null);
     close();
@@ -149,6 +233,7 @@ export function CommandPalette() {
   const run = (e: PaletteEntry | undefined, el?: Element | null) => {
     if (!e) return;
     if (e.kind === 'cmd') {
+      rememberRecent(e.cmd.id);
       setPreview(null);
       close();
       setTimeout(() => e.cmd.run(), 0);
@@ -162,61 +247,129 @@ export function CommandPalette() {
     if (picker) return;
     setPreview({ def, variants: variantsOf(def), anchor: anchorOf(el), pinned: false });
   };
+  const move = (d: number) => {
+    pointerMoved.current = false;
+    setIdx((i) => (flat.length ? (i + d + flat.length) % flat.length : 0));
+  };
+  let n = -1;
   return (
-    <Modal onClose={close} width={600} className="palette" closeFromInput ariaLabel="Command palette">
-      <input
-        className="palette-input"
-        autoFocus
-        placeholder="Type a command or a part name (e.g. “rotate”, “op amp”, “export png”)…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setIdx((i) => Math.min(entries.length - 1, i + 1));
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setIdx((i) => Math.max(0, i - 1));
-          } else if (e.key === 'Enter') run(entries[idx]);
-        }}
-      />
-      <div className="palette-list" ref={listRef}>
-        {entries.map((e, i) => {
-          const types = e.kind === 'sym' ? variantsOf(e.def).length : 0;
-          return (
-            <button
-              key={e.kind === 'cmd' ? e.cmd.id : `s:${e.def.id}`}
-              className={i === idx ? 'palette-item active' : 'palette-item'}
-              onMouseEnter={(ev) => {
-                clearClose();
-                setIdx(i);
-                if (e.kind === 'sym') hoverSym(e.def, ev.currentTarget);
-                else setPreview(null);
-              }}
-              onMouseLeave={scheduleClose}
-              onClick={(ev) => run(e, ev.currentTarget)}
-            >
-              {e.kind === 'cmd' ? (
-                <>
-                  <span className="palette-cat">{e.cmd.category}</span>
-                  <span className="palette-label">{e.cmd.label}</span>
-                  {keysFor(e.cmd.id)[0] && <Kbd combo={keysFor(e.cmd.id)[0]} />}
-                </>
-              ) : (
-                <>
-                  <span className="palette-cat sym">Place</span>
-                  <span className="palette-label">{e.def.name}</span>
-                  <span className="palette-meta">{e.def.category}</span>
-                  {types > 0 && <span className="palette-types">{types + 1} types</span>}
-                </>
-              )}
-            </button>
-          );
-        })}
-        {!entries.length && <div className="empty-note">No matches</div>}
+    <Modal onClose={close} width={640} className="palette" closeFromInput ariaLabel="Command palette">
+      <div className="palette-search">
+        <Search size={17} />
+        <input
+          className="palette-input"
+          autoFocus
+          placeholder="Search commands and parts — “rotate”, “op amp”, “export png”…"
+          value={q}
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="palette-list"
+          aria-activedescendant={flat[idx] ? `palette-row-${idx}` : undefined}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              move(1);
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              move(-1);
+            } else if (e.key === 'PageDown') {
+              e.preventDefault();
+              setIdx((i) => Math.min(flat.length - 1, i + 8));
+            } else if (e.key === 'PageUp') {
+              e.preventDefault();
+              setIdx((i) => Math.max(0, i - 8));
+            } else if (e.key === 'Enter') run(flat[idx]);
+          }}
+        />
+        {q && (
+          <button className="palette-clear" onClick={() => setQ('')} aria-label="Clear search">
+            <X size={14} />
+          </button>
+        )}
       </div>
-      {preview && <SymbolPopup {...preview} onPick={(d) => place(d)} onClose={() => setPreview(null)} onEnter={clearClose} />}
-      {picker && <SymbolPopup {...picker} onPick={(d) => place(d)} onClose={() => setPicker(null)} />}
+      <div className="palette-list" id="palette-list" role="listbox" ref={listRef} onPointerMove={() => (pointerMoved.current = true)}>
+        {sections.map((sec) => (
+          <div key={sec.title} className="palette-section" role="group" aria-label={sec.title}>
+            <div className="palette-heading">
+              {sec.title === 'Recent' && <History size={12} />}
+              {sec.title}
+            </div>
+            {sec.entries.map((e) => {
+              const i = ++n;
+              const types = e.kind === 'sym' ? variantsOf(e.def).length : 0;
+              const on = e.kind === 'cmd' ? e.cmd.checked?.() : undefined;
+              const Icon = e.kind === 'cmd' ? CATEGORY_ICON[e.cmd.category] : null;
+              const combo = e.kind === 'cmd' ? keysFor(e.cmd.id)[0] : undefined;
+              return (
+                <button
+                  key={e.kind === 'cmd' ? e.cmd.id : `s:${e.def.id}`}
+                  id={`palette-row-${i}`}
+                  role="option"
+                  aria-selected={i === idx}
+                  className={i === idx ? 'palette-item active' : 'palette-item'}
+                  onMouseEnter={(ev) => {
+                    if (!pointerMoved.current) return;
+                    clearClose();
+                    setIdx(i);
+                    if (e.kind === 'sym') hoverSym(e.def, ev.currentTarget);
+                    else setPreview(null);
+                  }}
+                  onMouseLeave={scheduleClose}
+                  onClick={(ev) => run(e, ev.currentTarget)}
+                >
+                  {e.kind === 'cmd' ? (
+                    <>
+                      <span className="palette-icon">{Icon && <Icon size={15} />}</span>
+                      <span className="palette-label">
+                        <Highlight text={e.cmd.label} words={words} />
+                      </span>
+                      {on !== undefined && <span className={on ? 'palette-state on' : 'palette-state'}>{on ? 'On' : 'Off'}</span>}
+                      {(words.length > 0 || sec.title === 'Recent') && <span className="palette-meta">{e.cmd.category}</span>}
+                      {combo && <Kbd combo={combo} />}
+                    </>
+                  ) : (
+                    <>
+                      <span className="palette-icon sym">
+                        <SymbolPreview def={e.def} size={26} pad={2} />
+                      </span>
+                      <span className="palette-label">
+                        <Highlight text={e.def.name} words={words} />
+                      </span>
+                      {types > 0 && <span className="palette-types">{types + 1} types</span>}
+                      <span className="palette-meta">{e.def.category}</span>
+                      <span className="palette-place">Place</span>
+                    </>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+        {!flat.length && (
+          <div className="palette-empty">
+            <Search size={22} />
+            <div>Nothing matches “{q.trim()}”</div>
+            <div className="small muted">Try a part name like “resistor” or a command like “align”.</div>
+          </div>
+        )}
+      </div>
+      <div className="palette-foot">
+        <span>
+          <kbd>↑</kbd>
+          <kbd>↓</kbd> to move
+        </span>
+        <span>
+          <kbd>↵</kbd> to run or place
+        </span>
+        <span>
+          <kbd>Esc</kbd> to close
+        </span>
+        <span className="grow" />
+        <span className="muted">{flat.length} {flat.length === 1 ? 'result' : 'results'}</span>
+      </div>
+      {preview && <SymbolPopup {...preview} onPick={(d) => place(d, preview.def.id)} onClose={() => setPreview(null)} onEnter={clearClose} />}
+      {picker && <SymbolPopup {...picker} onPick={(d) => place(d, picker.def.id)} onClose={() => setPicker(null)} />}
     </Modal>
   );
 }
