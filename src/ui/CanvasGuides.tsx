@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { Command, Cpu, FilePlus2, FileText, FolderOpen, MousePointerClick, Radio, Search, Sparkles, Spline, Upload, X } from 'lucide-react';
+import { ChevronRight, Command, Cpu, FilePlus2, LogOut, FileText, FolderOpen, MousePointerClick, Radio, Search, Sparkles, Spline, Upload, X } from 'lucide-react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { exportSvg } from '../io/export';
 import { listOtherCircuits, onVersionsChanged } from '../io/versionStore';
@@ -338,6 +338,42 @@ export function IntroCard() {
           Explore it
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inside a group (double-click a grouped item), a breadcrumb under the tool
+ * rail says where editing is happening and leaves with one click.
+ */
+export function GroupCrumbs() {
+  const scope = useStore((s) => s.scope);
+  const groups = useStore((s) => viewDoc(s.doc, s.page).groups);
+  const presenting = useExplain((s) => s.presenting !== null);
+  if (!scope || presenting) return null;
+  const chain: { id: string; name: string }[] = [];
+  for (let g: string | undefined = scope; g && groups[g] && chain.length < 12; g = groups[g].group) chain.unshift({ id: g, name: groups[g].name || 'Group' });
+  return (
+    <div className="group-crumbs" onPointerDown={(e) => e.stopPropagation()}>
+      <span className="crumb-label">Editing</span>
+      <button className="crumb" onClick={() => set({ scope: undefined })} title="Back to the whole page">
+        Page
+      </button>
+      {chain.map((g, i) => (
+        <span key={g.id} className="crumb-step">
+          <ChevronRight size={12} />
+          {i < chain.length - 1 ? (
+            <button className="crumb" onClick={() => set({ scope: g.id })}>
+              {g.name}
+            </button>
+          ) : (
+            <span className="crumb current">{g.name}</span>
+          )}
+        </span>
+      ))}
+      <button className="crumb-exit" onClick={() => A.exitGroup()}>
+        <LogOut size={13} /> Done <kbd>Esc</kbd>
+      </button>
     </div>
   );
 }

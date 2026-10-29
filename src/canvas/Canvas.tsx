@@ -33,7 +33,7 @@ import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
-import { HintBar, IntroCard, WelcomeScreen } from '../ui/CanvasGuides';
+import { GroupCrumbs, HintBar, IntroCard, WelcomeScreen } from '../ui/CanvasGuides';
 import { marqueeHits } from '../model/marquee';
 import { gestureSlots, hitSlop, useTouchInput } from './touch';
 import { applySolder, solderActionFor } from './solder';
@@ -2616,12 +2616,7 @@ export function Canvas() {
       </svg>
       <ExplainLayer data={data} wrapRef={wrapRef} />
       <FollowFrame />
-      {scope && (
-        <div className="scope-banner">
-          Editing group <b>{doc.groups[scope]?.name ?? ''}</b>
-          <button onClick={() => A.exitGroup()}>Done (Esc)</button>
-        </div>
-      )}
+      <GroupCrumbs />
       {editingText && <TextEditor id={editingText} onDone={() => setEditingText(null)} />}
       {editingLabel && <LabelEditor {...editingLabel} onDone={() => setEditingLabel(null)} />}
       {renamingGroup && <GroupNameEditor gid={renamingGroup} onDone={() => setRenamingGroup(null)} />}
