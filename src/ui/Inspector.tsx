@@ -53,6 +53,7 @@ import { DashSelect, Row, StyleSection, TextFormatRows, restyle, type TextFormat
 import { TEXT_KEYS, commonLook, mergeLabelStyle } from '../model/style';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
 import { useSettledDoc } from './useSettledDoc';
+import { keysFor, prettyKey } from '../store/commands';
 
 const HEAD_TITLES: Record<HeadKind, string> = {
   none: 'None — plain end',
@@ -399,10 +400,53 @@ function DocumentPanel() {
         </More>
         <div className="section-note">Saved with this drawing.</div>
       </Section>
-      <div className="inspector-tip">
-        Tip: select something to edit it. Press <kbd>?</kbd> for all shortcuts, <kbd>Ctrl+K</kbd> for the command palette.
-      </div>
+      <DidYouKnow />
     </>
+  );
+}
+
+/** Tips for the idle inspector: [text before the key, command id, text after]. A tip whose command has no key is skipped. */
+const TIPS: [string, string, string][] = [
+  ['Drag from any pin to draw a wire, or press ', 'tool.wire', ' and click to add bends.'],
+  ['', 'edit.quickAddRight', ' (or any arrow) adds a wired copy of the selected part — press it again to build a chain.'],
+  ['', 'tool.placeLast', ' places the last part you used again.'],
+  ['', 'edit.duplicateIncrement', ' duplicates labels with the next number: D0 → D1.'],
+  ['Select a wire and press ', 'wire.highlightNet', ' to light up everything on its net.'],
+  ['', 'tool.junction', ' puts a no-connect flag on a pin you leave open on purpose.'],
+  ['', 'view.check', ' checks for unconnected pins, shorted rails and duplicate names.'],
+  ['', 'wire.reroute', ' tidies the route of the selected wires.'],
+  ['', 'help.palette', ' runs any command or places any part by name.'],
+  ['Hold ', 'Space', ' and drag to pan from any tool.'],
+  ['Alt-drag a wire to branch a new wire off it', '', '.'],
+  ['Write $…$ in any text, title or value for maths, e.g. $f_c = \\frac{1}{2\\pi RC}$', '', '.'],
+  ['Drop a .nodal file onto the canvas to add it to this circuit as a group', '', '.'],
+  ['Right-click anything for what you can do with it', '', '.'],
+];
+
+/** One tip, picked afresh each time nothing is selected; keys follow the user's bindings. */
+function DidYouKnow() {
+  useStore((s) => s.prefs.keymap);
+  const tips = TIPS.filter(([, id]) => !id || id === 'Space' || keysFor(id)[0]);
+  const [i, setI] = useState(() => Math.floor(Math.random() * tips.length));
+  const [before, id, after] = tips[i % tips.length];
+  const key = id === 'Space' ? 'Space' : id ? prettyKey(keysFor(id)[0]) : '';
+  return (
+    <div className="inspector-tip">
+      <div className="tip-head">
+        <span>Did you know?</span>
+        <button className="tip-next" onClick={() => setI((n) => n + 1)} title="Another tip">
+          Next tip
+        </button>
+      </div>
+      <div>
+        {before}
+        {key && <kbd>{key}</kbd>}
+        {after}
+      </div>
+      <div className="tip-foot">
+        <kbd>?</kbd> all shortcuts · <kbd>{prettyKey(keysFor('help.palette')[0] ?? 'Mod+K')}</kbd> command palette
+      </div>
+    </div>
   );
 }
 
