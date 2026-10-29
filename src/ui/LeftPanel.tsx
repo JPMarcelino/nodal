@@ -22,6 +22,7 @@ import { NetsPanel } from './NetsPanel';
 import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
 import { useSettledDoc } from './useSettledDoc';
+import { libraryDrag } from './dragState';
 
 function Tile({ def }: { def: SymbolDef }) {
   const fav = useStore((s) => s.favorites.includes(def.id));
@@ -63,7 +64,9 @@ function Tile({ def }: { def: SymbolDef }) {
           setPop(null);
           e.dataTransfer.setData('application/x-nodal-symbol', def.id);
           e.dataTransfer.effectAllowed = 'copy';
+          libraryDrag.symbol = def.id;
         }}
+        onDragEnd={() => (libraryDrag.symbol = null)}
         onMouseEnter={(e) => {
           clearClose();
           if (pop) return;
