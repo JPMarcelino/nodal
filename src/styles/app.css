@@ -490,6 +490,39 @@ kbd {
   background: var(--panel-3);
 }
 
+.doc-name-pen {
+  flex: none;
+  margin-left: -4px;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.doc-name:hover .doc-name-pen {
+  opacity: 1;
+}
+
+.saved-tick {
+  flex: none;
+  color: var(--accent);
+  animation: saved-tick 1.6s ease forwards;
+}
+
+@keyframes saved-tick {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  15%,
+  70% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 .doc-name-input {
   background: var(--panel-2);
   border: 1px solid var(--accent);

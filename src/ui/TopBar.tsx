@@ -29,6 +29,7 @@ import {
   Eye,
   X as XIcon,
   ChevronDown,
+  Pencil,
 } from 'lucide-react';
 import { isExplainTool, useExplain } from '../store/explain';
 import { useEffect, useRef, useState } from 'react';
@@ -188,6 +189,19 @@ function ZoomMenu({ zoom }: { zoom: number }) {
 function DocName() {
   const name = useStore((s) => s.doc.name);
   const dirty = useStore((s) => s.dirty);
+  // a tick where the unsaved dot was, for a moment after saving
+  const [justSaved, setJustSaved] = useState(false);
+  const docId = useStore((s) => s.doc.id);
+  const was = useRef({ dirty, docId });
+  useEffect(() => {
+    // the same circuit going clean is a save; opening another one is not
+    const saved = was.current.dirty && !dirty && was.current.docId === docId;
+    was.current = { dirty, docId };
+    if (!saved) return;
+    setJustSaved(true);
+    const t = setTimeout(() => setJustSaved(false), 1600);
+    return () => clearTimeout(t);
+  }, [dirty, docId]);
   const locked = useStore(readOnly);
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(name);
@@ -212,10 +226,13 @@ function DocName() {
         }}
       />
     );
+  const saveKey = prettyKey(keysFor('file.save')[0] ?? '');
+  const state = dirty ? `Unsaved changes${saveKey ? ` — ${saveKey} saves` : ''}` : '';
   return (
-    <button className="doc-name" onClick={() => !locked && setEditing(true)} title={locked ? name : 'Rename circuit'}>
+    <button className="doc-name" onClick={() => !locked && setEditing(true)} title={locked ? name : state ? `Rename circuit\n${state}` : 'Rename circuit'}>
       <span className="doc-name-text">{name}</span>
-      {dirty && <span className="dirty-dot" title="Unsaved changes" />}
+      {!locked && <Pencil size={12} className="doc-name-pen" />}
+      {dirty ? <span className="dirty-dot" /> : justSaved && <Check size={13} className="saved-tick" />}
     </button>
   );
 }
