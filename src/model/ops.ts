@@ -5,6 +5,7 @@ import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateSha
 import { componentBounds, eq, pointInRect, projectOnSegment, rectsIntersect, rotate, segmentIntersectsRect, simplify, snap, unionRects } from './geometry';
 import { routeLeg, routeObstacles } from './route';
 import { inkPoints, packInk } from './ink';
+import { calloutAnchor } from './callout';
 import { mapNodes, pathNodes, setPathNodes } from './path';
 import { mapShapeFrame, normDeg, rectCentre, ROT_KINDS, rotateDeg, shapeBox, shapeRot } from './rotation';
 import { touchingPins } from './netlist';
@@ -478,6 +479,12 @@ export function deleteItems(doc: CircuitDoc, ids: Iterable<string>) {
   // connectors glued to what goes let go of it, staying where they are
   for (const s of connectorsOf(doc, del)) {
     if (!del.has(s.id)) detachConnector(doc, s, { from: !!s.from && del.has(s.from.id), to: !!s.to && del.has(s.to.id) });
+  }
+  // callouts pointing at what goes keep pointing where it was, instead of jumping back to where they were made
+  for (const it of Object.values(doc.items)) {
+    if (it.type !== 'shape' || it.kind !== 'callout' || del.has(it.id) || !it.anchor?.id || !del.has(it.anchor.id)) continue;
+    const at = calloutAnchor(doc, it);
+    if (at) it.anchor = { dx: 0, dy: 0, x: at.x, y: at.y };
   }
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'wire' || del.has(it.id)) continue;

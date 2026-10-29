@@ -4574,6 +4574,14 @@ select.input {
   pointer-events: none;
 }
 
+/* the centre a snapped shape scales and turns about while the pen is still down */
+.ink-snap-centre {
+  fill: var(--panel);
+  stroke: var(--accent);
+  pointer-events: none;
+  animation: fade 0.2s ease-out;
+}
+
 @keyframes ink-snap {
   from {
     opacity: 0.9;
@@ -7156,4 +7164,30 @@ button.crumb:hover {
     opacity: 0;
     transform: translateX(10px);
   }
+}
+
+/* callout editing in the select tool: the leader's end re-points, the note's edge sets its width */
+.handle.anchor-handle {
+  fill: var(--accent);
+  stroke: var(--panel);
+  cursor: grab;
+}
+
+.handle.wrap-handle {
+  cursor: ew-resize;
+}
+
+.xi-target {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.xi-row .secondary-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
 }

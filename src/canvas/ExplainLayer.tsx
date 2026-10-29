@@ -1,9 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useCollab } from '../collab/session';
-import { calloutAnchor, calloutLayout, makeAnchor, nextStep } from '../model/callout';
+import { calloutAnchor, calloutLayout, callouts, makeAnchor, nextStep } from '../model/callout';
 import { backZ, drawOrderCached, itemBounds, makeShape } from '../model/doc';
 import { pointInRect } from '../model/geometry';
-import { EXPLAIN_COLORS, inkHit, inkOutline, inkCenterPath, packInk, recognizeInk, type InkPoint, type InkShape } from '../model/ink';
+import { EXPLAIN_COLORS, inkAverageWidth, inkHit, inkOutline, inkCenterPath, inkShapePath, packInk, recognizeShape, shapeCentre, shapePoints, type InkPoint, type InkShapeParams } from '../model/ink';
 import { computeNets, type Net } from '../model/netlist';
 import { instanceSymbol } from '../model/registry';
 import { measureRich } from '../model/richText';
@@ -15,9 +15,17 @@ import { S, beginGesture, endGesture, gestureUpdate, inGesture, mutate, useStore
 import { EDITOR_PALETTE, inkColor, pagePalette, type SceneData } from './Scene';
 import { gestureSlots } from './touch';
 import { ExplainDock, TracePanel } from '../ui/ExplainDock';
+import { revealItems } from '../store/actions';
 
-/** How long a laser trail / vanishing stroke stays on screen (ms). */
-const LASER_LIFE = 750;
+/**
+ * Laser marks stay while the pointer keeps pointing, then all fade together
+ * a moment after it stops (so a circle drawn around something stays whole
+ * long enough to be seen); very old stretches of a long trail thin away.
+ */
+const LASER_IDLE = 1200;
+const LASER_FADE = 450;
+const LASER_TAIL = 3500;
+/** How long a vanishing stroke stays on screen (ms). */
 const VANISH_LIFE = 2600;
 const VANISH_FADE = 700;
 /** Hold the pen still this long to snap a scribble into a clean shape. */
@@ -26,11 +34,20 @@ const HOLD_MS = 520;
 const TRACE_SPEED = 900;
 
 type G =
-  | { kind: 'ink'; pts: InkPoint[]; highlighter: boolean; color: string; width: number; snapped: InkShape | null; still: Point }
+  | {
+      kind: 'ink';
+      pts: InkPoint[];
+      highlighter: boolean;
+      color: string;
+      width: number;
+      still: Point;
+      /** The shape a held stroke snapped into: kept while the pen stays down so it can be scaled and turned. */
+      snap: { shape: InkShapeParams; raw: InkPoint[]; width: number; ref: Point } | null;
+    }
   | { kind: 'laser' }
   | { kind: 'erase'; hits: Set<string>; last: Point }
   | { kind: 'callout-new'; at: Point; target: string | null; cur: Point; client: Point }
-  | { kind: 'callout-move'; id: string; start: Point }
+  | { kind: 'callout-move'; id: string; start: Point; moved: boolean }
   | { kind: 'callout-anchor'; id: string };
 
 interface Fading {
@@ -38,6 +55,8 @@ interface Fading {
   d: string;
   color: string;
   born: number;
+  /** Set for a snapped shape: its centre line, stroked this wide (otherwise `d` is a filled outline). */
+  stroke?: number;
 }
 
 let fadeId = 0;
@@ -61,6 +80,8 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
   const [cursor, setCursor] = useState<Point | null>(null);
   const [hover, setHover] = useState<{ item: string | null; seed: TraceSeed | null }>({ item: null, seed: null });
   const [snapFlash, setSnapFlash] = useState(0);
+  /** With the callout tool: whether the pointer is over a note (click edits, drag moves) or a leader's end (drag re-points). */
+  const [overCallout, setOverCallout] = useState<'note' | 'anchor' | null>(null);
   const holdTimer = useRef<number>();
 
   useEffect(() => {
@@ -185,7 +206,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
     const list = Object.values(d.items).filter((i): i is ShapeItem => i.type === 'shape' && i.kind === 'callout' && !i.hidden && !i.locked);
     const rank = drawOrderCached(d);
     list.sort((a, b) => rank.get(b.id)! - rank.get(a.id)!);
-    return list.find((c) => pointInRect(p, calloutLayout(c).box, 3)) ?? null;
+    return list.find((c) => pointInRect(p, calloutLayout(c, calloutAnchor(d, c)).box, 3)) ?? null;
   };
 
   /** Pin seed, plus a wire ending on the pin (rails and labels are not listed as net pins). */
@@ -245,11 +266,14 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
     window.clearTimeout(holdTimer.current);
     holdTimer.current = window.setTimeout(() => {
       const cur = gRef.current;
-      if (cur?.kind !== 'ink' || cur.snapped || cur.pts.length < 4) return;
-      const r = recognizeInk(cur.pts);
-      if (!r) return;
-      setGesture({ ...cur, pts: r.pts, snapped: r.kind });
+      if (cur?.kind !== 'ink' || cur.snap || cur.pts.length < 4) return;
+      const shape = recognizeShape(cur.pts);
+      if (!shape) return;
+      // the clean shape keeps the weight the stroke was drawn with (the highlighter is even already)
+      const width = cur.highlighter ? cur.width : inkAverageWidth(cur.pts, cur.width);
+      setGesture({ ...cur, pts: shapePoints(shape), snap: { shape, raw: cur.pts, width, ref: cur.still } });
       setSnapFlash(Date.now());
+      navigator.vibrate?.(8);
     }, HOLD_MS);
     const cur = gRef.current;
     if (cur?.kind === 'ink') cur.still = p;
@@ -271,7 +295,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
       case 'highlighter': {
         const hl = tool === 'highlighter';
         const width = hl ? (X().size * 4 + 8) / zz : X().size / zz;
-        setGesture({ kind: 'ink', pts: [{ ...w, p: pressure(e) }], highlighter: hl, color: hl ? X().highlightColor : X().color, width, snapped: null, still: w });
+        setGesture({ kind: 'ink', pts: [{ ...w, p: pressure(e) }], highlighter: hl, color: hl ? X().highlightColor : X().color, width, snap: null, still: w });
         resetHold(w);
         return;
       }
@@ -308,7 +332,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
         const hitC = hitCallout(w, d);
         if (hitC) {
           beginGesture();
-          setGesture({ kind: 'callout-move', id: hitC.id, start: w });
+          setGesture({ kind: 'callout-move', id: hitC.id, start: w, moved: false });
           return;
         }
         // grab a leader's end to re-point it
@@ -338,7 +362,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
       if (it.kind !== 'ink' && it.kind !== 'callout') continue;
       for (let i = 0; i <= steps; i++) {
         const p = { x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps };
-        if (it.kind === 'ink' ? inkHit(it, p, tol) : pointInRect(p, calloutLayout(it).box, tol / 2)) {
+        if (it.kind === 'ink' ? inkHit(it, p, tol) : pointInRect(p, calloutLayout(it, calloutAnchor(d, it)).box, tol / 2)) {
           hits.add(it.id);
           break;
         }
@@ -351,6 +375,20 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
     setCursor(w);
     const cur = gRef.current;
     if (!cur) {
+      if (tool === 'callout') {
+        const d = vdoc();
+        const zz = S().view.zoom;
+        const over = hitCallout(w, d)
+          ? 'note'
+          : Object.values(d.items).some((it) => {
+                if (it.type !== 'shape' || it.kind !== 'callout' || it.locked) return false;
+                const a = calloutAnchor(d, it);
+                return !!a && Math.hypot(a.x - w.x, a.y - w.y) < 8 / zz;
+              })
+            ? 'anchor'
+            : null;
+        if (over !== overCallout) setOverCallout(over);
+      }
       if (tool === 'trace' || tool === 'callout') {
         const t = hitThing(w, vdoc());
         if (t.item !== hover.item || JSON.stringify(t.seed) !== JSON.stringify(hover.seed)) setHover({ item: t.item, seed: t.seed });
@@ -359,8 +397,27 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
     }
     switch (cur.kind) {
       case 'ink': {
-        if (cur.snapped === 'ellipse' || cur.snapped === 'rect') return;
-        if (cur.snapped === 'line' || e.shiftKey) {
+        if (cur.snap) {
+          // still holding after the snap: the line's end follows the pen; a closed shape scales and turns about its centre
+          const sp = cur.snap.shape;
+          if (sp.kind === 'line') {
+            const end = e.shiftKey ? snapAngle(sp.a, w, 15) : w;
+            setGesture({ ...cur, pts: shapePoints({ ...sp, b: end }) });
+          } else {
+            const c = shapeCentre(sp);
+            const r0 = Math.hypot(cur.snap.ref.x - c.x, cur.snap.ref.y - c.y);
+            const r1 = Math.hypot(w.x - c.x, w.y - c.y);
+            const scale = r0 * S().view.zoom > 6 ? Math.max(0.1, r1 / r0) : 1;
+            let rot = Math.atan2(w.y - c.y, w.x - c.x) - Math.atan2(cur.snap.ref.y - c.y, cur.snap.ref.x - c.x);
+            // Shift: a perfect circle / square, turned in 15° steps
+            if (e.shiftKey) rot = Math.round(rot / (Math.PI / 12)) * (Math.PI / 12);
+            // near the start the turn is noise, not intent
+            if (Math.hypot(w.x - cur.snap.ref.x, w.y - cur.snap.ref.y) * S().view.zoom < 6) rot = 0;
+            setGesture({ ...cur, pts: shapePoints(sp, { scale, rot, perfect: e.shiftKey }) });
+          }
+          return;
+        }
+        if (e.shiftKey) {
           setGesture({ ...cur, pts: [cur.pts[0], { ...w, p: pressure(e) }] });
         } else {
           const evs = (e.nativeEvent.getCoalescedEvents?.() ?? []) as PointerEvent[];
@@ -385,6 +442,9 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
       case 'callout-move': {
         const dx = w.x - cur.start.x;
         const dy = w.y - cur.start.y;
+        // a click (no real drag) opens the note instead
+        if (!cur.moved && Math.hypot(dx, dy) * S().view.zoom < 4) return;
+        cur.moved = true;
         gestureUpdate((d, base) => {
           const b = base.items[cur.id] as ShapeItem;
           const s = d.items[cur.id] as ShapeItem;
@@ -417,21 +477,30 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
         const pts = cur.pts;
         if (!cur.highlighter && (X().presenting !== null ? X().presentVanish : X().vanish)) {
           // vanishing ink is kept out of the document
-          setFading((f) => [...f, { id: ++fadeId, d: inkOutline(pts, cur.width), color: cur.color, born: performance.now() }]);
+          const snap = cur.snap;
+          const fade = snap ? { d: inkShapePath(pts, snap.shape.kind), stroke: snap.width } : { d: inkOutline(pts, cur.width) };
+          setFading((f) => [...f, { id: ++fadeId, ...fade, color: cur.color, born: performance.now() }]);
           return;
         }
+        const style = { stroke: cur.color, highlighter: cur.highlighter || undefined, group: S().scope };
+        let id = '';
         mutate((d) => {
           const s = makeShape(d as CircuitDoc, 'ink', 0, 0, 1, 1);
-          Object.assign(s, packInk(pts), {
-            stroke: cur.color,
-            strokeWidth: Math.round(cur.width * 100) / 100,
-            highlighter: cur.highlighter || undefined,
-            group: S().scope,
-          });
+          Object.assign(s, packInk(cur.snap ? cur.snap.raw : pts), style, { strokeWidth: Math.round(cur.width * 100) / 100 });
           // highlighter goes under everything, like a marker on paper; pen ink on top
           if (cur.highlighter) s.z = backZ(d as CircuitDoc);
           d.items[s.id] = s;
+          id = s.id;
         });
+        // a snapped shape replaces the stroke in a second step, so one undo gives the hand-drawn stroke back
+        if (cur.snap) {
+          const snap = cur.snap;
+          mutate((d) => {
+            const s = d.items[id] as ShapeItem | undefined;
+            if (!s) return;
+            Object.assign(s, packInk(pts), { strokeWidth: Math.round(snap.width * 100) / 100, inkShape: snap.shape.kind });
+          });
+        }
         return;
       }
       case 'laser':
@@ -457,6 +526,9 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
         return;
       }
       case 'callout-move':
+        endGesture();
+        if (!cur.moved) setX({ editing: cur.id });
+        return;
       case 'callout-anchor':
         endGesture();
         return;
@@ -496,7 +568,13 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
             ? hover.item
               ? 'pointer'
               : 'crosshair'
-            : 'crosshair';
+            : tool === 'callout' && overCallout
+              ? g?.kind === 'callout-move' || g?.kind === 'callout-anchor'
+                ? 'grabbing'
+                : overCallout === 'note'
+                  ? 'pointer'
+                  : 'grab'
+              : 'crosshair';
 
   return (
     <>
@@ -535,19 +613,32 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
           {/* stroke being drawn */}
           {g?.kind === 'ink' &&
             (g.highlighter ? (
-              <path d={inkCenterPath(g.pts)} fill="none" stroke={inkColor(g.color, palette)} strokeOpacity={0.36} strokeWidth={g.width} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={g.snap ? inkShapePath(g.pts, g.snap.shape.kind) : inkCenterPath(g.pts)} fill="none" stroke={inkColor(g.color, palette)} strokeOpacity={0.36} strokeWidth={g.width} strokeLinecap="round" strokeLinejoin="round" />
             ) : (
-              <path d={inkOutline(g.pts, g.width)} fill={inkColor(g.color, palette)} />
+              g.snap ? (
+                <path d={inkShapePath(g.pts, g.snap.shape.kind)} fill="none" stroke={inkColor(g.color, palette)} strokeWidth={g.snap.width} strokeLinecap="round" strokeLinejoin="round" />
+              ) : (
+                <path d={inkOutline(g.pts, g.width)} fill={inkColor(g.color, palette)} />
+              )
             ))}
-          {g?.kind === 'ink' && g.snapped && (
-            <path key={snapFlash} d={g.highlighter ? inkCenterPath(g.pts) : inkOutline(g.pts, g.width)} className="ink-snap-flash" fill={g.highlighter ? 'none' : inkColor(g.color, palette)} stroke={inkColor(g.color, palette)} strokeWidth={g.highlighter ? g.width : 0} strokeLinecap="round" />
+          {g?.kind === 'ink' && g.snap && (
+            <path key={snapFlash} d={inkShapePath(g.pts, g.snap.shape.kind)} className="ink-snap-flash" fill="none" stroke={inkColor(g.color, palette)} strokeWidth={g.highlighter ? g.width : g.snap.width} strokeLinecap="round" strokeLinejoin="round" />
           )}
+          {/* the snapped shape's centre while it can still be scaled and turned */}
+          {g?.kind === 'ink' && g.snap && g.snap.shape.kind !== 'line' && (() => {
+            const c = shapeCentre(g.snap.shape);
+            return <circle cx={c.x} cy={c.y} r={3 / z} className="ink-snap-centre" strokeWidth={1.2 / z} />;
+          })()}
 
           {/* vanishing ink */}
           {fading.map((f) => {
             const age = now - f.born;
             const o = age < VANISH_LIFE - VANISH_FADE ? 1 : Math.max(0, (VANISH_LIFE - age) / VANISH_FADE);
-            return <path key={f.id} d={f.d} fill={inkColor(f.color, palette)} opacity={o} />;
+            return f.stroke ? (
+              <path key={f.id} d={f.d} fill="none" stroke={inkColor(f.color, palette)} strokeWidth={f.stroke} strokeLinecap="round" strokeLinejoin="round" opacity={o} />
+            ) : (
+              <path key={f.id} d={f.d} fill={inkColor(f.color, palette)} opacity={o} />
+            );
           })}
 
           {/* callout being placed */}
@@ -569,7 +660,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
 
           {/* laser pointer */}
           {laser.current.map((tr, i) => (
-            <LaserTrail key={i} pts={tr} now={now} z={z} color={laserColor} />
+            <LaserTrail key={i} pts={tr} now={now} z={z} color={laserColor} opacity={laserOpacity(laser.current, now, g?.kind === 'laser')} />
           ))}
           {tool === 'laser' && cursor && <LaserDot p={cursor} z={z} color={laserColor} />}
           <RemoteLasers z={z} />
@@ -590,7 +681,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
         onPointerLeave={() => setCursor(null)}
       />
 
-      {editing && editing.kind === 'callout' && <CalloutEditor s={editing} />}
+      {editing && editing.kind === 'callout' && <CalloutEditor key={editing.id} s={editing} />}
       {flows.length > 0 && ex.presenting === null && <TracePanel flows={flows} />}
       {(active || flows.length > 0) && ex.presenting === null && <ExplainDock />}
     </>
@@ -600,6 +691,14 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
 /* ------------------------------------------------------------------ */
 /* Pieces                                                              */
 /* ------------------------------------------------------------------ */
+
+/** `to`, turned about `from` to the nearest multiple of `deg` degrees (same length). */
+function snapAngle(from: Point, to: Point, deg: number): Point {
+  const l = Math.hypot(to.x - from.x, to.y - from.y);
+  const step = (deg * Math.PI) / 180;
+  const a = Math.round(Math.atan2(to.y - from.y, to.x - from.x) / step) * step;
+  return { x: from.x + Math.cos(a) * l, y: from.y + Math.sin(a) * l };
+}
 
 /** A lit net: glow + draw-on reveal spreading from the click, then current dots flowing along. */
 const TraceView = memo(function TraceView({ t, flow, z }: { t: Trace; flow: NetFlow; z: number }) {
@@ -642,18 +741,35 @@ interface LaserPt {
   t: number;
 }
 
-/** Drops faded points, and trails that have faded completely (keeping the one being drawn). */
-function fadeTrails(trails: LaserPt[][], now: number, keepLast = false): LaserPt[][] {
-  return trails
-    .map((tr) => tr.filter((p) => now - p.t < LASER_LIFE))
-    .filter((tr, i, all) => tr.length > 0 || (keepLast && i === all.length - 1));
+/** When the laser last moved (or now, while it is held down). */
+function laserLast(trails: LaserPt[][], now: number, active: boolean): number {
+  if (active) return now;
+  let last = -Infinity;
+  for (const tr of trails) for (const p of tr) last = Math.max(last, p.t);
+  return last;
 }
 
-function LaserTrail({ pts, now, z, color }: { pts: { x: number; y: number; t: number }[]; now: number; z: number; color: string }) {
-  if (pts.length < 2) return null;
-  const ink = pts.map((p) => ({ x: p.x, y: p.y, p: Math.max(0, 1 - (now - p.t) / LASER_LIFE) }));
+/** Drops trails once they have faded out together, and stretches older than the tail (keeping the one being drawn). */
+function fadeTrails(trails: LaserPt[][], now: number, active = false): LaserPt[][] {
+  if (now - laserLast(trails, now, active) > LASER_IDLE + LASER_FADE) return active && trails.length ? [[]] : [];
+  return trails
+    .map((tr) => tr.filter((p) => now - p.t < LASER_TAIL))
+    .filter((tr, i, all) => tr.length > 0 || (active && i === all.length - 1));
+}
+
+/** Opacity of all the laser marks: 1 while pointing, easing out together after a pause. */
+function laserOpacity(trails: LaserPt[][], now: number, active: boolean): number {
+  const idle = now - laserLast(trails, now, active) - LASER_IDLE;
+  if (idle <= 0) return 1;
+  const t = Math.min(1, idle / LASER_FADE);
+  return 1 - t * t;
+}
+
+function LaserTrail({ pts, now, z, color, opacity = 1 }: { pts: { x: number; y: number; t: number }[]; now: number; z: number; color: string; opacity?: number }) {
+  if (pts.length < 2 || opacity <= 0) return null;
+  const ink = pts.map((p) => ({ x: p.x, y: p.y, p: Math.max(0.25, 1 - (now - p.t) / LASER_TAIL) }));
   return (
-    <g className="laser-trail" pointerEvents="none">
+    <g className="laser-trail" pointerEvents="none" opacity={opacity}>
       <path d={inkOutline(ink, 12 / z, { taper: false, pressure: true })} fill={color} opacity={0.35} filter="url(#trace-glow)" />
       <path d={inkOutline(ink, 5 / z, { taper: false, pressure: true })} fill={color} />
       <path d={inkOutline(ink, 1.8 / z, { taper: false, pressure: true })} fill="#fff" opacity={0.85} />
@@ -695,7 +811,7 @@ function RemoteLasers({ z }: { z: number }) {
     out.push(
       <g key={p.id}>
         {st.strokes.map((tr, i) => (
-          <LaserTrail key={i} pts={tr} now={now} z={z} color={p.color} />
+          <LaserTrail key={i} pts={tr} now={now} z={z} color={p.color} opacity={laserOpacity(st.strokes, now, down)} />
         ))}
         <LaserDot p={p.cursor} z={z} color={p.color} />
       </g>,
@@ -704,9 +820,14 @@ function RemoteLasers({ z }: { z: number }) {
   return <>{out}</>;
 }
 
-/** Inline note editor for a callout (Enter saves, Shift+Enter breaks the line). */
+/**
+ * Inline note editor for a callout, laid over its card: Enter (or Esc, or a
+ * click elsewhere) keeps the note, Shift+Enter breaks the line, Tab and
+ * Shift+Tab save and move on to the next or previous callout.
+ */
 function CalloutEditor({ s }: { s: ShapeItem }) {
   const view = useStore((st) => st.view);
+  const doc = useViewDoc();
   const [text, setText] = useState(s.text ?? '');
   const ref = useRef<HTMLTextAreaElement>(null);
   const done = useRef(false);
@@ -714,16 +835,28 @@ function CalloutEditor({ s }: { s: ShapeItem }) {
     ref.current?.focus();
     ref.current?.select();
   }, []);
-  const finish = () => {
+  const finish = (next?: string | null) => {
     if (done.current) return;
     done.current = true;
     const v = text.replace(/\s+$/, '');
     if (v !== (s.text ?? '')) mutate((d) => void ((d.items[s.id] as ShapeItem).text = v));
-    setX({ editing: null });
+    setX({ editing: next ?? null });
+    // the next note may be off screen: bring it into view
+    if (next) revealItems([next]);
   };
-  const fs = (s.fontSize ?? 14) * view.zoom;
-  const m = measureRich(text || 'M', s.fontSize ?? 14, 500);
-  const left = (s.x + 30) * view.zoom + view.x;
+  /** The callout before / after this one in step order. */
+  const neighbour = (dir: 1 | -1): string | null => {
+    const list = callouts(vdoc()).filter((c) => !c.locked);
+    const i = list.findIndex((c) => c.id === s.id);
+    return i < 0 || list.length < 2 ? null : list[(i + dir + list.length) % list.length].id;
+  };
+  const fs = s.fontSize ?? 14;
+  // laid out with the text being typed, so the editor sits where the card will be
+  const L = calloutLayout({ ...s, text: text || 'M' }, calloutAnchor(doc, s));
+  const card = L.card!;
+  const m = measureRich(card.text, fs, 500);
+  const wrap = s.wrapW && s.wrapW > 0;
+  const left = card.x * view.zoom + view.x;
   const top = s.y * view.zoom + view.y;
   return (
     <textarea
@@ -732,21 +865,25 @@ function CalloutEditor({ s }: { s: ShapeItem }) {
       style={{
         left,
         top,
-        fontSize: fs,
+        fontSize: fs * view.zoom,
         borderColor: inkColor(s.stroke, EDITOR_PALETTE),
-        width: Math.max(180, (m.w + 40) * view.zoom),
+        // as wide as the card, so lines wrap where the note will wrap
+        width: Math.max(140, card.w + (wrap ? 0 : 18)) * view.zoom,
         height: Math.max(28 * view.zoom, (m.h + 14) * view.zoom),
       }}
       value={text}
       placeholder="Note"
       onChange={(e) => setText(e.target.value)}
       onPointerDown={(e) => e.stopPropagation()}
-      onBlur={finish}
+      onBlur={() => finish()}
       onKeyDown={(e) => {
         e.stopPropagation();
         if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') {
           e.preventDefault();
           finish();
+        } else if (e.key === 'Tab') {
+          e.preventDefault();
+          finish(neighbour(e.shiftKey ? -1 : 1));
         }
       }}
     />

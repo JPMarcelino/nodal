@@ -16,7 +16,7 @@ import { FONT_STACKS } from '../model/fonts';
 import { defaultAlign, defaultValign, hasHeader, headerHeight, lineCap, lineJoin, measureTextShape, shapeText, textFaceStyle, textSize, textWeight, titleWidth } from '../model/shapeText';
 import { SymbolBody, PrimEl } from './SymbolGraphic';
 import { calloutAnchor, calloutLayout, leaderPath } from '../model/callout';
-import { inkCenterPath, inkOutline, inkPoints } from '../model/ink';
+import { inkCenterPath, inkOutline, inkPoints, inkShapePath } from '../model/ink';
 import { polyPath } from '../model/path';
 import { connectorD, isConnector, resolveConnector, type ConnectorPath } from '../model/connectors';
 import { rotateDeg, shapeBox, shapeTransform } from '../model/rotation';
@@ -643,18 +643,22 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number, con
       if (s.highlighter) {
         return (
           <g className="shape ink" data-id={s.id}>
-            <path d={inkCenterPath(pts)} fill="none" stroke={ink} strokeOpacity={0.36} strokeWidth={s.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+            <path d={s.inkShape ? inkShapePath(pts, s.inkShape) : inkCenterPath(pts)} fill="none" stroke={ink} strokeOpacity={0.36} strokeWidth={s.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
           </g>
         );
       }
       return (
         <g className="shape ink" data-id={s.id}>
-          <path d={inkOutline(pts, s.strokeWidth)} fill={ink} />
+          {s.inkShape ? (
+            <path d={inkShapePath(pts, s.inkShape)} fill="none" stroke={ink} strokeWidth={s.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+          ) : (
+            <path d={inkOutline(pts, s.strokeWidth)} fill={ink} />
+          )}
         </g>
       );
     }
     case 'callout': {
-      const L = calloutLayout(s);
+      const L = calloutLayout(s, ax !== undefined && ay !== undefined ? { x: ax, y: ay } : null);
       const fs = s.fontSize ?? 14;
       const leader = ax !== undefined && ay !== undefined ? leaderPath({ x: L.badge.cx, y: L.badge.cy }, L.badge.r, { x: ax, y: ay }) : null;
       return (
@@ -670,7 +674,7 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number, con
             <g className="callout-card">
               <rect x={L.card.x} y={L.card.y} width={L.card.w} height={L.card.h} rx={8} fill={palette.bg} stroke={ink} strokeWidth={1.25} />
               <rect x={L.card.x} y={L.card.y} width={L.card.w} height={L.card.h} rx={8} fill={ink} fillOpacity={0.07} />
-              <RichText text={(s.text ?? '').trim()} x={L.card.tx} y={L.card.ty} fontSize={fs} fill={s.textColor ? inkColor(s.textColor, palette) : palette.label} fontWeight={500} />
+              <RichText text={L.card.text} x={L.card.tx} y={L.card.ty} fontSize={fs} fill={s.textColor ? inkColor(s.textColor, palette) : palette.label} fontWeight={500} />
             </g>
           )}
           <circle cx={L.badge.cx} cy={L.badge.cy} r={L.badge.r} fill={ink} />

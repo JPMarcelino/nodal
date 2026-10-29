@@ -40,6 +40,7 @@ import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
 import { attachSpots, bendSlots, findGlue, isConnector, isFixed, resolveConnector, type GlueHit } from '../model/connectors';
 import { libraryDrag, placeHere } from '../ui/dragState';
+import { CALLOUT_MIN_WRAP, calloutAnchor, calloutLayout, makeAnchor } from '../model/callout';
 import { focusValueField } from '../store/commands';
 import { pulseAt, usePulses } from './pulses';
 
@@ -604,7 +605,15 @@ export function Canvas() {
       const b = shapeBox(s);
       return [{ h: 'e', p: fromShapeFrame(s, { x: b.x + b.w, y: b.y + b.h / 2 }) }];
     }
-    if (s.kind === 'callout') return [];
+    // a callout: its leader's end (drag it onto another part, pin or wire) and the note's outer edge (its wrap width)
+    if (s.kind === 'callout') {
+      const a = calloutAnchor(vdoc(), s);
+      const L = calloutLayout(s, a);
+      const out: { h: Handle; p: Point }[] = [];
+      if (a) out.push({ h: 'p2', p: a });
+      if (L.card) out.push({ h: 'e', p: { x: L.card.x < s.x ? L.card.x : L.card.x + L.card.w, y: L.card.y + L.card.h / 2 } });
+      return out;
+    }
     const { x, y, w, h } = s;
     const out: { h: Handle; p: Point }[] = [
       { h: 'nw', p: { x, y } },
@@ -1841,6 +1850,28 @@ export function Canvas() {
         // a turned shape snaps in its own frame (inside resizeInFrame), where the world grid doesn't line up
         const turned = shapeRot(g.base);
         const p = snapOn && !turned ? sp(w) : w;
+        if (g.base.kind === 'callout') {
+          const b = g.base;
+          if (g.handle === 'p2') {
+            // re-point the leader: a pin, else a wire or part under the pointer, else a fixed spot
+            const pin = findPort(w);
+            const under = pin ? null : hitItems(w).find((id) => vdoc().items[id]?.type === 'component' || vdoc().items[id]?.type === 'wire');
+            gestureUpdate((d) => {
+              const s = d.items[g.id] as ShapeItem;
+              const target = pin ? d.items[pin.comp] : under ? d.items[under] : null;
+              s.anchor = makeAnchor(d as CircuitDoc, target ?? null, pin ? pin.pt : under ? w : p);
+            });
+          } else {
+            gestureUpdate((d, base) => {
+              const s = d.items[g.id] as ShapeItem;
+              const card = calloutLayout(b, calloutAnchor(base as CircuitDoc, b)).card;
+              if (!card) return;
+              const width = card.x < b.x ? card.x + card.w - w.x : w.x - card.x;
+              s.wrapW = Math.max(CALLOUT_MIN_WRAP, Math.round(width - 22));
+            });
+          }
+          break;
+        }
         gestureUpdate((d) => {
           const s = d.items[g.id] as ShapeItem;
           const b = g.base;
@@ -2394,9 +2425,24 @@ export function Canvas() {
             !(singleShape.id === editingText && singleShape.kind === 'text') &&
             !(tool === 'node' && singleShape.kind === 'polygon') &&
             !(tool === 'select' && isConnector(singleShape)) &&
-            shapeHandles(singleShape).map((h) => (
-              <rect key={h.h} x={h.p.x - 4 / z} y={h.p.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className="handle" strokeWidth={1.5 / z} />
-            ))}
+            shapeHandles(singleShape).map((h) =>
+              singleShape.kind === 'callout' && h.h === 'p2' ? (
+                <circle key={h.h} cx={h.p.x} cy={h.p.y} r={5.5 / z} className="handle anchor-handle" strokeWidth={1.5 / z} />
+              ) : (
+                <rect key={h.h} x={h.p.x - 4 / z} y={h.p.y - 4 / z} width={8 / z} height={8 / z} rx={2 / z} className={singleShape.kind === 'callout' ? 'handle wrap-handle' : 'handle'} strokeWidth={1.5 / z} />
+              ),
+            )}
+          {/* what a callout being re-pointed will follow */}
+          {g?.kind === 'resize' &&
+            g.base.kind === 'callout' &&
+            g.handle === 'p2' &&
+            (() => {
+              const c = doc.items[g.id];
+              const tid = c?.type === 'shape' ? c.anchor?.id : undefined;
+              const t = tid ? doc.items[tid] : undefined;
+              const b = t && itemBounds(doc, t);
+              return b ? <rect x={b.x - 5 / z} y={b.y - 5 / z} width={b.w + 10 / z} height={b.h + 10 / z} rx={5 / z} className="explain-hover" fill="none" strokeWidth={1.5 / z} /> : null;
+            })()}
           {singleShape &&
             !singleShape.locked &&
             tool === 'select' &&

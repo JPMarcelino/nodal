@@ -27,15 +27,15 @@ const REASON: typeof TOOLS = [
 export const EXPLAIN_HINTS: Record<ExplainTool, JSX.Element> = {
   pen: (
     <>
-      Drag to draw · hold still at the end to snap to a line, ellipse or box · <kbd>Shift</kbd> straight · <kbd>1</kbd>–<kbd>7</kbd> colour · <kbd>[</kbd> <kbd>]</kbd> size
+      Drag to draw · hold still at the end to snap to a line, ellipse or box, then keep holding to resize and turn it (<kbd>Shift</kbd>: circle, square, 15°) · <kbd>1</kbd>–<kbd>7</kbd> colour · <kbd>[</kbd> <kbd>]</kbd> size
     </>
   ),
   highlighter: (
     <>
-      Drag to highlight (drawn under the circuit) · hold still to straighten · <kbd>Shift</kbd> straight
+      Drag to highlight (drawn under the circuit) · hold still to straighten, then keep holding to adjust · <kbd>Shift</kbd> straight
     </>
   ),
-  laser: <>Drag to point · trails fade after a moment · visible to others in a live session</>,
+  laser: <>Drag to point · marks stay while you point and fade together when you stop · visible to others in a live session</>,
   eraser: <>Drag over ink or callouts to erase them</>,
   trace: (
     <>
@@ -44,7 +44,7 @@ export const EXPLAIN_HINTS: Record<ExplainTool, JSX.Element> = {
   ),
   callout: (
     <>
-      Click a part, pin or wire to add a numbered note · drag to place it · <kbd>F5</kbd> presents the notes in order
+      Click a part, pin or wire to add a numbered note · click a note to edit it, drag to move it, drag its pin end to re-point it · <kbd>Tab</kbd> next note · <kbd>F5</kbd> presents them
     </>
   ),
 };
