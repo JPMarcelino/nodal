@@ -149,13 +149,16 @@ The web app can be installed (Chrome/Edge: the install icon in the address bar; 
 
 ### Interface
 - Dark and light themes, compact/normal/large UI sizes, minimap, focus mode
-- **Command palette** (**Ctrl+K**): run any command or place any part by name
+- **Command palette** (**Ctrl+K**): run any command or place any part by name. Results are ranked (label and word starts first) with the matched letters highlighted; with nothing typed it lists what you used recently, then every command by menu. Parts show a thumbnail, on/off commands show their state, and **Find** (**Ctrl+F**) works the same way.
+- **Tooltips** name every button with its shortcut drawn as keys; the tool rail's also say what the tool does. Moving along the rail hands the tooltip from button to button without waiting again.
+- **Smooth camera**: zoom to fit, zoom to selection, the zoom keys and every jump from Find, Check, Nets or Layers glide there. The zoom level in the top bar opens a zoom menu (fit, selection, 50–400 %). Wheel and pinch zoom stay immediate; *reduce motion* in your system settings turns the glides off.
 - **Customisable keyboard shortcuts** (Settings → Keyboard shortcuts)
 - **Tool lock** (padlock at the left of the tool rail, **Shift+Q**): placing a part keeps it armed for the next click instead of returning to Select (the drawing tools — wire, shapes, text — already stay active). **Esc** returns to Select. Remembered between sessions.
-- **Hint line**: a quiet line at the bottom of the canvas names the next useful step for the tool and selection in hand (with your own key bindings). Turn it off in Settings → *Show hints*.
+- **Hint line**: a quiet line at the bottom of the canvas names the next useful step for the tool and selection in hand, with its keys drawn as keycaps (your own bindings). Turn it off in Settings → *Show hints*.
 - **View mode** (**Alt+Shift+R**, or *View → View mode*): the circuit becomes read-only — select, hover, pan, zoom, find, trace and highlight nets, copy and export all still work, but nothing moves, gets deleted, wired, placed, pasted, edited in the inspector or undone. The tool rail keeps only Select and Pan, edit commands hide from the palette and menus, and a **View mode** pill in the top bar (click to edit again) and the hint line say so. It isn't remembered after a reload. Guests of a view-only live session are read-only regardless.
 - **Stats** (**Alt+/**, or *View → Stats*): a small floating panel with the selection's item count, bounding box (X, Y, W × H in px, as in the inspector) and a lone part's rotation; and for the page and the whole circuit the number of parts (power symbols, net labels, ports and flags are counted separately), wires and their total length, nets that join something, and pages.
-- **Welcome screen** on an empty page: place a part, open or import a file, the command palette, the example circuit or a live session. It goes as soon as anything is placed.
+- **Welcome screen** on an empty page: place a part, open or import a file, the command palette, the example circuit or a live session, your most recent circuits on this device (with thumbnails), and a row of common parts that you can place with one click. It goes as soon as anything is placed. A first visit opens the example circuit with a small card that offers a blank one instead.
+- **Feedback as you work**: a short ring where a part is set down or a wire snaps onto a pin; dragging a part from the library shows it snapped where it will land; double-click or **F2** jumps to the value field with a glow; a tick replaces the unsaved dot after saving; inside a group a breadcrumb shows where you are and leaves any level in one click.
 
 ## Keyboard shortcuts
 
