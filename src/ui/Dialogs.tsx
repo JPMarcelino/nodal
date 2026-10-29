@@ -27,7 +27,7 @@ import { BUILTIN_SYMBOLS } from '../model/symbols';
 import type { SymbolDef } from '../model/types';
 import * as A from '../store/actions';
 import { COMMANDS, activeKeymap, eventToCombo, keysFor, prettyKey, setActiveKeymap, type Command } from '../store/commands';
-import { readOnly, set, setPrefs, toast, useStore, vdoc, type ExportScope } from '../store/store';
+import { readOnly, set, setPrefs, setTheme, toast, useStore, vdoc, type ExportScope } from '../store/store';
 import { Field, Kbd, Segmented, Toggle } from './controls';
 import { FindDialog } from './FindDialog';
 import { LiveSession } from './LiveSession';
@@ -551,7 +551,7 @@ export function SettingsDialog() {
                 { value: 'dark', label: 'Dark' },
                 { value: 'light', label: 'Light' },
               ]}
-              onChange={(theme) => setPrefs({ theme })}
+              onChange={(theme) => setTheme(theme)}
             />
           </Field>
           <Field label="Mouse wheel">

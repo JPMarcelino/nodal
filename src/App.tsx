@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type CSSProperties } from 'react';
 import { Canvas, canvasKeys } from './canvas/Canvas';
 import { isDesktop } from './io/files';
 import { importDroppedFiles } from './io/importFiles';
@@ -19,6 +19,7 @@ import { AskHost } from './ui/Ask';
 import { SvgImportHost } from './ui/SvgImportDialog';
 import { StatsPanel } from './ui/StatsPanel';
 import { Tooltips } from './ui/Tooltips';
+import { usePanelWidth } from './ui/PanelResizer';
 
 function isTyping(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
@@ -38,6 +39,9 @@ export function App() {
   const editingSymbol = useStore((s) => s.editingSymbol);
   const name = useStore((s) => s.doc.name);
   const dirty = useStore((s) => s.dirty);
+  // where the panels float over the canvas (narrow windows), the stage's own overlays keep clear of them
+  const leftW = usePanelWidth('left', useStore((s) => s.prefs.leftWidth));
+  const rightW = usePanelWidth('right', useStore((s) => s.prefs.rightWidth));
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -119,7 +123,7 @@ export function App() {
   return (
     <div className="app" onContextMenu={(e) => e.preventDefault()}>
       <TopBar />
-      <div className="workspace">
+      <div className="workspace" style={{ '--lw': `${leftW}px`, '--rw': `${rightW}px` } as CSSProperties}>
         {left && <LeftPanel />}
         <main className={showTimeline ? 'stage with-timeline' : 'stage'}>
           <ToolRail />

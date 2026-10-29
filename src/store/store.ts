@@ -577,6 +577,20 @@ export function imageExportOptions(): { theme: 'light' | 'dark'; background: boo
   return { theme: p.exportTheme ?? p.theme, background: p.exportBackground ?? true, scale: p.exportScale ?? 3, scene: p.exportScene ?? true };
 }
 
+/** Switches the theme with a quick cross-fade where the browser can (View Transitions), at once elsewhere. */
+export function setTheme(theme: Prefs['theme']) {
+  if (theme === S().prefs.theme) return;
+  const apply = () => {
+    document.documentElement.dataset.theme = theme;
+    setPrefs({ theme });
+  };
+  const doc = typeof document !== 'undefined' ? (document as Document & { startViewTransition?: (cb: () => void) => unknown }) : null;
+  const still = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (doc?.startViewTransition && !still) doc.startViewTransition(apply);
+  else if (doc) apply();
+  else setPrefs({ theme });
+}
+
 export function setPrefs(p: Partial<Prefs>) {
   set((s) => ({ prefs: { ...s.prefs, ...p } }));
   localStorage.setItem(LS.prefs, JSON.stringify(S().prefs));
