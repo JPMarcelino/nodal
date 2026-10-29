@@ -84,7 +84,7 @@ export function SymbolPopup({
         <span className="sym-popup-name">{def.name}</span>
         <span className="sym-popup-cat">{def.category}</span>
       </div>
-      <button className="sym-popup-stage" onClick={() => onPick(active)} title={pinned ? 'Place this type' : 'Click to place'}>
+      <button className="sym-popup-stage" onClick={() => onPick(active)} aria-label={pinned ? 'Place this type' : 'Place'}>
         <SymbolPreview def={active} size={pinned ? 150 : 136} ports />
         <span className="sym-popup-value">{active.value || active.prefix}</span>
       </button>
@@ -101,7 +101,6 @@ export function SymbolPopup({
                 className={o.id === active.id ? 'sym-type active' : 'sym-type'}
                 onMouseEnter={() => setActive(o)}
                 onClick={() => onPick(o)}
-                title={`Place ${label}`}
               >
                 <span className="sym-type-prev">
                   <SymbolPreview def={o} size={34} />

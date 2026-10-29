@@ -92,12 +92,13 @@ function Tile({ def }: { def: SymbolDef }) {
           set({ placing: null });
           A.placeAtCenter(def.id);
         }}
-        title={`${def.name}${def.value ? ` — ${def.value}` : ''}${variants.length ? `\n${variants.length + 1} types — click to choose` : ''}\nClick to place · drag onto canvas · double-click to drop in view centre`}
+        // the hover card says all this; the name stays for screen readers
+        aria-label={`${def.name}${def.value ? ` — ${def.value}` : ''}`}
       >
         <SymbolPreview def={def} size={44} />
         <span className="tile-name">{def.name}</span>
         {variants.length > 0 && (
-          <span className="tile-types" title={`${variants.length + 1} types available`}>
+          <span className="tile-types">
             <Boxes size={9} />
             {variants.length + 1}
           </span>
