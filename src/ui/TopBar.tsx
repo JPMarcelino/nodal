@@ -28,6 +28,7 @@ import {
   LockOpen,
   Eye,
   X as XIcon,
+  ChevronDown,
 } from 'lucide-react';
 import { isExplainTool, useExplain } from '../store/explain';
 import { useEffect, useRef, useState } from 'react';
@@ -129,6 +130,61 @@ function MenuBar() {
   );
 }
 
+/** The zoom level; opens the zoom commands and a few fixed levels. */
+function ZoomMenu({ zoom }: { zoom: number }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const hasSel = useStore((s) => s.selection.length > 0);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  const item = (label: string, run: () => void, key?: string, disabled = false, on = false) => (
+    <button
+      key={label}
+      className="dropdown-item"
+      disabled={disabled}
+      onClick={() => {
+        setOpen(false);
+        run();
+      }}
+    >
+      <span className="dropdown-label">
+        <span className="dropdown-check">{on && <Check size={13} />}</span>
+        {label}
+      </span>
+      {key && <kbd>{prettyKey(key)}</kbd>}
+    </button>
+  );
+  const pct = Math.round(zoom * 100);
+  return (
+    <div className="menu-root" ref={ref}>
+      <button className={open ? 'zoom-chip open' : 'zoom-chip'} onClick={() => setOpen(!open)} title="Zoom" aria-haspopup="menu" aria-expanded={open}>
+        {pct}%
+        <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="dropdown zoom-dropdown" role="menu">
+          {item('Zoom in', () => A.zoomStep(1.25), keysFor('view.zoomIn')[0])}
+          {item('Zoom out', () => A.zoomStep(0.8), keysFor('view.zoomOut')[0])}
+          <div className="dropdown-sep" />
+          {item('Zoom to fit', () => A.glideFit(), keysFor('view.fit')[0])}
+          {item('Zoom to selection', () => A.glideFit(S().selection), keysFor('view.fitSel')[0], !hasSel)}
+          <div className="dropdown-sep" />
+          {[0.5, 1, 1.5, 2, 4].map((z) => item(`${z * 100}%`, () => A.zoomTo(z), z === 1 ? keysFor('view.100')[0] : undefined, false, pct === z * 100))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DocName() {
   const name = useStore((s) => s.doc.name);
   const dirty = useStore((s) => s.dirty);
@@ -212,9 +268,7 @@ export function TopBar() {
           <Redo2 size={16} />
         </button>
         <span className="divider" />
-        <button className="zoom-chip" onClick={() => A.fitView()} title="Zoom to fit (F)">
-          {Math.round(zoom * 100)}%
-        </button>
+        <ZoomMenu zoom={zoom} />
         <button className={left ? 'icon-btn active' : 'icon-btn'} onClick={() => set({ leftPanel: !left })} title="Toggle library (Ctrl+B)">
           <PanelLeft size={16} />
         </button>

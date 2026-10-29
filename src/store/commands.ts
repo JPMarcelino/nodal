@@ -177,10 +177,10 @@ export const COMMANDS: Command[] = [
   { id: 'wire.corners', label: 'Toggle rounded wire corners', category: 'Wire', keys: ['Mod+Shift+K'], run: toggleCorners, checked: () => vdoc().settings.wire.radius > 0 },
 
   // View
-  { id: 'view.zoomIn', label: 'Zoom in', category: 'View', keys: ['=', 'Mod+=', '+'], cadence: ['[', 'Mod+=', '='], run: () => A.zoomBy(1.25) },
-  { id: 'view.zoomOut', label: 'Zoom out', category: 'View', keys: ['-', 'Mod+-'], cadence: [']', 'Shift+Z', 'Mod+-', '-'], run: () => A.zoomBy(0.8) },
-  { id: 'view.fit', label: 'Zoom to fit', category: 'View', keys: ['Shift+1', 'F'], run: () => A.fitView() },
-  { id: 'view.fitSel', label: 'Zoom to selection', category: 'View', keys: ['Shift+2'], run: () => A.fitView(S().selection) },
+  { id: 'view.zoomIn', label: 'Zoom in', category: 'View', keys: ['=', 'Mod+=', '+'], cadence: ['[', 'Mod+=', '='], run: () => A.zoomStep(1.25) },
+  { id: 'view.zoomOut', label: 'Zoom out', category: 'View', keys: ['-', 'Mod+-'], cadence: [']', 'Shift+Z', 'Mod+-', '-'], run: () => A.zoomStep(0.8) },
+  { id: 'view.fit', label: 'Zoom to fit', category: 'View', keys: ['Shift+1', 'F'], run: () => A.glideFit() },
+  { id: 'view.fitSel', label: 'Zoom to selection', category: 'View', keys: ['Shift+2'], run: () => A.glideFit(S().selection) },
   { id: 'view.100', label: 'Zoom to 100%', category: 'View', keys: ['Mod+0', 'Shift+0'], run: () => A.zoomTo(1) },
   { id: 'view.refs', label: 'Show part names', category: 'View', keys: ['Alt+N'], run: () => toggleSetting('hideRefs', 'Part names'), checked: () => !vdoc().settings.hideRefs },
   { id: 'view.values', label: 'Show part values', category: 'View', keys: ['Alt+U'], run: () => toggleSetting('hideValues', 'Part values'), checked: () => !vdoc().settings.hideValues },

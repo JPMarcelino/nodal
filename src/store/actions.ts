@@ -40,7 +40,7 @@ import type { CircuitDoc, Item, Point, Rect, ShapeItem, Tool, WireAngle } from '
 import { PASTE_IMAGE_RE, pasteClipboardContent } from '../io/clipboardPaste';
 import { fragmentFromText, writePictureClipboard } from '../io/clipboardCopy';
 import { viewCentre } from '../io/importFiles';
-import { S, activePage, inGesture, mutate, pushRecent, readOnly, readOnlyNotice, viewModeKey, select, set, setPage, setPrefs, toast, vdoc, imageExportOptions } from './store';
+import { S, activePage, inGesture, mutate, pushRecent, readOnly, readOnlyNotice, viewModeKey, select, set, setPage, setPrefs, toast, vdoc, imageExportOptions, type View } from './store';
 import { addPage, docPages, editPage, movePage, pageIndex, pageItemIds, renamePage } from '../model/pages';
 import { deletePage, duplicatePage, moveItemsToPage } from '../model/pageOps';
 import { confirmDelete } from '../ui/Ask';
@@ -683,37 +683,112 @@ export function updateItems(ids: Iterable<string>, patch: (it: Item) => void, op
 /* View                                                                */
 /* ------------------------------------------------------------------ */
 
-export function zoomBy(factor: number, cx?: number, cy?: number) {
+/* ------------------------------------------------------------------ */
+/* Camera                                                              */
+/* ------------------------------------------------------------------ */
+
+let glideFrame = 0;
+/** The view the running glide set last; anything else setting the view (a pan, a wheel) stops it. */
+let glideLast: View | null = null;
+
+const canGlide = () =>
+  typeof requestAnimationFrame === 'function' && typeof window !== 'undefined' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches && !document.hidden;
+
+/**
+ * Moves the camera to `to` over a short ease, zooming about the path between
+ * the two views (zoom is eased in log space so it feels even). Jumps straight
+ * there where animation isn't possible or wanted; a pan or zoom by the user
+ * mid-way takes over.
+ */
+export function glideView(to: View, ms = 280) {
+  if (glideFrame) cancelAnimationFrame(glideFrame);
+  glideFrame = 0;
+  const from = S().view;
+  const { canvasSize } = S();
+  const same = Math.abs(from.zoom - to.zoom) < 1e-4 && Math.abs(from.x - to.x) < 0.5 && Math.abs(from.y - to.y) < 0.5;
+  if (same || !canGlide()) return set({ view: to });
+  // the world point at the middle of the screen, before and after
+  const cx = canvasSize.w / 2;
+  const cy = canvasSize.h / 2;
+  const a = { x: (cx - from.x) / from.zoom, y: (cy - from.y) / from.zoom };
+  const b = { x: (cx - to.x) / to.zoom, y: (cy - to.y) / to.zoom };
+  const lz0 = Math.log(from.zoom);
+  const lz1 = Math.log(to.zoom);
+  const t0 = performance.now();
+  glideLast = from;
+  const step = (now: number) => {
+    if (S().view !== glideLast) {
+      glideFrame = 0;
+      return; // someone else moved the view
+    }
+    const t = Math.min(1, (now - t0) / ms);
+    const e = 1 - Math.pow(1 - t, 3);
+    const zoom = Math.exp(lz0 + (lz1 - lz0) * e);
+    const wx = a.x + (b.x - a.x) * e;
+    const wy = a.y + (b.y - a.y) * e;
+    const v = t >= 1 ? to : { zoom, x: cx - wx * zoom, y: cy - wy * zoom };
+    glideLast = v;
+    set({ view: v });
+    glideFrame = t < 1 ? requestAnimationFrame(step) : 0;
+  };
+  glideFrame = requestAnimationFrame(step);
+}
+
+function zoomedView(factor: number, cx?: number, cy?: number): View {
   const { view, canvasSize } = S();
   const px = cx ?? canvasSize.w / 2;
   const py = cy ?? canvasSize.h / 2;
   const zoom = Math.min(8, Math.max(0.1, view.zoom * factor));
   const k = zoom / view.zoom;
-  set({ view: { zoom, x: px - (px - view.x) * k, y: py - (py - view.y) * k } });
+  return { zoom, x: px - (px - view.x) * k, y: py - (py - view.y) * k };
+}
+
+/** Zooms about a point at once (wheel, pinch). */
+export function zoomBy(factor: number, cx?: number, cy?: number) {
+  set({ view: zoomedView(factor, cx, cy) });
+}
+
+/** One zoom step from a key or button, eased; repeated presses build on where the glide is heading. */
+let stepTarget: View | null = null;
+export function zoomStep(factor: number) {
+  const base = glideFrame && stepTarget ? stepTarget : S().view;
+  const { canvasSize } = S();
+  const zoom = Math.min(8, Math.max(0.1, base.zoom * factor));
+  const k = zoom / base.zoom;
+  const px = canvasSize.w / 2;
+  const py = canvasSize.h / 2;
+  stepTarget = { zoom, x: px - (px - base.x) * k, y: py - (py - base.y) * k };
+  glideView(stepTarget, 180);
 }
 
 export function zoomTo(zoom: number) {
-  zoomBy(zoom / S().view.zoom);
+  glideView(zoomedView(zoom / S().view.zoom));
 }
 
-export function fitView(ids?: string[]) {
+/** The view that fits the page (or `ids`) on screen. */
+function fitTarget(ids?: string[]): View {
   const { canvasSize } = S();
   const doc = vdoc();
   const whole = !ids || !ids.length;
   const b = whole ? unionRects([docBounds(doc), sheetRect(doc.settings)].filter((r): r is Rect => !!r)) : docBounds(doc, ids);
-  if (!b) {
-    set({ view: { x: canvasSize.w / 2, y: canvasSize.h / 2, zoom: 1 } });
-    return;
-  }
+  if (!b) return { x: canvasSize.w / 2, y: canvasSize.h / 2, zoom: 1 };
   const pad = 60;
   const zoom = Math.min(3, Math.max(0.1, Math.min((canvasSize.w - pad * 2) / Math.max(b.w, 1), (canvasSize.h - pad * 2) / Math.max(b.h, 1))));
-  set({
-    view: {
-      zoom,
-      x: canvasSize.w / 2 - (b.x + b.w / 2) * zoom,
-      y: canvasSize.h / 2 - (b.y + b.h / 2) * zoom,
-    },
-  });
+  return {
+    zoom,
+    x: canvasSize.w / 2 - (b.x + b.w / 2) * zoom,
+    y: canvasSize.h / 2 - (b.y + b.h / 2) * zoom,
+  };
+}
+
+/** Fits the page (or `ids`) on screen at once: for a circuit that was just opened. */
+export function fitView(ids?: string[]) {
+  set({ view: fitTarget(ids) });
+}
+
+/** Fits the page (or `ids`) on screen with an eased camera move: for the zoom-to-fit commands. */
+export function glideFit(ids?: string[]) {
+  glideView(fitTarget(ids));
 }
 
 /** Brings items (or a point) into view at a readable zoom, without zooming in further than needed. */
@@ -727,7 +802,7 @@ export function revealItems(ids: string[], at?: Point | null) {
   const fit = Math.min((canvasSize.w - pad * 2) / Math.max(box.w, 1), (canvasSize.h - pad * 2) / Math.max(box.h, 1));
   const zoom = Math.min(Math.max(view.zoom, 1), Math.max(0.15, fit), 2.5);
   const c = at && b && box.w * zoom > canvasSize.w - pad * 2 ? at : { x: box.x + box.w / 2, y: box.y + box.h / 2 };
-  set({ view: { zoom, x: canvasSize.w / 2 - c.x * zoom, y: canvasSize.h / 2 - c.y * zoom } });
+  glideView({ zoom, x: canvasSize.w / 2 - c.x * zoom, y: canvasSize.h / 2 - c.y * zoom });
 }
 
 export function symbolOfSelection() {
