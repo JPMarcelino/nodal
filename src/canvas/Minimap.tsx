@@ -18,6 +18,8 @@ export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
   const ref = useRef<SVGSVGElement>(null);
   // panning and zooming only move the viewport box; the drawing is measured once per edit
   const b = useMemo(() => unionRects([docBounds(doc), sheetRect(doc.settings)].filter((r): r is Rect => !!r)), [doc]);
+  // nothing to map on an empty page (the welcome screen is there instead)
+  if (!b) return null;
   const vp = { x: -view.x / view.zoom, y: -view.y / view.zoom, w: size.w / view.zoom, h: size.h / view.zoom };
   const all = b
     ? {

@@ -18,6 +18,7 @@ import { useExplain } from './store/explain';
 import { AskHost } from './ui/Ask';
 import { SvgImportHost } from './ui/SvgImportDialog';
 import { StatsPanel } from './ui/StatsPanel';
+import { Tooltips } from './ui/Tooltips';
 
 function isTyping(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
@@ -68,7 +69,9 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      const combo = eventToCombo(e);
+      let combo = eventToCombo(e);
+      // "?" typed on a layout where it isn't Shift+/ (or reported without Shift) still means Shift+/
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) combo = 'Shift+/';
       if (S().dialog) return; // dialogs own the keyboard
       if (isTyping(e)) {
         const cmd = findCommand(combo);
@@ -135,6 +138,7 @@ export function App() {
       <Toasts />
       <AskHost />
       <SvgImportHost />
+      <Tooltips />
     </div>
   );
 }

@@ -95,6 +95,8 @@ export interface Toast {
   id: number;
   text: string;
   kind: 'info' | 'error' | 'success';
+  /** How long it stays up, in ms. */
+  ms?: number;
 }
 
 export interface AppState {
@@ -550,8 +552,14 @@ export function select(ids: string[], mode: 'replace' | 'add' | 'toggle' = 'repl
 let toastId = 0;
 export function toast(text: string, kind: Toast['kind'] = 'info') {
   const id = ++toastId;
-  set((s) => ({ toasts: [...s.toasts, { id, text, kind }] }));
-  setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === 'error' ? 6000 : 2600);
+  const ms = kind === 'error' ? 6000 : 2600;
+  // the same message again replaces the old one instead of stacking, and only the last few stay up
+  set((s) => ({ toasts: [...s.toasts.filter((t) => t.text !== text), { id, text, kind, ms }].slice(-4) }));
+  setTimeout(() => dismissToast(id), ms);
+}
+
+export function dismissToast(id: number) {
+  set((s) => (s.toasts.some((t) => t.id === id) ? { toasts: s.toasts.filter((t) => t.id !== id) } : {}));
 }
 
 /* ------------------------------------------------------------------ */

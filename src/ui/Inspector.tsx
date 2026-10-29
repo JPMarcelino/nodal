@@ -1337,7 +1337,15 @@ function SectionNav({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement> 
   };
   return (
     <nav className="section-nav" aria-label="Panel sections">
-      <div className="section-chips" ref={chipsRef}>
+      <div
+        className="section-chips"
+        ref={chipsRef}
+        // a mouse wheel scrolls the row sideways (it has no scrollbar)
+        onWheel={(ev) => {
+          const el = ev.currentTarget;
+          if (Math.abs(ev.deltaY) > Math.abs(ev.deltaX) && el.scrollWidth > el.clientWidth) el.scrollLeft += ev.deltaY;
+        }}
+      >
         {list.map((e) => (
           <button key={e.id} type="button" className={`section-chip${e.id === active ? ' active' : ''}${e.open ? '' : ' folded'}`} title={e.open ? `Go to ${e.title}` : `Show ${e.title}`} onClick={() => go(e.id)}>
             {e.title}

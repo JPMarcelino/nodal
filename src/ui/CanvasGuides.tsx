@@ -1,8 +1,13 @@
-import { memo } from 'react';
-import { Command, Cpu, FolderOpen, Radio, Search, Upload } from 'lucide-react';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { Command, Cpu, FileText, FolderOpen, Radio, Search, Upload } from 'lucide-react';
+import { SymbolPreview } from '../canvas/SymbolGraphic';
+import { exportSvg } from '../io/export';
+import { listOtherCircuits, onVersionsChanged } from '../io/versionStore';
+import type { Version } from '../model/versions';
+import * as A from '../store/actions';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, Item } from '../model/types';
-import { openExample } from '../io/fileActions';
+import { openExample, openFromHistory } from '../io/fileActions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { isExplainTool, useExplain } from '../store/explain';
 import { readOnly, set, useStore } from '../store/store';
@@ -85,18 +90,102 @@ export const HintBar = memo(function HintBar({ gesture, editingText }: { gesture
     shapePreset,
     banner,
     viewMode,
-    key: keyLabel,
+    key: markedKey,
   });
   if (!text) return null;
   return (
     <div className={minimap ? 'hint-bar with-minimap' : 'hint-bar'} role="status" aria-live="polite">
-      {text}
+      <HintText text={text} />
     </div>
   );
 });
 
+/* Keys in a hint are wrapped in these (invisible) marks, so the line can draw them as keycaps. */
+const KEY_OPEN = '\u2063';
+const KEY_CLOSE = '\u2064';
+const markedKey = (idOrCombo: string) => {
+  const label = keyLabel(idOrCombo);
+  return label ? `${KEY_OPEN}${label}${KEY_CLOSE}` : '';
+};
+
+/** A hint with its keys as keycaps and its steps set apart by quiet dots. */
+function HintText({ text }: { text: string }) {
+  const steps = text.split(' · ');
+  return (
+    <>
+      {steps.map((step, i) => (
+        <span key={i} className="hint-step">
+          {i > 0 && <span className="hint-dot"> · </span>}
+          {step.split(new RegExp(`(${KEY_OPEN}[^${KEY_CLOSE}]*${KEY_CLOSE})`)).map((part, j) =>
+            part.startsWith(KEY_OPEN) ? <kbd key={j}>{part.slice(1, -1)}</kbd> : part,
+          )}
+        </span>
+      ))}
+    </>
+  );
+}
+
 /** Runs a command by id (they all exist; a missing one would just do nothing). */
 const run = (id: string) => COMMAND_MAP.get(id)?.run();
+
+/** Parts most circuits start with: one click arms them for placing. */
+const QUICK_PARTS: [id: string, label: string][] = [
+  ['resistor', 'Resistor'],
+  ['capacitor', 'Capacitor'],
+  ['led', 'LED'],
+  ['diode', 'Diode'],
+  ['npn', 'NPN'],
+  ['opamp', 'Op-amp'],
+  ['vcc', 'Supply'],
+  ['gnd', 'Ground'],
+];
+
+/** "3 min ago", "Yesterday", "12 Mar" */
+function ago(t: number): string {
+  const s = (Date.now() - t) / 1000;
+  if (s < 60) return 'Just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 2 * 86400) return 'Yesterday';
+  return new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+/** Circuits kept on this device (newest first), loaded once the welcome screen shows. */
+function useRecentCircuits(shown: boolean, docId: string | undefined): Version[] {
+  const [list, setList] = useState<Version[]>([]);
+  useEffect(() => {
+    if (!shown) return;
+    let alive = true;
+    const load = () => listOtherCircuits(docId, 3).then((vs) => alive && setList(vs), () => {});
+    void load();
+    const off = onVersionsChanged(load);
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [shown, docId]);
+  return list;
+}
+
+function RecentCard({ v, theme }: { v: Version; theme: 'light' | 'dark' }) {
+  const src = useMemo(() => {
+    try {
+      const { svg } = exportSvg(viewDoc(v.doc), { theme, background: false, padding: 16 });
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    } catch {
+      return null;
+    }
+  }, [v, theme]);
+  return (
+    <button className="welcome-recent" onClick={() => void openFromHistory(v.doc)} title={`Open “${v.doc.name}”`}>
+      <span className="welcome-thumb">{src ? <img src={src} alt="" draggable={false} /> : <FileText size={18} />}</span>
+      <span className="welcome-recent-text">
+        <span className="welcome-recent-name">{v.doc.name}</span>
+        <span className="welcome-recent-time">{ago(v.t)}</span>
+      </span>
+    </button>
+  );
+}
 
 /**
  * Shown over an empty page: the name and the first things to do. Only its
@@ -105,6 +194,10 @@ const run = (id: string) => COMMAND_MAP.get(id)?.run();
  */
 export function WelcomeScreen() {
   const shown = useWelcomeShown();
+  const docId = useStore((s) => s.doc.id);
+  const docSymbols = useStore((s) => s.doc.symbols);
+  const theme = useStore((s) => s.prefs.theme);
+  const recent = useRecentCircuits(shown, docId);
   useStore((s) => s.prefs.keymap);
   useStore((s) => s.prefs.keymapCadence);
   if (!shown) return null;
@@ -117,24 +210,63 @@ export function WelcomeScreen() {
     { icon: <Cpu size={16} />, label: 'Open the example circuit', run: () => void openExample() },
     { icon: <Radio size={16} />, label: 'Join a live session…', run: () => set({ dialog: 'share' }) },
   ];
+  const parts = QUICK_PARTS.map(([id, label]) => ({ def: getSymbol({ symbols: docSymbols }, id), label })).filter((p) => p.def.id !== '__missing');
+  const steps: { n: number; text: string; key?: string }[] = [
+    { n: 1, text: 'Place parts', key: k('view.search') },
+    { n: 2, text: 'Drag from a pin to wire', key: k('tool.wire') },
+    { n: 3, text: 'Export or share', key: k('file.export') },
+  ];
   return (
     <div className="welcome" aria-label="Welcome">
       <div className="welcome-inner">
-        <div className="welcome-card">
+        <div className="welcome-card" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
           <div className="welcome-brand">
             <Logo size={34} />
             <span>Nodal</span>
           </div>
           <div className="welcome-sub">Place parts, then wire their pins together.</div>
-          <div className="welcome-actions" role="group" aria-label="Get started" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-            {actions.map((a) => (
-              <button key={a.label} className="welcome-btn" onClick={a.run}>
-                {a.icon}
-                <span>{a.label}</span>
-                {a.key && <kbd>{a.key}</kbd>}
-              </button>
-            ))}
+          <div className={recent.length ? 'welcome-cols two' : 'welcome-cols'}>
+            <div className="welcome-col">
+              <div className="welcome-heading">Start</div>
+              <div className="welcome-actions" role="group" aria-label="Get started">
+                {actions.map((a) => (
+                  <button key={a.label} className="welcome-btn" onClick={a.run}>
+                    {a.icon}
+                    <span>{a.label}</span>
+                    {a.key && <kbd>{a.key}</kbd>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {recent.length > 0 && (
+              <div className="welcome-col welcome-recents">
+                <div className="welcome-heading">Recent on this device</div>
+                {recent.map((v) => (
+                  <RecentCard key={v.id} v={v} theme={theme} />
+                ))}
+              </div>
+            )}
           </div>
+          <div className="welcome-parts" role="group" aria-label="Quick parts">
+            <div className="welcome-heading">Drop in a part</div>
+            <div className="welcome-part-row">
+              {parts.map(({ def, label }) => (
+                <button key={def.id} className="welcome-part" onClick={() => A.startPlacing(def.id)} title={`Place: ${def.name}`}>
+                  <SymbolPreview def={def} size={30} pad={2} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <ol className="welcome-steps">
+            {steps.map((st) => (
+              <li key={st.n}>
+                <span className="welcome-step-n">{st.n}</span>
+                {st.text}
+                {st.key && <kbd>{st.key}</kbd>}
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
     </div>
