@@ -4751,7 +4751,7 @@ select.input {
 
 .explain-dock-wrap {
   position: absolute;
-  left: 50%;
+  left: calc(var(--inset-l) + (100% - var(--inset-l) - var(--inset-r)) / 2);
   bottom: 16px;
   transform: translateX(-50%);
   z-index: 5;
@@ -4759,8 +4759,14 @@ select.input {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  max-width: calc(100% - 32px);
+  max-width: calc(100% - var(--inset-l) - var(--inset-r) - 32px);
   pointer-events: none;
+}
+
+/* the minimap steps up out of the way of the explain dock and its hint */
+.canvas-wrap:has(.explain-dock-wrap) .minimap {
+  bottom: 118px;
+  transition: bottom 0.2s ease;
 }
 
 .explain-dock-wrap > .explain-dock {
