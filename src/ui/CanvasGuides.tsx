@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { Command, Cpu, FileText, FolderOpen, Radio, Search, Upload } from 'lucide-react';
+import { Command, Cpu, FilePlus2, FileText, FolderOpen, MousePointerClick, Radio, Search, Sparkles, Spline, Upload, X } from 'lucide-react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { exportSvg } from '../io/export';
 import { listOtherCircuits, onVersionsChanged } from '../io/versionStore';
@@ -7,10 +7,10 @@ import type { Version } from '../model/versions';
 import * as A from '../store/actions';
 import { getSymbol } from '../model/registry';
 import type { CircuitDoc, Item } from '../model/types';
-import { openExample, openFromHistory } from '../io/fileActions';
+import { fileNew, openExample, openFromHistory } from '../io/fileActions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { isExplainTool, useExplain } from '../store/explain';
-import { readOnly, set, useStore } from '../store/store';
+import { firstVisit, readOnly, set, useStore } from '../store/store';
 import { viewDoc } from '../model/pages';
 import { hintFor, type HintGesture, type HintSel } from './hints';
 import { Logo } from './Logo';
@@ -268,6 +268,75 @@ export function WelcomeScreen() {
             ))}
           </ol>
         </div>
+      </div>
+    </div>
+  );
+}
+
+const INTRO_KEY = 'nodal.introSeen';
+
+/**
+ * A first visit opens the example circuit; this card says so and offers a
+ * blank page. It shows once, and goes as soon as it is dismissed or the
+ * circuit is edited.
+ */
+export function IntroCard() {
+  const [seen, setSeen] = useState(() => {
+    try {
+      return !firstVisit || !!localStorage.getItem(INTRO_KEY);
+    } catch {
+      return true;
+    }
+  });
+  const edited = useStore((s) => s.past.length > 0);
+  const presenting = useExplain((s) => s.presenting !== null);
+  const blocked = useStore((s) => readOnly(s));
+  const dismiss = () => {
+    setSeen(true);
+    try {
+      localStorage.setItem(INTRO_KEY, '1');
+    } catch {
+      /* storage blocked: it just shows again next time */
+    }
+  };
+  useEffect(() => {
+    if (edited && !seen) dismiss();
+  }, [edited, seen]);
+  if (seen || presenting || blocked) return null;
+  const k = (id: string) => prettyKey(keysFor(id)[0] ?? '');
+  return (
+    <div className="intro-card" role="dialog" aria-label="Welcome to Nodal" onPointerDown={(e) => e.stopPropagation()}>
+      <button className="intro-close" onClick={dismiss} aria-label="Close">
+        <X size={14} />
+      </button>
+      <div className="intro-title">
+        <Sparkles size={15} /> Welcome to Nodal
+      </div>
+      <p>This is an example circuit — poke at it, nothing here can break.</p>
+      <ul>
+        <li>
+          <MousePointerClick size={14} /> Drag parts in from the library on the left
+        </li>
+        <li>
+          <Spline size={14} /> Drag from any pin to draw a wire
+        </li>
+        <li>
+          <Command size={14} /> <kbd>{k('help.palette')}</kbd> finds any command or part
+        </li>
+      </ul>
+      <div className="intro-actions">
+        <button
+          className="primary-btn"
+          onClick={() => {
+            dismiss();
+            void fileNew();
+          }}
+        >
+          <FilePlus2 size={14} /> Start blank
+        </button>
+        <button className="secondary-btn" onClick={dismiss}>
+          Explore it
+        </button>
       </div>
     </div>
   );

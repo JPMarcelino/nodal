@@ -197,6 +197,15 @@ const DEFAULT_PREFS: Prefs = {
   showHints: true,
 };
 
+/** Nothing kept from an earlier visit: this is someone's first look (they get the example and an intro). */
+export const firstVisit = (() => {
+  try {
+    return !localStorage.getItem(LS.doc) && !localStorage.getItem(LS.prefs);
+  } catch {
+    return false;
+  }
+})();
+
 function initialDoc(): CircuitDoc {
   try {
     const raw = localStorage.getItem(LS.doc);
