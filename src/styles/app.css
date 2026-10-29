@@ -2166,30 +2166,6 @@ select.input {
   pointer-events: none;
 }
 
-.scope-banner {
-  position: absolute;
-  top: 64px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px 6px 14px;
-  border-radius: 10px;
-  background: var(--panel);
-  border: 1px solid var(--accent);
-  box-shadow: var(--shadow-sm);
-  font-size: 0.92em;
-}
-
-.scope-banner button {
-  padding: 4px 10px;
-  border-radius: 7px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
-}
-
 .canvas-hint {
   position: absolute;
   bottom: 14px;
@@ -5111,7 +5087,7 @@ body.is-presenting .topbar,
 body.is-presenting .statusbar,
 body.is-presenting .tool-rail,
 body.is-presenting .minimap,
-body.is-presenting .scope-banner {
+body.is-presenting .group-crumbs {
   display: none !important;
 }
 
@@ -6998,4 +6974,80 @@ a:focus-visible,
   100% {
     box-shadow: 0 0 0 3px transparent;
   }
+}
+
+/* where editing is happening inside groups */
+.group-crumbs {
+  position: absolute;
+  top: 62px;
+  left: calc(var(--inset-l) + (100% - var(--inset-l) - var(--inset-r)) / 2);
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - var(--inset-l) - var(--inset-r) - 32px);
+  padding: 3px 4px 3px 6px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  box-shadow: var(--shadow-sm);
+  font-size: 0.86em;
+  animation: tip-in 0.15s ease-out;
+}
+
+.crumb-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: var(--text-faint);
+}
+
+.crumb {
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+button.crumb:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.crumb.current {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.crumb-label {
+  padding: 0 4px 0 4px;
+  color: var(--text-faint);
+}
+
+.crumb-exit {
+  margin-left: 6px;
+  height: 24px;
+  padding: 0 6px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 7px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.crumb-exit kbd {
+  font-size: 0.8em;
+  padding: 0 4px;
+}
+
+.crumb-exit:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
