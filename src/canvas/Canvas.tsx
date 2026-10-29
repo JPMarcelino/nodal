@@ -39,6 +39,7 @@ import { gestureSlots, hitSlop, useTouchInput } from './touch';
 import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
 import { attachSpots, bendSlots, findGlue, isConnector, isFixed, resolveConnector, type GlueHit } from '../model/connectors';
+import { libraryDrag } from '../ui/dragState';
 
 /* ------------------------------------------------------------------ */
 /* Targets                                                             */
@@ -205,6 +206,8 @@ export function Canvas() {
   const alignRef = useRef<{ ids: Set<string> | object; moving: Point[]; index: AlignIndex; box: Rect | null; others: Rect[] } | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
   const [fileDrag, setFileDrag] = useState(false);
+  // a library part dragged over the canvas, drawn snapped where it would land
+  const [dragSym, setDragSym] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState<{ id: string; which: 'ref' | 'value' } | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
@@ -2153,6 +2156,7 @@ export function Canvas() {
 
   const onDrop = (e: React.DragEvent) => {
     setFileDrag(false);
+    setDragSym(null);
     if (readOnly()) {
       e.preventDefault();
       A.readOnlyNotice();
@@ -2228,20 +2232,21 @@ export function Canvas() {
                     ? 'move'
                     : 'default';
 
-  const ghost: ComponentItem | null = placing
+  const ghostOf = placing ?? (dragSym ? { symbol: dragSym, rot: 0 as const, flipX: false } : null);
+  const ghost: ComponentItem | null = ghostOf
     ? {
         id: '__ghost',
         type: 'component',
-        symbol: placing.symbol,
+        symbol: ghostOf.symbol,
         x: sp(cursor).x,
         y: sp(cursor).y,
-        rot: placing.rot,
-        flipX: placing.flipX,
-        ref: getSymbol(doc, placing.symbol).prefix + '?',
-        value: getSymbol(doc, placing.symbol).value ?? '',
+        rot: ghostOf.rot,
+        flipX: ghostOf.flipX,
+        ref: getSymbol(doc, ghostOf.symbol).prefix + '?',
+        value: getSymbol(doc, ghostOf.symbol).value ?? '',
         props: {},
-        showRef: !getSymbol(doc, placing.symbol).hideLabels,
-        showValue: !!getSymbol(doc, placing.symbol).valueIsLabel,
+        showRef: !getSymbol(doc, ghostOf.symbol).hideLabels,
+        showValue: !!getSymbol(doc, ghostOf.symbol).valueIsLabel,
       }
     : null;
 
@@ -2275,6 +2280,7 @@ export function Canvas() {
         if (e.dataTransfer.types.includes('application/x-nodal-symbol') || e.dataTransfer.types.includes('application/x-nodal-shape')) {
           e.preventDefault();
           setCursor(toWorldPt(e.clientX, e.clientY));
+          if (dragSym !== libraryDrag.symbol && !readOnly()) setDragSym(libraryDrag.symbol);
         } else if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
           e.dataTransfer.dropEffect = 'copy';
@@ -2282,7 +2288,10 @@ export function Canvas() {
         }
       }}
       onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileDrag(false);
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setFileDrag(false);
+          setDragSym(null);
+        }
       }}
       onDrop={onDrop}
     >
