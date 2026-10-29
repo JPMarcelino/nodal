@@ -1,6 +1,7 @@
 import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, History, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFold } from './controls';
+import { keysFor, prettyKey } from '../store/commands';
 import { drawOrderCached } from '../model/doc';
 import { computeNets } from '../model/netlist';
 import { viewDoc } from '../model/pages';
@@ -228,6 +229,8 @@ function score(def: SymbolDef, q: string, extra = '') {
 
 function Library() {
   const [q, setQ] = useState('');
+  useStore((s) => s.prefs.keymap);
+  const searchKey = prettyKey(keysFor('view.search')[0] ?? '');
   const favorites = useStore((s) => s.favorites);
   const recent = useStore((s) => s.recent);
   const docSymbols = useStore((s) => s.doc.symbols);
@@ -271,7 +274,7 @@ function Library() {
         <Search size={14} />
         <input
           id="library-search"
-          placeholder={`Search ${all.length} symbols and ${SHAPE_PRESETS.length} shapes…`}
+          placeholder={`Search ${all.length + SHAPE_PRESETS.length} parts & shapes`}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
@@ -286,10 +289,12 @@ function Library() {
             }
           }}
         />
-        {q && (
-          <button className="clear" onClick={() => setQ('')}>
+        {q ? (
+          <button className="clear" onClick={() => setQ('')} aria-label="Clear search">
             <X size={13} />
           </button>
+        ) : (
+          searchKey && <kbd className="search-key">{searchKey}</kbd>
         )}
       </div>
       <div className="lib-scroll">
@@ -465,7 +470,7 @@ function Layers() {
             set({ selection: [...s] });
           } else set({ selection: [it.id] });
         }}
-        onDoubleClick={() => A.fitView([it.id])}
+        onDoubleClick={() => A.glideFit([it.id])}
       >
         <span className={`layer-icon ${it.type}`} />
         <span className="layer-name">{itemLabel(doc, it, netByWire.get(it.id))}</span>

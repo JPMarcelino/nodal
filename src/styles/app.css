@@ -540,15 +540,36 @@ kbd {
 }
 
 .zoom-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   font-variant-numeric: tabular-nums;
-  padding: 4px 8px;
+  padding: 4px 6px 4px 8px;
   border-radius: 7px;
   color: var(--text-dim);
-  min-width: 52px;
+  min-width: 62px;
 }
 
-.zoom-chip:hover {
+.zoom-chip svg {
+  opacity: 0.6;
+  transition: transform 0.15s;
+}
+
+.zoom-chip.open svg {
+  transform: rotate(180deg);
+}
+
+.zoom-chip:hover,
+.zoom-chip.open {
   background: var(--panel-3);
+  color: var(--text);
+}
+
+.dropdown.zoom-dropdown {
+  left: 50%;
+  translate: -50% 0;
+  min-width: 220px;
 }
 
 .zoom-chip.active {
@@ -787,6 +808,15 @@ body.is-resizing-panel .stage {
 .search:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.search .search-key {
+  flex: none;
+  transition: opacity 0.12s;
+}
+
+.search:focus-within .search-key {
+  opacity: 0;
 }
 
 .search input {
@@ -1064,12 +1094,21 @@ body.is-resizing-panel .stage {
   align-items: center;
 }
 
+.layer-filter.secondary {
+  gap: 2px;
+  flex-wrap: nowrap;
+}
+
 .layer-filter.secondary button {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 7px;
+  gap: 3px;
+  padding: 3px 5px;
   font-size: 0.8em;
+  white-space: nowrap;
 }
 
 .layer-filter-sep {

@@ -241,7 +241,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
       '-',
       cmd('edit.lock', locked ? 'Unlock' : 'Lock', <Lock size={I} />),
       cmd('edit.hide', 'Hide', <Eye size={I} />),
-      { label: 'Zoom to selection', icon: <Move3d size={I} />, run: () => A.fitView(selection), key: keysFor('view.fitSel')[0] },
+      { label: 'Zoom to selection', icon: <Move3d size={I} />, run: () => A.glideFit(selection), key: keysFor('view.fitSel')[0] },
       '-',
       { label: multi ? `Export ${selection.length} items…` : 'Export selection…', icon: <Download size={I} />, run: () => openExport({ ids: selection }), key: keysFor('file.exportSelection')[0] },
     ),
