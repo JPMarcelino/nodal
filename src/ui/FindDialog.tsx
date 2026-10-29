@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Search, Spline, Tag, Type, X } from 'lucide-react';
+import { SymbolPreview } from '../canvas/SymbolGraphic';
+import type { SymbolDef } from '../model/types';
+import { matchRanges, queryWords } from './paletteSearch';
 import { computeNets } from '../model/netlist';
 import { instanceSymbol } from '../model/registry';
 import * as A from '../store/actions';
@@ -14,6 +18,29 @@ interface Hit {
   ids: string[];
   /** Wires to highlight (nets). */
   net?: string[];
+  /** The part's drawing, for its thumbnail. */
+  def?: SymbolDef;
+}
+
+const KIND_ICON: Record<Exclude<Hit['kind'], 'Part'>, ReactNode> = {
+  Label: <Tag size={14} />,
+  Net: <Spline size={14} />,
+  Wire: <Tag size={14} />,
+  Text: <Type size={14} />,
+};
+
+function Marked({ text, words }: { text: string; words: string[] }) {
+  const ranges = matchRanges(text, words);
+  if (!ranges.length) return <>{text}</>;
+  const out: ReactNode[] = [];
+  let at = 0;
+  ranges.forEach(([a, b], i) => {
+    if (a > at) out.push(text.slice(at, a));
+    out.push(<mark key={i}>{text.slice(a, b)}</mark>);
+    at = b;
+  });
+  if (at < text.length) out.push(text.slice(at));
+  return <>{out}</>;
 }
 
 const close = () => set({ dialog: null });
@@ -32,10 +59,10 @@ export function FindDialog() {
         const def = instanceSymbol(doc, it);
         const fields = Object.values(it.props).filter(Boolean).join(' · ');
         if (def.valueIsLabel || def.prefix.startsWith('#')) {
-          if (it.value) out.push({ key: it.id, kind: 'Label', label: it.value, meta: def.name, ids: [it.id] });
+          if (it.value) out.push({ key: it.id, kind: 'Label', label: it.value, meta: def.name, ids: [it.id], def });
           continue;
         }
-        out.push({ key: it.id, kind: 'Part', label: [it.ref, it.value].filter(Boolean).join('  '), meta: [def.name, fields].filter(Boolean).join(' · '), ids: [it.id] });
+        out.push({ key: it.id, kind: 'Part', label: [it.ref, it.value].filter(Boolean).join('  '), meta: [def.name, fields].filter(Boolean).join(' · '), ids: [it.id], def });
       } else if (it.type === 'shape' && it.text?.trim()) {
         out.push({ key: it.id, kind: 'Text', label: it.text.trim().replace(/\s+/g, ' '), meta: it.kind === 'text' ? 'Text' : `${it.kind} title`, ids: [it.id] });
       } else if (it.type === 'wire' && it.label?.trim()) {
@@ -59,8 +86,8 @@ export function FindDialog() {
     return out.sort((a, b) => order[a.kind] - order[b.kind] || a.label.localeCompare(b.label, undefined, { numeric: true }));
   }, [doc]);
 
+  const words = useMemo(() => queryWords(q), [q]);
   const hits = useMemo(() => {
-    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!words.length) return all.slice(0, 200);
     const scored = all
       .map((h) => {
@@ -73,7 +100,7 @@ export function FindDialog() {
       })
       .filter((x): x is { h: Hit; score: number } => !!x);
     return scored.sort((a, b) => a.score - b.score).map((x) => x.h).slice(0, 200);
-  }, [all, q]);
+  }, [all, words]);
 
   useEffect(() => setIdx(0), [q]);
   useEffect(() => {
@@ -91,32 +118,65 @@ export function FindDialog() {
   };
 
   return (
-    <Modal onClose={close} width={600} className="palette" closeFromInput ariaLabel="Find">
-      <input
-        className="palette-input"
-        autoFocus
-        placeholder="Find a part, value, net, label or text (e.g. “R12”, “10k”, “GND”)…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setIdx((i) => Math.min(hits.length - 1, i + 1));
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setIdx((i) => Math.max(0, i - 1));
-          } else if (e.key === 'Enter') go(hits[idx]);
-        }}
-      />
+    <Modal onClose={close} width={640} className="palette" closeFromInput ariaLabel="Find">
+      <div className="palette-search">
+        <Search size={17} />
+        <input
+          className="palette-input"
+          autoFocus
+          placeholder="Find a part, value, net, label or text — “R12”, “10k”, “GND”…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setIdx((i) => Math.min(hits.length - 1, i + 1));
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setIdx((i) => Math.max(0, i - 1));
+            } else if (e.key === 'Enter') go(hits[idx]);
+          }}
+        />
+        {q && (
+          <button className="palette-clear" onClick={() => setQ('')} aria-label="Clear search">
+            <X size={14} />
+          </button>
+        )}
+      </div>
       <div className="palette-list" ref={listRef}>
         {hits.map((h, i) => (
           <button key={h.key} className={i === idx ? 'palette-item active' : 'palette-item'} onMouseEnter={() => setIdx(i)} onClick={() => go(h)}>
-            <span className={h.kind === 'Part' ? 'palette-cat sym' : 'palette-cat'}>{h.kind}</span>
-            <span className="palette-label">{h.label}</span>
+            <span className={h.def ? 'palette-icon sym' : 'palette-icon'}>{h.def ? <SymbolPreview def={h.def} size={26} pad={2} /> : h.kind !== 'Part' && KIND_ICON[h.kind]}</span>
+            <span className="palette-label">
+              <Marked text={h.label} words={words} />
+            </span>
             <span className="palette-meta">{h.meta}</span>
+            <span className="palette-kind">{h.kind}</span>
           </button>
         ))}
-        {!hits.length && <div className="empty-note">{all.length ? 'No matches' : 'The circuit is empty'}</div>}
+        {!hits.length && (
+          <div className="palette-empty">
+            <Search size={22} />
+            <div>{all.length ? `Nothing matches “${q.trim()}”` : 'The circuit is empty'}</div>
+            {all.length > 0 && <div className="small muted">Search by reference (R12), value (10k), net (GND), label or any text.</div>}
+          </div>
+        )}
+      </div>
+      <div className="palette-foot">
+        <span>
+          <kbd>↑</kbd>
+          <kbd>↓</kbd> to move
+        </span>
+        <span>
+          <kbd>↵</kbd> to show it
+        </span>
+        <span>
+          <kbd>Esc</kbd> to close
+        </span>
+        <span className="grow" />
+        <span className="muted">
+          {hits.length} of {all.length}
+        </span>
       </div>
     </Modal>
   );

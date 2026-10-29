@@ -2744,6 +2744,17 @@ select.input {
   background: var(--accent-soft);
 }
 
+.palette-kind {
+  flex: none;
+  min-width: 42px;
+  text-align: right;
+  font-size: 0.72em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
 .palette-place {
   font-size: 0.78em;
   font-weight: 650;
