@@ -254,6 +254,15 @@ describe('page edits', () => {
     expect(produce(next, (d) => void deletePage(d as CircuitDoc, p1))).toBe(next);
   });
 
+  it('duplicates a page of a document that an earlier edit has frozen', () => {
+    const { doc, p1 } = twoPages();
+    // any edit passes the document through immer, which freezes every item
+    const edited = produce(doc, (d) => void (d.name = 'Edited'));
+    let copy = '';
+    const next = produce(edited, (d) => void (copy = duplicatePage(d as CircuitDoc, p1)));
+    expect(pageItemIds(next, copy)).toHaveLength(pageItemIds(edited, p1).length);
+  });
+
   it('duplicates a page with fresh ids, wires, glued connectors and groups following the copies', () => {
     const { doc, p1, r1, r2, w } = twoPages();
     const box = makeShape(doc, 'rect', 0, 100, 40, 40);
