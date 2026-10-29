@@ -50,17 +50,37 @@ function tipTarget(el: EventTarget | null): HTMLElement | null {
   return null;
 }
 
-/** Takes the title over so the native tooltip doesn't show too; keeps an accessible name for icon buttons. */
+/**
+ * Takes the title over while the pointer is on the element, so the native
+ * tooltip doesn't show too. An element named only by its title (an icon
+ * button, a select) gets it as its aria-label meanwhile; release() puts
+ * everything back, so React's own title updates and the accessible name
+ * stay right.
+ */
 function adopt(el: HTMLElement): string {
   const title = el.getAttribute('title');
   if (title !== null) {
     el.removeAttribute('title');
-    if (title) {
-      el.dataset.tip = title;
-      if (!el.hasAttribute('aria-label') && !el.textContent?.trim()) el.setAttribute('aria-label', title);
+    el.dataset.tip = title;
+    const formish = el instanceof HTMLSelectElement || el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+    if (title && !el.hasAttribute('aria-label') && (formish || !el.textContent?.trim())) {
+      el.setAttribute('aria-label', title);
+      el.dataset.tipNamed = '';
     }
   }
   return el.dataset.tip ?? '';
+}
+
+function release(el: HTMLElement) {
+  const tip = el.dataset.tip;
+  if (tip === undefined) return;
+  // React may have set a new title meanwhile: that one wins
+  if (!el.hasAttribute('title')) el.setAttribute('title', tip);
+  delete el.dataset.tip;
+  if (el.dataset.tipNamed !== undefined) {
+    el.removeAttribute('aria-label');
+    delete el.dataset.tipNamed;
+  }
 }
 
 export function Tooltips() {
@@ -80,23 +100,36 @@ export function Tooltips() {
       shown = true;
       setTip({ label, keys, desc: el.dataset.tipDesc ?? '', rect: el.getBoundingClientRect() });
     };
+    /** The element whose title is taken over right now. */
+    let held: HTMLElement | null = null;
+    const letGo = () => {
+      if (held) release(held);
+      held = null;
+    };
     const hide = () => {
       clearTimeout(timer);
       if (shown) lastHidden = performance.now();
       shown = false;
       current = null;
+      letGo();
       setTip(null);
     };
     const onOver = (e: PointerEvent) => {
       if (e.pointerType === 'touch') return;
       const el = tipTarget(e.target);
-      if (el === current) return;
+      if (el && el === held) return;
+      letGo();
+      if (el) held = el;
       const raw = el ? adopt(el) : '';
       // a tooltip that only repeats the button's own visible label adds nothing (unless that label is cut off)
       const text = raw && (raw.trim() !== el?.textContent?.trim() || (el && clipped(el))) ? raw : '';
       clearTimeout(timer);
       if (!el || !text) {
-        if (shown) hide();
+        if (shown) {
+          shown = false;
+          lastHidden = performance.now();
+          setTip(null);
+        }
         current = null;
         return;
       }
@@ -110,9 +143,10 @@ export function Tooltips() {
       timer = setTimeout(() => current === el && show(el), warm ? 0 : DELAY);
     };
     const onOut = (e: PointerEvent) => {
-      if (!current) return;
+      const from = current ?? held;
+      if (!from) return;
       const to = e.relatedTarget as Node | null;
-      if (to && current.contains(to)) return;
+      if (to && from.contains(to)) return;
       hide();
     };
     // a click, a key or a scroll means the pointer is doing something else now
@@ -131,6 +165,7 @@ export function Tooltips() {
     window.addEventListener('blur', hide);
     return () => {
       clearTimeout(timer);
+      letGo();
       window.removeEventListener('pointerover', onOver, true);
       window.removeEventListener('pointerout', onOut, true);
       window.removeEventListener('pointerdown', onDown, true);

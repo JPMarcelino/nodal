@@ -692,6 +692,8 @@ export function updateItems(ids: Iterable<string>, patch: (it: Item) => void, op
 /* ------------------------------------------------------------------ */
 
 let glideFrame = 0;
+/** Where the running zoom step is heading (null for any other glide). */
+let stepTarget: View | null = null;
 /** The view the running glide set last; anything else setting the view (a pan, a wheel) stops it. */
 let glideLast: View | null = null;
 
@@ -707,6 +709,8 @@ const canGlide = () =>
 export function glideView(to: View, ms = 280) {
   if (glideFrame) cancelAnimationFrame(glideFrame);
   glideFrame = 0;
+  // only a zoom step's own glide may be built on by the next step
+  stepTarget = null;
   const from = S().view;
   const { canvasSize } = S();
   const same = Math.abs(from.zoom - to.zoom) < 1e-4 && Math.abs(from.x - to.x) < 0.5 && Math.abs(from.y - to.y) < 0.5;
@@ -753,7 +757,6 @@ export function zoomBy(factor: number, cx?: number, cy?: number) {
 }
 
 /** One zoom step from a key or button, eased; repeated presses build on where the glide is heading. */
-let stepTarget: View | null = null;
 export function zoomStep(factor: number) {
   const base = glideFrame && stepTarget ? stepTarget : S().view;
   const { canvasSize } = S();
@@ -761,8 +764,9 @@ export function zoomStep(factor: number) {
   const k = zoom / base.zoom;
   const px = canvasSize.w / 2;
   const py = canvasSize.h / 2;
-  stepTarget = { zoom, x: px - (px - base.x) * k, y: py - (py - base.y) * k };
-  glideView(stepTarget, 180);
+  const target = { zoom, x: px - (px - base.x) * k, y: py - (py - base.y) * k };
+  glideView(target, 180);
+  stepTarget = target;
 }
 
 export function zoomTo(zoom: number) {

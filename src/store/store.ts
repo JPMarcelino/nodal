@@ -587,9 +587,15 @@ export function imageExportOptions(): { theme: 'light' | 'dark'; background: boo
 }
 
 /** Switches the theme with a quick cross-fade where the browser can (View Transitions), at once elsewhere. */
+let themeTarget: Prefs['theme'] | null = null;
+/** The theme being switched to, or the current one: a second quick toggle flips back from where the first is going. */
+export const nextTheme = (): Prefs['theme'] => ((themeTarget ?? S().prefs.theme) === 'dark' ? 'light' : 'dark');
+
 export function setTheme(theme: Prefs['theme']) {
-  if (theme === S().prefs.theme) return;
+  if (theme === (themeTarget ?? S().prefs.theme)) return;
+  themeTarget = theme;
   const apply = () => {
+    themeTarget = null;
     document.documentElement.dataset.theme = theme;
     setPrefs({ theme });
   };

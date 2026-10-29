@@ -2154,6 +2154,7 @@ export function Canvas() {
   const onDrop = (e: React.DragEvent) => {
     setFileDrag(false);
     setDragSym(null);
+    libraryDrag.symbol = null;
     if (readOnly()) {
       e.preventDefault();
       A.readOnlyNotice();
@@ -2277,7 +2278,8 @@ export function Canvas() {
         if (e.dataTransfer.types.includes('application/x-nodal-symbol') || e.dataTransfer.types.includes('application/x-nodal-shape')) {
           e.preventDefault();
           setCursor(toWorldPt(e.clientX, e.clientY));
-          if (dragSym !== libraryDrag.symbol && !readOnly()) setDragSym(libraryDrag.symbol);
+          const sym = e.dataTransfer.types.includes('application/x-nodal-symbol') ? libraryDrag.symbol : null;
+          if (dragSym !== sym && !readOnly()) setDragSym(sym);
         } else if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
           e.dataTransfer.dropEffect = 'copy';
