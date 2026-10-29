@@ -150,6 +150,7 @@ The web app can be installed (Chrome/Edge: the install icon in the address bar; 
 ### Interface
 - Dark and light themes, compact/normal/large UI sizes, minimap, focus mode
 - **Command palette** (**Ctrl+K**): run any command or place any part by name. Results are ranked (label and word starts first) with the matched letters highlighted; with nothing typed it lists what you used recently, then every command by menu. Parts show a thumbnail, on/off commands show their state, and **Find** (**Ctrl+F**) works the same way.
+- **Double-click empty canvas** to search for a part and place it right where you clicked (recently used and common parts are listed before you type).
 - **Tooltips** name every button with its shortcut drawn as keys; the tool rail's also say what the tool does. Moving along the rail hands the tooltip from button to button without waiting again.
 - **Smooth camera**: zoom to fit, zoom to selection, the zoom keys and every jump from Find, Check, Nets or Layers glide there. The zoom level in the top bar opens a zoom menu (fit, selection, 50–400 %). Wheel and pinch zoom stay immediate; *reduce motion* in your system settings turns the glides off.
 - **Customisable keyboard shortcuts** (Settings → Keyboard shortcuts)
