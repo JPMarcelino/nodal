@@ -2,7 +2,8 @@ import { current } from 'immer';
 import { docBounds, groupChain, itemBounds, makeComponent, makeShape, topGroup } from '../model/doc';
 import { pulseAt } from '../canvas/pulses';
 import { inkAverageWidth, inkPoints, packInk, recognizeShape, shapePoints } from '../model/ink';
-import { calloutAnchor } from '../model/callout';
+import { calloutAnchor, makeAnchor, nextStep } from '../model/callout';
+import { wirePolyline } from '../model/wires';
 import { withContents } from '../model/containers';
 import { PRESET_SIZE, getPreset, makePresetShape } from '../model/shapePresets';
 import { nextPresentationStep } from '../model/presentation';
@@ -983,4 +984,36 @@ export function detachCallouts(ids = S().selection) {
       if (at) s.anchor = { dx: 0, dy: 0, x: at.x, y: at.y };
     }
   });
+}
+
+/**
+ * Pins a numbered note to the selected part or wire (the first one), next to
+ * it, and opens it for typing — the callout tool's job, without switching tools.
+ */
+export function addNoteToSelection() {
+  if (readOnly()) return readOnlyNotice();
+  const d0 = vdoc();
+  const target = S().selection.map((id) => d0.items[id]).find((it) => it && (it.type === 'component' || it.type === 'wire'));
+  if (!target) return toast('Select a part or wire to add a note to it');
+  const box = itemBounds(d0, target);
+  if (!box) return;
+  // a part: its middle; a wire: the middle of its middle segment, so the leader lands on the wire
+  let at = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+  if (target.type === 'wire') {
+    const pts = wirePolyline(d0, target);
+    const i = Math.max(0, Math.floor((pts.length - 2) / 2));
+    if (pts.length >= 2) at = { x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2 };
+  }
+  let id = '';
+  mutate((d) => {
+    const s = makeShape(d as CircuitDoc, 'callout', box.x + box.w + 24, box.y - 36, 24, 24);
+    s.stroke = X().color;
+    s.step = nextStep(d as CircuitDoc);
+    s.anchor = makeAnchor(d as CircuitDoc, d.items[target.id] as Item, at);
+    s.group = S().scope;
+    d.items[s.id] = s;
+    id = s.id;
+  });
+  set({ selection: [id] });
+  setX({ editing: id });
 }
