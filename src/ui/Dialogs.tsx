@@ -1,5 +1,5 @@
 import { CircleHelp, ClipboardPaste, Copy, Cpu, Eye, FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, Files, Film, FolderUp, History, Layers3, LayoutGrid, LayoutTemplate, Pencil, Printer, RotateCcw, Scan, Search, Shapes, Share2, Spline, Users, Wrench, X, type LucideIcon } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { isValidElement, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { importFile } from '../io/importFiles';
 import { copyScope, doClipExport, doExport, filePrint, scopeSvgOptions, startAreaExport } from '../io/fileActions';
@@ -529,6 +529,30 @@ export function ShortcutsDialog({ editable = false }: { editable?: boolean }) {
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
+function SettingsGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="settings-group">
+      <h3>{title}</h3>
+      <div className="settings-rows">{children}</div>
+    </section>
+  );
+}
+
+/** One preference: its name (and what it does, quietly) on the left, the control on the right. */
+function Setting({ label, desc, children }: { label: string; desc?: string; children: ReactNode }) {
+  // a switch can be flipped from anywhere on its row; a row of choices only from the choices
+  const Row = isValidElement(children) && children.type === Toggle ? 'label' : 'div';
+  return (
+    <Row className="setting-row">
+      <span className="setting-text">
+        <span className="setting-label">{label}</span>
+        {desc && <span className="setting-desc">{desc}</span>}
+      </span>
+      <span className="setting-control">{children}</span>
+    </Row>
+  );
+}
+
 export function SettingsDialog() {
   const prefs = useStore((s) => s.prefs);
   const [tab, setTab] = useState<'general' | 'keys'>('general');
@@ -544,75 +568,83 @@ export function SettingsDialog() {
       </div>
       {tab === 'general' ? (
         <div className="settings-body">
-          <Field label="Theme">
-            <Segmented
-              value={prefs.theme}
-              options={[
-                { value: 'dark', label: 'Dark' },
-                { value: 'light', label: 'Light' },
-              ]}
-              onChange={(theme) => setTheme(theme)}
-            />
-          </Field>
-          <Field label="Mouse wheel">
-            <Segmented
-              value={prefs.wheel}
-              options={[
-                { value: 'zoom', label: 'Zooms' },
-                { value: 'pan', label: 'Pans (Ctrl zooms)' },
-              ]}
-              onChange={(wheel) => setPrefs({ wheel })}
-            />
-          </Field>
-          <Field label="One finger (touch)">
-            <Segmented
-              value={prefs.touch}
-              options={[
-                { value: 'auto', label: 'Pans with a stylus' },
-                { value: 'draw', label: 'Draws' },
-                { value: 'pan', label: 'Pans' },
-              ]}
-              onChange={(touch) => setPrefs({ touch })}
-            />
-          </Field>
-          <Field label="Interface size">
-            <Segmented
-              value={prefs.uiScale}
-              options={[
-                { value: 0.9, label: 'Compact' },
-                { value: 1, label: 'Normal' },
-                { value: 1.1, label: 'Large' },
-              ]}
-              onChange={(uiScale) => setPrefs({ uiScale })}
-            />
-          </Field>
-          <Field label="Minimap">
-            <Toggle checked={prefs.showMinimap} onChange={(showMinimap) => setPrefs({ showMinimap })} />
-          </Field>
-          <Field label="Show hints (next step for the tool in hand, at the bottom of the canvas)">
-            <Toggle checked={prefs.showHints} onChange={(showHints) => setPrefs({ showHints })} />
-          </Field>
-          <Field label="Tool lock (keep placing parts after each click)">
-            <Toggle checked={prefs.toolLock} onChange={(toolLock) => setPrefs({ toolLock })} />
-          </Field>
-          <Field label="Wires route around parts and stay off other pins">
-            <Toggle checked={prefs.wireAvoid} onChange={(wireAvoid) => setPrefs({ wireAvoid })} />
-          </Field>
-          <Field label="Alignment guides">
-            <Toggle checked={prefs.alignGuides} onChange={(alignGuides) => setPrefs({ alignGuides })} />
-          </Field>
-          <Field label="Equal-spacing guides">
-            <Toggle checked={prefs.spacingGuides} onChange={(spacingGuides) => setPrefs({ spacingGuides })} />
-          </Field>
-          <Field label="Part names and values follow guides">
-            <Toggle checked={prefs.labelGuides} onChange={(labelGuides) => setPrefs({ labelGuides })} />
-          </Field>
-          <Field label="Unconnected pin markers">
-            <Toggle checked={prefs.showPortMarkers} onChange={(showPortMarkers) => setPrefs({ showPortMarkers })} />
-          </Field>
-          <Field label="Autosave (restores your work on restart)">
-            <Toggle checked={prefs.autosave} onChange={(autosave) => setPrefs({ autosave })} />
-          </Field>
+          <SettingsGroup title="Appearance">
+            <Setting label="Theme">
+              <Segmented
+                value={prefs.theme}
+                options={[
+                  { value: 'dark', label: 'Dark' },
+                  { value: 'light', label: 'Light' },
+                ]}
+                onChange={(theme) => setTheme(theme)}
+              />
+            </Setting>
+            <Setting label="Interface size">
+              <Segmented
+                value={prefs.uiScale}
+                options={[
+                  { value: 0.9, label: 'Compact' },
+                  { value: 1, label: 'Normal' },
+                  { value: 1.1, label: 'Large' },
+                ]}
+                onChange={(uiScale) => setPrefs({ uiScale })}
+              />
+            </Setting>
+            <Setting label="Minimap" desc="A small map of the page in the corner; click or drag it to move around">
+              <Toggle checked={prefs.showMinimap} onChange={(showMinimap) => setPrefs({ showMinimap })} />
+            </Setting>
+            <Setting label="Show hints" desc="The next step for the tool in hand, at the bottom of the canvas">
+              <Toggle checked={prefs.showHints} onChange={(showHints) => setPrefs({ showHints })} />
+            </Setting>
+            <Setting label="Unconnected pin markers" desc="A ring on every pin that isn't wired yet">
+              <Toggle checked={prefs.showPortMarkers} onChange={(showPortMarkers) => setPrefs({ showPortMarkers })} />
+            </Setting>
+          </SettingsGroup>
+          <SettingsGroup title="Mouse and touch">
+            <Setting label="Mouse wheel">
+              <Segmented
+                value={prefs.wheel}
+                options={[
+                  { value: 'zoom', label: 'Zooms' },
+                  { value: 'pan', label: 'Pans (Ctrl zooms)' },
+                ]}
+                onChange={(wheel) => setPrefs({ wheel })}
+              />
+            </Setting>
+            <Setting label="One finger (touch)">
+              <Segmented
+                value={prefs.touch}
+                options={[
+                  { value: 'auto', label: 'Pans with a stylus' },
+                  { value: 'draw', label: 'Draws' },
+                  { value: 'pan', label: 'Pans' },
+                ]}
+                onChange={(touch) => setPrefs({ touch })}
+              />
+            </Setting>
+          </SettingsGroup>
+          <SettingsGroup title="Editing">
+            <Setting label="Tool lock" desc="Keep placing parts after each click (Esc stops)">
+              <Toggle checked={prefs.toolLock} onChange={(toolLock) => setPrefs({ toolLock })} />
+            </Setting>
+            <Setting label="Smart wire routing" desc="Wires route around parts and stay off other pins">
+              <Toggle checked={prefs.wireAvoid} onChange={(wireAvoid) => setPrefs({ wireAvoid })} />
+            </Setting>
+            <Setting label="Alignment guides" desc="Lines that snap edges and centres together while moving">
+              <Toggle checked={prefs.alignGuides} onChange={(alignGuides) => setPrefs({ alignGuides })} />
+            </Setting>
+            <Setting label="Equal-spacing guides" desc="Snap to the same gap as the neighbours">
+              <Toggle checked={prefs.spacingGuides} onChange={(spacingGuides) => setPrefs({ spacingGuides })} />
+            </Setting>
+            <Setting label="Part names and values follow guides">
+              <Toggle checked={prefs.labelGuides} onChange={(labelGuides) => setPrefs({ labelGuides })} />
+            </Setting>
+          </SettingsGroup>
+          <SettingsGroup title="Saving">
+            <Setting label="Autosave" desc="Keeps your work in this browser and restores it on restart">
+              <Toggle checked={prefs.autosave} onChange={(autosave) => setPrefs({ autosave })} />
+            </Setting>
+          </SettingsGroup>
         </div>
       ) : (
         <ShortcutsDialog editable />
