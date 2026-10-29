@@ -30,6 +30,8 @@ const VANISH_LIFE = 2600;
 const VANISH_FADE = 700;
 /** Hold the pen still this long to snap a scribble into a clean shape. */
 const HOLD_MS = 520;
+/** A faint preview of the shape it would snap to shows this soon into the pause. */
+const PREVIEW_MS = 160;
 /** Reveal speed of a traced net (world units / s). */
 const TRACE_SPEED = 900;
 
@@ -43,6 +45,8 @@ type G =
       still: Point;
       /** The shape a held stroke snapped into: kept while the pen stays down so it can be scaled and turned. */
       snap: { shape: InkShapeParams; raw: InkPoint[]; width: number; ref: Point } | null;
+      /** Where the stroke would snap if the pen stays still (shown faintly before it does). */
+      ghost: { pts: InkPoint[]; kind: InkShapeParams['kind'] } | null;
     }
   | { kind: 'laser' }
   | { kind: 'erase'; hits: Set<string>; last: Point }
@@ -89,6 +93,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
       get: () => gRef.current,
       restore: (before) => {
         window.clearTimeout(holdTimer.current);
+        window.clearTimeout(previewTimer.current);
         if (gRef.current === before) return;
         if (inGesture()) endGesture(false);
         gRef.current = null;
@@ -262,8 +267,16 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
 
   const pressure = (e: React.PointerEvent) => (e.pointerType === 'pen' ? e.pressure || 0.5 : 0.5);
 
+  const previewTimer = useRef<number>();
   const resetHold = (p: Point) => {
     window.clearTimeout(holdTimer.current);
+    window.clearTimeout(previewTimer.current);
+    previewTimer.current = window.setTimeout(() => {
+      const cur = gRef.current;
+      if (cur?.kind !== 'ink' || cur.snap || cur.pts.length < 4) return;
+      const shape = recognizeShape(cur.pts);
+      if (shape) setGesture({ ...cur, ghost: { pts: shapePoints(shape), kind: shape.kind } });
+    }, PREVIEW_MS);
     holdTimer.current = window.setTimeout(() => {
       const cur = gRef.current;
       if (cur?.kind !== 'ink' || cur.snap || cur.pts.length < 4) return;
@@ -271,7 +284,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
       if (!shape) return;
       // the clean shape keeps the weight the stroke was drawn with (the highlighter is even already)
       const width = cur.highlighter ? cur.width : inkAverageWidth(cur.pts, cur.width);
-      setGesture({ ...cur, pts: shapePoints(shape), snap: { shape, raw: cur.pts, width, ref: cur.still } });
+      setGesture({ ...cur, pts: shapePoints(shape), snap: { shape, raw: cur.pts, width, ref: cur.still }, ghost: null });
       setSnapFlash(Date.now());
       navigator.vibrate?.(8);
     }, HOLD_MS);
@@ -295,7 +308,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
       case 'highlighter': {
         const hl = tool === 'highlighter';
         const width = hl ? (X().size * 4 + 8) / zz : X().size / zz;
-        setGesture({ kind: 'ink', pts: [{ ...w, p: pressure(e) }], highlighter: hl, color: hl ? X().highlightColor : X().color, width, snap: null, still: w });
+        setGesture({ kind: 'ink', pts: [{ ...w, p: pressure(e) }], highlighter: hl, color: hl ? X().highlightColor : X().color, width, snap: null, ghost: null, still: w });
         resetHold(w);
         return;
       }
@@ -426,7 +439,10 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
           setGesture(cur);
         }
         // holding still (after moving) snaps the scribble into a shape
-        if (Math.hypot(w.x - cur.still.x, w.y - cur.still.y) * S().view.zoom > 3) resetHold(w);
+        if (Math.hypot(w.x - cur.still.x, w.y - cur.still.y) * S().view.zoom > 3) {
+          if (cur.ghost) setGesture({ ...cur, ghost: null });
+          resetHold(w);
+        }
         return;
       }
       case 'laser':
@@ -469,6 +485,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
     if (e.button !== 0) return;
     e.stopPropagation();
     window.clearTimeout(holdTimer.current);
+    window.clearTimeout(previewTimer.current);
     const cur = gRef.current;
     setGesture(null);
     if (!cur) return;
@@ -621,6 +638,10 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
                 <path d={inkOutline(g.pts, g.width)} fill={inkColor(g.color, palette)} />
               )
             ))}
+          {/* the shape a pause would snap to, before it does */}
+          {g?.kind === 'ink' && g.ghost && !g.snap && (
+            <path d={inkShapePath(g.ghost.pts, g.ghost.kind)} className="ink-snap-ghost" fill="none" stroke={inkColor(g.color, palette)} strokeWidth={Math.max(1, g.width * 0.6)} strokeDasharray={`${6 / z} ${5 / z}`} strokeLinecap="round" />
+          )}
           {g?.kind === 'ink' && g.snap && (
             <path key={snapFlash} d={inkShapePath(g.pts, g.snap.shape.kind)} className="ink-snap-flash" fill="none" stroke={inkColor(g.color, palette)} strokeWidth={g.highlighter ? g.width : g.snap.width} strokeLinecap="round" strokeLinejoin="round" />
           )}

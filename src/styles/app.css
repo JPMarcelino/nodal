@@ -4574,6 +4574,13 @@ select.input {
   pointer-events: none;
 }
 
+/* the shape a pause would snap to, shown faintly just before it does */
+.ink-snap-ghost {
+  opacity: 0.45;
+  pointer-events: none;
+  animation: fade 0.15s ease-out;
+}
+
 /* the centre a snapped shape scales and turns about while the pen is still down */
 .ink-snap-centre {
   fill: var(--panel);
