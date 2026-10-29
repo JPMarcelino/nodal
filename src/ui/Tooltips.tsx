@@ -33,6 +33,14 @@ export function parseTip(text: string): { label: string; keys: string[] } {
   return { label: text, keys: [] };
 }
 
+/** Text cut short by an ellipsis, in the element or the spans inside it. */
+function clipped(el: HTMLElement): boolean {
+  const over = (n: Element) => n.scrollWidth > n.clientWidth + 1;
+  if (over(el)) return true;
+  for (const c of el.children) if (over(c)) return true;
+  return false;
+}
+
 function tipTarget(el: EventTarget | null): HTMLElement | null {
   let n = el as Element | null;
   while (n && n !== document.body) {
@@ -83,7 +91,9 @@ export function Tooltips() {
       if (e.pointerType === 'touch') return;
       const el = tipTarget(e.target);
       if (el === current) return;
-      const text = el ? adopt(el) : '';
+      const raw = el ? adopt(el) : '';
+      // a tooltip that only repeats the button's own visible label adds nothing (unless that label is cut off)
+      const text = raw && (raw.trim() !== el?.textContent?.trim() || (el && clipped(el))) ? raw : '';
       clearTimeout(timer);
       if (!el || !text) {
         if (shown) hide();
