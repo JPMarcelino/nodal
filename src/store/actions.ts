@@ -1,5 +1,6 @@
 import { current } from 'immer';
-import { docBounds, groupChain, makeComponent, makeShape, topGroup } from '../model/doc';
+import { docBounds, groupChain, itemBounds, makeComponent, makeShape, topGroup } from '../model/doc';
+import { pulseAt } from '../canvas/pulses';
 import { withContents } from '../model/containers';
 import { PRESET_SIZE, getPreset, makePresetShape } from '../model/shapePresets';
 import { nextPresentationStep } from '../model/presentation';
@@ -197,6 +198,9 @@ export function placeComponent(symbol: string, x: number, y: number, rot: 0 | 90
   });
   set({ selection: [id] });
   pushRecent(symbol);
+  const placed = vdoc().items[id];
+  const b = placed && itemBounds(vdoc(), placed);
+  if (b) pulseAt(b.x + b.w / 2, b.y + b.h / 2, 'place');
   return id;
 }
 
