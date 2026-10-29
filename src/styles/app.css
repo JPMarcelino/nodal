@@ -7063,7 +7063,14 @@ a:focus-visible,
   border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
   box-shadow: var(--shadow-sm);
   font-size: 0.86em;
-  animation: tip-in 0.15s ease-out;
+  animation: crumbs-in 0.15s ease-out;
+}
+
+@keyframes crumbs-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -3px);
+  }
 }
 
 .crumb-step {

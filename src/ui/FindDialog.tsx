@@ -51,6 +51,8 @@ export function FindDialog() {
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  // the keyboard moves the highlight; a pointer only takes it over once it actually moves
+  const pointerMoved = useRef(false);
 
   const all = useMemo<Hit[]>(() => {
     const out: Hit[] = [];
@@ -130,9 +132,11 @@ export function FindDialog() {
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
+              pointerMoved.current = false;
               setIdx((i) => Math.min(hits.length - 1, i + 1));
             } else if (e.key === 'ArrowUp') {
               e.preventDefault();
+              pointerMoved.current = false;
               setIdx((i) => Math.max(0, i - 1));
             } else if (e.key === 'Enter') go(hits[idx]);
           }}
@@ -143,9 +147,9 @@ export function FindDialog() {
           </button>
         )}
       </div>
-      <div className="palette-list" ref={listRef}>
+      <div className="palette-list" ref={listRef} onPointerMove={() => (pointerMoved.current = true)}>
         {hits.map((h, i) => (
-          <button key={h.key} className={i === idx ? 'palette-item active' : 'palette-item'} onMouseEnter={() => setIdx(i)} onClick={() => go(h)}>
+          <button key={h.key} className={i === idx ? 'palette-item active' : 'palette-item'} onMouseEnter={() => pointerMoved.current && setIdx(i)} onClick={() => go(h)}>
             <span className={h.def ? 'palette-icon sym' : 'palette-icon'}>{h.def ? <SymbolPreview def={h.def} size={26} pad={2} /> : h.kind !== 'Part' && KIND_ICON[h.kind]}</span>
             <span className="palette-label">
               <Marked text={h.label} words={words} />
