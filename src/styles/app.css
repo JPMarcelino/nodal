@@ -163,6 +163,9 @@ kbd {
   position: relative;
   min-width: 0;
   container-type: inline-size;
+  /* room taken by a side panel floating over the stage (narrow windows only) */
+  --inset-l: 0px;
+  --inset-r: 0px;
 }
 
 /* a narrow canvas gets a slimmer tool rail (it wraps to a second row only as a last resort) */
@@ -186,7 +189,7 @@ kbd {
 @container (max-width: 640px) {
   .stage .tool-rail {
     width: auto;
-    max-width: calc(100% - 20px);
+    max-width: calc(100% - var(--inset-l) - var(--inset-r) - 20px);
     overflow-x: auto;
     overflow-y: hidden;
     flex-wrap: nowrap;
@@ -2248,14 +2251,14 @@ select.input {
 .tool-rail {
   position: absolute;
   top: 12px;
-  left: 50%;
+  left: calc(var(--inset-l) + (100% - var(--inset-l) - var(--inset-r)) / 2);
   transform: translateX(-50%);
   z-index: 4;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   width: max-content;
-  max-width: calc(100% - 16px);
+  max-width: calc(100% - var(--inset-l) - var(--inset-r) - 16px);
   align-items: center;
   gap: 2px;
   padding: 5px;
@@ -2310,7 +2313,7 @@ select.input {
 
 .minimap {
   position: absolute;
-  right: 14px;
+  right: calc(14px + var(--inset-r));
   bottom: 14px;
   border-radius: 12px;
   overflow: hidden;
@@ -3253,6 +3256,27 @@ select.input {
   }
   .right-panel {
     right: 0;
+  }
+  /* the rail, hint line, welcome card and minimap move out from under a floating panel */
+  .workspace:has(> .left-panel) > .stage {
+    --inset-l: var(--lw, 280px);
+  }
+  .workspace:has(> .right-panel) > .stage {
+    --inset-r: var(--rw, 290px);
+  }
+  .workspace:has(> .panel) > .stage .tool-rail {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    gap: 0;
+  }
+  .workspace:has(> .panel) > .stage .tool-rail .tool-btn {
+    width: 29px;
+  }
+  .workspace:has(> .panel) > .stage .tool-rail::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -5965,11 +5989,11 @@ body.is-presenting .stage .canvas-wrap {
 /* one quiet line: the next useful step for the tool in hand (never takes the pointer) */
 .hint-bar {
   position: absolute;
-  left: 50%;
+  left: calc(var(--inset-l) + (100% - var(--inset-l) - var(--inset-r)) / 2);
   bottom: 12px;
   transform: translateX(-50%);
   z-index: 3;
-  max-width: calc(100% - 48px);
+  max-width: calc(100% - var(--inset-l) - var(--inset-r) - 48px);
   width: max-content;
   padding: 3px 10px;
   border-radius: 10px;
@@ -5991,8 +6015,8 @@ body.is-presenting .stage .canvas-wrap {
 /* with the minimap up, the line centres in the room to its left instead of shrinking on both sides */
 .hint-bar.with-minimap {
   --mm-room: 236px;
-  left: calc((100% - var(--mm-room)) / 2);
-  max-width: calc(100% - var(--mm-room) - 24px);
+  left: calc(var(--inset-l) + (100% - var(--inset-l) - var(--inset-r) - var(--mm-room)) / 2);
+  max-width: calc(100% - var(--inset-l) - var(--inset-r) - var(--mm-room) - 24px);
 }
 
 @container (max-width: 900px) {
@@ -6048,7 +6072,7 @@ body.is-presenting .welcome {
 /* welcome screen over an empty page: only its buttons take the pointer */
 .welcome {
   position: absolute;
-  inset: 0;
+  inset: 0 var(--inset-r) 0 var(--inset-l);
   z-index: 3;
   display: flex;
   align-items: center;
@@ -6723,6 +6747,22 @@ body.is-presenting .stats-panel {
     opacity: 0;
     transform: translateY(3px);
   }
+}
+
+/* Keyboard focus: one clear ring everywhere (mouse clicks don't show it) */
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 85%, transparent);
+  outline-offset: 1px;
+}
+
+/* theme switch: a short cross-fade of the whole window */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.28s;
+  animation-timing-function: ease;
 }
 
 /* People who ask for less motion get state changes without the movement */

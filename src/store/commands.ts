@@ -9,7 +9,7 @@ import { clearExplainOverlays } from './explain';
 import { startPresenting } from '../ui/Presenter';
 import { renumberCallouts } from '../ui/ExplainDock';
 import { toggleTimeline } from '../ui/Timeline';
-import { S, activePage, readOnly, viewModeKey, redo, set, setPrefs, toast, undo, mutate, vdoc } from './store';
+import { S, activePage, readOnly, viewModeKey, redo, set, setPrefs, setTheme, toast, undo, mutate, vdoc } from './store';
 import { docPages, pageIndex } from '../model/pages';
 import { canvasActions } from './canvasActions';
 import { copyStyle, pasteStyle } from '../ui/StyleSection';
@@ -195,7 +195,7 @@ export const COMMANDS: Command[] = [
   { id: 'view.inspector', label: 'Toggle properties panel', category: 'View', keys: ['Mod+I'], run: () => set((s) => ({ rightPanel: !s.rightPanel })), checked: () => S().rightPanel },
   { id: 'view.layers', label: 'Show layers panel', category: 'View', keys: ['Mod+Shift+O'], run: () => set({ leftPanel: true, leftTab: 'layers' }) },
   { id: 'view.minimap', label: 'Toggle minimap', category: 'View', keys: ['Alt+M'], run: () => setPrefs({ showMinimap: !S().prefs.showMinimap }), checked: () => S().prefs.showMinimap },
-  { id: 'view.theme', label: 'Toggle light / dark theme', category: 'View', keys: ['Mod+Shift+D'], run: () => setPrefs({ theme: S().prefs.theme === 'dark' ? 'light' : 'dark' }) },
+  { id: 'view.theme', label: 'Toggle light / dark theme', category: 'View', keys: ['Mod+Shift+D'], run: () => setTheme(S().prefs.theme === 'dark' ? 'light' : 'dark') },
   { id: 'view.focus', label: 'Focus mode (hide panels)', category: 'View', keys: ['Mod+.'], run: focusMode },
   { id: 'view.search', label: 'Search symbol library', category: 'View', keys: ['/'], cadence: ['I', '/'], run: focusSearch },
   { id: 'view.viewMode', label: 'View mode (read-only: look, select, find, export)', category: 'View', keys: ['Alt+Shift+R'], run: () => A.setViewMode(), checked: () => S().viewMode, keywords: 'read only readonly lock locked protect view zen viewer' },
