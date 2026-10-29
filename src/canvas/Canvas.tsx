@@ -33,7 +33,7 @@ import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
-import { HintBar, WelcomeScreen } from '../ui/CanvasGuides';
+import { HintBar, IntroCard, WelcomeScreen } from '../ui/CanvasGuides';
 import { marqueeHits } from '../model/marquee';
 import { gestureSlots, hitSlop, useTouchInput } from './touch';
 import { applySolder, solderActionFor } from './solder';
@@ -2654,6 +2654,7 @@ export function Canvas() {
         </div>
       )}
       <WelcomeScreen />
+      <IntroCard />
       <HintBar
         gesture={!g ? null : g.kind === 'wire' || g.kind === 'polygon' || g.kind === 'path' ? g.kind : g.kind === 'shape' && (g.shape === 'line' || g.shape === 'arrow') ? 'connector' : 'other'}
         editingText={!!editingText}

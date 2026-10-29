@@ -6843,3 +6843,102 @@ a:focus-visible,
     scroll-behavior: auto !important;
   }
 }
+
+/* first-visit card over the example circuit */
+.intro-card {
+  position: absolute;
+  top: 66px;
+  right: calc(16px + var(--inset-r));
+  z-index: 5;
+  width: 292px;
+  max-width: calc(100% - 32px);
+  padding: 14px 14px 12px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  box-shadow: var(--shadow);
+  animation: intro-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.1) 0.4s both;
+}
+
+.intro-card p {
+  margin: 6px 0 10px;
+  color: var(--text-dim);
+  font-size: 0.93em;
+  line-height: 1.4;
+}
+
+.intro-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 650;
+  font-size: 1.05em;
+}
+
+.intro-title svg {
+  color: var(--accent);
+}
+
+.intro-card ul {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 0.9em;
+  color: var(--text-dim);
+}
+
+.intro-card li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.intro-card li > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.intro-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.intro-actions button {
+  flex: 1;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.intro-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+.intro-close:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+@keyframes intro-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
+@container (max-width: 560px) {
+  .intro-card {
+    display: none;
+  }
+}
