@@ -2858,11 +2858,78 @@ select.input {
 .settings-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
 }
 
-.settings-body .field {
-  grid-template-columns: 260px 1fr;
+.settings-group h3 {
+  margin: 0 0 6px;
+  font-size: 0.74em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.settings-rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 9px 14px;
+  min-height: 46px;
+}
+
+.setting-row + .setting-row {
+  border-top: 1px solid var(--border);
+}
+
+.setting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.setting-label {
+  color: var(--text);
+}
+
+.setting-desc {
+  font-size: 0.86em;
+  color: var(--text-faint);
+}
+
+.setting-control {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.setting-control .segmented {
+  min-width: 300px;
+}
+
+@media (max-width: 640px) {
+  .setting-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .setting-control {
+    justify-content: flex-start;
+  }
+  .setting-control .segmented {
+    min-width: 0;
+    width: 100%;
+  }
 }
 
 .export-preview-wrap {
