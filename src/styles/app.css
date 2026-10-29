@@ -6983,3 +6983,19 @@ a:focus-visible,
     transform: scale(1.25);
   }
 }
+
+/* the field a double-click or F2 just jumped to */
+.attention {
+  animation: attention-glow 1.1s ease-out;
+}
+
+@keyframes attention-glow {
+  0%,
+  30% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+    border-color: var(--accent);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}

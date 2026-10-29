@@ -347,11 +347,25 @@ function renameGroupCmd() {
 
 function focusValue() {
   if (!S().selection.length) return;
+  focusValueField();
+}
+
+/**
+ * Opens the inspector and puts the cursor in the selection's value field,
+ * with a short glow so the eye finds it across the screen.
+ */
+export function focusValueField() {
   set({ rightPanel: true });
   setTimeout(() => {
     const el = document.querySelector<HTMLInputElement>('[data-focus="value"]');
-    el?.focus();
-    el?.select();
+    if (!el) return;
+    el.scrollIntoView({ block: 'nearest' });
+    el.focus();
+    el.select();
+    el.classList.remove('attention');
+    void el.offsetWidth; // restart the glow if it is still running
+    el.classList.add('attention');
+    setTimeout(() => el.classList.remove('attention'), 1200);
   }, 30);
 }
 

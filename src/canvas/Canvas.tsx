@@ -40,6 +40,7 @@ import { applySolder, solderActionFor } from './solder';
 import { computeHotSpots, hotSpotKey, type HotSpot } from '../model/hotspots';
 import { attachSpots, bendSlots, findGlue, isConnector, isFixed, resolveConnector, type GlueHit } from '../model/connectors';
 import { libraryDrag } from '../ui/dragState';
+import { focusValueField } from '../store/commands';
 import { pulseAt, usePulses } from './pulses';
 
 /* ------------------------------------------------------------------ */
@@ -1562,14 +1563,7 @@ export function Canvas() {
       setX({ editing: id });
       return;
     }
-    if (it.type === 'component' || it.type === 'wire' || it.type === 'shape') {
-      set({ rightPanel: true });
-      setTimeout(() => {
-        const el = document.querySelector<HTMLInputElement>('[data-focus="value"]');
-        el?.focus();
-        el?.select();
-      }, 30);
-    }
+    if (it.type === 'component' || it.type === 'wire' || it.type === 'shape') focusValueField();
   };
 
   const hoverAt = useRef<Point | null>(null);
