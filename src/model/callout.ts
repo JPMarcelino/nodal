@@ -18,6 +18,23 @@ export const CALLOUT_MIN_WRAP = 60;
 /** Where a note wraps when it has no width of its own. */
 export const CALLOUT_AUTO_WRAP = 280;
 
+/** Measured notes, by text, size and width: laying a note out is text measuring, and it runs on every hit test. */
+const sizes = new Map<string, { text: string; w: number; h: number }>();
+
+/** A note's wrapped text and card size (independent of where it sits). */
+function noteSize(raw: string, fs: number, set: number): { text: string; w: number; h: number } {
+  const key = `${fs}|${set}|${raw}`;
+  const hit = sizes.get(key);
+  if (hit) return hit;
+  // without a width of its own a note still wraps before it gets too wide, and hugs shorter text
+  const text = wrapRich(raw, fs, 500, set || CALLOUT_AUTO_WRAP);
+  const m = measureRich(text, fs, 500);
+  const out = { text, w: (set || m.w) + 22, h: Math.max(2 * CALLOUT_R, m.h + 12) };
+  if (sizes.size > 500) sizes.clear();
+  sizes.set(key, out);
+  return out;
+}
+
 /**
  * Badge and note card of a callout. The card sits beside the badge on the
  * side away from what the leader points at (so the leader never crosses
@@ -30,11 +47,7 @@ export function calloutLayout(s: Pick<ShapeItem, 'x' | 'y' | 'text' | 'fontSize'
   if (!raw) return { badge, card: null, box: { x: s.x, y: s.y, w: 2 * r, h: 2 * r } };
   const fs = s.fontSize ?? 14;
   const set = s.wrapW && s.wrapW > 0 ? Math.max(CALLOUT_MIN_WRAP, s.wrapW) : 0;
-  // without a width of its own a note still wraps before it gets too wide, and hugs shorter text
-  const text = wrapRich(raw, fs, 500, set || CALLOUT_AUTO_WRAP);
-  const m = measureRich(text, fs, 500);
-  const w = (set || m.w) + 22;
-  const h = Math.max(2 * r, m.h + 12);
+  const { text, w, h } = noteSize(raw, fs, set);
   // the leader leaves the badge towards the anchor: put the note on the other side
   const left = !!anchor && anchor.x > badge.cx + r;
   const cx = left ? s.x - GAP - w : s.x + 2 * r + GAP;

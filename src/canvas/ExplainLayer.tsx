@@ -116,7 +116,16 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
 
   // animates laser trails and vanishing ink; idles when there is nothing to fade
   const peers = useCollab((s) => s.peers);
-  const remoteLaser = Object.values(peers).some((p) => p.laser);
+  const remoteHeld = Object.values(peers).some((p) => p.laser);
+  // after the last peer puts the laser down, keep painting until their marks have faded
+  const [remoteTail, setRemoteTail] = useState(false);
+  useEffect(() => {
+    if (remoteHeld) return;
+    setRemoteTail(true);
+    const t = window.setTimeout(() => setRemoteTail(false), LASER_IDLE + LASER_FADE + 100);
+    return () => window.clearTimeout(t);
+  }, [remoteHeld]);
+  const remoteLaser = remoteHeld || remoteTail;
   const fadingRef = useRef(false);
   fadingRef.current = fading.length > 0;
   const remoteLaserRef = useRef(false);
@@ -699,7 +708,10 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onPointerLeave={() => setCursor(null)}
+        onPointerLeave={() => {
+          setCursor(null);
+          setOverCallout(null);
+        }}
       />
 
       {editing && editing.kind === 'callout' && <CalloutEditor key={editing.id} s={editing} />}
@@ -815,11 +827,22 @@ function RemoteLasers({ z }: { z: number }) {
   const now = performance.now();
   const out: JSX.Element[] = [];
   for (const p of Object.values(peers)) {
+    const st = trails.current.get(p.id) ?? { strokes: [], down: false };
     if (!p.laser || !p.cursor) {
-      trails.current.delete(p.id);
+      // they put the laser down: what they drew still fades out with the rest, then goes
+      st.down = false;
+      st.strokes = fadeTrails(st.strokes, now, false);
+      if (!st.strokes.length) trails.current.delete(p.id);
+      else
+        out.push(
+          <g key={p.id}>
+            {st.strokes.map((tr, i) => (
+              <LaserTrail key={i} pts={tr} now={now} z={z} color={p.color} opacity={laserOpacity(st.strokes, now, false)} />
+            ))}
+          </g>,
+        );
       continue;
     }
-    const st = trails.current.get(p.id) ?? { strokes: [], down: false };
     const down = p.laser === 2;
     // a fresh press starts a new trail instead of joining the last one
     if (down && !st.down) st.strokes.push([]);
@@ -873,11 +896,15 @@ function CalloutEditor({ s }: { s: ShapeItem }) {
   };
   const fs = s.fontSize ?? 14;
   // laid out with the text being typed, so the editor sits where the card will be
-  const L = calloutLayout({ ...s, text: text || 'M' }, calloutAnchor(doc, s));
-  const card = L.card!;
+  // (blank or spaces only: laid out as a one-letter note, so there is always a card to type in)
+  const L = calloutLayout({ ...s, text: text.trim() ? text : 'M' }, calloutAnchor(doc, s));
+  const card = L.card ?? { x: s.x + 30, y: s.y, w: 40, h: 28, text: 'M' };
   const m = measureRich(card.text, fs, 500);
   const wrap = s.wrapW && s.wrapW > 0;
-  const left = card.x * view.zoom + view.x;
+  const onLeft = card.x < s.x;
+  // as wide as the card, so lines wrap where the note will wrap; a card left of its badge grows leftwards
+  const width = Math.max(140, card.w + (wrap ? 0 : 18));
+  const left = (onLeft ? card.x + card.w - width : card.x) * view.zoom + view.x;
   const top = s.y * view.zoom + view.y;
   return (
     <textarea
@@ -888,8 +915,7 @@ function CalloutEditor({ s }: { s: ShapeItem }) {
         top,
         fontSize: fs * view.zoom,
         borderColor: inkColor(s.stroke, EDITOR_PALETTE),
-        // as wide as the card, so lines wrap where the note will wrap
-        width: Math.max(140, card.w + (wrap ? 0 : 18)) * view.zoom,
+        width: width * view.zoom,
         height: Math.max(28 * view.zoom, (m.h + 14) * view.zoom),
       }}
       value={text}
