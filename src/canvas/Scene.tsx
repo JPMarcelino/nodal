@@ -319,7 +319,7 @@ export const ComponentView = memo(function ComponentView({
   const color = inkColor(c.color || settings.componentColor || palette.sym, palette);
   const tf = `translate(${c.x} ${c.y}) rotate(${c.rot}) scale(${c.flipX ? -1 : 1} 1) translate(${-def.w / 2} ${-def.h / 2})`;
   const labels = labelLayout(c, def);
-  const labelColor = c.labelColor || settings.labelColor || palette.label;
+  const labelColor = inkColor(c.labelColor || settings.labelColor || palette.label, palette);
   const lw = c.lineWidth ?? 2;
   const look = useMemo(() => ({ sw: lw, k: lw / 2, fill: c.fill, fillOpacity: c.fillOpacity }), [lw, c.fill, c.fillOpacity]);
   const dnp = isDnp(c);
@@ -335,20 +335,20 @@ export const ComponentView = memo(function ComponentView({
         if (anchor !== 'middle' && (c.flipX ? c.rot !== 180 : c.rot === 180)) anchor = anchor === 'start' ? 'end' : 'start';
         if (c.rot === 90 || c.rot === 270) anchor = 'middle';
         return (
-          <text key={i} x={w.x} y={w.y + p.size * 0.35} fontSize={p.size} textAnchor={anchor} fill={p.color ?? 'currentColor'} className="sym-text">
+          <text key={i} x={w.x} y={w.y + p.size * 0.35} fontSize={p.size} textAnchor={anchor} fill={p.color ? inkColor(p.color, palette) : 'currentColor'} className="sym-text">
             {p.text}
           </text>
         );
       })}
       {c.showRef && labels.ref && (
-        <PartLabel at={labels.ref} look={labelLook(c, 'ref', def)} className="ref-label" fill={c.refStyle?.color || labelColor} bg={knockout ? 'none' : palette.bg} />
+        <PartLabel at={labels.ref} look={labelLook(c, 'ref', def)} className="ref-label" fill={c.refStyle?.color ? inkColor(c.refStyle.color, palette) : labelColor} bg={knockout ? 'none' : palette.bg} />
       )}
       {c.showValue && c.value && labels.value && (
         <PartLabel
           at={labels.value}
           look={labelLook(c, 'value', def)}
           className={def.valueIsLabel ? 'net-label' : 'value-label'}
-          fill={c.valueStyle?.color || (def.valueIsLabel ? color : settings.labelColor || palette.value)}
+          fill={inkColor(c.valueStyle?.color || (def.valueIsLabel ? color : settings.labelColor || palette.value), palette)}
           bg={knockout ? 'none' : palette.bg}
         >
           {dnp && <tspan className="dnp-tag"> DNP</tspan>}
@@ -395,7 +395,7 @@ export const WireView = memo(function WireView({
         strokeDasharray={dashArray(st.dash, st.width)}
       />
       {spot && look && (
-        <RichText text={look.text} x={spot.x} y={spot.y} anchor={spot.anchor} fontSize={look.size} fontWeight={look.weight} className="wire-label" fill={look.st.color || color} style={labelFace(look.st, look.size, look.weight)} />
+        <RichText text={look.text} x={spot.x} y={spot.y} anchor={spot.anchor} fontSize={look.size} fontWeight={look.weight} className="wire-label" fill={look.st.color ? inkColor(look.st.color, palette) : color} style={labelFace(look.st, look.size, look.weight)} />
       )}
     </g>
   );

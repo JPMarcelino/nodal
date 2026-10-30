@@ -114,6 +114,15 @@ describe('selectionDoc', () => {
     expect(exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg).toContain('stroke="#000000"');
   });
 
+  it('draws black (ink) part labels in the ink colour, like the part itself', () => {
+    const { doc, c1 } = twoResistors();
+    c1.labelColor = '#000000';
+    c1.valueStyle = { color: '#000000' };
+    const dark = exportSvg(doc, { theme: 'dark', background: true, padding: 10 }).svg;
+    expect(dark).not.toContain('fill="#000000"');
+    expect(dark).toContain('fill="#e6dfcf"');
+  });
+
   it('follows the document background, not the theme, when the drawing sets one', () => {
     // dark theme on a white page: parts, wires and labels must stay dark
     const { doc } = twoResistors();
