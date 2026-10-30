@@ -438,7 +438,7 @@ export function exportDxf(doc: CircuitDoc): string {
         g(8, 'JUNCTIONS');
         g(10, it.x);
         g(20, Y(it.y));
-        g(40, doc.settings.junctionSize);
+        g(40, it.size ?? doc.settings.junctionSize);
       }
     } else if (it.type === 'shape') {
       const layer = it.kind === 'zone' || it.kind === 'rect' ? 'ZONES' : 'ANNOTATIONS';

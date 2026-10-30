@@ -156,8 +156,10 @@ export function itemBounds(doc: CircuitDoc, it: Item): Rect | null {
   switch (it.type) {
     case 'component':
       return componentBounds(it, instanceSymbol(doc, it));
-    case 'junction':
-      return { x: it.x - 3, y: it.y - 3, w: 6, h: 6 };
+    case 'junction': {
+      const r = Math.max(it.size ?? doc.settings.junctionSize, 3);
+      return { x: it.x - r, y: it.y - r, w: r * 2, h: r * 2 };
+    }
     case 'shape':
       // free text is sized by its content, so the outline always follows the text
       // turned shapes take the bounds of their turned box

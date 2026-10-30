@@ -218,6 +218,10 @@ export interface JunctionItem extends ItemBase {
   type: 'junction';
   x: number;
   y: number;
+  /** Dot colour; unset follows the first wire soldered here (then the document's wire colour). */
+  color?: string;
+  /** Dot radius in px; unset follows the document's junction size. */
+  size?: number;
 }
 
 export type ShapeKind = 'rect' | 'zone' | 'ellipse' | 'polygon' | 'line' | 'arrow' | 'text' | 'image' | 'ink' | 'callout' | 'frame';

@@ -8,7 +8,8 @@ export interface Pulse {
   id: number;
   x: number;
   y: number;
-  kind: 'place' | 'snap';
+  /** place: something set down; snap: a wire snapped onto a pin; solder: a joint was made or broken. */
+  kind: 'place' | 'snap' | 'solder';
 }
 
 const LIFE = 650;
