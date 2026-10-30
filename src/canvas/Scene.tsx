@@ -445,7 +445,7 @@ export const hasMovableTitle = (s: ShapeItem) => !!s.text && (s.kind === 'rect' 
 /** Where a shape's title text sits: anchor point (baseline of the first line), its alignment and its box. */
 export function shapeTitle(s: ShapeItem): { x: number; y: number; anchor: 'start' | 'middle' | 'end'; box: { x: number; y: number; w: number; h: number } } {
   const fs = s.fontSize ?? 13;
-  const m = measureRich(shapeText(s), fs, textWeight(s), s.font);
+  const m = measureRich(shapeText(s), fs, textWeight(s), s.font, s.italic);
   const round = s.kind === 'ellipse' || s.kind === 'polygon';
   const anchor = s.align ?? defaultAlign(s);
   const valign = hasHeader(s) ? 'top' : (s.valign ?? defaultValign(s));
@@ -688,7 +688,7 @@ function shapeBody(s: ShapeItem, palette: Palette, ax?: number, ay?: number, con
       const fs = textSize(s);
       const text = shapeText(s);
       const m = measureTextShape(s);
-      const first = hasMath(text) ? layoutRich(text, fs, textWeight(s), s.font)[0].ascent : fs;
+      const first = hasMath(text) ? layoutRich(text, fs, textWeight(s), s.font, s.italic)[0].ascent : fs;
       const anchor = s.align ?? 'start';
       return (
         <g className="shape" data-id={s.id}>

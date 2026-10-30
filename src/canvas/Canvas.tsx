@@ -550,7 +550,7 @@ export function Canvas() {
         const spot = wireLabelAt(it, data.polys.get(it.id) ?? [], wireStyle(d, it).width);
         if (!spot) continue;
         const look = wireLabelLook(it);
-        const m = measureRich(look.text, look.size, look.weight, look.st.font);
+        const m = measureRich(look.text, look.size, look.weight, look.st.font, look.st.italic);
         const x = spot.anchor === 'start' ? spot.x : spot.anchor === 'middle' ? spot.x - m.w / 2 : spot.x - m.w;
         if (pointInRect(p, { x, y: spot.y - look.size, w: m.w, h: look.size * 1.3 }, 2)) return it.id;
       }

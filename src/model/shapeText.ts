@@ -37,12 +37,12 @@ export function wrapWidth(s: ShapeItem): number | undefined {
 export function shapeText(s: ShapeItem): string {
   const text = s.allCaps ? upperText(s.text ?? '') : (s.text ?? '');
   const w = wrapWidth(s);
-  return w ? wrapRich(text, textSize(s), textWeight(s), w, s.font) : text;
+  return w ? wrapRich(text, textSize(s), textWeight(s), w, s.font, s.italic) : text;
 }
 
 /** Size of a shape's laid-out text; a free text with a wrap width is exactly that wide. */
 export function measureTextShape(s: ShapeItem): { w: number; h: number } {
-  const m = measureRich(shapeText(s), textSize(s), textWeight(s), s.font);
+  const m = measureRich(shapeText(s), textSize(s), textWeight(s), s.font, s.italic);
   return s.kind === 'text' && s.wrapW && s.wrapW > 0 ? { w: s.wrapW, h: m.h } : m;
 }
 
