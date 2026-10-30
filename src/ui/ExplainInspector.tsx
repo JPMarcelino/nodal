@@ -33,7 +33,7 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
       {allCallouts && shapes.length === 1 && (
         <Section title="Note">
           <Field label="Text" wide hint="Also the caption when presenting · supports $LaTeX$">
-            <TextInput value={first.text ?? ''} multiline focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder="Note" />
+            <TextInput value={first.text ?? ''} math multiline focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder="Note" />
           </Field>
           <Field label="Step">
             <NumberInput value={first.step ?? 1} min={1} max={999} onChange={(v) => upd((s) => (s.step = Math.round(v)))} />
@@ -180,7 +180,7 @@ export function FramePanel({ shapes }: { shapes: ShapeItem[] }) {
       {shapes.length === 1 && (
         <Section title="Frame">
           <Field label="Title" wide hint="Caption while presenting and in the video · supports $LaTeX$">
-            <TextInput value={first.text ?? ''} multiline focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder="Optional" />
+            <TextInput value={first.text ?? ''} math multiline focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder="Optional" />
           </Field>
           <Field label="Step">
             <NumberInput value={first.step ?? 1} min={1} max={999} onChange={(v) => upd((s) => (s.step = Math.round(v)))} />

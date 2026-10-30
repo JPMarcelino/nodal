@@ -709,7 +709,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
           </Field>
         )}
         <Field label={def.valueIsLabel ? 'Net name' : 'Value'} hint="Supports maths, e.g. $R_{load}$ or $\SI{10}{\kilo\ohm}$">
-          <TextInput value={c.value} focusKey="value" onChange={(v) => upd((x) => (x.value = v))} />
+          <TextInput value={c.value} math focusKey="value" onChange={(v) => upd((x) => (x.value = v))} />
         </Field>
         {(def.fields ?? []).map((f) => (
           <Field key={f.key} label={f.label}>
@@ -850,7 +850,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
       {wires.length === 1 && (
         <Section title="Label">
           <Field label="Text" hint="Supports maths, e.g. $V_{CC}$">
-            <TextInput value={first.label ?? ''} focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => updLabel((w) => (w.label = v || undefined))} />
+            <TextInput value={first.label ?? ''} math focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => updLabel((w) => (w.label = v || undefined))} />
           </Field>
           {first.label && (
             <>
@@ -953,7 +953,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
         extras={{
           textTop: shapes.some((s) => (s.text ?? '') !== (first.text ?? '')) ? undefined : (
             <Field label={isText ? 'Content' : 'Title'} wide hint="Supports maths: $…$ inline, $$…$$ display, \$ for a dollar sign">
-              <TextInput value={first.text ?? ''} multiline={isText} focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder={isText ? '' : 'Optional title'} />
+              <TextInput value={first.text ?? ''} math multiline={isText} focusKey="value" onChange={(v) => upd((s) => (s.text = v))} placeholder={isText ? '' : 'Optional title'} />
             </Field>
           ),
           text:

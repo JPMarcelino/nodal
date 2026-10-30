@@ -43,6 +43,7 @@ import { libraryDrag, placeHere } from '../ui/dragState';
 import { CALLOUT_MIN_WRAP, calloutAnchor, calloutLayout, makeAnchor } from '../model/callout';
 import { focusValueField } from '../store/commands';
 import { pulseAt, usePulses } from './pulses';
+import { openEquation } from '../ui/EquationZone';
 
 /* ------------------------------------------------------------------ */
 /* Targets                                                             */
@@ -343,6 +344,33 @@ export function Canvas() {
     const v = S().view;
     return { x: (clientX - r.left - v.x) / v.zoom, y: (clientY - r.top - v.y) / v.zoom };
   }, []);
+
+  // Insert equation (Alt+=): a new text under the pointer (or mid-view), opened in the math zone
+  useEffect(() => {
+    const onEquation = () => {
+      if (readOnly()) return;
+      const r = wrapRef.current!.getBoundingClientRect();
+      const m = lastMove.current;
+      const inside = m && m.clientX >= r.left && m.clientX <= r.right && m.clientY >= r.top && m.clientY <= r.bottom;
+      const p = toWorldPt(inside ? m.clientX : r.left + r.width / 2, inside ? m.clientY : r.top + r.height / 2);
+      let id = '';
+      mutate((d) => {
+        const s = makeShape(d as CircuitDoc, 'text', Math.round(p.x), Math.round(p.y), 40, 20);
+        const mm = measureRich(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400);
+        s.w = mm.w;
+        s.h = mm.h;
+        s.group = S().scope;
+        d.items[s.id] = s;
+        id = s.id;
+      });
+      if (!id) return;
+      pendingEquation = id;
+      set({ selection: [id] });
+      setEditingText(id);
+    };
+    window.addEventListener('nodal:equation', onEquation);
+    return () => window.removeEventListener('nodal:equation', onEquation);
+  }, [toWorldPt]);
 
   useEffect(() => {
     const el = wrapRef.current!;
@@ -2928,6 +2956,9 @@ function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; 
   );
 }
 
+/** A new text whose editor should open straight into the math zone. */
+let pendingEquation: string | null = null;
+
 /** Inline editor for free text and for rectangle / zone / ellipse titles. */
 function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
   const doc = useViewDoc();
@@ -2941,6 +2972,11 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
     const t = setTimeout(() => {
       ref.current?.focus();
       ref.current?.select();
+      // a text placed with Insert equation starts in the math zone
+      if (ref.current && pendingEquation === id) {
+        pendingEquation = null;
+        openEquation(ref.current, true);
+      }
     }, 0);
     return () => clearTimeout(t);
   }, []);
