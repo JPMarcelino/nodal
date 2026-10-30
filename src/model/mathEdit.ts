@@ -209,7 +209,8 @@ function joinTex(a: string, b: string) {
 /** A pending `\name` written out as what it will become. */
 function cmdTex(v: string) {
   const name = v.slice(1);
-  if (!name) return '\\backslash';
+  // a lone \ just typed: nothing yet (and the field doesn't flicker wider)
+  if (!name) return '';
   const d = lookupSym(name);
   if (d) return d.tex;
   if (FUNCTIONS.has(name)) return fnTex(name);
