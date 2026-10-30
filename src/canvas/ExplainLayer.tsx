@@ -2,11 +2,11 @@ import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'reac
 import { useCollab } from '../collab/session';
 import { calloutAnchor, calloutLayout, callouts, makeAnchor, nextStep } from '../model/callout';
 import { backZ, drawOrderCached, itemBounds, makeShape } from '../model/doc';
-import { pointInRect } from '../model/geometry';
+import { measureText, pointInRect } from '../model/geometry';
+import { useFitHeight } from './fitHeight';
 import { EXPLAIN_COLORS, inkAverageWidth, inkHit, inkOutline, inkCenterPath, inkShapePath, packInk, recognizeShape, shapeCentre, shapePoints, type InkPoint, type InkShapeParams } from '../model/ink';
 import { computeNets, type Net } from '../model/netlist';
 import { instanceSymbol } from '../model/registry';
-import { measureRich } from '../model/richText';
 import { netFlow, resolveNet, type NetFlow, type TraceSeed } from '../model/trace';
 import type { CircuitDoc, Item, Point, ShapeItem } from '../model/types';
 import { buildWirePath, hitWire, portPosition } from '../model/wires';
@@ -895,15 +895,16 @@ function CalloutEditor({ s }: { s: ShapeItem }) {
     return i < 0 || list.length < 2 ? null : list[(i + dir + list.length) % list.length].id;
   };
   const fs = s.fontSize ?? 14;
+  useFitHeight(ref, 28 * view.zoom);
   // laid out with the text being typed, so the editor sits where the card will be
   // (blank or spaces only: laid out as a one-letter note, so there is always a card to type in)
   const L = calloutLayout({ ...s, text: text.trim() ? text : 'M' }, calloutAnchor(doc, s));
   const card = L.card ?? { x: s.x + 30, y: s.y, w: 40, h: 28, text: 'M' };
-  const m = measureRich(card.text, fs, 500);
   const wrap = s.wrapW && s.wrapW > 0;
   const onLeft = card.x < s.x;
   // as wide as the card, so lines wrap where the note will wrap; a card left of its badge grows leftwards
-  const width = Math.max(140, card.w + (wrap ? 0 : 18));
+  // (and, unwrapped, as wide as the source it shows, which is wider than typeset maths)
+  const width = Math.max(140, card.w + (wrap ? 0 : 18), wrap ? 0 : measureText(text || ' ', fs, 500).w + 18);
   const left = (onLeft ? card.x + card.w - width : card.x) * view.zoom + view.x;
   const top = s.y * view.zoom + view.y;
   return (
@@ -916,7 +917,6 @@ function CalloutEditor({ s }: { s: ShapeItem }) {
         fontSize: fs * view.zoom,
         borderColor: inkColor(s.stroke, EDITOR_PALETTE),
         width: width * view.zoom,
-        height: Math.max(28 * view.zoom, (m.h + 14) * view.zoom),
       }}
       value={text}
       placeholder="Note"

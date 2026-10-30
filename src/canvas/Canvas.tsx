@@ -44,6 +44,7 @@ import { CALLOUT_MIN_WRAP, calloutAnchor, calloutLayout, makeAnchor } from '../m
 import { focusValueField } from '../store/commands';
 import { pulseAt, usePulses } from './pulses';
 import { openEquation } from '../ui/EquationZone';
+import { useFitHeight } from './fitHeight';
 
 /* ------------------------------------------------------------------ */
 /* Targets                                                             */
@@ -2980,11 +2981,13 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
     }, 0);
     return () => clearTimeout(t);
   }, []);
+  useFitHeight(ref);
   if (!it) return null;
   const isText = it.kind === 'text';
   const size = textSize(it);
   const weight = textWeight(it);
-  const m = measureRich(value, size, weight, it.font);
+  // the editor shows the source, so it is sized by the source (typeset formulas change shape as you type)
+  const m = measureText(value || ' ', size, weight, it.font);
   // a free text with a wrap width edits at that width
   const width = it.wrapW && isText ? it.wrapW * view.zoom : Math.max(80, m.w * view.zoom + 20);
   let at = { x: it.x, y: it.y };
@@ -3048,7 +3051,6 @@ function TextEditor({ id, onDone }: { id: string; onDone: () => void }) {
         fontSize: size * view.zoom,
         lineHeight: 1.3,
         minWidth: width,
-        height: m.h * view.zoom + 12,
         fontWeight: weight,
         color: it.textColor || undefined,
         ...textFaceStyle(it),
@@ -3122,6 +3124,7 @@ function LabelEditor({ id, which, onDone }: { id: string; which: 'ref' | 'value'
     }, 0);
     return () => clearTimeout(t);
   }, []);
+  useFitHeight(ref);
   if (!c) return null;
   const def = instanceSymbol(doc, c);
   const at = labelLayout(c, def)[which];
@@ -3131,7 +3134,7 @@ function LabelEditor({ id, which, onDone }: { id: string; which: 'ref' | 'value'
   const st = { ...c[key], prefix: undefined, suffix: undefined, allCaps: undefined };
   const look = labelLook({ ...c, [which]: value || ' ', [key]: st }, which, def);
   const box = labelBox(at, look);
-  const width = Math.max(60, box.w * view.zoom + 24);
+  const width = Math.max(60, Math.max(box.w, measureText(value || ' ', look.size, look.weight, look.st.font).w) * view.zoom + 24);
   const anchor = st.align ?? at.anchor;
   const left = anchor === 'start' ? at.x * view.zoom + view.x - 5 : anchor === 'middle' ? at.x * view.zoom + view.x - width / 2 : at.x * view.zoom + view.x - width + 5;
   const commit = () => {
@@ -3167,7 +3170,6 @@ function LabelEditor({ id, which, onDone }: { id: string; which: 'ref' | 'value'
         fontSize: look.size * view.zoom,
         lineHeight: 1.3,
         width,
-        height: box.h * view.zoom + 10,
         fontWeight: look.weight,
         textAlign: anchor === 'start' ? 'left' : anchor === 'middle' ? 'center' : 'right',
       }}

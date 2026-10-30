@@ -19,6 +19,8 @@ interface Session {
 }
 
 let session: Session | null = null;
+/** Counts openings, so each one lays its zone out afresh. */
+let opened = 0;
 let tick = 0;
 const subs = new Set<() => void>();
 const emit = () => {
@@ -62,6 +64,7 @@ export function openEquation(el: Field, fresh = false) {
   const a = fresh ? 0 : (el.selectionStart ?? v.length);
   const b = fresh ? v.length : (el.selectionEnd ?? a);
   if (fresh) {
+    opened++;
     session = { el, start: 0, len: v.length, ed: new EqEditor(), display: true };
     write(session);
     return emit();
@@ -80,6 +83,7 @@ export function openEquation(el: Field, fresh = false) {
     // selected text becomes an equation, built up as if typed
     if (b > a) s.ed.paste(v.slice(a, b));
   }
+  opened++;
   session = s;
   write(s);
   emit();
@@ -728,6 +732,7 @@ function Ribbon() {
 function Zone({ s }: { s: Session }) {
   const ref = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState(false);
+  const place = useRef<{ below: boolean; left: number } | null>(null);
   const fieldSize = parseFloat(getComputedStyle(s.el).fontSize) || 16;
   const size = Math.max(17, Math.min(30, fieldSize * 1.1));
   useLayoutEffect(() => {
@@ -736,9 +741,14 @@ function Zone({ s }: { s: Session }) {
     const r = s.el.getBoundingClientRect();
     const h = el.offsetHeight;
     const w = el.offsetWidth;
-    let top = r.bottom + 8;
-    if (top + h > window.innerHeight - 8 && r.top - h - 8 > 8) top = r.top - h - 8;
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+    // the side (below or above the field) and the left edge are picked once, so the zone
+    // doesn't hop about as the field grows while typing
+    if (!place.current) {
+      const below = r.bottom + 8 + h <= window.innerHeight - 8 || r.top - h - 8 < 8;
+      place.current = { below, left: Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) };
+    }
+    const top = place.current.below ? r.bottom + 8 : r.top - h - 8;
+    const left = Math.max(8, Math.min(place.current.left, window.innerWidth - w - 8));
     el.style.top = `${top}px`;
     el.style.left = `${left}px`;
   });
@@ -809,5 +819,5 @@ export function EquationHost() {
   }, []);
   const s = session;
   if (!s) return null;
-  return createPortal(<Zone s={s} />, document.body);
+  return createPortal(<Zone key={opened} s={s} />, document.body);
 }
