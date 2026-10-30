@@ -1,5 +1,6 @@
 import { useSyncExternalStore, type CSSProperties } from 'react';
 import { hasMath, mathVersion, onMathReady, unescapeDollars } from '../model/latex';
+import { FONT_STACKS, type FontName } from '../model/fonts';
 import { layoutRich } from '../model/richText';
 
 interface Props {
@@ -39,15 +40,24 @@ export function RichText({ text, x, y, fontSize, anchor = 'start', fill, fontWei
     );
   }
   const fs = fontSize ?? 12;
-  const laid = layoutRich(text, fs, fontWeight ?? 400);
+  // formulas follow the text's style too (bold, italic, underline), and the plain runs
+  // beside them are measured in the font they are drawn in
+  const font = (Object.keys(FONT_STACKS) as FontName[]).find((k) => FONT_STACKS[k] === style?.fontFamily);
+  const italic = style?.fontStyle === 'italic';
+  const underline = String(style?.textDecoration ?? '').includes('underline');
+  const laid = layoutRich(text, fs, fontWeight ?? 400, font, italic);
   let base = y;
   return (
-    <g className={className} style={{ ...style, color: fill }} fontSize={fs} fontWeight={fontWeight}>
+    <g className={className} style={{ ...style, textDecoration: undefined, color: fill }} fontSize={fs} fontWeight={fontWeight}>
       {laid.map((line, i) => {
         if (i > 0) base += Math.max(fs * 1.3, laid[i - 1].descent + line.ascent + fs * 0.25);
         const x0 = anchor === 'middle' ? x - line.w / 2 : anchor === 'end' ? x - line.w : x;
+        // SVG text decoration neither reaches a formula nor passes from the group to the runs,
+        // so the line is underlined by hand, in one stroke clear of anything hanging below it
+        const uy = base + Math.max(fs * 0.12, ...line.runs.map((r) => (r.math && r.svg ? r.depth + fs * 0.08 : 0)));
         return (
           <g key={i}>
+            {underline && line.w > 0 && <rect x={x0} y={uy} width={line.w} height={Math.max(0.6, fs * 0.065)} fill={fill} />}
             {line.runs.map((r, j) =>
               !r.math ? (
                 <text key={j} x={x0 + r.x} y={base} fill={fill} style={{ whiteSpace: 'pre' }}>

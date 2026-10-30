@@ -143,7 +143,7 @@ export type LabelLook = ReturnType<typeof labelLook>;
 
 /** Approximate unrotated box of a label's text at its anchor. */
 export function labelBox(at: LabelPos, look: LabelLook): Rect {
-  const m = measureRich(look.text, look.size, look.weight);
+  const m = measureRich(look.text, look.size, look.weight, look.st.font, look.st.italic);
   const anchor = look.st.align ?? at.anchor;
   const x = anchor === 'start' ? at.x : anchor === 'middle' ? at.x - m.w / 2 : at.x - m.w;
   return { x, y: at.y - look.size, w: m.w, h: Math.max(look.size * 1.3, m.h) };

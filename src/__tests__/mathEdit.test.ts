@@ -97,3 +97,14 @@ describe('LaTeX round trip', () => {
     expect(rowTex(parseTex('\\dfrac12'))).toBe('\\frac{1}{2}');
   });
 });
+
+describe('formulas follow the text style', () => {
+  it('bold and italic wrap the formula', async () => {
+    const { styledTex } = await import('../model/richText');
+    expect(styledTex('x^2')).toBe('x^2');
+    expect(styledTex('x^2', 600)).toBe('x^2');
+    expect(styledTex('x^2', 700)).toBe('\\boldsymbol{x^2}');
+    expect(styledTex('10k\\Omega', 400, true)).toBe('\\mathit{10k\\Omega}');
+    expect(styledTex('a', 700, true)).toBe('\\boldsymbol{\\mathit{a}}');
+  });
+});
