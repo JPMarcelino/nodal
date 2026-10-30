@@ -62,6 +62,9 @@ export function lookKeys(it: Item): LookKey[] {
       return ['line', 'fill', 'fillOpacity', 'width', 'dash', ...TEXT_KEYS];
     case 'wire':
       return it.label ? ['line', 'width', 'dash', ...WIRE_LABEL_KEYS] : ['line', 'width', 'dash'];
+    case 'junction':
+      // a solder dot: colour and size, so it can be restyled with the shared controls
+      return ['line', 'width'];
     case 'shape':
       switch (it.kind) {
         case 'text':
@@ -109,6 +112,8 @@ export function lookOf(doc: CircuitDoc, it: Item): Partial<Look> {
       const st = wireStyleFor(doc.settings, it);
       return { line: st.color, width: st.width, dash: st.dash, ...labelLookOf(it.labelStyle ?? {}, 10, true) };
     }
+    case 'junction':
+      return { line: it.color ?? '', width: it.size ?? doc.settings.junctionSize };
     case 'shape':
       return {
         line: it.stroke,
@@ -161,6 +166,9 @@ export function applyLook(it: Item, p: Partial<Look>) {
       if (!c.refStyle) delete c.refStyle;
       if (!c.valueStyle) delete c.valueStyle;
     }
+  } else if (it.type === 'junction') {
+    if (want('line')) it.color = p.line || undefined;
+    if (want('width')) it.size = p.width;
   } else if (it.type === 'wire') {
     const w = it as WireItem;
     const st = { ...w.style };

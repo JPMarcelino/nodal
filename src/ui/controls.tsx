@@ -379,7 +379,7 @@ export function Section({
   children,
   actions,
   id = title.replace(/\s*\(.*\)$/, ''),
-  defaultOpen = true,
+  defaultOpen = false,
   summary,
 }: {
   title: string;

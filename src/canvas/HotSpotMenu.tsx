@@ -5,11 +5,14 @@ import { computeNets, netOfWire } from '../model/netlist';
 import { attachedWires } from '../model/doc';
 import { deleteItems } from '../model/ops';
 import { applySolder } from './solder';
+import { pulseAt } from './pulses';
 import { instanceSymbol } from '../model/registry';
 import type { CircuitDoc, WireItem } from '../model/types';
 import { crossingStack, restack, wireStyle } from '../model/wires';
 import { S, goToItems, mutate, select, set, toast } from '../store/store';
 import { EDITOR_PALETTE, inkColor, pagePalette, type SceneData } from './Scene';
+import { QuickColor, QuickNumber } from '../ui/HoverEdit';
+import { restyle } from '../ui/StyleSection';
 
 /**
  * Menu shown after the pointer rests on a hot spot: a wire crossing (reorder /
@@ -51,11 +54,12 @@ export function HotSpotMenu({
   });
   if (!valid) return null;
 
-  const run = (fn: (d: CircuitDoc) => string | null, ok: string) => {
+  const run = (fn: (d: CircuitDoc) => string | null, ok: string, pulse?: boolean) => {
     let err: string | null = null;
     mutate((dd) => {
       err = fn(dd as CircuitDoc);
     });
+    if (!err && pulse) pulseAt(spot.pt.x, spot.pt.y, 'solder');
     toast(err ?? ok, err ? 'error' : 'success');
     onClose();
   };
@@ -78,7 +82,7 @@ export function HotSpotMenu({
           <Sub>Top wire hops over the ones below · drag to reorder</Sub>
           <OrderList doc={doc} data={data} wires={stack.map((s) => s.wire)} names={dedupe(stack.map((s) => netName(s.wire)))} onHold={onHold} />
           <Actions>
-            <Item icon={<CircleDot size={14} />} label="Solder here" hint="join into one net" onClick={() => run((d) => applySolder(d, spot, data), `Soldered ${stack.length} wires`)} />
+            <Item icon={<CircleDot size={14} />} label="Solder here" hint="join into one net" onClick={() => run((d) => applySolder(d, spot, data), `Soldered ${stack.length} wires`, true)} />
           </Actions>
         </>
       );
@@ -90,13 +94,14 @@ export function HotSpotMenu({
         <>
           <Title>Junction · {netName(wires[0] ?? '')}</Title>
           <Sub>{wires.length} wires soldered together here</Sub>
+          <DotEditor doc={doc} id={spot.id} />
           <Actions>
             <Item
               icon={<Unlink size={14} />}
               label="Unsolder"
               hint="straight runs hop, branches detach"
               onClick={() =>
-                run((d) => applySolder(d, spot, data), 'Unsoldered — the wires cross without connecting')
+                run((d) => applySolder(d, spot, data), 'Unsoldered — the wires cross without connecting', true)
               }
             />
             {wires[0] && <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(wires[0])} />}
@@ -120,7 +125,7 @@ export function HotSpotMenu({
             {netName(spot.wire)} ends on {what}
           </Sub>
           <Actions>
-            <Item icon={<CircleDot size={14} />} label="Solder here" hint="connect" onClick={() => run((d) => applySolder(d, spot, data), 'Soldered')} />
+            <Item icon={<CircleDot size={14} />} label="Solder here" hint="connect" onClick={() => run((d) => applySolder(d, spot, data), 'Soldered', true)} />
             <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(spot.wire)} />
           </Actions>
         </>
@@ -139,7 +144,7 @@ export function HotSpotMenu({
               icon={<CircleDot size={14} />}
               label="Solder here"
               hint="connect the pin"
-              onClick={() => run((d) => applySolder(d, spot, data), `Soldered ${pinLabel(doc, spot.comp, spot.port)}`)}
+              onClick={() => run((d) => applySolder(d, spot, data), `Soldered ${pinLabel(doc, spot.comp, spot.port)}`, true)}
             />
             <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(spot.wire)} />
           </Actions>
@@ -162,7 +167,7 @@ export function HotSpotMenu({
               icon={<Unlink size={14} />}
               label="Unsolder"
               hint="disconnect the pin"
-              onClick={() => run((d) => applySolder(d, spot, data), `Unsoldered ${pinLabel(doc, spot.comp, spot.port)}`)}
+              onClick={() => run((d) => applySolder(d, spot, data), `Unsoldered ${pinLabel(doc, spot.comp, spot.port)}`, true)}
             />
             {wire && <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(wire.id)} />}
           </Actions>
@@ -220,9 +225,33 @@ export function HotSpotMenu({
   );
 }
 
+/** Colour and size of the solder dot, right in its hover menu. */
+function DotEditor({ doc, id }: { doc: CircuitDoc; id: string }) {
+  const j = doc.items[id];
+  if (j?.type !== 'junction') return null;
+  const first = attachedWires(doc, id)
+    .map((wid) => doc.items[wid])
+    .find((it): it is WireItem => it?.type === 'wire');
+  const fallback = first ? wireStyle(doc, first).color : doc.settings.wire.color;
+  return (
+    <div className="hot-dot">
+      <span className="hot-dot-label">Dot</span>
+      <QuickColor value={j.color ?? ''} fallback={fallback} title="Dot colour" onChange={(line) => restyle([id], { line })} />
+      <QuickNumber
+        value={j.size ?? doc.settings.junctionSize}
+        min={1}
+        max={40}
+        step={0.5}
+        title="Dot size"
+        suffix="px"
+        onChange={(width) => restyle([id], { width })}
+      />
+    </div>
+  );
+}
+
 /** The spot can vanish while the menu is open (wire moved, deleted, soldered…). */
-function spotStillValid(spot: HotSpot, doc: CircuitDoc, data: SceneData): boolean {
-  switch (spot.kind) {
+function spotStillValid(spot: HotSpot, doc: CircuitDoc, data: SceneData): boolean {  switch (spot.kind) {
     case 'crossing':
       return crossingStack(data.crossings, spot.pt, 1).length >= 2;
     case 'junction':

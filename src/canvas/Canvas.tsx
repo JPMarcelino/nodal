@@ -33,6 +33,7 @@ import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
+import { HoverEdit } from '../ui/HoverEdit';
 import { GroupCrumbs, HintBar, IntroCard, WelcomeScreen } from '../ui/CanvasGuides';
 import { marqueeHits } from '../model/marquee';
 import { gestureSlots, hitSlop, useTouchInput } from './touch';
@@ -224,6 +225,15 @@ export function Canvas() {
   /** Set while the menu is busy (dragging a row): pointer movement must not close it. */
   const hotHold = useRef(false);
 
+  /* the small style card that follows a hovered object */
+  const [quickId, setQuickId] = useState<string | null>(null);
+  const quickHold = useRef(false);
+  const quickTimers = useRef<{ hide?: number; show?: number }>({});
+  const cancelQuickHide = () => {
+    window.clearTimeout(quickTimers.current.hide);
+    quickTimers.current.hide = undefined;
+  };
+
   const setGesture = useCallback((g: Gesture | null) => {
     gRef.current = g;
     setGestureState(g);
@@ -265,6 +275,35 @@ export function Canvas() {
     if (hotTimers.current.close === undefined) hotTimers.current.close = window.setTimeout(closeHotMenu, 300);
   };
   useEffect(() => () => closeHotMenu(), []);
+
+  /** The item the hover card is offering to edit, when it is safe to show one. */
+  const quickHovered = !gesture && tool === 'select' && !placing && !exportAreaJob && !presenting && !readOnly() && !hotMenu && !hotPending && !editingText && hover.item ? doc.items[hover.item] : null;
+  const quickCandidate = quickHovered && !quickHovered.locked && quickHovered.type !== 'junction' ? quickHovered.id : null;
+  useEffect(() => {
+    window.clearTimeout(quickTimers.current.show);
+    if (!quickCandidate) {
+      // moving from the object onto the card counts as staying: only close after a short grace
+      if (quickId) {
+        cancelQuickHide();
+        quickTimers.current.hide = window.setTimeout(() => {
+          if (!quickHold.current) setQuickId(null);
+        }, 280);
+      }
+      return;
+    }
+    cancelQuickHide();
+    if (quickId === quickCandidate) return;
+    if (quickId) setQuickId(null);
+    quickTimers.current.show = window.setTimeout(() => setQuickId(quickCandidate), 420);
+    return () => window.clearTimeout(quickTimers.current.show);
+  }, [quickCandidate, quickId]);
+  useEffect(
+    () => () => {
+      window.clearTimeout(quickTimers.current.show);
+      window.clearTimeout(quickTimers.current.hide);
+    },
+    [],
+  );
 
   const hotSpots = useMemo(() => (gestureKind ? NO_HOTSPOTS : computeHotSpots(doc, data.polys, data.crossings)), [doc, data, gestureKind]);
 
@@ -494,7 +533,7 @@ export function Canvas() {
         return s.fillOpacity > 0 && (seeThrough ? 'weak' : 'strong');
       };
       const out: string[] = [];
-      for (const it of items) if (it.type === 'junction' && dist(it, p) < t + 2) out.push(it.id);
+      for (const it of items) if (it.type === 'junction' && dist(it, p) < Math.max(t, (it.size ?? d.settings.junctionSize) + 2)) out.push(it.id);
       // shapes, parts and wires in their shared stacking order, front first (as drawn)
       const rank = drawOrderCached(d);
       const strong: string[] = [];
@@ -1226,6 +1265,10 @@ export function Canvas() {
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (editingText || editingLabel || renamingGroup) return;
+    // a press belongs to the canvas: tuck the hover card away at once
+    cancelQuickHide();
+    quickHold.current = false;
+    if (quickId) setQuickId(null);
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
     const w = toWorldPt(e.clientX, e.clientY);
@@ -1384,6 +1427,7 @@ export function Canvas() {
         err = applySolder(d as CircuitDoc, h, data);
       });
       if (err) toast(err, 'error');
+      else pulseAt(h.pt.x, h.pt.y, 'solder');
       return;
     }
     if (tool === 'polygon') {
@@ -2339,6 +2383,8 @@ export function Canvas() {
     : null;
 
   const scopeBounds = scope ? groupBounds(doc, scope) : null;
+  const quickItem = quickId ? doc.items[quickId] : null;
+  const quickBounds = quickItem ? itemBounds(doc, quickItem) : null;
   const showErc = useStore((s) => s.leftPanel && s.leftTab === 'check');
   const ercAll = useErcIssues(showErc);
   // markers only for findings about this page's items
@@ -2362,6 +2408,9 @@ export function Canvas() {
         clearHotTimer('open');
         setHotPending(null);
         if (hotMenu) scheduleHotClose();
+        cancelQuickHide();
+        quickHold.current = false;
+        setQuickId(null);
       }}
       onContextMenu={onContextMenu}
       onDragOver={(e) => {
@@ -2626,7 +2675,8 @@ export function Canvas() {
             const h = hotSpotAt(cursor);
             const act = h && solderActionFor(h);
             if (!h || !act) return null;
-            const r = Math.max(doc.settings.junctionSize, 3);
+            const jr = h.kind === 'junction' ? (doc.items[h.id] as { size?: number } | undefined)?.size : undefined;
+            const r = Math.max(jr ?? doc.settings.junctionSize, 3);
             return act === 'solder' ? (
               <circle cx={h.pt.x} cy={h.pt.y} r={r} className="solder-preview" />
             ) : (
@@ -2642,12 +2692,22 @@ export function Canvas() {
               const open = hotMenu && hotSpotKey(hotMenu) === key;
               const pending = hotPending === key;
               if (d > reach && !open) return null;
-              const r = h.kind === 'junction' ? Math.max(doc.settings.junctionSize + 3, 6 / z) : h.kind === 'end' ? 5 / z : 7 / z;
+              const r = h.kind === 'junction'
+                ? Math.max(((doc.items[h.id] as { size?: number } | undefined)?.size ?? doc.settings.junctionSize) + 3, 6 / z)
+                : h.kind === 'end' ? 5 / z : 7 / z;
               return (
                 <g key={key} className={open ? 'hot-ring open' : pending ? 'hot-ring pending' : 'hot-ring'} style={{ opacity: open || pending ? 1 : 0.55 * (1 - d / reach) }}>
                   <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-base" strokeWidth={1.2 / z} />
                   {(pending || open) && (
-                    <circle cx={h.pt.x} cy={h.pt.y} r={r} pathLength={1} className="hot-ring-fill" strokeWidth={1.6 / z} transform={`rotate(-90 ${h.pt.x} ${h.pt.y})`} />
+                    <circle
+                      cx={h.pt.x}
+                      cy={h.pt.y}
+                      r={r}
+                      className="hot-ring-fill"
+                      strokeWidth={1.6 / z}
+                      transform={`rotate(-90 ${h.pt.x} ${h.pt.y})`}
+                      style={{ ['--hot-len' as string]: `${2 * Math.PI * r}px` }}
+                    />
                   )}
                 </g>
               );
@@ -2721,6 +2781,22 @@ export function Canvas() {
           <RemotePresence doc={doc} polys={data.polys} z={z} />
         </g>
       </svg>
+      {quickItem && quickBounds && !quickItem.locked && quickId && (
+        <HoverEdit
+          id={quickId}
+          x={view.x + (quickBounds.x + quickBounds.w / 2) * z}
+          y={view.y + quickBounds.y * z}
+          onEnter={() => {
+            quickHold.current = true;
+            cancelQuickHide();
+          }}
+          onLeave={() => {
+            quickHold.current = false;
+            cancelQuickHide();
+            quickTimers.current.hide = window.setTimeout(() => setQuickId(null), 240);
+          }}
+        />
+      )}
       <ExplainLayer data={data} wrapRef={wrapRef} />
       <FollowFrame />
       <GroupCrumbs />
@@ -2769,9 +2845,16 @@ function Pulses({ z }: { z: number }) {
   if (!list.length) return null;
   return (
     <g className="pulses" pointerEvents="none">
-      {list.map((p) => (
-        <circle key={p.id} className={`pulse ${p.kind}`} cx={p.x} cy={p.y} r={(p.kind === 'snap' ? 9 : 22) / z} />
-      ))}
+      {list.map((p) =>
+        p.kind === 'solder' ? (
+          <g key={p.id}>
+            <circle className="pulse solder" cx={p.x} cy={p.y} r={14 / z} />
+            <circle className="pulse-core" cx={p.x} cy={p.y} r={4.5 / z} />
+          </g>
+        ) : (
+          <circle key={p.id} className={`pulse ${p.kind}`} cx={p.x} cy={p.y} r={(p.kind === 'snap' ? 9 : 22) / z} />
+        ),
+      )}
     </g>
   );
 }

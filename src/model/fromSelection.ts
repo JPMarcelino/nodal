@@ -44,7 +44,7 @@ export function selectionToDrawing(doc: CircuitDoc, ids: string[]): SelectionDra
       if (pts.length > 1) prims.push({ t: 'line', pts: flat(pts), w: style.width, ...(style.dash !== 'solid' ? { dash: true } : {}) });
     } else if (it.type === 'junction') {
       const c = at(it);
-      prims.push({ t: 'circle', cx: c.x, cy: c.y, r: doc.settings.junctionSize, fill: 'solid' });
+      prims.push({ t: 'circle', cx: c.x, cy: c.y, r: it.size ?? doc.settings.junctionSize, fill: 'solid' });
     } else prims.push(...shapePrims(it, at, doc));
   }
   return {

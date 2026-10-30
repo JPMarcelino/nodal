@@ -38,7 +38,7 @@ import { measureTextShape } from '../model/shapeText';
 import { DNP, PART_FIELDS, customFieldKeys, hasPartFields, isDnp } from '../model/partFields';
 import { getSymbol, stateSymbol } from '../model/registry';
 import { gridScale } from '../model/symbols/scale';
-import type { CircuitDoc, ConnectorRoute, ComponentItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
+import type { CircuitDoc, ConnectorRoute, ComponentItem, JunctionItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
 import { GRID_STYLES, GRID_STYLE_NAMES, SHAPE_DEFAULTS, SHAPE_TOOLS, docBounds, selectedGroup, type ShapeTool, type ShapeToolStyle } from '../model/doc';
 import { scaleItems, selectionPivot } from '../model/ops';
@@ -923,6 +923,71 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
 
 const SHAPE_NAMES: Record<ShapeItem['kind'], string> = { rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', polygon: 'Polygon', line: 'Line', arrow: 'Arrow', text: 'Text', image: 'Image', ink: 'Ink', callout: 'Callout', frame: 'Frame' };
 
+/** Solder dots: the colour and size of the joint at a junction. */
+function JunctionPanel({ junctions }: { junctions: JunctionItem[] }) {
+  const doc = useStore((s) => s.doc);
+  const ids = junctions.map((j) => j.id);
+  const first = junctions[0];
+  const same = <K extends 'color' | 'size'>(k: K) => junctions.every((j) => j[k] === first[k]);
+  const color = same('color') ? (first.color ?? '') : '';
+  const size = same('size') ? (first.size ?? doc.settings.junctionSize) : doc.settings.junctionSize;
+  const touched = junctions.some((j) => j.color !== undefined || j.size !== undefined);
+  const upd = (fn: (j: JunctionItem) => void) =>
+    A.updateItems(ids, (it) => {
+      if (it.type === 'junction') fn(it);
+    });
+  return (
+    <>
+      <div className="panel-title">
+        Solder{junctions.length > 1 ? ` · ${junctions.length} joints` : ''}
+        <span className="net-chip">{junctions.length > 1 ? 'dots' : 'dot'}</span>
+      </div>
+      <Section title="Dot" summary={`${size}px${color ? '' : ' · follows the wires'}`}>
+        <Field label="Colour" hint="Unset follows the first wire soldered here, and changes with it">
+          <ColorInput
+            value={color}
+            allowNone
+            onChange={(v) =>
+              upd((j) => {
+                if (v) j.color = v;
+                else delete j.color;
+              })
+            }
+          />
+        </Field>
+        <Field label="Size" hint="The radius of the dot at this joint">
+          <NumberInput
+            value={size}
+            min={1}
+            max={40}
+            step={0.5}
+            suffix="px"
+            onChange={(v) =>
+              upd((j) => {
+                j.size = v;
+              })
+            }
+          />
+        </Field>
+        <button
+          className="secondary-btn full"
+          disabled={!touched}
+          onClick={() =>
+            upd((j) => {
+              delete j.color;
+              delete j.size;
+            })
+          }
+        >
+          Back to the circuit's look
+        </button>
+        <div className="section-note">A solder appears where three or more conductors meet.</div>
+      </Section>
+    </>
+  );
+}
+
+
 function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
   const first = shapes[0];
   const ids = shapes.map((s) => s.id);
@@ -1566,7 +1631,7 @@ export function Inspector() {
   else if (items.every((i) => i.type === 'shape' && i.kind === 'frame')) body = <FramePanel shapes={items as ShapeItem[]} />;
   else if (items.every((i) => i.type === 'shape' && (i.kind === 'ink' || i.kind === 'callout'))) body = <ExplainShapePanel shapes={items as ShapeItem[]} />;
   else if (items.every((i) => i.type === 'shape')) body = <ShapePanel shapes={items as ShapeItem[]} />;
-  else if (items.length === 1 && items[0].type === 'junction') body = <div className="panel-title">Junction</div>;
+  else if (items.every((i) => i.type === 'junction')) body = <JunctionPanel junctions={items as JunctionItem[]} />;
   else body = <MultiPanel ids={selection} />;
   return (
     <aside className={locked ? 'panel right-panel read-only' : 'panel right-panel'} style={{ width }}>

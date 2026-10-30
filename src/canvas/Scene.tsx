@@ -866,7 +866,7 @@ export const Scene = memo(function Scene({
     ),
   );
   const knockoutScene = knockout && knockoutBox ? knockoutStack(doc, stack, stackEls, knockoutBox) : null;
-  const dots: { x: number; y: number; color: string; key: string }[] = [];
+  const dots: { x: number; y: number; color: string; r: number; key: string }[] = [];
   const js = doc.settings.junctionSize;
   // the first wire at each junction gives its dot colour
   const wireAt = new Map<string, WireItem>();
@@ -877,20 +877,20 @@ export const Scene = memo(function Scene({
   for (const it of items) {
     if (it.type === 'junction' && (data.junctionDegree.get(it.id) ?? 0) >= 3) {
       const w = wireAt.get(it.id);
-      dots.push({ x: it.x, y: it.y, color: w ? wireStyle(doc, w).color : doc.settings.wire.color, key: it.id });
+      dots.push({ x: it.x, y: it.y, color: it.color ?? (w ? wireStyle(doc, w).color : doc.settings.wire.color), r: it.size ?? js, key: it.id });
     }
   }
   // butted pins count as joined: with a wire on them too, three or more branches meet there
   const dotted = new Set<string>();
   for (const keys of data.touchCells.values()) {
     if (keys.length < 2 || !keys.some((k) => data.touching.has(k))) continue;
-    const n = keys.reduce((sum, k) => sum + (data.portDegree.get(k) ?? 0), keys.length);
+    const n = keys.reduce((sum, key) => sum + (data.portDegree.get(key) ?? 0), keys.length);
     if (n < 3) continue;
     for (const k of keys) dotted.add(k);
     const [comp, port] = keys[0].split(':');
     const c = doc.items[comp];
     const p = c?.type === 'component' ? portPosition(doc, c, port) : null;
-    if (p) dots.push({ x: p.pt.x, y: p.pt.y, color: doc.settings.wire.color, key: keys[0] });
+    if (p) dots.push({ x: p.pt.x, y: p.pt.y, color: doc.settings.wire.color, r: js, key: keys[0] });
   }
   for (const [k, n] of data.portDegree) {
     if (n < 2 || dotted.has(k)) continue;
@@ -898,7 +898,7 @@ export const Scene = memo(function Scene({
     const c = doc.items[comp];
     if (!c || c.type !== 'component') continue;
     const p = portPosition(doc, c, port);
-    if (p) dots.push({ x: p.pt.x, y: p.pt.y, color: doc.settings.wire.color, key: k });
+    if (p) dots.push({ x: p.pt.x, y: p.pt.y, color: doc.settings.wire.color, r: js, key: k });
   }
   return (
     <>
@@ -909,7 +909,7 @@ export const Scene = memo(function Scene({
       <g className="layer-stack">{knockoutScene ? knockoutScene.content : stackEls}</g>
       <g className="layer-dots">
         {dots.map((d) => (
-          <circle key={d.key} cx={d.x} cy={d.y} r={js} fill={inkColor(d.color, palette)} />
+          <circle key={d.key} cx={d.x} cy={d.y} r={d.r} fill={inkColor(d.color, palette)} className="solder-dot" />
         ))}
       </g>
     </>
