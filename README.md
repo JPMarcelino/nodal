@@ -70,6 +70,7 @@ You can also share without a live session. Open **File â†’ Share & collaborateâ€
 - Junction dots appear wherever three or more conductors meet. Deleting a branch merges the remaining wire back into one.
 - To reshape a selected wire, drag one of its segments. To reconnect it, drag an end handle. To **move it whole, keeping its shape**, drag anywhere else inside its selection box: wires moved on their own let go of the pins they leave, and ends set down exactly on a pin, junction or wire end connect there.
 - **Wire style is fully customisable**, both per wire and as the document default: colour, thickness, sharp or rounded corners (with a radius), and solid/dashed/dotted lines. "Use for new wires" turns the current style into a brush, and "Apply style to whole net" restyles a net in one click.
+- **Wire tool settings:** with the wire tool in hand and nothing selected, the side panel shows the style the next wires get (start from the circuit's default; *Use the default* goes back to it). Turn on **Match the wire I start from** to have a wire started on another wire, its end or junction, or a pin it is on take that wire's colour, width, corners and line style (off by default).
 - Wire labels (net names): **drag a label along its wire, onto any other wire of the same net, and to either side** (above, below, left, right), set its side and position in the inspector, or hide it while it still names the net. Wires with the same label are connected. Net-label, port and rail symbols can hide their name too, and their name can be dragged. Ctrl+Alt+D (or Insert) duplicates the selected labels one row down with the next number: D0 â†’ D1.
 - Net highlighting (**N**), and a list of the pins on each net
 - Unconnected pins are marked, so dangling connections are easy to spot
@@ -78,6 +79,7 @@ You can also share without a live session. Open **File â†’ Share & collaborateâ€
 - Outline **rectangles** (**B**) and **filled zones** (**Z**) for highlighting areas, each with an optional title (ellipses and polygons can have one too). New zones cycle through a palette of colours, so neighbouring zones stand apart. Shapes, wires and parts share one stacking order (the layers panel): areas start at the back, annotations in front, and **Ctrl+]** / **Ctrl+[** (or the inspector's order buttons) move anything forward or back.
 - Ellipses, lines, arrows and free text
 - Stroke, fill, opacity, corner radius and dash settings; z-ordering within each layer
+- **Tool settings:** with a drawing tool in hand (rectangle, zone, ellipse, polygon, path, line, arrow, text) and nothing selected, the side panel shows that tool's settings: line colour, width and style, corner radius, arrowheads, fill, and the font, size, bold/italic/underline, colour and alignment of its text. The next shapes you draw get them, and they are remembered between sessions. *Reset to defaults* clears them; the *Document* tab is beside the tool's.
 - Locking a zone lets clicks pass through it
 
 ### Explaining a circuit

@@ -1,6 +1,6 @@
 import { produce, type Draft } from 'immer';
 import { create } from 'zustand';
-import { createDoc, groupMembers, normalizeDoc, topGroup } from '../model/doc';
+import { createDoc, groupMembers, normalizeDoc, topGroup, type ShapeTool, type ShapeToolStyle } from '../model/doc';
 import { setUserLibrary, usedSymbols } from '../model/registry';
 import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
@@ -88,6 +88,10 @@ export interface Prefs {
   toolLock: boolean;
   /** The quiet hint line at the bottom of the canvas: the next useful action for the tool in hand. */
   showHints: boolean;
+  /** Settings of each shape tool, for the shapes it draws next (the side panel shows them while the tool is in hand). */
+  toolStyles?: Partial<Record<ShapeTool, ShapeToolStyle>>;
+  /** A wire started on another wire (or its junction, end, or a pin it is on) takes that wire's style. */
+  wireMatchStart?: boolean;
 }
 
 
@@ -605,6 +609,9 @@ export function setTheme(theme: Prefs['theme']) {
   else if (doc) apply();
   else setPrefs({ theme });
 }
+
+/** The settings a shape tool has for the next shape it draws. */
+export const toolPreset = (tool: string): ShapeToolStyle | undefined => S().prefs.toolStyles?.[tool as ShapeTool];
 
 export function setPrefs(p: Partial<Prefs>) {
   set((s) => ({ prefs: { ...s.prefs, ...p } }));

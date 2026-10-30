@@ -40,16 +40,16 @@ import { getSymbol, stateSymbol } from '../model/registry';
 import { gridScale } from '../model/symbols/scale';
 import type { CircuitDoc, ConnectorRoute, ComponentItem, LabelSide, LabelSpotName, LabelStyle, SymbolDef, DocSettings, HeadKind, SheetSettings, SheetSize, ShapeItem, WireItem, WireStyle } from '../model/types';
 import { SHEET_SIZES, centredSheet, sheetOf, todayText } from '../model/sheet';
-import { GRID_STYLES, GRID_STYLE_NAMES, docBounds, selectedGroup } from '../model/doc';
+import { GRID_STYLES, GRID_STYLE_NAMES, SHAPE_DEFAULTS, SHAPE_TOOLS, docBounds, selectedGroup, type ShapeTool, type ShapeToolStyle } from '../model/doc';
 import { scaleItems, selectionPivot } from '../model/ops';
 import { normDeg, ROT_KINDS, setShapeSize, shapeRot } from '../model/rotation';
 import { detachConnector } from '../model/connectors';
 import { isPathShape, isSmooth, pathNodes } from '../model/path';
 import * as A from '../store/actions';
-import { S, goToItems, mutate, readOnly, select, set, toast, useStore } from '../store/store';
+import { S, goToItems, mutate, readOnly, select, set, setPrefs, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
 import { ExplainShapePanel, FramePanel } from './ExplainInspector';
-import { DashSelect, Row, StyleSection, TextFormatRows, restyle, type TextFormat } from './StyleSection';
+import { DashSelect, Row, StyleSection, SwatchRow, TextFormatRows, restyle, type TextFormat } from './StyleSection';
 import { TEXT_KEYS, commonLook, mergeLabelStyle } from '../model/style';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
 import { useSettledDoc } from './useSettledDoc';
@@ -1409,6 +1409,142 @@ function SectionNav({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement> 
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Tool settings: what the tool in hand adds next                      */
+/* ------------------------------------------------------------------ */
+
+const TOOL_NAMES: Record<string, string> = { wire: 'Wire', rect: 'Rectangle', zone: 'Filled zone', ellipse: 'Ellipse', polygon: 'Polygon', path: 'Path', line: 'Line', arrow: 'Arrow', text: 'Text' };
+const hasToolPanel = (tool: string) => tool === 'wire' || SHAPE_TOOLS.has(tool);
+
+function WireToolPanel() {
+  const settings = useStore((s) => s.doc.settings);
+  const brush = useStore((s) => s.wireBrush);
+  const match = useStore((s) => !!s.prefs.wireMatchStart);
+  const style = wireStyleFor(settings, { style: brush ?? undefined });
+  return (
+    <>
+      <div className="panel-title">Wire tool</div>
+      <p className="tool-note">For the next wires you draw.</p>
+      <Section title="Next wire">
+        <WireStyleEditor style={style} onChange={(p) => set({ wireBrush: { ...brush, ...p } })} />
+        <div className="btn-row">
+          <span className="small">{brush ? 'Your own style' : "The circuit's default style"}</span>
+          {brush && (
+            <button className="secondary-btn" onClick={() => set({ wireBrush: null })}>
+              Use the default
+            </button>
+          )}
+        </div>
+      </Section>
+      <Section title="Matching">
+        <Field label="Match the wire I start from" hint="A wire started on another wire, its end or junction, or a pin it is on takes that wire's colour, width, corners and line style">
+          <Toggle checked={match} onChange={(wireMatchStart) => setPrefs({ wireMatchStart })} />
+        </Field>
+        <p className="tool-note">{match ? 'Starting on a wire copies its style; starting anywhere else uses the style above.' : 'Off: new wires always use the style above.'}</p>
+      </Section>
+    </>
+  );
+}
+
+function ShapeToolPanel({ tool }: { tool: ShapeTool }) {
+  const preset = useStore((s) => s.prefs.toolStyles?.[tool]);
+  const kind = tool === 'path' ? 'polygon' : tool;
+  const v: ShapeToolStyle = { ...SHAPE_DEFAULTS[kind], ...preset };
+  const upd = (p: ShapeToolStyle) => {
+    const all = S().prefs.toolStyles ?? {};
+    setPrefs({ toolStyles: { ...all, [tool]: { ...all[tool], ...p } } });
+  };
+  const reset = () => {
+    const { [tool]: _gone, ...rest } = S().prefs.toolStyles ?? {};
+    setPrefs({ toolStyles: rest });
+  };
+  const isText = tool === 'text';
+  const isLine = tool === 'line' || tool === 'arrow';
+  const isZone = tool === 'zone';
+  const fmt: Partial<TextFormat> = {
+    font: v.font ?? '',
+    size: v.fontSize ?? (isText ? 16 : 13),
+    bold: v.bold,
+    italic: v.italic,
+    underline: v.underline,
+    allCaps: v.allCaps,
+    text: v.textColor ?? '',
+    align: v.align ?? '',
+  };
+  const setFmt = (p: Partial<TextFormat>) => {
+    const o: ShapeToolStyle = {};
+    if ('font' in p) o.font = p.font || undefined;
+    if ('size' in p) o.fontSize = p.size;
+    if ('text' in p) o.textColor = p.text || undefined;
+    if ('align' in p) o.align = p.align || undefined;
+    for (const k of ['bold', 'italic', 'underline', 'allCaps'] as const) if (k in p) o[k] = p[k];
+    upd(o);
+  };
+  return (
+    <>
+      <div className="panel-title">{TOOL_NAMES[tool]} tool</div>
+      <p className="tool-note">For the next {isText ? 'texts' : 'shapes'} you draw with it.</p>
+      {!isText && (
+        <Section title={isZone ? 'Colour' : 'Line'}>
+          <Row label={isZone ? 'Colour' : 'Colour'}>
+            <SwatchRow
+              value={isZone ? (preset?.fill ?? '') : v.stroke === 'none' ? '' : (v.stroke ?? '')}
+              onChange={(c) => (isZone ? upd(c ? { fill: c, stroke: c } : { fill: undefined, stroke: undefined }) : upd({ stroke: c || 'none' }))}
+              noneTitle={isZone ? 'A new colour for each zone' : 'No outline'}
+            />
+          </Row>
+          <Field label="Width">
+            <NumberInput value={v.strokeWidth ?? 2} min={0} max={40} step={0.5} suffix="px" onChange={(strokeWidth) => upd({ strokeWidth })} />
+          </Field>
+          <Field label="Line style">
+            <DashSelect value={v.dash ?? 'solid'} onChange={(dash) => upd({ dash })} />
+          </Field>
+          {(tool === 'rect' || isZone) && (
+            <Field label="Corner radius">
+              <NumberInput value={v.radius ?? 0} min={0} max={200} suffix="px" onChange={(radius) => upd({ radius })} />
+            </Field>
+          )}
+          {isLine && (
+            <>
+              <Field label="Start">
+                <Segmented value={v.headStart ?? 'none'} options={headOptions(true)} onChange={(headStart) => upd({ headStart })} />
+              </Field>
+              <Field label="End">
+                <Segmented value={v.headEnd ?? 'none'} options={headOptions(false)} onChange={(headEnd) => upd({ headEnd })} />
+              </Field>
+            </>
+          )}
+        </Section>
+      )}
+      {!isText && !isLine && (
+        <Section title="Fill">
+          {!isZone && (
+            <Row label="Colour">
+              <SwatchRow
+                value={(v.fillOpacity ?? 0) > 0 && v.fill !== 'none' ? (v.fill ?? '') : ''}
+                // a colour picked while the fill is see-through makes it solid
+                onChange={(c) => upd(c ? { fill: c, fillOpacity: (v.fillOpacity ?? 0) > 0 ? v.fillOpacity : 1 } : { fillOpacity: 0 })}
+                noneTitle="No fill"
+              />
+            </Row>
+          )}
+          <Field label="Opacity">
+            <Slider value={v.fillOpacity ?? 0} min={0} max={1} onChange={(fillOpacity) => upd({ fillOpacity })} />
+          </Field>
+        </Section>
+      )}
+      <Section title={isText ? 'Text' : 'Title text'}>
+        <TextFormatRows value={fmt} onChange={setFmt} />
+      </Section>
+      <div className="btn-row">
+        <button className="secondary-btn" disabled={!preset} onClick={reset}>
+          Reset to defaults
+        </button>
+      </div>
+    </>
+  );
+}
+
 export function Inspector() {
   const selection = useStore((s) => s.selection);
   const doc = useStore((s) => s.doc);
@@ -1416,8 +1552,14 @@ export function Inspector() {
   const width = usePanelWidth('right', useStore((s) => s.prefs.rightWidth));
   const scrollRef = useRef<HTMLDivElement>(null);
   const locked = useStore(readOnly);
+  // with nothing selected, a drawing tool shows its settings for the next thing it adds
+  const tool = useStore((s) => s.tool);
+  const toolPanel = !items.length && hasToolPanel(tool);
+  const [docTab, setDocTab] = useState(false);
+  useEffect(() => setDocTab(false), [tool]);
   let body: JSX.Element;
-  if (!items.length) body = <DocumentPanel />;
+  if (toolPanel && !docTab) body = tool === 'wire' ? <WireToolPanel /> : <ShapeToolPanel tool={tool as ShapeTool} />;
+  else if (!items.length) body = <DocumentPanel />;
   else if (items.length === 1 && items[0].type === 'component') body = <ComponentPanel c={items[0]} />;
   else if (items.every((i) => i.type === 'wire' || i.type === 'junction') && items.some((i) => i.type === 'wire'))
     body = <WirePanel wires={items.filter((i): i is WireItem => i.type === 'wire')} />;
@@ -1430,7 +1572,18 @@ export function Inspector() {
     <aside className={locked ? 'panel right-panel read-only' : 'panel right-panel'} style={{ width }}>
       <PanelResizer side="right" />
       <div className="tabs">
-        <button className="active">{items.length ? 'Properties' : 'Document'}</button>
+        {toolPanel ? (
+          <>
+            <button className={docTab ? '' : 'active'} onClick={() => setDocTab(false)}>
+              {TOOL_NAMES[tool]} tool
+            </button>
+            <button className={docTab ? 'active' : ''} onClick={() => setDocTab(true)}>
+              Document
+            </button>
+          </>
+        ) : (
+          <button className="active">{items.length ? 'Properties' : 'Document'}</button>
+        )}
       </div>
       <SectionNav scrollRef={scrollRef} />
       <div className="inspector-scroll" ref={scrollRef}>
