@@ -29,6 +29,7 @@ export function TextInput({
   focusKey,
   multiline,
   mono,
+  math,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -36,6 +37,8 @@ export function TextInput({
   focusKey?: string;
   multiline?: boolean;
   mono?: boolean;
+  /** Takes equations (Alt+= opens the math zone). */
+  math?: boolean;
 }) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
@@ -47,6 +50,7 @@ export function TextInput({
         value={v}
         rows={3}
         placeholder={placeholder}
+        data-math={math || undefined}
         onChange={(e) => setV(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
@@ -65,6 +69,7 @@ export function TextInput({
       value={v}
       placeholder={placeholder}
       data-focus={focusKey}
+      data-math={math || undefined}
       onChange={(e) => setV(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {

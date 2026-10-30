@@ -107,6 +107,15 @@ Turn on **Drawing frame** in the document properties for a sheet border with zon
 ### Maths (LaTeX)
 Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone/shape titles, wire labels and part values, e.g. `$f_c = \frac{1}{2\pi RC}$` or `$R_{load}$`. Formulas are typeset with MathJax as vector paths, so they look the same in SVG, PNG and PDF exports. Type `\$` for a literal dollar sign. As in pandoc and Obsidian, an inline formula can't start or end with a space and the closing `$` can't be followed by a digit, so prices like "$5 and $10" stay as text. A `$$…$$` formula can span several lines (e.g. an `aligned` block). The common siunitx commands work too: `$\SI{10}{\kilo\ohm}$`, `$\si{\micro\farad}$`, `\ohm`, `\volt`, `\hertz`, `\celsius` and so on. A formula with a mistake shows its source in red; hover it to see the error.
 
+**Equation editor (like Word's).** Press **Alt+=** in a text, title, label, value or note to open a math zone at the caret (Alt+= on the canvas drops a new equation where the pointer is). The equation is built up as you type:
+- `\name` then **Space** becomes its symbol or structure: `\Omega` → Ω, `\alpha`, `\pm`, `\to`, `\infty`, `\sqrt`, `\sum`, `\int`, `\hat`, `\matrix`… (names it doesn't know are kept as typed).
+- `_` starts a subscript and `^` a superscript; **Space** leaves it. `x_i^2` puts both on x.
+- `/` turns what is before it into a numerator (`1/2\pi RC` → a fraction; `(a+b)/c` drops the brackets). Brackets `( [ { |` grow with their contents and close with their closing bracket.
+- `sin`, `cos`, `log`, `lim`, `max`… turn upright, and `<=`, `>=`, `!=`, `->`, `+-` become ≤ ≥ ≠ → ±.
+- The **Equation** ribbon above the zone has symbol galleries (Basic Math, Greek, Letter-like, Operators, Arrows) and structures (Fraction, Script, Radical, Integral, Large Operator, Bracket, Function, Accent, Limit and Log, Matrix); empty slots show as dotted boxes. Selected maths goes into the structure you pick.
+- Arrows, Home/End, Shift+arrows, Backspace, Ctrl+Z/Y, Ctrl+A and copy/paste work inside it; arrowing past either end, **Enter** or **Esc** leaves it. The options menu (▾) switches between inline and display (an equation alone on its line starts as display), or lets you edit the LaTeX directly.
+- The equation is saved as ordinary `$…$` LaTeX. To edit one again, put the caret in it and press **Alt+=**. Select some text and press Alt+= to turn it into an equation.
+
 ### Colour, fill and size
 - The **Style** section of the inspector works on anything selected (one part, or a mix of parts, wires and shapes) and changes them all at once. It covers line colour, fill colour and opacity, line width, solid/dashed/dotted lines, and text/label colour, with one-click swatches or any colour.
 - Parts can be coloured individually: line colour, a fill for their bodies, line width, dashes and label colour.

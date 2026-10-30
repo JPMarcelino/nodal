@@ -7198,3 +7198,588 @@ button.crumb:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ==================================================================== */
+/* Equation (Word-style math zone)                                       */
+/* ==================================================================== */
+
+.eq-pop {
+  position: fixed;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(760px, calc(100vw - 16px));
+  user-select: none;
+  font-family: inherit;
+}
+.eq-ribbon {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  overflow: visible;
+}
+.eq-ribbon-tab {
+  display: inline-block;
+  margin: 0 0 0 10px;
+  padding: 3px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+}
+.eq-ribbon-body {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--border);
+}
+.eq-group {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  padding: 6px 8px 18px;
+  border-right: 1px solid var(--border);
+}
+.eq-group:last-child {
+  border-right: 0;
+}
+.eq-group-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.eq-symbols {
+  display: grid;
+  grid-template-columns: repeat(10, 22px);
+  grid-auto-rows: 22px;
+  max-height: 66px;
+  overflow: hidden;
+  gap: 1px;
+}
+.eq-symbols-more {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.eq-symbol {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  font: 14px 'Cambria Math', 'STIX Two Math', 'Latin Modern Math', 'Cambria', 'Times New Roman', serif;
+  cursor: pointer;
+}
+.eq-symbol:hover,
+.eq-struct:hover,
+.eq-gallery-item:hover,
+.eq-set:hover,
+.eq-more:hover,
+.eq-options:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.eq-symbols-side {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 4px;
+}
+.eq-set,
+.eq-more {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 10px;
+  padding: 2px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.eq-structs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 470px;
+}
+.eq-struct-wrap {
+  position: relative;
+}
+.eq-struct {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  width: 66px;
+  height: 66px;
+  padding: 3px 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.eq-struct.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.eq-struct-icon {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  pointer-events: none;
+}
+.eq-struct-label {
+  font-size: 9.5px;
+  line-height: 1.1;
+  color: var(--text-dim);
+  text-align: center;
+}
+.eq-caretdown {
+  font-size: 8px;
+}
+.eq-gallery {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 2;
+  margin-top: 2px;
+  min-width: 220px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+.eq-gallery-title {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--panel-3);
+  border-bottom: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+}
+.eq-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 72px);
+  gap: 4px;
+  padding: 6px;
+}
+.eq-gallery-item {
+  height: 62px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.eq-gallery-item .eq-view,
+.eq-struct-icon .eq-view {
+  pointer-events: none;
+}
+
+.eq-zone {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  align-self: flex-start;
+  min-width: 220px;
+  max-width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  box-shadow: var(--shadow-sm);
+}
+.eq-zone-display {
+  min-width: 320px;
+}
+.eq-handle {
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+  font-size: 9px;
+  letter-spacing: -2px;
+  color: var(--text-faint);
+  background: var(--panel-3);
+  border-right: 1px solid var(--border);
+  cursor: default;
+}
+.eq-content {
+  flex: 1;
+  padding: 8px 14px;
+  overflow-x: auto;
+  color: var(--text);
+  cursor: text;
+}
+.eq-zone-display .eq-content {
+  text-align: center;
+}
+.eq-options {
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: var(--panel-3);
+  color: var(--text-dim);
+  padding: 0 5px;
+  font-size: 10px;
+  cursor: pointer;
+}
+.eq-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  margin-top: 2px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+.eq-menu button {
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.eq-menu button:hover,
+.eq-menu button.on {
+  background: var(--accent-soft);
+}
+.eq-sets {
+  left: 0;
+  right: auto;
+}
+.eq-menu-sep {
+  height: 1px;
+  margin: 3px 0;
+  background: var(--border);
+}
+.eq-help {
+  align-self: flex-start;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.eq-help b {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+/* the equation itself */
+.eq-view {
+  font-family: 'Cambria Math', 'STIX Two Math', 'Latin Modern Math', 'Cambria', 'Times New Roman', 'Liberation Serif', serif;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.eq-row {
+  display: inline;
+}
+.eq-n,
+.eq-sel {
+  display: inline;
+}
+.eq-sel {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 2px;
+}
+.eq-s {
+  display: inline-block;
+}
+.eq-var {
+  font-style: italic;
+  padding-right: 0.03em;
+}
+.eq-fn {
+  margin-right: 0.17em;
+}
+.eq-bin {
+  margin: 0 0.22em;
+}
+.eq-rel {
+  margin: 0 0.28em;
+}
+.eq-punct {
+  margin-right: 0.17em;
+}
+.eq-large {
+  font-size: 1.25em;
+  vertical-align: -0.1em;
+  margin-right: 0.1em;
+}
+.eq-display .eq-large {
+  font-size: 1.6em;
+  vertical-align: -0.2em;
+}
+.eq-cmd {
+  font-family: inherit;
+  color: var(--text-dim);
+}
+.eq-raw {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.75em;
+  color: var(--text-dim);
+}
+.eq-hint {
+  color: var(--text-faint);
+  font-family: inherit;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.eq-ph {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.8em;
+  margin: 0 0.05em;
+  vertical-align: -0.08em;
+  border: 1px dotted var(--text-faint);
+  cursor: text;
+}
+.eq-ph-on {
+  border-color: var(--accent);
+}
+.eq-base {
+  width: 0.55em;
+  cursor: default;
+}
+.eq-caret {
+  display: inline-block;
+  width: 1.5px;
+  margin-right: -1.5px;
+  height: 1.15em;
+  vertical-align: -0.25em;
+  background: var(--text);
+  animation: eq-blink 1.06s steps(1) infinite;
+  position: relative;
+  z-index: 1;
+}
+@keyframes eq-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.eq-probe {
+  display: inline-block;
+  width: 0;
+  height: 0;
+}
+
+/* fraction */
+.eq-frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 0.1em;
+}
+.eq-frac .eq-frac {
+  font-size: 0.85em;
+}
+.eq-fnum,
+.eq-fden {
+  padding: 0 0.15em;
+  text-align: center;
+}
+.eq-fnum {
+  padding-bottom: 0.08em;
+}
+.eq-fden {
+  align-self: stretch;
+  border-top: 0.06em solid currentColor;
+  padding-top: 0.04em;
+}
+
+/* scripts */
+.eq-scripts {
+  display: inline;
+}
+.eq-ss {
+  display: inline-block;
+  font-size: 0.7em;
+}
+.eq-ss-sup {
+  vertical-align: 0.65em;
+}
+.eq-ss-sub {
+  vertical-align: -0.4em;
+}
+.eq-ss-both {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: 0.65em;
+}
+.eq-ss-both .eq-sub {
+  margin-top: -0.15em;
+}
+.eq-ss .eq-ss {
+  font-size: 0.85em;
+}
+
+/* limits under / over */
+.eq-lim {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 0.1em;
+}
+.eq-lim-top,
+.eq-lim-bot {
+  font-size: 0.7em;
+  min-height: 0.2em;
+}
+.eq-lim-mid {
+  line-height: 1;
+}
+.eq-lim-mid .eq-large {
+  vertical-align: baseline;
+  margin: 0;
+}
+
+/* radical */
+.eq-sqrt {
+  display: inline;
+}
+.eq-idx {
+  display: inline-block;
+  font-size: 0.55em;
+  vertical-align: 0.9em;
+  margin-right: -0.5em;
+  min-width: 0.6em;
+  text-align: right;
+}
+.eq-rad {
+  position: relative;
+  display: inline-block;
+  padding-left: 0.62em;
+  margin-right: 0.05em;
+}
+.eq-rad-sign {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0.62em;
+  height: 100%;
+  overflow: visible;
+}
+.eq-rad-sign path,
+.eq-fence path,
+.eq-acc-vec path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.065em;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+.eq-rad-sign path,
+.eq-fence path,
+.eq-acc-vec path {
+  stroke-width: 1.3px;
+}
+.eq-rad-body {
+  display: inline-block;
+  border-top: 1.3px solid currentColor;
+  padding: 0.08em 0.08em 0 0.05em;
+}
+
+/* brackets */
+.eq-delim {
+  position: relative;
+  display: inline-block;
+  padding: 0.05em 0.42em;
+}
+.eq-fence {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.36em;
+}
+.eq-fence-l {
+  left: 0.02em;
+}
+.eq-fence-r {
+  right: 0.02em;
+}
+.eq-fence svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* accents */
+.eq-acc {
+  position: relative;
+  display: inline-block;
+  padding-top: 0.28em;
+}
+.eq-acc-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -0.12em;
+  text-align: center;
+  line-height: 1;
+  pointer-events: none;
+}
+.eq-acc-vec {
+  position: absolute;
+  left: 0.05em;
+  right: 0.05em;
+  top: 0.05em;
+  width: calc(100% - 0.1em);
+  height: 0.3em;
+  overflow: visible;
+}
+.eq-acc-overline .eq-acc-body {
+  border-top: 1.3px solid currentColor;
+}
+.eq-acc-overline {
+  padding-top: 0.12em;
+}
+.eq-acc-underline {
+  padding-top: 0;
+}
+.eq-acc-underline .eq-acc-body {
+  border-bottom: 1.3px solid currentColor;
+}
+.eq-acc-body {
+  display: inline-block;
+}
+
+/* matrix */
+.eq-mat {
+  display: inline-grid;
+  gap: 0.15em 0.7em;
+  justify-items: center;
+  margin: 0 0.1em;
+}
+.eq-cell {
+  min-width: 0.6em;
+  text-align: center;
+}
+/* no operator spacing in scripts and limits (as in TeX's script style) */
+.eq-ss .eq-bin,
+.eq-ss .eq-rel,
+.eq-lim-top .eq-rel,
+.eq-lim-bot .eq-rel,
+.eq-lim-top .eq-bin,
+.eq-lim-bot .eq-bin {
+  margin: 0 0.08em;
+}

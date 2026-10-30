@@ -107,6 +107,7 @@ export const COMMANDS: Command[] = [
   { id: 'tool.line', label: 'Line', category: 'Tools', keys: ['L'], run: () => A.setTool('line') },
   { id: 'tool.arrow', label: 'Arrow', category: 'Tools', keys: ['A'], run: () => A.setTool('arrow') },
   { id: 'tool.text', label: 'Text', category: 'Tools', keys: ['T'], cadence: ['N', 'T'], run: () => A.setTool('text') },
+  { id: 'insert.equation', label: 'Insert equation', category: 'Tools', keys: ['Alt+='], run: () => window.dispatchEvent(new Event('nodal:equation')), when: () => !readOnly(), keywords: 'math maths formula latex word' },
   { id: 'tool.pan', label: 'Hand (pan) tool', category: 'Tools', keys: ['H'], run: () => A.setTool('pan') },
   { id: 'tool.lock', label: 'Tool lock (keep placing parts after each click)', category: 'Tools', keys: ['Shift+Q'], run: () => A.toggleToolLock(), checked: () => S().prefs.toolLock, keywords: 'keep repeat sticky padlock stay' },
   // Explain: talk a circuit through

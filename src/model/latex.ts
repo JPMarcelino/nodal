@@ -53,6 +53,16 @@ export function splitMath(line: string): Run[] {
   return out;
 }
 
+/** Where each formula sits in a piece of text (for editing one in place). */
+export function mathRanges(text: string): { start: number; end: number; tex: string; display: boolean }[] {
+  return [...text.matchAll(new RegExp(MATH_RE.source, 'g'))].map((m) => ({
+    start: m.index!,
+    end: m.index! + m[0].length,
+    tex: (m[1] ?? m[2]).trim(),
+    display: m[1] !== undefined,
+  }));
+}
+
 /** Plain-text version of a string with maths (for exports that cannot draw formulas, e.g. DXF, CSV). */
 export const stripMath = (text: string) => splitMath(text).map((r) => (r.math ? r.tex : r.text)).join('');
 

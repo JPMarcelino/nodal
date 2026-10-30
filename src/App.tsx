@@ -20,6 +20,7 @@ import { SvgImportHost } from './ui/SvgImportDialog';
 import { StatsPanel } from './ui/StatsPanel';
 import { Tooltips } from './ui/Tooltips';
 import { usePanelWidth } from './ui/PanelResizer';
+import { EquationHost } from './ui/EquationZone';
 
 function isTyping(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
@@ -143,6 +144,7 @@ export function App() {
       <AskHost />
       <SvgImportHost />
       <Tooltips />
+      <EquationHost />
     </div>
   );
 }
