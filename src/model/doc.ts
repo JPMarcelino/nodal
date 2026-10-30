@@ -226,6 +226,15 @@ export const SHAPE_DEFAULTS: Record<ShapeKind, Partial<ShapeItem>> = {
   frame: { stroke: '#a855f7', strokeWidth: 1.5, fill: 'none', fillOpacity: 0, dash: 'dashed', radius: 0, fontSize: 13, text: '' },
 };
 
+/** Tools that draw shapes, each with settings for the shapes it draws next. */
+export type ShapeTool = 'rect' | 'zone' | 'ellipse' | 'polygon' | 'path' | 'line' | 'arrow' | 'text';
+export const SHAPE_TOOLS: ReadonlySet<string> = new Set<ShapeTool>(['rect', 'zone', 'ellipse', 'polygon', 'path', 'line', 'arrow', 'text']);
+
+/** What a shape tool's settings can preset on the shapes it draws next. */
+export type ShapeToolStyle = Partial<
+  Pick<ShapeItem, 'stroke' | 'strokeWidth' | 'fill' | 'fillOpacity' | 'dash' | 'radius' | 'fontSize' | 'textColor' | 'bold' | 'italic' | 'underline' | 'allCaps' | 'font' | 'align' | 'headStart' | 'headEnd'>
+>;
+
 /** Colours new zones cycle through, so neighbouring zones stand apart. */
 export const ZONE_COLOURS = ['#7aa2f7', '#9ece6a', '#ff9e64', '#bb9af7', '#2ac3de', '#f7768e', '#e0af68', '#3ddc97'];
 
@@ -265,7 +274,7 @@ export function backZ(doc: Pick<CircuitDoc, 'items'>, image = false): number {
  * the back of the single stacking order; the rest leave z unset, which puts
  * them in front of everything, newest on top (see drawOrder).
  */
-export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number, w: number, h: number): ShapeItem {
+export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number, w: number, h: number, preset?: ShapeToolStyle): ShapeItem {
   const shape = {
     id: uid('s'),
     type: 'shape',
@@ -284,6 +293,8 @@ export function makeShape(doc: CircuitDoc, kind: ShapeKind, x: number, y: number
   } as ShapeItem;
   if (BACK_KINDS.has(kind)) shape.z = backZ(doc, kind === 'image');
   if (kind === 'zone') shape.stroke = shape.fill = nextZoneColour(doc);
+  // the tool's own settings (a zone colour picked there replaces the cycle)
+  if (preset) for (const [k, v] of Object.entries(preset)) if (v !== undefined) (shape as unknown as Record<string, unknown>)[k] = v;
   return shape;
 }
 

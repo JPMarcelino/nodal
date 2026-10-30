@@ -7783,3 +7783,13 @@ button.crumb:hover {
 .eq-lim-bot .eq-bin {
   margin: 0 0.08em;
 }
+
+/* tool settings in the side panel */
+.tool-note {
+  margin: 0 14px 8px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.section .tool-note {
+  margin: 4px 0 2px;
+}

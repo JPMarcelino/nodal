@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { measureRich } from '../model/richText';
 import { measureTextShape, textFaceStyle, textSize, textWeight } from '../model/shapeText';
-import { drawOrderCached, groupMembers, groupTags, itemBounds, labelsShown, makeShape, selectedGroup } from '../model/doc';
+import { attachedWires, drawOrderCached, groupMembers, groupTags, itemBounds, labelsShown, makeShape, selectedGroup } from '../model/doc';
 import { withContents } from '../model/containers';
 import { getPreset, makePresetShape } from '../model/shapePresets';
 import { PresetShape } from './PresetShape';
@@ -10,7 +10,7 @@ import { cleanup, deleteWirePart, followParts, rotateShapeBy, scaleItems, select
 import { dragRotation, fromShapeFrame, HANDLE_ROT_KINDS, rectCentre, resizeInFrame, rotateDeg, shapeBox, shapeRot, shapeTransform, toShapeFrame } from '../model/rotation';
 import { getSymbol, instanceSymbol } from '../model/registry';
 import { gridScale, scaleStep } from '../model/symbols/scale';
-import type { CircuitDoc, ComponentItem, Endpoint, GridStyle, Item, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem } from '../model/types';
+import type { CircuitDoc, ComponentItem, Endpoint, GridStyle, Item, LabelSide, Point, Rect, ShapeItem, ShapeKind, Tool, WireItem, WireStyle } from '../model/types';
 import { buildWirePath, endpointInfo, hitWire, moveWireNode, projectAlong, snapOnSegment, wireStyle, wireStyleFor } from '../model/wires';
 import { computeNets, netOfWire } from '../model/netlist';
 import { buildAngledPreview, buildWirePreview, commitWire as commitWireDoc, moveWireSegment, reconnectWireEnd, wireRouter } from '../model/wireCommit';
@@ -18,7 +18,7 @@ import { routeObstacles } from '../model/route';
 import { runAreaExport } from '../io/fileActions';
 import { importDroppedFiles } from '../io/importFiles';
 import * as A from '../store/actions';
-import { S, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, readOnly, rebaseGesture, select, set, toast, useStore, useViewDoc, vdoc, withGestureMutate } from '../store/store';
+import { S, toolPreset, beginGesture, endGesture, gestureBaseDoc, gestureUpdate, inGesture, mutate, readOnly, rebaseGesture, select, set, toast, useStore, useViewDoc, vdoc, withGestureMutate } from '../store/store';
 import { viewDoc } from '../model/pages';
 import { pageCrossRefs } from '../model/pageRefs';
 import { alignAnchors, alignMove, rectPoints, spaceMove, type AlignIndex, type Guide, type SpaceGuide } from '../model/align';
@@ -356,7 +356,7 @@ export function Canvas() {
       const p = toWorldPt(inside ? m.clientX : r.left + r.width / 2, inside ? m.clientY : r.top + r.height / 2);
       let id = '';
       mutate((d) => {
-        const s = makeShape(d as CircuitDoc, 'text', Math.round(p.x), Math.round(p.y), 40, 20);
+        const s = makeShape(d as CircuitDoc, 'text', Math.round(p.x), Math.round(p.y), 40, 20, toolPreset('text'));
         const mm = measureRich(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400);
         s.w = mm.w;
         s.h = mm.h;
@@ -904,7 +904,7 @@ export function Canvas() {
     if (pts.length < 3) return;
     let id = '';
     mutate((d) => {
-      const s = makeShape(d as CircuitDoc, 'polygon', 0, 0, 1, 1);
+      const s = makeShape(d as CircuitDoc, 'polygon', 0, 0, 1, 1, toolPreset('polygon'));
       Object.assign(s, packPoly(pts));
       s.group = S().scope;
       d.items[s.id] = s;
@@ -936,7 +936,7 @@ export function Canvas() {
     if (nodes.length < minNodes(open)) return;
     let id = '';
     mutate((d) => {
-      const s = makeShape(d as CircuitDoc, 'polygon', 0, 0, 1, 1);
+      const s = makeShape(d as CircuitDoc, 'polygon', 0, 0, 1, 1, toolPreset('path'));
       setPathNodes(s, nodes, open);
       s.group = S().scope;
       d.items[s.id] = s;
@@ -945,8 +945,30 @@ export function Canvas() {
     if (id) set({ selection: [id] });
   };
 
+  /**
+   * Style for a wire started at `t`: with "match the wire you start from", the style of the
+   * wire there (also through its end, a junction, or a pin it is on); else the picked style.
+   */
+  const newWireStyle = (t: Target): Partial<WireStyle> | null => {
+    if (S().prefs.wireMatchStart) {
+      const d = vdoc();
+      const onPin = (e: Endpoint) => t.kind === 'port' && e.kind === 'port' && e.comp === t.comp && e.port === t.port;
+      const wid =
+        t.kind === 'wire' || t.kind === 'wireEnd'
+          ? t.wire
+          : t.kind === 'junction'
+            ? attachedWires(d, t.id)[0]
+            : t.kind === 'port'
+              ? Object.values(d.items).find((it) => it.type === 'wire' && (onPin(it.a) || onPin(it.b)))?.id
+              : undefined;
+      const w = wid ? d.items[wid] : undefined;
+      if (w?.type === 'wire') return { ...w.style };
+    }
+    return S().wireBrush;
+  };
+
   const commitWire = (g: Extract<Gesture, { kind: 'wire' }>, end: Target) => {
-    const brush = S().wireBrush;
+    const brush = newWireStyle(g.start);
     let newId: string | null = null;
     mutate((dd) => {
       newId = commitWireDoc(dd as CircuitDoc, g.start, end, {
@@ -1337,7 +1359,7 @@ export function Canvas() {
       const p = sp(w);
       let id = '';
       mutate((d) => {
-        const s = makeShape(d as CircuitDoc, 'text', p.x, p.y, 40, 20);
+        const s = makeShape(d as CircuitDoc, 'text', p.x, p.y, 40, 20, toolPreset('text'));
         const m = measureRich(s.text ?? '', s.fontSize ?? 16, s.bold ? 700 : 400);
         s.w = m.w;
         s.h = m.h;
@@ -2120,7 +2142,7 @@ export function Canvas() {
           if (dist(g.start, g.cur) >= grid || (glueB && g.glueA && glueB.attach.id !== g.glueA.attach.id)) {
             let id = '';
             mutate((d) => {
-              const s = makeShape(d as CircuitDoc, g.shape, g.start.x, g.start.y, g.cur.x - g.start.x, g.cur.y - g.start.y);
+              const s = makeShape(d as CircuitDoc, g.shape, g.start.x, g.start.y, g.cur.x - g.start.x, g.cur.y - g.start.y, toolPreset(g.shape));
               if (g.glueA) s.from = g.glueA.attach;
               if (glueB) s.to = glueB.attach;
               s.group = S().scope;
@@ -2140,7 +2162,7 @@ export function Canvas() {
           let id = '';
           const preset = getPreset(g.preset);
           mutate((d) => {
-            const s = preset ? makePresetShape(d as CircuitDoc, preset, r.x, r.y, r.w, r.h, S().prefs.theme) : makeShape(d as CircuitDoc, g.shape, r.x, r.y, r.w, r.h);
+            const s = preset ? makePresetShape(d as CircuitDoc, preset, r.x, r.y, r.w, r.h, S().prefs.theme) : makeShape(d as CircuitDoc, g.shape, r.x, r.y, r.w, r.h, toolPreset(g.shape));
             s.group = S().scope;
             d.items[s.id] = s;
             id = s.id;
@@ -2667,7 +2689,7 @@ export function Canvas() {
             )}
           {g?.kind === 'wire' && (() => {
             const pts = wirePreview(g);
-            const st = wireStyleFor(doc.settings, { style: S().wireBrush ?? undefined });
+            const st = wireStyleFor(doc.settings, { style: newWireStyle(g.start) ?? undefined });
             return (
               <g className="wire-preview">
                 <path d={buildWirePath(pts, st.radius)} fill="none" stroke={inkColor(st.color, pagePalette(doc.settings, EDITOR_PALETTE))} strokeWidth={st.width} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} strokeDasharray={dashArray(st.dash, st.width)} />
