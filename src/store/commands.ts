@@ -13,6 +13,7 @@ import { S, activePage, readOnly, viewModeKey, redo, set, setPrefs, setTheme, ne
 import { docPages, pageIndex } from '../model/pages';
 import { canvasActions } from './canvasActions';
 import { copyStyle, pasteStyle } from '../ui/StyleSection';
+import { setFolds } from '../ui/controls';
 
 export interface Command {
   id: string;
@@ -125,7 +126,7 @@ export const COMMANDS: Command[] = [
   { id: 'explain.clear', label: 'Clear traced nets', category: 'View', keys: [], run: () => void clearExplainOverlays() },
   { id: 'explain.renumber', label: 'Renumber steps (callouts and frames) 1, 2, 3…', category: 'Edit', keys: [], run: () => renumberCallouts() },
   { id: 'explain.note', label: 'Add a note to the selected part', category: 'Edit', keys: [], run: () => A.addNoteToSelection(), when: () => S().selection.some((id) => ['component', 'wire'].includes(vdoc().items[id]?.type ?? '')), keywords: 'callout comment annotate explain numbered' },
-  { id: 'explain.snapInk', label: 'Snap ink to shapes', category: 'Edit', keys: [], run: () => A.snapInkToShapes(), when: () => A.rawInk(S().selection).length > 0, keywords: 'straighten clean up circle ellipse box rectangle line pen drawing' },
+  { id: 'explain.snapInk', label: 'Snap ink to shapes', category: 'Edit', keys: [], run: () => A.snapInkToShapes(), when: () => A.rawInk(S().selection).length > 0, keywords: 'straighten clean up circle ellipse box rectangle line polyline polygon triangle diamond star arrow arc pen drawing' },
   { id: 'tool.placeLast', label: 'Place last used symbol', category: 'Tools', keys: ['P'], cadence: ['Shift+I'], run: () => S().recent[0] && A.startPlacing(S().recent[0]) },
   { id: 'tool.netLabel', label: 'Place net label (wire name)', category: 'Tools', keys: ['Shift+L'], cadence: ['L'], run: () => A.startPlacing('net-label') },
   { id: 'tool.pin', label: 'Place pin (port)', category: 'Tools', keys: [], cadence: ['P'], run: () => A.startPlacing('port-in') },
@@ -353,6 +354,31 @@ function focusValue() {
   focusValueField();
 }
 
+/** The inspector section that holds the selection's value / content field (F2 and double-click jump to it). */
+function valueSectionId(): string | null {
+  const it = vdoc().items[S().selection[0]];
+  if (!it) return null;
+  if (it.type === 'component') return 'Properties';
+  if (it.type === 'wire') return 'Label';
+  if (it.type === 'shape') {
+    if (it.kind === 'callout') return 'Note';
+    if (it.kind === 'frame') return 'Frame';
+    if (it.kind === 'image' || it.kind === 'ink') return null;
+    return 'Text';
+  }
+  return null;
+}
+
+function focusAndGlow(el: HTMLInputElement | HTMLTextAreaElement) {
+  el.scrollIntoView({ block: 'nearest' });
+  el.focus();
+  el.select();
+  el.classList.remove('attention');
+  void el.offsetWidth; // restart the glow if it is still running
+  el.classList.add('attention');
+  setTimeout(() => el.classList.remove('attention'), 1200);
+}
+
 /**
  * Opens the inspector and puts the cursor in the selection's value field,
  * with a short glow so the eye finds it across the screen.
@@ -361,14 +387,15 @@ export function focusValueField() {
   set({ rightPanel: true });
   setTimeout(() => {
     const el = document.querySelector<HTMLInputElement>('[data-focus="value"]');
-    if (!el) return;
-    el.scrollIntoView({ block: 'nearest' });
-    el.focus();
-    el.select();
-    el.classList.remove('attention');
-    void el.offsetWidth; // restart the glow if it is still running
-    el.classList.add('attention');
-    setTimeout(() => el.classList.remove('attention'), 1200);
+    if (el) return focusAndGlow(el);
+    // sections start folded: open the one holding the value, then look again once it has rendered
+    const section = valueSectionId();
+    if (!section) return;
+    setFolds({ [`s:${section}`]: true });
+    setTimeout(() => {
+      const el2 = document.querySelector<HTMLInputElement>('[data-focus="value"]');
+      if (el2) focusAndGlow(el2);
+    }, 30);
   }, 30);
 }
 
