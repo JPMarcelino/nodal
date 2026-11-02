@@ -3067,7 +3067,7 @@ function LockBadge({ r }: { r: Rect }) {
   );
 }
 
-function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; polys: Map<string, Point[]>; z: number }) {
+const SelectionOutline = memo(function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; polys: Map<string, Point[]>; z: number }) {
   const it = doc.items[id];
   if (!it) return null;
   if (it.type === 'wire') {
@@ -3093,7 +3093,7 @@ function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; 
       transform={turned ? shapeTransform(turned) : undefined}
     />
   );
-}
+});
 
 /** A new text whose editor should open straight into the math zone. */
 let pendingEquation: string | null = null;

@@ -16,6 +16,9 @@ export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
   const view = useStore((s) => s.view);
   const size = useStore((s) => s.canvasSize);
   const ref = useRef<SVGSVGElement>(null);
+  // the map frame is held still while dragging: it grows to include the viewport, and re-fitting it
+  // under the pointer on every move would pan further each time (a runaway feedback loop)
+  const held = useRef<{ box: Rect; k: number } | null>(null);
   // panning and zooming only move the viewport box; the drawing is measured once per edit
   const b = useMemo(() => unionRects([docBounds(doc), sheetRect(doc.settings)].filter((r): r is Rect => !!r)), [doc]);
   // nothing to map on an empty page (the welcome screen is there instead)
@@ -30,8 +33,8 @@ export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
       }
     : vp;
   const pad = 40;
-  const box = { x: all.x - pad, y: all.y - pad, w: all.w + pad * 2, h: all.h + pad * 2 };
-  const k = Math.min(W / box.w, H / box.h);
+  const fit = { x: all.x - pad, y: all.y - pad, w: all.w + pad * 2, h: all.h + pad * 2 };
+  const { box, k } = held.current ?? { box: fit, k: Math.min(W / fit.w, H / fit.h) };
 
   const navigate = (clientX: number, clientY: number) => {
     const r = ref.current!.getBoundingClientRect();
@@ -53,9 +56,15 @@ export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
         viewBox={`0 0 ${W} ${H}`}
         onPointerDown={(e) => {
           (e.target as Element).setPointerCapture(e.pointerId);
+          held.current = { box, k };
           navigate(e.clientX, e.clientY);
         }}
         onPointerMove={(e) => e.buttons === 1 && navigate(e.clientX, e.clientY)}
+        onPointerUp={() => {
+          held.current = null;
+          set({ view: { ...S().view } });
+        }}
+        onPointerCancel={() => (held.current = null)}
       >
         <g transform={`translate(${(W - box.w * k) / 2} ${(H - box.h * k) / 2}) scale(${k}) translate(${-box.x} ${-box.y})`}>
           <MapContent doc={doc} data={data} k={k} />
