@@ -116,8 +116,10 @@ export function refreshTouching(
     }
   }
   const touching = new Set(prevTouching);
-  for (const [cell, old] of before) {
-    for (const key of old ?? []) touching.delete(key);
+  // drop every old key first: a pin that moved from one changed cell to
+  // another must not be dropped again after its new cell added it back
+  for (const old of before.values()) for (const key of old ?? []) touching.delete(key);
+  for (const cell of before.keys()) {
     const list = cells.get(cell) ?? [];
     if (new Set(list).size > 1) for (const key of list) touching.add(key);
   }
