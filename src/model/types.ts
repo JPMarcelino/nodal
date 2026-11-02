@@ -319,7 +319,7 @@ export interface ShapeItem extends ItemBase {
   /** Ink strokes: flat [x, y, pressure, …] list, x / y as fractions (0–1) of the box. */
   ink?: number[];
   /** Ink that snapped into a clean shape: drawn the same width all along, without tapered ends. */
-  inkShape?: 'line' | 'ellipse' | 'rect';
+  inkShape?: 'line' | 'polyline' | 'arrow' | 'arc' | 'ellipse' | 'rect' | 'polygon';
   /** Polygon corners (path nodes): flat [x, y, …] list as fractions (0–1) of the box. */
   poly?: number[];
   /**

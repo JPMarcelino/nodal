@@ -125,7 +125,7 @@ export const COMMANDS: Command[] = [
   { id: 'explain.clear', label: 'Clear traced nets', category: 'View', keys: [], run: () => void clearExplainOverlays() },
   { id: 'explain.renumber', label: 'Renumber steps (callouts and frames) 1, 2, 3…', category: 'Edit', keys: [], run: () => renumberCallouts() },
   { id: 'explain.note', label: 'Add a note to the selected part', category: 'Edit', keys: [], run: () => A.addNoteToSelection(), when: () => S().selection.some((id) => ['component', 'wire'].includes(vdoc().items[id]?.type ?? '')), keywords: 'callout comment annotate explain numbered' },
-  { id: 'explain.snapInk', label: 'Snap ink to shapes', category: 'Edit', keys: [], run: () => A.snapInkToShapes(), when: () => A.rawInk(S().selection).length > 0, keywords: 'straighten clean up circle ellipse box rectangle line pen drawing' },
+  { id: 'explain.snapInk', label: 'Snap ink to shapes', category: 'Edit', keys: [], run: () => A.snapInkToShapes(), when: () => A.rawInk(S().selection).length > 0, keywords: 'straighten clean up circle ellipse box rectangle line polyline polygon triangle diamond star arrow arc pen drawing' },
   { id: 'tool.placeLast', label: 'Place last used symbol', category: 'Tools', keys: ['P'], cadence: ['Shift+I'], run: () => S().recent[0] && A.startPlacing(S().recent[0]) },
   { id: 'tool.netLabel', label: 'Place net label (wire name)', category: 'Tools', keys: ['Shift+L'], cadence: ['L'], run: () => A.startPlacing('net-label') },
   { id: 'tool.pin', label: 'Place pin (port)', category: 'Tools', keys: [], cadence: ['P'], run: () => A.startPlacing('port-in') },
