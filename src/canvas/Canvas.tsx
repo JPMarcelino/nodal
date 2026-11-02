@@ -190,6 +190,7 @@ export function Canvas() {
   const placing = useStore((s) => s.placing);
   const highlight = useStore((s) => s.highlight);
   const presenting = useExplain((s) => s.presenting !== null);
+  const pointerOnCanvas = useStore((s) => s.pointerOnCanvas);
   const prefs = useStore((s) => s.prefs);
   const scope = useStore((s) => s.scope);
   const exportAreaJob = useStore((s) => s.exportArea);
@@ -206,6 +207,8 @@ export function Canvas() {
   const [gesture, setGestureState] = useState<Gesture | null>(null);
   const [hover, setHover] = useState<{ item: string | null; port: PortInfo | null }>({ item: null, port: null });
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 });
+  /** Where the solder tool last clicked: no preview there until the pointer moves off, so the result shows (not a "do it again" dot). */
+  const [solderedAt, setSolderedAt] = useState<Point | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [spaceGuides, setSpaceGuides] = useState<SpaceGuide[]>([]);
   /** Alignment anchors of the running move (or label drag), keyed by its id set (or gesture). */
@@ -1442,7 +1445,10 @@ export function Canvas() {
         err = applySolder(d as CircuitDoc, h, data);
       });
       if (err) toast(err, 'error');
-      else pulseAt(h.pt.x, h.pt.y, 'solder');
+      else {
+        pulseAt(h.pt.x, h.pt.y, 'solder');
+        setSolderedAt(h.pt);
+      }
       return;
     }
     if (tool === 'polygon') {
@@ -1706,6 +1712,7 @@ export function Canvas() {
   const hoverRef = useRef((_w: Point) => {});
   hoverRef.current = (w: Point) => {
     setCursor(w);
+    if (solderedAt && dist(w, solderedAt) > 10 / S().view.zoom) setSolderedAt(null);
     const g = gRef.current;
     if (g && g.kind !== 'arm') return;
     if (tool === 'select' || tool === 'wire' || tool === 'node' || g) {
@@ -2690,10 +2697,10 @@ export function Canvas() {
             })()}
 
           {/* hover-menu hints: faint rings on nearby hot spots; the one being rested on fills up */}
-          {tool === 'solder' && !g && !placing && (() => {
+          {tool === 'solder' && !g && !placing && pointerOnCanvas && (() => {
             const h = hotSpotAt(cursor);
             const act = h && solderActionFor(h);
-            if (!h || !act) return null;
+            if (!h || !act || (solderedAt && dist(h.pt, solderedAt) < 0.5)) return null;
             const jr = h.kind === 'junction' ? (doc.items[h.id] as { size?: number } | undefined)?.size : undefined;
             const r = Math.max(jr ?? doc.settings.junctionSize, 3);
             return act === 'solder' ? (

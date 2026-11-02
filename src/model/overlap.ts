@@ -186,10 +186,15 @@ export function resolveWireOverlaps(prev: CircuitDoc, next: CircuitDoc): Circuit
   if (!changed.size || !findOverlap(next, changed)) return next;
   return produce(next, (d) => {
     const doc = d as CircuitDoc;
+    const shape = (w: WireItem) => JSON.stringify([w.a, w.b, w.pts]);
     for (let guard = 0; guard < 50; guard++) {
       const o = findOverlap(doc, changed);
       if (!o) break;
+      const before = new Map(Object.values(doc.items).flatMap((i) => (i.type === 'wire' ? [[i.id, shape(i)] as const] : [])));
       resolve(doc, o, changed);
+      // the wire it was joined to was split or given a junction too: an
+      // overlap that wire already had would now end on a dot, so look at it again
+      for (const it of Object.values(doc.items)) if (it.type === 'wire' && before.get(it.id) !== shape(it)) changed.add(it.id);
     }
     cleanup(doc);
   });
