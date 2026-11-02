@@ -1600,6 +1600,8 @@ function ShapeToolPanel({ tool }: { tool: ShapeTool }) {
   const isText = tool === 'text';
   const isLine = tool === 'line' || tool === 'arrow';
   const isZone = tool === 'zone';
+  // lines and paths are the stroke itself; rectangles, ellipses and polygons get an outline
+  const stroke = isLine || tool === 'path' ? 'Line' : 'Outline';
   const fmt: Partial<TextFormat> = {
     font: v.font ?? '',
     size: v.fontSize ?? (isText ? 16 : 13),
@@ -1625,7 +1627,7 @@ function ShapeToolPanel({ tool }: { tool: ShapeTool }) {
       <p className="tool-note">For the next {isText ? 'texts' : 'shapes'} you draw with it.</p>
       {!isText && (
         <Section
-          title={isZone ? 'Colour' : 'Line'}
+          title={isZone ? 'Colour' : stroke}
           id={isZone ? 'tool:Colour' : 'tool:Line'}
           defaultOpen
           menu={[{ label: 'Reset to defaults', onClick: reset, disabled: !preset }]}
@@ -1635,13 +1637,13 @@ function ShapeToolPanel({ tool }: { tool: ShapeTool }) {
               value={isZone ? (preset?.fill ?? '') : v.stroke === 'none' ? '' : (v.stroke ?? '')}
               allowNone
               onChange={(c) => (isZone ? upd(c ? { fill: c, stroke: c } : { fill: undefined, stroke: undefined }) : upd({ stroke: c || 'none' }))}
-              noneTitle={isZone ? 'New colour each' : 'No outline'}
+              noneTitle={isZone ? 'New colour each' : `No ${stroke.toLowerCase()}`}
             />
           </Row>
           <Field label="Width">
             <NumberInput value={v.strokeWidth ?? 2} min={0} max={40} step={0.5} suffix="px" onChange={(strokeWidth) => upd({ strokeWidth })} />
           </Field>
-          <Field label="Line style">
+          <Field label={`${stroke} style`}>
             <DashSelect value={v.dash ?? 'solid'} onChange={(dash) => upd({ dash })} />
           </Field>
           {(tool === 'rect' || isZone) && (
