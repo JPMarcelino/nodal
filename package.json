@@ -18,7 +18,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-dialog": "^2.2.0",
-    "@tauri-apps/plugin-fs": "^2.2.0",
+    "@tauri-apps/plugin-fs": "^2.7.1",
     "immer": "^10.1.1",
     "lucide-react": "^0.460.0",
     "mathjax-full": "^3.2.2",
