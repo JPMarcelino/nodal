@@ -13,6 +13,7 @@ import { S, activePage, readOnly, viewModeKey, redo, set, setPrefs, setTheme, ne
 import { docPages, pageIndex } from '../model/pages';
 import { canvasActions } from './canvasActions';
 import { copyStyle, pasteStyle } from '../ui/StyleSection';
+import { PIN_SYMBOL, openSymbolEditor, saveSymbolEditor } from './symbolSession';
 
 export interface Command {
   id: string;
@@ -207,7 +208,7 @@ export const COMMANDS: Command[] = [
   { id: 'view.checkSave', label: 'Check and save', category: 'File', keys: [], cadence: ['Shift+X'], run: checkAndSave },
 
   // Symbols
-  { id: 'symbols.new', label: 'Create new symbol…', category: 'Symbols', keys: ['Mod+Shift+N'], run: () => set({ dialog: 'symbol-editor', editingSymbol: null }) },
+  { id: 'symbols.new', label: 'Create new symbol…', category: 'Symbols', keys: ['Mod+Shift+N'], run: () => void openSymbolEditor() },
   {
     id: 'symbols.edit',
     label: 'Edit symbol of selected component…',
@@ -216,7 +217,7 @@ export const COMMANDS: Command[] = [
     run: () => {
       const def = A.symbolOfSelection();
       if (!def) return toast('Select a component first');
-      set({ dialog: 'symbol-editor', editingSymbol: def.id });
+      openSymbolEditor({ editing: def.id });
     },
   },
 
@@ -229,7 +230,7 @@ export const COMMANDS: Command[] = [
       const ids = S().selection;
       const drawing = ids.length ? selectionToDrawing(vdoc(), ids) : null;
       if (!drawing) return toast('Select the parts, wires or shapes to turn into a symbol');
-      set({ dialog: 'symbol-editor', editingSymbol: null, symbolSeed: { ...drawing, ids: [...ids] } });
+      openSymbolEditor({ fromSelection: [...ids] });
     },
   },
 
@@ -271,6 +272,31 @@ for (const c of COMMANDS) {
   const { run, when } = c;
   c.run = () => (readOnly() ? A.readOnlyNotice() : run());
   c.when = () => !readOnly() && (!when || when());
+}
+
+/*
+ * While the symbol editor page stands in for the circuit, Save saves the
+ * symbol, and commands about the circuit's file or pages wait until it closes.
+ */
+const SYMBOL_PAGE_OK = new Set(['file.import', 'file.export', 'file.print', 'file.copyPng', 'file.copySvg', 'file.exportSelection', 'file.exportArea']);
+for (const c of COMMANDS) {
+  const run = c.run;
+  if (c.id === 'wire.highlightNet') {
+    // on the symbol page N arms the pin tool (as the old editor's Pin tool key did)
+    c.run = () => {
+      if (!S().symbolSession) return run();
+      if (S().placing?.symbol === PIN_SYMBOL) set({ placing: null });
+      else A.startPlacing(PIN_SYMBOL);
+    };
+  } else if (c.id === 'file.save') {
+    c.run = () => {
+      if (!S().symbolSession) return run();
+      const err = saveSymbolEditor();
+      if (err) toast(err, 'error');
+    };
+  } else if ((c.category === 'File' || c.category === 'Page') && !SYMBOL_PAGE_OK.has(c.id)) {
+    c.run = () => (S().symbolSession ? toast('Save or cancel the symbol first (top of the canvas)', 'info') : run());
+  }
 }
 
 export const COMMAND_MAP = new Map(COMMANDS.map((c) => [c.id, c]));

@@ -7,6 +7,7 @@ import { wirePolyline, wireStyleFor } from './wires';
 import { inkPoints } from './ink';
 import { isCurved, mapNodes, pathD, pathNodes } from './path';
 import { polyPoints } from './polygon';
+import { measureTextShape } from './shapeText';
 import { resolveConnector } from './connectors';
 import { fromShapeFrame, rotatedCorners, shapeBox, shapeRot } from './rotation';
 
@@ -55,7 +56,7 @@ export function selectionToDrawing(doc: CircuitDoc, ids: string[]): SelectionDra
   };
 }
 
-function componentPrims(doc: CircuitDoc, c: ComponentItem, at: (p: Point) => Point): Prim[] {
+export function componentPrims(doc: CircuitDoc, c: ComponentItem, at: (p: Point) => Point): Prim[] {
   const def = instanceSymbol(doc, c);
   const T = (x: number, y: number) => at(toWorld(c, def, x, y));
   const mapPts = (pts: number[]) => {
@@ -134,7 +135,46 @@ function mapPath(d: string, T: (x: number, y: number) => Point): string | null {
   return out.join(' ');
 }
 
-function shapePrims(s: ShapeItem, at: (p: Point) => Point, doc: CircuitDoc): Prim[] {
+/** A shape as symbol primitives, keeping its colours, fill and dashes (black stays theme ink). */
+export function shapePrims(s: ShapeItem, at: (p: Point) => Point, doc: CircuitDoc): Prim[] {
+  return bareShapePrims(s, at, doc).map((p) => stylePrim(p, s));
+}
+
+const isInk = (c?: string) => !c || /^#(000|000000)$/i.test(c);
+/** The two canvas colours that mean "the page" (a background-filled interior). */
+const isPage = (c?: string) => !!c && /^#(0f0e0c|fffdf9)$/i.test(c);
+
+function stylePrim(p: Prim, s: ShapeItem): Prim {
+  if (p.t === 'text') {
+    return isInk(s.textColor) ? p : { ...p, color: s.textColor };
+  }
+  const out: Prim = { ...p };
+  // arrowheads are already solid ink of the line's colour
+  const stroked = s.stroke && s.stroke !== 'none' && s.strokeWidth > 0;
+  if (stroked && !isInk(s.stroke)) out.color = s.stroke;
+  if (s.dash && s.dash !== 'solid') out.dash = true;
+  if ('fill' in out && out.fill === 'none' && s.fill && s.fill !== 'none' && s.fillOpacity >= 0.5 && s.kind !== 'line' && s.kind !== 'arrow' && s.kind !== 'ink') {
+    if (isPage(s.fill)) out.fill = 'bg';
+    else {
+      out.fill = 'solid';
+      if (!isInk(s.fill)) out.fc = s.fill;
+      else if (out.color) out.fc = 'currentColor';
+    }
+  }
+  // no outline: drawn without a stroke
+  if (!stroked && 'fill' in out && out.fill !== 'none') {
+    if (out.t === 'rect') out.sw = 0;
+    else (out as { w?: number }).w = 0;
+  }
+  // the default width follows the part's line width instead of being fixed
+  if (out.t === 'rect' ? out.sw === 2 : 'w' in out && out.w === 2) {
+    if (out.t === 'rect') delete out.sw;
+    else delete (out as { w?: number }).w;
+  }
+  return out;
+}
+
+function bareShapePrims(s: ShapeItem, at: (p: Point) => Point, doc: CircuitDoc): Prim[] {
   if (shapeRot(s) && s.kind !== 'text') {
     // a turned box becomes its turned outline (a title inside it is dropped)
     const b = shapeBox(s);
@@ -156,10 +196,10 @@ function shapePrims(s: ShapeItem, at: (p: Point) => Point, doc: CircuitDoc): Pri
   const w = Math.abs(z.x - a.x);
   const h = Math.abs(z.y - a.y);
   const fs = s.fontSize ?? 16;
-  const textLines = (tx: number, ty: number, size: number) =>
+  const textLines = (tx: number, ty: number, size: number, anchor: 'start' | 'middle' | 'end' = 'start') =>
     (s.text ?? '')
       .split('\n')
-      .map((line, i): Prim => ({ t: 'text', x: tx, y: r(ty + size + i * size * 1.3), size, anchor: 'start', text: line }))
+      .map((line, i): Prim => ({ t: 'text', x: tx, y: r(ty + size + i * size * 1.3), size, anchor, text: line }))
       .filter((p) => p.t === 'text' && p.text.trim());
   switch (s.kind) {
     case 'rect':
@@ -199,8 +239,11 @@ function shapePrims(s: ShapeItem, at: (p: Point) => Point, doc: CircuitDoc): Pri
       if ((s.headStart ?? 'none') !== 'none') head({ x: tipA.x - path.startDir.x, y: tipA.y - path.startDir.y }, tipA);
       return out;
     }
-    case 'text':
-      return textLines(a.x, a.y, fs);
+    case 'text': {
+      const anchor = s.align ?? 'start';
+      const tw = measureTextShape(s).w;
+      return textLines(r(a.x + (anchor === 'middle' ? tw / 2 : anchor === 'end' ? tw : 0)), a.y, fs, anchor);
+    }
     case 'ink':
       return [{ t: 'line', pts: inkPoints(s).flatMap((p) => {
         const q = at(p);

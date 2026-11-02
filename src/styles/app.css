@@ -8377,3 +8377,157 @@ button.crumb:hover {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------------------ */
+/* Symbol editor page                                                  */
+/* ------------------------------------------------------------------ */
+
+.symbol-bar {
+  position: absolute;
+  top: 10px;
+  left: calc(var(--inset-l) + 10px);
+  right: calc(var(--inset-r) + 10px);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid color-mix(in srgb, #f7768e 45%, var(--border));
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(8px);
+}
+.symbol-bar .divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 2px;
+  background: var(--border);
+}
+.symbol-bar .grow {
+  flex: 1;
+}
+.symbol-bar .secondary-btn,
+.symbol-bar .primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.symbol-bar .secondary-btn.active {
+  color: #f7768e;
+  border-color: #f7768e;
+  background: color-mix(in srgb, #f7768e 14%, transparent);
+}
+.symbol-bar-title {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  min-width: 0;
+}
+.symbol-bar-kicker {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #f7768e;
+}
+.symbol-bar-name {
+  width: 220px;
+  max-width: 30vw;
+  padding: 2px 6px;
+  font-weight: 600;
+  background: transparent;
+  border-color: transparent;
+}
+.symbol-bar-name:hover,
+.symbol-bar-name:focus {
+  border-color: var(--border);
+}
+.symbol-bar-count {
+  font-size: 0.85em;
+  color: var(--text-dim);
+}
+.symbol-bar-count.warn {
+  color: var(--warn);
+}
+.symbol-bar-error {
+  font-size: 0.85em;
+  color: var(--danger, #f7768e);
+  max-width: 340px;
+}
+.symbol-bar-banner {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 0;
+  font-size: 0.9em;
+}
+/* the tool rail sits under the symbol bar */
+.stage.symbol-mode .tool-rail {
+  top: 72px;
+}
+
+.symbol-outline-box {
+  fill: color-mix(in srgb, #f7768e 4%, transparent);
+  stroke: color-mix(in srgb, #f7768e 70%, transparent);
+}
+.symbol-outline-label {
+  fill: #f7768e;
+  font-family: var(--font-sans, inherit);
+  opacity: 0.85;
+}
+.symbol-pin-guide line {
+  stroke: #f7768e;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+.symbol-pin-guide circle {
+  fill: #f7768e;
+  opacity: 0.75;
+}
+.symbol-pin-guide .symbol-pin-dup {
+  fill: none;
+  stroke: var(--danger, #f7768e);
+  opacity: 1;
+}
+
+.symbol-props .se-preview {
+  margin: 10px 12px 4px;
+}
+.symbol-props-size {
+  text-align: center;
+  margin-bottom: 6px;
+}
+.symbol-props-help {
+  padding: 8px 14px 14px;
+}
+.pin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pin-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.pin-row.active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.pin-name {
+  flex: 1;
+  min-width: 0;
+}
+.pin-name .input {
+  width: 100%;
+}
+.pin-name.dup .input {
+  border-color: var(--danger, #f7768e);
+}
+.pin-side {
+  width: 44px;
+  text-align: right;
+}

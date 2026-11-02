@@ -1,4 +1,5 @@
 import { current } from 'immer';
+import { PIN_SYMBOL } from '../model/symbols';
 import { docBounds, groupChain, itemBounds, makeComponent, makeShape, topGroup } from '../model/doc';
 import { pulseAt } from '../canvas/pulses';
 import { inkAverageWidth, inkPoints, packInk, recognizeShape, shapePoints } from '../model/ink';
@@ -154,7 +155,7 @@ export function addPresetShape(id: string, at: Point, size: { w: number; h: numb
 export function startPlacing(symbol: string) {
   if (readOnly()) return readOnlyNotice();
   set({ placing: { symbol, rot: 0, flipX: false, repeat: true }, tool: 'select', contextMenu: null });
-  pushRecent(symbol);
+  if (symbol !== PIN_SYMBOL) pushRecent(symbol);
 }
 
 /**
@@ -172,7 +173,8 @@ export function placeArmed(x: number, y: number, shift = false): string | null {
   const pl = S().placing;
   if (!pl) return null;
   const id = placeComponent(pl.symbol, x, y, pl.rot, pl.flipX);
-  if (!keepsPlacing(shift)) set({ placing: null });
+  // pins come in sets: the pin tool stays armed until Esc
+  if (!keepsPlacing(shift) && pl.symbol !== PIN_SYMBOL) set({ placing: null });
   return id;
 }
 
@@ -200,7 +202,7 @@ export function placeComponent(symbol: string, x: number, y: number, rot: 0 | 90
     id = c.id;
   });
   set({ selection: [id] });
-  pushRecent(symbol);
+  if (symbol !== PIN_SYMBOL) pushRecent(symbol);
   const placed = vdoc().items[id];
   const b = placed && itemBounds(vdoc(), placed);
   if (b) pulseAt(b.x + b.w / 2, b.y + b.h / 2, 'place');
