@@ -134,7 +134,7 @@ export function hintFor(s: HintState): string | null {
 function selectHint(s: HintState, cmd: (id: string, what: string) => string | null, pair: (a: string, b: string, what: string) => string | null): string | null {
   const sel = s.selection;
   if (!sel.length) {
-    return join(['Click a part or wire to select it, drag to select an area', cmd('tool.wire', 'draws wires'), cmd('view.search', 'finds parts'), cmd('help.palette', 'opens the command palette')]);
+    return join(['Click a part or wire to select it, drag to select an area', cmd('tool.wire', 'draws wires'), `${s.key('Alt')}-drag from a pin to wire it`, cmd('view.search', 'finds parts'), cmd('help.palette', 'opens the command palette')]);
   }
   if (sel.length > 1) {
     const labels = sel.every((t) => t === 'label' || t === 'labelledWire');
@@ -149,7 +149,7 @@ function selectHint(s: HintState, cmd: (id: string, what: string) => string | nu
   }
   switch (sel[0]) {
     case 'part':
-      return join([cmd('arrange.rotateCw', 'rotates'), pair('arrange.flipH', 'arrange.flipV', 'flip'), 'drag a corner to resize', cmd('edit.duplicate', 'duplicates'), cmd('edit.quickAddRight', '(or another arrow) chains a wired copy'), cmd('edit.properties', 'edits the value')]);
+      return join([cmd('arrange.rotateCw', 'rotates'), pair('arrange.flipH', 'arrange.flipV', 'flip'), 'drag a corner to resize', `${s.key('Alt')}-drag a pin to wire it`, cmd('edit.duplicate', 'duplicates'), cmd('edit.quickAddRight', '(or another arrow) chains a wired copy'), cmd('edit.properties', 'edits the value')]);
     case 'label':
       return join([cmd('edit.properties', 'renames the net'), 'drag its name to move it', cmd('edit.duplicateIncrement', 'duplicates with the next number (D0 → D1)'), cmd('arrange.rotateCw', 'rotates')]);
     case 'labelledWire':
