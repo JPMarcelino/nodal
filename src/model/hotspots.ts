@@ -71,11 +71,13 @@ export function computeHotSpots(doc: CircuitDoc, polys: Map<string, Point[]>, cr
   }
   const taken = new Set(out.map((h) => `${h.pt.x},${h.pt.y}`));
   for (const p of ports) {
-    if (taken.has(`${p.pt.x},${p.pt.y}`)) continue;
+    const at = `${p.pt.x},${p.pt.y}`;
+    if (taken.has(at)) continue;
     const ends = endsAt.get(`${p.comp}\0${p.port}`) ?? 0;
     const over = wireThroughPoint(doc, ix, p.pt, p.comp, p.port);
-    if (over) out.push({ kind: 'pinTouch', pt: p.pt, comp: p.comp, port: p.port, wire: over });
-    else if (ends > 0) out.push({ kind: 'pin', pt: p.pt, comp: p.comp, port: p.port, ends });
+    // two pins meeting on one spot share its menu (and its key)
+    if (over) out.push({ kind: 'pinTouch', pt: p.pt, comp: p.comp, port: p.port, wire: over }), taken.add(at);
+    else if (ends > 0) out.push({ kind: 'pin', pt: p.pt, comp: p.comp, port: p.port, ends }), taken.add(at);
   }
   return out;
 }

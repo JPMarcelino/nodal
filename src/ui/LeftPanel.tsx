@@ -84,7 +84,10 @@ function Tile({ def }: { def: SymbolDef }) {
           clearClose();
           if (!variants.length) return A.startPlacing(def.id);
           const anchor = anchorOf(e.currentTarget);
-          setPop((p) => (p?.pinned ? null : { def, variants, anchor, pinned: true }));
+          // pinning puts a backdrop over the tile, which would swallow the second click of a
+          // double-click (place at centre): wait out the double-click before pinning
+          if (e.detail > 1) return;
+          timer.current = setTimeout(() => setPop((p) => (p?.pinned ? null : { def, variants, anchor, pinned: true })), 250);
         }}
         onDoubleClick={(e) => {
           e.stopPropagation();

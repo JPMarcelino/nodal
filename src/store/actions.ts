@@ -154,8 +154,9 @@ export function addPresetShape(id: string, at: Point, size: { w: number; h: numb
 
 export function startPlacing(symbol: string) {
   if (readOnly()) return readOnlyNotice();
+  // the part joins "Recently used" when it is placed: adding it now would push a new row in
+  // above the tile just clicked, moving the tile out from under a double-click
   set({ placing: { symbol, rot: 0, flipX: false, repeat: true }, tool: 'select', contextMenu: null });
-  if (symbol !== PIN_SYMBOL) pushRecent(symbol);
 }
 
 /**
