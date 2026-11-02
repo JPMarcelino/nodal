@@ -8463,10 +8463,47 @@ button.crumb:hover {
   padding: 4px 4px 0;
   font-size: 0.9em;
 }
-/* the tool rail sits under the symbol bar */
+/* the tool rail (and group crumbs) sit under the symbol bar; --symbar is its bottom edge, measured as it wraps */
 .stage.symbol-mode .tool-rail {
-  top: 72px;
+  top: calc(var(--symbar, 62px) + 8px);
 }
+.stage.symbol-mode .group-crumbs {
+  top: calc(var(--symbar, 62px) + 58px);
+}
+.symbol-bar .sb-short {
+  display: none;
+}
+/* a bar with little room (narrow canvas, or side panels floating over it) drops its labels for icons */
+.symbol-bar.compact,
+.symbol-bar.tiny {
+  gap: 4px;
+  padding: 4px 6px;
+}
+.symbol-bar.compact .sb-label,
+.symbol-bar.tiny .sb-label,
+.symbol-bar.compact .symbol-bar-kicker,
+.symbol-bar.tiny .symbol-bar-kicker,
+.symbol-bar.compact .divider,
+.symbol-bar.tiny .divider,
+.symbol-bar.tiny .symbol-bar-count {
+  display: none;
+}
+.symbol-bar.compact .sb-short,
+.symbol-bar.tiny .sb-short {
+  display: inline;
+}
+.symbol-bar.compact .symbol-bar-name {
+  width: 140px;
+}
+.symbol-bar.tiny .symbol-bar-name {
+  width: 96px;
+}
+.symbol-bar.tiny .symbol-bar-error {
+  order: 10;
+  flex-basis: 100%;
+  max-width: none;
+}
+
 
 .symbol-outline-box {
   fill: color-mix(in srgb, #f7768e 4%, transparent);

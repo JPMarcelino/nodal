@@ -1,5 +1,5 @@
 import { ArrowLeft, Code2, Cpu, History, Layers, Pencil, Pin, Save, Trash2, Upload } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { compileSource, parseDraw, parsePorts } from '../model/symbols/dsl';
 import { baseSymbols, getSymbol, variantDefs } from '../model/registry';
@@ -47,6 +47,27 @@ export function SymbolBar() {
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pins = useMemo(() => pagePins(doc), [doc]);
+  // the tool rail and other overlays along the top of the canvas sit below the bar, however many rows it wraps to
+  const barRef = useRef<HTMLDivElement>(null);
+  // the room the bar has (side panels can float over the canvas): labels give way to icons as it narrows
+  const [fit, setFit] = useState<'' | ' compact' | ' tiny'>('');
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const stage = bar?.parentElement;
+    if (!bar || !stage) return;
+    const place = () => {
+      const w = bar.clientWidth;
+      setFit(w < 520 ? ' tiny' : w < 860 ? ' compact' : '');
+      stage.style.setProperty('--symbar', `${Math.ceil(bar.offsetTop + bar.offsetHeight)}px`);
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(bar);
+    return () => {
+      ro.disconnect();
+      stage.style.removeProperty('--symbar');
+    };
+  }, [session !== null]);
   const problem = useMemo(() => {
     try {
       pageToSymbol(doc);
@@ -67,9 +88,9 @@ export function SymbolBar() {
   const cancel = () => (symbolDirty() ? setConfirm(true) : closeSymbolEditor());
   const togglePins = () => (placingPins ? set({ placing: null }) : A.startPlacing(PIN_SYMBOL));
   return (
-    <div className="symbol-bar" role="toolbar" aria-label="Symbol editor">
+    <div className={`symbol-bar${fit}`} role="toolbar" aria-label="Symbol editor" ref={barRef}>
       <button className="secondary-btn" onClick={cancel} title="Back to the circuit without saving">
-        <ArrowLeft size={14} /> Circuit
+        <ArrowLeft size={14} /> <span className="sb-label">Circuit</span>
       </button>
       <div className="symbol-bar-title">
         <span className="symbol-bar-kicker">{title}</span>
@@ -77,7 +98,7 @@ export function SymbolBar() {
       </div>
       <span className="divider" />
       <button className={placingPins ? 'secondary-btn active' : 'secondary-btn'} onClick={togglePins} title="Add pins: click where wires should connect — near a lead's end it snaps onto it (N; Esc to stop)">
-        <Pin size={14} /> Add pins
+        <Pin size={14} /> <span className="sb-label">Add pins</span>
       </button>
       <span className={pins.length ? 'symbol-bar-count' : 'symbol-bar-count warn'} title="Pins of the symbol (select one to rename it)">
         {pins.length} pin{pins.length === 1 ? '' : 's'}
@@ -95,12 +116,13 @@ export function SymbolBar() {
       <span className="grow" />
       {(error || problem) && <span className="symbol-bar-error">{problem ?? error}</span>}
       {meta.id && !meta.variantOf && (
-        <button className="secondary-btn" onClick={() => save(true)}>
-          Save as copy
+        <button className="secondary-btn" onClick={() => save(true)} title="Save as a new symbol, leaving the original as it was">
+          <span className="sb-label">Save as </span>copy
         </button>
       )}
       <button className="primary-btn" onClick={() => save(false)} disabled={!!problem} title="Save the symbol and go back to the circuit (Ctrl+S)">
-        <Save size={14} /> {meta.variantOf ? (meta.id ? 'Save this type' : 'Add this type') : meta.id ? 'Save symbol' : 'Add to My symbols'}
+        <Save size={14} /> <span className="sb-label">{meta.variantOf ? (meta.id ? 'Save this type' : 'Add this type') : meta.id ? 'Save symbol' : 'Add to My symbols'}</span>
+        <span className="sb-short">Save</span>
       </button>
       {draft && (
         <div className="symbol-bar-banner">
