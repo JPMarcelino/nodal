@@ -1550,12 +1550,18 @@ export function Canvas() {
         }
       }
     }
-    // drag from a port starts a wire
+    // the move tool moves: pressing a pin grabs its part; Alt-drag from a pin draws a wire (as Alt-drag on a wire branches)
     const pi = findPort(w);
-    if (pi && !e.shiftKey) {
+    if (pi && !e.shiftKey && !e.ctrlKey && !e.metaKey && !isDouble) {
       const portItem = vdoc().items[pi.comp];
       if (portItem && !portItem.locked) {
-        startWire({ kind: 'port', comp: pi.comp, port: pi.port, pt: pi.pt, dir: portDir(pi) }, true, client);
+        if (e.altKey) {
+          startWire({ kind: 'port', comp: pi.comp, port: pi.port, pt: pi.pt, dir: portDir(pi) }, true, client);
+          return;
+        }
+        if (!selSet.has(pi.comp)) select([pi.comp]);
+        beginGesture();
+        setGesture(moveGesture(S().selection, w, client));
         return;
       }
     }
@@ -2371,9 +2377,7 @@ export function Canvas() {
             ? badgeCursor(tool === 'select' ? 'plus' : tool, prefs.theme) ?? 'crosshair'
             : g?.kind === 'wire'
               ? badgeCursor(tool, prefs.theme) ?? 'crosshair'
-              : hover.port
-                ? 'crosshair'
-                : hover.item
+              : hover.item || hover.port
                   ? 'pointer'
                   : tool === 'select' && !g && selectionBounds && pointInRect(cursor, selectionBounds, 4 / z)
                     ? 'move'
@@ -2729,7 +2733,7 @@ export function Canvas() {
             })}
 
           {/* hovered port */}
-          {hover.port && (!g || g.kind === 'wire') && <circle cx={hover.port.pt.x} cy={hover.port.pt.y} r={6 / z + 2} className="port-hover" strokeWidth={2 / z} />}
+          {hover.port && (g ? g.kind === 'wire' : tool !== 'select') && <circle cx={hover.port.pt.x} cy={hover.port.pt.y} r={6 / z + 2} className="port-hover" strokeWidth={2 / z} />}
 
           {/* gestures */}
           {g?.kind === 'marquee' && (() => {
