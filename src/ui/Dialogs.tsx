@@ -59,8 +59,22 @@ export function Modal({
   /** Name for a dialog with no visible title. */
   ariaLabel?: string;
 }) {
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
+      // Tab cycles inside the dialog rather than wandering off to the app behind it
+      if (e.key === 'Tab' && box.current) {
+        const all = [...box.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
+          (el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null,
+        );
+        if (!all.length) return;
+        const first = all[0];
+        const last = all[all.length - 1];
+        const inside = box.current.contains(document.activeElement);
+        if (e.shiftKey && (document.activeElement === first || !inside)) (e.preventDefault(), last.focus());
+        else if (!e.shiftKey && (document.activeElement === last || !inside)) (e.preventDefault(), first.focus());
+        return;
+      }
       if (e.key === 'Escape') {
         e.stopPropagation();
         const t = e.target as HTMLElement;
@@ -73,9 +87,16 @@ export function Modal({
     window.addEventListener('keydown', k, true);
     return () => window.removeEventListener('keydown', k, true);
   }, [onClose, onEscape]);
+  // focus goes back to whatever had it before the dialog opened
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    return () => {
+      if (opener?.isConnected && opener !== document.body) opener.focus();
+    };
+  }, []);
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${className ?? ''}`} style={{ width }} role="dialog" aria-modal="true" aria-label={ariaLabel ?? (typeof title === 'string' ? title : undefined)}>
+      <div ref={box} className={`modal ${className ?? ''}`} style={{ width }} role="dialog" aria-modal="true" aria-label={ariaLabel ?? (typeof title === 'string' ? title : undefined)}>
         {title && (
           <header className="modal-head">
             <h2>{title}</h2>

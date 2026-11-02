@@ -32,7 +32,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { isExplainTool, useExplain } from '../store/explain';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Tool } from '../model/types';
 import * as A from '../store/actions';
 import { openExport } from '../io/fileActions';
@@ -82,11 +82,50 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
 function MenuBar() {
   const [open, setOpen] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const dialog = useStore((s) => s.dialog);
   useEffect(() => {
     if (open === null) return;
     const close = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(null);
+    // keys reach the menu before the app's shortcuts: Esc closes, arrows walk the items and the menus
+    const onKey = (e: KeyboardEvent) => {
+      const items = [...(ref.current?.querySelectorAll<HTMLButtonElement>('.dropdown-item:not(:disabled)') ?? [])];
+      const at = items.indexOf(document.activeElement as HTMLButtonElement);
+      const stop = () => (e.preventDefault(), e.stopPropagation());
+      if (e.key === 'Escape') {
+        stop();
+        setOpen(null);
+        ref.current?.querySelectorAll<HTMLButtonElement>('.menu-btn')[open]?.focus();
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        stop();
+        const d = e.key === 'ArrowDown' ? 1 : -1;
+        items[at < 0 ? (d > 0 ? 0 : items.length - 1) : (at + d + items.length) % items.length]?.focus();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        stop();
+        setOpen((open + (e.key === 'ArrowRight' ? 1 : -1) + MENUS.length) % MENUS.length);
+      } else if (e.key === 'Home' || e.key === 'End') {
+        stop();
+        items[e.key === 'Home' ? 0 : items.length - 1]?.focus();
+      } else if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Tab' && !['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+        // any other shortcut acts as usual, and the menu gets out of its way
+        setOpen(null);
+      }
+    };
     window.addEventListener('pointerdown', close);
-    return () => window.removeEventListener('pointerdown', close);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+  // a dialog opening (from a menu item or a shortcut) closes the menu under it
+  useEffect(() => setOpen(null), [dialog]);
+  // a menu near the right edge of a narrow window slides left to stay on screen
+  useLayoutEffect(() => {
+    const d = ref.current?.querySelector<HTMLElement>('.dropdown');
+    if (!d) return;
+    d.style.left = '';
+    const over = d.getBoundingClientRect().right - (window.innerWidth - 8);
+    if (over > 0) d.style.left = `${-over}px`;
   }, [open]);
   return (
     <div className="menubar" ref={ref}>

@@ -807,11 +807,22 @@ body.is-resizing-panel .stage {
   border-bottom-color: var(--accent);
 }
 
-/* narrow side panels: tighter tabs so they all stay in view */
-@container side-panel (max-width: 270px) {
+/* narrow side panels (the default width included): tighter tabs so they all stay in view */
+@container side-panel (max-width: 320px) {
   .tabs button {
     padding-left: 7px;
     padding-right: 7px;
+  }
+}
+@container side-panel (max-width: 250px) {
+  .tabs {
+    gap: 0;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .tabs button {
+    padding-left: 5px;
+    padding-right: 5px;
   }
 }
 
@@ -6230,8 +6241,9 @@ body {
 
 .page-bar {
   position: absolute;
-  left: 0;
-  right: 0;
+  /* clear of floating side panels, which would otherwise cover the tabs */
+  left: var(--inset-l);
+  right: var(--inset-r);
   bottom: 0;
   height: var(--pb-h);
   display: flex;
