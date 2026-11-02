@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { SWATCHES, swatchBg, swatchTitle } from './controls';
 import { restyle } from './StyleSection';
-import { lookKeys, lookOf } from '../model/style';
+import { lookKeys, lookOf, strokeNoun } from '../model/style';
 import { DASH_OPTIONS, dashArray } from '../model/dash';
 import { select, set as setState, useStore } from '../store/store';
 import type { Dash, ShapeItem } from '../model/types';
@@ -176,7 +176,7 @@ function DashLine({ dash }: { dash: Dash }) {
 }
 
 /** The line style as a picture, opening a short list of the others. */
-export function QuickDash({ value, onChange }: { value: Dash; onChange: (d: Dash) => void }) {
+export function QuickDash({ value, onChange, noun = 'Line' }: { value: Dash; onChange: (d: Dash) => void; noun?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
   useDismiss(open, () => setOpen(false), ref);
@@ -186,15 +186,15 @@ export function QuickDash({ value, onChange }: { value: Dash; onChange: (d: Dash
       <button
         type="button"
         className="qe-btn qe-dash"
-        title={`Line style: ${label}`}
-        aria-label={`Line style: ${label}`}
+        title={`${noun} style: ${label}`}
+        aria-label={`${noun} style: ${label}`}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
         <DashLine dash={value} />
       </button>
       {open && (
-        <div className="qe-palette qe-dash-menu" role="listbox" aria-label="Line style">
+        <div className="qe-palette qe-dash-menu" role="listbox" aria-label={`${noun} style`}>
           {DASH_OPTIONS.map((o) => (
             <button
               key={o.value}
@@ -279,6 +279,7 @@ export function HoverEdit({
   const look = lookOf(doc, it);
   const keys = new Set(lookKeys(it));
   const set = (p: Parameters<typeof restyle>[1]) => restyle([id], p);
+  const noun = strokeNoun(it);
 
   // what this object is, in a word or two
   let name = '';
@@ -303,8 +304,8 @@ export function HoverEdit({
       sizes = [{ value: look.size ?? 16, min: 4, max: 200, step: 1, title: 'Text size', suffix: 'px', set: (size) => set({ size }) }];
     } else {
       if (keys.has('fill')) colour.push({ value: it.fill === 'none' || it.fillOpacity === 0 ? '' : (look.fill ?? ''), title: 'Fill colour', kind: 'fill' as const, patch: (fill: string) => ({ fill }) });
-      if (keys.has('line')) colour.push({ value: look.line ?? '', title: 'Line colour', kind: 'line' as const, patch: (line: string) => ({ line }) });
-      if (keys.has('width')) sizes.push({ value: look.width ?? 2, min: 0, max: 40, step: 0.5, title: 'Line width', suffix: 'px', set: (width) => set({ width }) });
+      if (keys.has('line')) colour.push({ value: look.line ?? '', title: `${noun} colour`, kind: 'line' as const, patch: (line: string) => ({ line }) });
+      if (keys.has('width')) sizes.push({ value: look.width ?? 2, min: 0, max: 40, step: 0.5, title: `${noun} width`, suffix: 'px', set: (width) => set({ width }) });
     }
   }
 
@@ -346,7 +347,7 @@ export function HoverEdit({
       {colour.map((c) => (
         <QuickColor key={c.title} value={c.value} title={c.title} kind={c.kind} onChange={(v) => set(c.patch(v))} />
       ))}
-      {dash && <QuickDash value={dash} onChange={(d) => set({ dash: d })} />}
+      {dash && <QuickDash value={dash} noun={noun} onChange={(d) => set({ dash: d })} />}
       {emphasis.length > 0 && (
         <span className="qe-group">
           {emphasis.map((e) => (

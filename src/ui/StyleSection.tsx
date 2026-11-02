@@ -1,5 +1,5 @@
 import { AlignCenter, AlignLeft, AlignRight } from 'lucide-react';
-import { TEXT_KEYS, applyLook, commonLook, lookOf, type Look, type LookKey } from '../model/style';
+import { TEXT_KEYS, applyLook, commonLook, lookOf, strokeNounOf, type Look, type LookKey } from '../model/style';
 import { DASH_OPTIONS, dashArray } from '../model/dash';
 import { FONT_OPTIONS } from '../model/fonts';
 import { measureTextShape } from '../model/shapeText';
@@ -194,7 +194,7 @@ export interface StyleExtras {
   textTop?: ReactNode;
   /** Last in "Text". */
   text?: ReactNode;
-  /** Last in "Line" (e.g. arrowheads). */
+  /** Last in the "Line" / "Outline" section (e.g. arrowheads). */
   line?: ReactNode;
   /** More entries for the style's ⋯ menu. */
   menu?: MenuItem[];
@@ -214,6 +214,8 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
   if (!keys.size) return null;
   const set = (p: Partial<Look>) => restyle(ids, p);
   const hint = (k: keyof Look) => (mixed.has(k) ? ' (mixed)' : '');
+  // a line is the stroke itself; an outline goes round a closed shape
+  const noun = strokeNounOf(items);
   const copyPaste: MenuItem[] = [
     { label: 'Copy style', hint: 'Ctrl+Alt+Shift+C', onClick: copyStyle },
     { label: 'Paste style', hint: 'Ctrl+Alt+Shift+V', onClick: pasteStyle, disabled: !copied },
@@ -226,19 +228,19 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
   const lineRows = (
     <>
       {keys.has('line') && (
-        <Row label={`Line colour${hint('line')}`}>
+        <Row label={`${noun} colour${hint('line')}`}>
           <ColorInput value={value.line ?? ''} mixed={mixed.has('line')} allowNone noneTitle="Default" onChange={(line) => set({ line })} />
         </Row>
       )}
       {keys.has('width') && (
-        <Row label={`Line width${hint('width')}`}>
+        <Row label={`${noun} width${hint('width')}`}>
           <span className="stack">
             <NumberInput value={value.width ?? 2} min={keys.has('lineOpacity') ? 0 : 0.25} max={30} step={0.25} suffix="px" onChange={(width) => set({ width })} />
           </span>
         </Row>
       )}
       {keys.has('dash') && (
-        <Row label={`Line style${hint('dash')}`}>
+        <Row label={`${noun} style${hint('dash')}`}>
           <DashSelect value={value.dash ?? 'solid'} mixed={mixed.has('dash')} onChange={(dash) => set({ dash })} />
         </Row>
       )}
@@ -250,7 +252,7 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
       {(keys.has('lineOpacity') || keys.has('cap') || keys.has('join')) && (
         <More id="line-ends" label="Ends, joins & opacity" count={[value.lineOpacity !== undefined && value.lineOpacity < 1, value.cap && value.cap !== 'butt', value.join && value.join !== 'miter'].filter(Boolean).length}>
         {keys.has('lineOpacity') && (
-          <Row label={`Line opacity${hint('lineOpacity')}`}>
+          <Row label={`${noun} opacity${hint('lineOpacity')}`}>
             <Percent value={value.lineOpacity ?? 1} onChange={(lineOpacity) => set({ lineOpacity })} />
           </Row>
         )}
@@ -345,7 +347,7 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
     </Section>
   );
   const line = hasLine && (
-    <Section key="line" title="Line" {...lead('line')} summary={<>{!mixed.has('line') && <ColourDot c={value.line ?? ''} />}{!mixed.has('width') && value.width !== undefined && ` ${+value.width.toFixed(2)}px`}</>}>
+    <Section key="line" title={noun} {...lead('line')} summary={<>{!mixed.has('line') && <ColourDot c={value.line ?? ''} />}{!mixed.has('width') && value.width !== undefined && ` ${+value.width.toFixed(2)}px`}</>}>
       {lineRows}
       {extras.line}
     </Section>

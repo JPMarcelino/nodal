@@ -248,6 +248,9 @@ export function SymbolDrawPane({
 
   const valid = sel.filter((i) => i < prims.length);
   const single = valid.length === 1 ? prims[valid[0]] : null;
+  // a line is the stroke itself; an outline goes round a closed shape (rect, circle, ellipse, polygon)
+  const strokeNouns = new Set(valid.length ? valid.map((i) => prims[i].t).filter((t) => t !== 'text').map((t) => (t === 'line' || t === 'arc' ? 'Line' : 'Outline')) : [tool === 'line' || tool === 'select' ? 'Line' : 'Outline']);
+  const stroke = strokeNouns.size === 1 ? [...strokeNouns][0] : 'Line & outline';
 
   /* ---------------------------- view ---------------------------- */
 
@@ -756,29 +759,29 @@ export function SymbolDrawPane({
         <Segmented
           value={shown.fill}
           options={[
-            { value: 'none', label: 'Outline' },
+            { value: 'none', label: 'No fill' },
             { value: 'solid', label: 'Filled' },
             { value: 'bg', label: 'Opaque' },
           ]}
           onChange={setSelFill}
         />
-        <span className="se-style" title="Line colour (empty: follows the theme)">
-          <span className="se-props-label">Line colour</span>
+        <span className="se-style" title={`${stroke} colour (empty: follows the theme)`}>
+          <span className="se-props-label">{stroke} colour</span>
           <ColorInput value={shown.color ?? ''} onChange={setSelColor} allowNone />
         </span>
         {shown.fill === 'solid' && (
-          <span className="se-style" title="Fill colour (empty: same as the line)">
+          <span className="se-style" title="Fill colour (empty: same as the outline)">
             <span className="se-props-label">Fill colour</span>
             <ColorInput value={shown.fc ?? ''} onChange={setSelFillColor} allowNone />
           </span>
         )}
-        <span className="se-style" title="Line width">
-          <span className="se-props-label">Line width</span>
+        <span className="se-style" title={`${stroke} width`}>
+          <span className="se-props-label">{stroke} width</span>
           <span className="se-num">
             <NumberInput value={shown.w} min={0.5} max={10} step={0.5} suffix="px" onChange={setSelWidth} />
           </span>
         </span>
-        <span className="se-style" title="Line style">
+        <span className="se-style" title={`${stroke} style`}>
           <Segmented
             value={shown.dash ? 'dash' : 'solid'}
             options={[
