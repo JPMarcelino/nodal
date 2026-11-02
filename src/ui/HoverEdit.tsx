@@ -170,7 +170,7 @@ export function QuickNumber({
 function DashLine({ dash }: { dash: Dash }) {
   return (
     <svg className="qe-dash-line" width="22" height="8" viewBox="0 0 22 8" aria-hidden>
-      <line x1="2" y1="4" x2="20" y2="4" strokeDasharray={dashArray(dash, 1.6)} />
+      <line x1="2" y1="4" x2="20" y2="4" strokeDasharray={dashArray(dash, 1.1)} />
     </svg>
   );
 }

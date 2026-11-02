@@ -1,4 +1,4 @@
-import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, History, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
+import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, Filter, History, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFold } from './controls';
 import { keysFor, prettyKey } from '../store/commands';
@@ -391,6 +391,16 @@ function Layers() {
   const [vis, setVis] = useState<VisFilter>('any');
   const [lock, setLock] = useState<LockFilter>('any');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // runs of wires on one net are folded into a single row unless opened
+  const [openRuns, setOpenRuns] = useState<Set<string>>(new Set());
+  const [filterMenu, setFilterMenu] = useState(false);
+  const filterRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!filterMenu) return;
+    const away = (e: PointerEvent) => !filterRef.current?.contains(e.target as Node) && setFilterMenu(false);
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, [filterMenu]);
   const [renaming, setRenaming] = useState<string | null>(null);
   // row dragging (pointer based): which row, where it would drop, and whether it actually moved
   const [drag, setDrag] = useState<{ id: string; startY: number; moved: boolean } | null>(null);
@@ -500,6 +510,81 @@ function Layers() {
     );
   };
 
+  /** Three or more wires of one net in a row (in draw order) show as one foldable row. */
+  const list = (its: Item[], depth: number) => {
+    const out: JSX.Element[] = [];
+    for (let i = 0; i < its.length; ) {
+      const it = its[i];
+      const net = it.type === 'wire' ? netByWire.get(it.id) : undefined;
+      let j = i + 1;
+      if (net !== undefined) while (j < its.length && its[j].type === 'wire' && netByWire.get(its[j].id) === net) j++;
+      if (net === undefined || j - i < 3) {
+        out.push(row(it, depth));
+        i++;
+        continue;
+      }
+      const run = its.slice(i, j);
+      out.push(runNode(`${net}:${run[0].id}`, net, run, depth));
+      i = j;
+    }
+    return out;
+  };
+
+  const runNode = (key: string, net: string, run: Item[], depth: number) => {
+    const ids = run.map((w) => w.id);
+    const someSel = ids.some((id) => sel.has(id));
+    const allSel = ids.every((id) => sel.has(id));
+    // a wire picked on the canvas opens its run so its row is there to see
+    const open = openRuns.has(key) || (someSel && !allSel);
+    const allHidden = run.every((w) => w.hidden);
+    const allLocked = run.every((w) => w.locked);
+    return (
+      <div key={key}>
+        <div
+          className={`layer-row run${allSel ? ' selected' : ''}${allHidden ? ' is-hidden' : ''}`}
+          style={{ paddingLeft: 6 + depth * 14 }}
+          onPointerEnter={() => !drag && hover(ids)}
+          onPointerLeave={() => !drag && hover([])}
+          onClick={() => set({ selection: ids })}
+          onDoubleClick={() => A.glideFit(ids)}
+          title="Wires of one net, next to each other in the drawing order. Open to reorder them one by one"
+        >
+          <button
+            className="layer-caret"
+            onClick={(e) => {
+              e.stopPropagation();
+              const next = new Set(openRuns);
+              if (openRuns.has(key)) next.delete(key);
+              else next.add(key);
+              setOpenRuns(next);
+            }}
+          >
+            {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </button>
+          <span className="layer-icon wire" />
+          <span className="layer-name">
+            Wires · {net}
+            <span className="layer-count">{run.length}</span>
+          </span>
+          <button className={allHidden ? 'layer-act on' : 'layer-act'} title={allHidden ? 'Show all' : 'Hide all'} onClick={(e) => (e.stopPropagation(), A.toggleHidden(ids))}>
+            {allHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+          </button>
+          <button
+            className={allLocked ? 'layer-act locked' : 'layer-act'}
+            title={allLocked ? 'Unlock all' : 'Lock all'}
+            onClick={(e) => {
+              e.stopPropagation();
+              mutate((d) => ids.forEach((id) => void (d.items[id].locked = !allLocked)));
+            }}
+          >
+            {allLocked ? <Lock size={12} /> : <LockOpen size={12} />}
+          </button>
+        </div>
+        {open && run.map((w) => row(w, depth + 1))}
+      </div>
+    );
+  };
+
   const groupNode = (gid: string, depth: number): JSX.Element | null => {
     const g = doc.groups[gid];
     if (filtering && !groupHasItems(gid)) return null;
@@ -548,7 +633,7 @@ function Layers() {
         {open && (
           <>
             {ch.groups.map((sg) => groupNode(sg.id, depth + 1))}
-            {ch.items.map((it) => row(it, depth + 1))}
+            {list(ch.items, depth + 1)}
           </>
         )}
       </div>
@@ -571,17 +656,41 @@ function Layers() {
             {f === 'all' ? 'All' : f === 'component' ? 'Parts' : f === 'wire' ? 'Wires' : 'Shapes'}
           </button>
         ))}
+        <span className="layer-filter-more" ref={filterRef}>
+          <button
+            className={vis !== 'any' || lock !== 'any' ? 'filter-btn on' : 'filter-btn'}
+            title="Filter by shown, hidden, locked"
+            aria-expanded={filterMenu}
+            onClick={() => setFilterMenu((o) => !o)}
+          >
+            <Filter size={12} />
+            {(vis !== 'any' || lock !== 'any') && <span className="filter-dot" />}
+          </button>
+          {filterMenu && (
+            <div className="layer-filter-pop">
+              <div className="layer-filter secondary">
+                {chip(vis, setVis, 'shown', <Eye size={11} />, 'Shown')}
+                {chip(vis, setVis, 'hidden', <EyeOff size={11} />, 'Hidden')}
+              </div>
+              <div className="layer-filter secondary">
+                {chip(lock, setLock, 'locked', <Lock size={11} />, 'Locked')}
+                {chip(lock, setLock, 'unlocked', <LockOpen size={11} />, 'Unlocked')}
+              </div>
+            </div>
+          )}
+        </span>
       </div>
-      <div className="layer-filter secondary">
-        {chip(vis, setVis, 'shown', <Eye size={11} />, 'Shown')}
-        {chip(vis, setVis, 'hidden', <EyeOff size={11} />, 'Hidden')}
-        <span className="layer-filter-sep" />
-        {chip(lock, setLock, 'locked', <Lock size={11} />, 'Locked')}
-        {chip(lock, setLock, 'unlocked', <LockOpen size={11} />, 'Unlocked')}
-      </div>
+      {(vis !== 'any' || lock !== 'any') && (
+        <div className="layer-active-filters small muted">
+          Only {[vis !== 'any' && vis, lock !== 'any' && lock].filter(Boolean).join(' and ')} items
+          <button className="link-btn" onClick={() => (setVis('any'), setLock('any'))}>
+            Clear
+          </button>
+        </div>
+      )}
       <div className="lib-scroll" onPointerLeave={() => !drag && hover([])}>
         {root.groups.map((g) => groupNode(g.id, 0))}
-        {root.items.map((it) => row(it, 0))}
+        {list(root.items, 0)}
         {!items.length && <div className="empty-note">{filtering ? 'Nothing matches these filters.' : 'Nothing here yet.'}</div>}
       </div>
       <div className="layer-foot muted small">Top of the list is in front · drag rows to reorder</div>

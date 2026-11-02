@@ -1154,6 +1154,73 @@ body.is-resizing-panel .stage {
   margin: 0 2px;
 }
 
+/* shown / hidden / locked filters, behind a funnel at the end of the type row */
+.layer-filter-more {
+  position: relative;
+  margin-left: auto;
+}
+
+.layer-filter .filter-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 5px 7px;
+}
+
+.layer-filter .filter-btn.on {
+  color: var(--accent);
+}
+
+.filter-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.layer-filter-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  width: 190px;
+  padding: 8px 0 4px;
+  border-radius: 9px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  animation: section-in 0.12s ease-out;
+}
+
+.layer-filter-pop .layer-filter.secondary {
+  padding: 0 8px 4px;
+}
+
+.layer-active-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 6px;
+}
+
+.layer-active-filters .link-btn {
+  margin-left: auto;
+}
+
+/* a run of wires of one net, folded into one row */
+.layer-count {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text-faint);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
 .layer-foot {
   padding: 6px 12px 8px;
   border-top: 1px solid var(--border);
@@ -1405,6 +1472,136 @@ body.is-resizing-panel .stage {
   font-size: 0.82em;
   color: var(--text-faint);
   line-height: 1.35;
+}
+
+/* ⋯ menu in a section header: the section's less frequent actions */
+.overflow {
+  position: relative;
+  display: inline-flex;
+}
+
+.overflow-btn {
+  width: 24px;
+  height: 24px;
+  color: var(--text-faint);
+}
+
+.overflow-btn:hover,
+.overflow-btn.open {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.overflow-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  border-radius: 9px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  font-size: 1.15em;
+  animation: section-in 0.12s ease-out;
+}
+
+.overflow-item {
+  padding: 6px 9px;
+  border-radius: 6px;
+  text-align: left;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.overflow-item:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+
+.overflow-item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.overflow-item.divided {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  padding-top: 8px;
+}
+
+/* a colour chip in a folded section's summary */
+.colour-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  vertical-align: -1px;
+}
+
+.colour-dot.none {
+  background: repeating-linear-gradient(45deg, var(--panel-2) 0 2px, var(--panel-3) 2px 4px);
+}
+
+.swatch.mixed {
+  background: conic-gradient(#f7768e 0 25%, #7aa2f7 0 50%, #9ece6a 0 75%, #e0af68 0);
+}
+
+/* line style as pictures */
+.segmented.dash-seg {
+  flex-wrap: nowrap;
+}
+
+.segmented.dash-seg button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 5px 2px;
+  display: grid;
+  place-items: center;
+}
+
+.segmented.dash-seg svg {
+  max-width: 100%;
+}
+
+/* part details: the fields not shown yet, offered as chips */
+.add-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.add-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.add-detail-chips .chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 0.86em;
+}
+
+.add-detail-chips .chip:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.add-detail-chips .chip.custom {
+  border-style: dashed;
 }
 
 /* jump bar above the inspector */
