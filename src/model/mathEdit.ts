@@ -821,6 +821,8 @@ export class EqEditor {
   backspace() {
     if (this.selection) return void this.deleteSelection();
     this.save();
+    // a caret-only anchor must not linger past the caret once it moves, or it becomes a selection off the end
+    this.anchor = null;
     const row = this.row;
     if (this.pos > 0) {
       const n = row[this.pos - 1];
@@ -867,6 +869,8 @@ export class EqEditor {
   del() {
     if (this.selection) return void this.deleteSelection();
     this.save();
+    // as in backspace: an anchor level with the caret would be left behind by the caret's move
+    this.anchor = null;
     const row = this.row;
     if (this.pos < row.length) {
       const n = row[this.pos];
@@ -898,6 +902,8 @@ export class EqEditor {
   private resolveCmd() {
     const n = this.pendingCmd();
     if (!n) return;
+    // the caret moves as the command becomes a symbol or structure: a level anchor would be left off the end
+    this.anchor = null;
     const name = n.v.slice(1);
     const row = this.row;
     const at = this.pos - 1;
@@ -987,6 +993,9 @@ export class EqEditor {
     if (k === this.pos) return false;
     const word = row.slice(k, this.pos).map((n) => (n as { v: string }).v).join('');
     if (!FUNCTIONS.has(word)) return false;
+    // only once the letters really are folded into one node does the caret move: a selection that
+    // openDelim() / script() are about to cut must be left alone here
+    this.anchor = null;
     row.splice(k, this.pos - k, fnSym(word));
     this.pos = k + 1;
     return true;
