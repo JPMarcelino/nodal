@@ -2139,7 +2139,14 @@ export function Canvas() {
         break;
       }
       case 'move':
-        if (!g.floating) finishMove(g);
+        if (g.floating) break;
+        // let go over a side panel or dialog: the part would land hidden behind it, so put it back
+        if (g.moved && droppedOffCanvas(wrapRef.current, e.clientX, e.clientY)) {
+          abortGesture();
+          toast('Dropped outside the canvas · move cancelled');
+          break;
+        }
+        finishMove(g);
         break;
       case 'scale':
       case 'groupScale':
@@ -2350,7 +2357,10 @@ export function Canvas() {
   const z = view.zoom;
   const gs = grid * z;
   const showGrid = doc.settings.showGrid;
-  const majorEvery = 5;
+  // zoomed far out, major marks every 5 cells would be a few pixels apart and drown the drawing
+  // in noise: step them out by further fives until they are a readable distance apart
+  let majorEvery = 5;
+  while (gs > 0 && gs * majorEvery < 14) majorEvery *= 5;
   const dotGrid = gs >= 7;
   const gridStyle = doc.settings.gridStyle ?? 'dots';
 
@@ -3094,6 +3104,14 @@ const SelectionOutline = memo(function SelectionOutline({ doc, id, polys, z }: {
     />
   );
 });
+
+/** Let go outside the canvas, or over a side panel floating on it (the toolbar and other overlays still count as canvas). */
+function droppedOffCanvas(wrap: HTMLElement | null, x: number, y: number): boolean {
+  if (!wrap) return false;
+  const r = wrap.getBoundingClientRect();
+  if (x < r.left || x > r.right || y < r.top || y > r.bottom) return true;
+  return !!document.elementFromPoint(x, y)?.closest('.panel, .dialog, [role="dialog"]');
+}
 
 /** A new text whose editor should open straight into the math zone. */
 let pendingEquation: string | null = null;
