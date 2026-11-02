@@ -34,6 +34,7 @@ import { FollowFrame, RemotePresence } from './RemotePresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
 import { HoverEdit } from '../ui/HoverEdit';
+import { onWayToPopup, popupBox } from './hoverPath';
 import { GroupCrumbs, HintBar, IntroCard, WelcomeScreen } from '../ui/CanvasGuides';
 import { marqueeHits } from '../model/marquee';
 import { gestureSlots, hitSlop, useTouchInput } from './touch';
@@ -210,6 +211,8 @@ export function Canvas() {
   const moveRef = useRef<((e: React.PointerEvent) => void) | null>(null);
   const [gesture, setGestureState] = useState<Gesture | null>(null);
   const [hover, setHover] = useState<{ item: string | null; port: PortInfo | null }>({ item: null, port: null });
+  const hoverNow = useRef(hover);
+  hoverNow.current = hover;
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 });
   /** Where the solder tool last clicked: no preview there until the pointer moves off, so the result shows (not a "do it again" dot). */
   const [solderedAt, setSolderedAt] = useState<Point | null>(null);
@@ -236,6 +239,8 @@ export function Canvas() {
   const [quickId, setQuickId] = useState<string | null>(null);
   const quickHold = useRef(false);
   const quickTimers = useRef<{ hide?: number; show?: number }>({});
+  /** Where (on screen) the pointer last was on the card's object: the way to the card starts there. */
+  const quickFrom = useRef<Point | null>(null);
   const cancelQuickHide = () => {
     window.clearTimeout(quickTimers.current.hide);
     quickTimers.current.hide = undefined;
@@ -266,6 +271,12 @@ export function Canvas() {
   }, [setGesture]);
 
   const HOT_DWELL = 550;
+  /** How close the pointer has to come to a hot spot (solder dots: their own size plus a margin). */
+  const hotReach = (h: HotSpot, z: number) => {
+    if (h.kind === 'crossing') return Math.max(9 / z, doc.settings.hopSize + 2);
+    if (h.kind === 'junction') return Math.max(((doc.items[h.id] as { size?: number } | undefined)?.size ?? doc.settings.junctionSize) + 4 / z, 10 / z);
+    return 9 / z;
+  };
   const clearHotTimer = (k: 'open' | 'close') => {
     window.clearTimeout(hotTimers.current[k]);
     hotTimers.current[k] = undefined;
@@ -279,7 +290,7 @@ export function Canvas() {
   };
   const scheduleHotClose = () => {
     if (hotHold.current) return;
-    if (hotTimers.current.close === undefined) hotTimers.current.close = window.setTimeout(closeHotMenu, 300);
+    if (hotTimers.current.close === undefined) hotTimers.current.close = window.setTimeout(closeHotMenu, 450);
   };
   useEffect(() => () => closeHotMenu(), []);
 
@@ -294,14 +305,19 @@ export function Canvas() {
         cancelQuickHide();
         quickTimers.current.hide = window.setTimeout(() => {
           if (!quickHold.current) setQuickId(null);
-        }, 280);
+        }, 450);
       }
       return;
     }
     cancelQuickHide();
     if (quickId === quickCandidate) return;
     if (quickId) setQuickId(null);
-    quickTimers.current.show = window.setTimeout(() => setQuickId(quickCandidate), 420);
+    quickFrom.current = null;
+    quickTimers.current.show = window.setTimeout(() => {
+      const { cursor, view: v } = S();
+      quickFrom.current = { x: v.x + cursor.x * v.zoom, y: v.y + cursor.y * v.zoom };
+      setQuickId(quickCandidate);
+    }, 420);
     return () => window.clearTimeout(quickTimers.current.show);
   }, [quickCandidate, quickId]);
   useEffect(
@@ -320,7 +336,7 @@ export function Canvas() {
     let best: HotSpot | null = null;
     let bd = Infinity;
     for (const h of hotSpots) {
-      const tol = h.kind === 'crossing' ? Math.max(8 / z, doc.settings.hopSize + 2) : 7 / z;
+      const tol = hotReach(h, z);
       const d = dist(h.pt, w);
       if (d < tol && d < bd) {
         best = h;
@@ -332,7 +348,12 @@ export function Canvas() {
 
   /** Tracks the pointer resting on a hot spot (only while idle in the select / edit points tools). */
   const trackHotSpot = (w: Point) => {
-    const h = (tool === 'select' || tool === 'node') && !readOnly() ? hotSpotAt(w) : null;
+    const live = (tool === 'select' || tool === 'node') && !readOnly();
+    // the spot already filling (or open) holds on a little further out than it takes to start,
+    // so a wobbling hand doesn't restart the fill
+    const held = hotMenu ?? (hotPending ? hotSpots.find((s) => hotSpotKey(s) === hotPending) : undefined);
+    const z = S().view.zoom;
+    const h = !live ? null : held && dist(held.pt, w) < hotReach(held, z) * 1.8 ? held : hotSpotAt(w);
     if (!h) {
       clearHotTimer('open');
       setHotPending(null);
@@ -1720,9 +1741,33 @@ export function Canvas() {
     if (solderedAt && dist(w, solderedAt) > 10 / S().view.zoom) setSolderedAt(null);
     const g = gRef.current;
     if (g && g.kind !== 'arm') return;
+    const v = S().view;
+    const sp = { x: v.x + w.x * v.zoom, y: v.y + w.y * v.zoom };
+    if (!g) {
+      // on the way to an open hot spot menu: keep it, and don't light up or start anything passed over
+      if (hotMenu) {
+        const box = popupBox(wrapRef.current, '.cross-pop');
+        if (box && onWayToPopup(sp, { x: v.x + hotMenu.pt.x * v.zoom, y: v.y + hotMenu.pt.y * v.zoom }, box, 14)) {
+          clearHotTimer('close');
+          clearHotTimer('open');
+          if (hotPending) setHotPending(null);
+          if (hover.item || hover.port) setHover({ item: null, port: null });
+          return;
+        }
+      }
+      // on the way to the style card: it stays on its object, whatever lies in between
+      if (quickId && quickFrom.current) {
+        const box = popupBox(wrapRef.current, '.hover-edit');
+        if (box && onWayToPopup(sp, quickFrom.current, box)) {
+          if (hover.item !== quickId || hover.port) setHover({ item: quickId, port: null });
+          return;
+        }
+      }
+    }
     if (tool === 'select' || tool === 'wire' || tool === 'node' || g) {
       const pi = findPort(w);
       const item = pi ? null : hitItem(w);
+      if (item && item === quickId) quickFrom.current = sp;
       if (pi?.comp !== hover.port?.comp || pi?.port !== hover.port?.port || item !== hover.item) setHover({ port: pi, item });
     }
     if (!placing && !S().exportArea && !g) trackHotSpot(w);
@@ -2525,7 +2570,10 @@ export function Canvas() {
           })}
 
           {/* hover */}
-          {hover.item && !selSet.has(hover.item) && !g && <HoverOutline doc={doc} id={hover.item} polys={data.polys} z={z} />}
+          {/* (a solder dot whose ring is filling or open already shows it is hovered: no square box over the ring) */}
+          {hover.item && !selSet.has(hover.item) && !g && !(doc.items[hover.item]?.type === 'junction' && (hotPending || hotMenu)) && (
+            <HoverOutline doc={doc} id={hover.item} polys={data.polys} z={z} />
+          )}
           {/* items hovered in the layers panel */}
           {layerHover.map((id) => (
             <HoverOutline key={`lh-${id}`} doc={doc} id={id} polys={data.polys} z={z} />
@@ -2739,7 +2787,13 @@ export function Canvas() {
                 ? Math.max(((doc.items[h.id] as { size?: number } | undefined)?.size ?? doc.settings.junctionSize) + 3, 6 / z)
                 : h.kind === 'end' ? 5 / z : 7 / z;
               return (
-                <g key={key} className={open ? 'hot-ring open' : pending ? 'hot-ring pending' : 'hot-ring'} style={{ opacity: open || pending ? 1 : 0.55 * (1 - d / reach) }}>
+                <g
+                  key={key}
+                  className={open ? 'hot-ring open' : pending ? 'hot-ring pending' : 'hot-ring'}
+                  style={{ opacity: open || pending ? 1 : 0.55 * (1 - d / reach), ['--hot-dwell' as string]: `${HOT_DWELL}ms` }}
+                >
+                  {/* a soft disc swells inside the ring as it fills, and stays while the menu is open */}
+                  {(pending || open) && <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-disc" />}
                   <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-base" strokeWidth={1.2 / z} />
                   {(pending || open) && (
                     <circle
@@ -2836,7 +2890,10 @@ export function Canvas() {
           onLeave={() => {
             quickHold.current = false;
             cancelQuickHide();
-            quickTimers.current.hide = window.setTimeout(() => setQuickId(null), 240);
+            // back on its object (or on the way there) keeps it; anywhere else closes it after a grace
+            quickTimers.current.hide = window.setTimeout(() => {
+              if (hoverNow.current.item !== quickId) setQuickId(null);
+            }, 450);
           }}
         />
       )}
