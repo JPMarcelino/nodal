@@ -1399,6 +1399,21 @@ export function Canvas() {
       return;
     }
     if (tool === 'text') {
+      // clicking a box that holds text edits it rather than dropping a new text on top
+      const top = hitItems(w)[0];
+      const under = top ? vdoc().items[top] : undefined;
+      if (under?.type === 'shape' && !under.locked) {
+        if (under.kind === 'text' || under.kind === 'rect' || under.kind === 'ellipse' || under.kind === 'polygon') {
+          select([under.id]);
+          setEditingText(under.id);
+          return;
+        }
+        if (under.kind === 'callout') {
+          select([under.id]);
+          setX({ editing: under.id });
+          return;
+        }
+      }
       const p = sp(w);
       let id = '';
       mutate((d) => {
