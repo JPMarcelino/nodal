@@ -66,7 +66,7 @@ export function ExplainShapePanel({ shapes }: { shapes: ShapeItem[] }) {
           </Field>
         </Section>
       )}
-      <Section title="Colour">
+      <Section title="Colour" id="Note colour">
         <div className="xi-swatches">
           {EXPLAIN_COLORS.map((c) => (
             <button key={c} className={first.stroke === c ? 'xi-swatch active' : 'xi-swatch'} style={{ background: c === '#000000' ? 'var(--ink)' : c }} onClick={() => upd((s) => (s.stroke = c))} />

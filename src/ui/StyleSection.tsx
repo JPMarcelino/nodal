@@ -1,12 +1,12 @@
-import { ClipboardPaste, Copy } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight } from 'lucide-react';
 import { TEXT_KEYS, applyLook, commonLook, lookOf, type Look, type LookKey } from '../model/style';
-import { DASH_OPTIONS } from '../model/dash';
+import { DASH_OPTIONS, dashArray } from '../model/dash';
 import { FONT_OPTIONS } from '../model/fonts';
 import { measureTextShape } from '../model/shapeText';
 import type { Dash, Item, ShapeItem } from '../model/types';
 import { S, mutate, toast, useViewDoc, vdoc } from '../store/store';
 import type { ReactNode } from 'react';
-import { EyedropperButton, NumberInput, SWATCHES, Section, Segmented, Slider, Toggle, swatchBg, swatchTitle } from './controls';
+import { ColorInput, More, NumberInput, Section, Segmented, Slider, Toggle, type MenuItem } from './controls';
 
 /** Style copied with "Copy style", ready to paste onto other items. */
 let copied: Partial<Look> | null = null;
@@ -40,41 +40,44 @@ export function pasteStyle() {
 }
 
 /**
- * A full-width labelled row. Not a <label>: a click between the swatches
- * would otherwise press the first button in the row.
+ * A labelled row: label on the left, control on the right (`stacked` puts the
+ * label above, for controls that need the full width). Not a <label>: a click
+ * on the label would otherwise press the first button in the row.
  */
-export function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Row({ label, hint, children, stacked }: { label: string; hint?: string; children: ReactNode; stacked?: boolean }) {
   return (
-    <div className="field wide" title={hint}>
+    <div className={stacked ? 'field wide' : 'field'} title={hint}>
       <span className="field-label">{label}</span>
       <span className="field-control">{children}</span>
     </div>
   );
 }
 
-/** Line style as a dropdown (five styles don't fit a button row). */
+/** Line style as five little pictures of the line. */
 export function DashSelect({ value, mixed, onChange }: { value: Dash; mixed?: boolean; onChange: (d: Dash) => void }) {
   return (
-    <select className="input" value={mixed ? '' : value} onChange={(e) => onChange(e.target.value as Dash)}>
-      {mixed && (
-        <option value="" disabled>
-          Mixed
-        </option>
-      )}
-      {DASH_OPTIONS.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <Segmented
+      value={mixed ? ('' as Dash) : value}
+      className="dash-seg"
+      options={DASH_OPTIONS.map((o) => ({
+        value: o.value,
+        title: o.label,
+        label: (
+          <svg width="22" height="8" viewBox="0 0 22 8" aria-label={o.label}>
+            <line x1="2" y1="4" x2="20" y2="4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeDasharray={dashArray(o.value, 1.1)} />
+          </svg>
+        ),
+      }))}
+      onChange={onChange}
+    />
   );
 }
 
-const ALIGNS: { value: Look['align']; label: string; title?: string }[] = [
+const ALIGNS: { value: Look['align']; label: ReactNode; title?: string }[] = [
   { value: '', label: 'Auto', title: 'The default for this kind of text' },
-  { value: 'start', label: 'Left' },
-  { value: 'middle', label: 'Centre' },
-  { value: 'end', label: 'Right' },
+  { value: 'start', label: <AlignLeft size={14} />, title: 'Left' },
+  { value: 'middle', label: <AlignCenter size={14} />, title: 'Centre' },
+  { value: 'end', label: <AlignRight size={14} />, title: 'Right' },
 ];
 const VALIGNS: { value: Look['valign']; label: string }[] = [
   { value: 'top', label: 'Top' },
@@ -97,22 +100,9 @@ const FILLS: { value: Look['fillKind']; label: string }[] = [
   { value: 'gradient', label: 'Gradient' },
 ];
 
-/** One-click colours: automatic / none, the palette, and any colour. */
-export function SwatchRow({ value, onChange, noneTitle, mixed }: { value: string; onChange: (v: string) => void; noneTitle: string; mixed?: boolean }) {
-  const cur = mixed ? null : value.toLowerCase();
-  return (
-    <span className="swatch-row">
-      <button type="button" className={`swatch none${cur === '' ? ' picked' : ''}`} title={noneTitle} onClick={() => onChange('')} />
-      {SWATCHES.map((c) => (
-        <button key={c} type="button" className={`swatch${cur === c ? ' picked' : ''}`} style={{ background: swatchBg(c) }} title={swatchTitle(c)} onClick={() => onChange(c)} />
-      ))}
-      <label className={`swatch custom${cur && !SWATCHES.includes(cur) ? ' picked' : ''}`} title="Any colour" style={cur && !SWATCHES.includes(cur) ? { background: cur } : undefined}>
-        +
-        <input type="color" value={cur && /^#[0-9a-f]{6}$/.test(cur) ? cur : '#7aa2f7'} onChange={(e) => onChange(e.target.value)} />
-      </label>
-      <EyedropperButton onPick={onChange} />
-    </span>
-  );
+/** A small chip of a colour, for folded section summaries. */
+function ColourDot({ c }: { c: string }) {
+  return <span className={c ? 'colour-dot' : 'colour-dot none'} style={c ? { background: c === '#000000' ? 'var(--ink)' : c } : undefined} />;
 }
 
 /** Slider with its percentage. */
@@ -186,7 +176,7 @@ export function TextFormatRows({
       </Row>
       {has('text') && (
         <Row label={`Colour${hint('text')}`}>
-          <SwatchRow value={value.text ?? ''} mixed={mixed.has('text')} onChange={(text) => onChange({ text })} noneTitle="Default text colour" />
+          <ColorInput value={value.text ?? ''} mixed={mixed.has('text')} allowNone noneTitle="Default" onChange={(text) => onChange({ text })} />
         </Row>
       )}
       {has('align') && (
@@ -206,6 +196,8 @@ export interface StyleExtras {
   text?: ReactNode;
   /** Last in "Line" (e.g. arrowheads). */
   line?: ReactNode;
+  /** More entries for the style's ⋯ menu. */
+  menu?: MenuItem[];
 }
 
 /**
@@ -222,16 +214,11 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
   if (!keys.size) return null;
   const set = (p: Partial<Look>) => restyle(ids, p);
   const hint = (k: keyof Look) => (mixed.has(k) ? ' (mixed)' : '');
-  const copyPaste = (
-    <span className="row-gap">
-      <button className="icon-btn" title="Copy style (Ctrl+Alt+Shift+C)" onClick={copyStyle}>
-        <Copy size={13} />
-      </button>
-      <button className="icon-btn" title="Paste style (Ctrl+Alt+Shift+V)" onClick={pasteStyle}>
-        <ClipboardPaste size={13} />
-      </button>
-    </span>
-  );
+  const copyPaste: MenuItem[] = [
+    { label: 'Copy style', hint: 'Ctrl+Alt+Shift+C', onClick: copyStyle },
+    { label: 'Paste style', hint: 'Ctrl+Alt+Shift+V', onClick: pasteStyle, disabled: !copied },
+    ...(extras.menu ?? []),
+  ];
   const grouped = keys.has('size') || keys.has('opacity') || keys.has('lineOpacity');
   const fillKind = value.fillKind ?? (value.fill ? 'solid' : 'none');
   const fillShown = keys.has('fillKind') ? fillKind !== 'none' || mixed.has('fillKind') : true;
@@ -240,7 +227,7 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
     <>
       {keys.has('line') && (
         <Row label={`Line colour${hint('line')}`}>
-          <SwatchRow value={value.line ?? ''} mixed={mixed.has('line')} onChange={(line) => set({ line })} noneTitle="Default colour" />
+          <ColorInput value={value.line ?? ''} mixed={mixed.has('line')} allowNone noneTitle="Default" onChange={(line) => set({ line })} />
         </Row>
       )}
       {keys.has('width') && (
@@ -255,25 +242,29 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
           <DashSelect value={value.dash ?? 'solid'} mixed={mixed.has('dash')} onChange={(dash) => set({ dash })} />
         </Row>
       )}
-      {keys.has('lineOpacity') && (
-        <Row label={`Line opacity${hint('lineOpacity')}`}>
-          <Percent value={value.lineOpacity ?? 1} onChange={(lineOpacity) => set({ lineOpacity })} />
-        </Row>
-      )}
-      {keys.has('cap') && (
-        <Row label={`Line cap${hint('cap')}`}>
-          <Segmented value={mixed.has('cap') ? ('' as Look['cap']) : (value.cap ?? 'butt')} options={CAPS} onChange={(cap) => set({ cap })} />
-        </Row>
-      )}
-      {keys.has('join') && (
-        <Row label={`Line join${hint('join')}`}>
-          <Segmented value={mixed.has('join') ? ('' as Look['join']) : (value.join ?? 'miter')} options={JOINS} onChange={(join) => set({ join })} />
-        </Row>
-      )}
       {keys.has('radius') && (
         <Row label={`Corner radius${hint('radius')}`}>
           <NumberInput value={value.radius ?? 0} min={0} max={200} suffix="px" onChange={(radius) => set({ radius })} />
         </Row>
+      )}
+      {(keys.has('lineOpacity') || keys.has('cap') || keys.has('join')) && (
+        <More id="line-ends" label="Ends, joins & opacity" count={[value.lineOpacity !== undefined && value.lineOpacity < 1, value.cap && value.cap !== 'butt', value.join && value.join !== 'miter'].filter(Boolean).length}>
+        {keys.has('lineOpacity') && (
+          <Row label={`Line opacity${hint('lineOpacity')}`}>
+            <Percent value={value.lineOpacity ?? 1} onChange={(lineOpacity) => set({ lineOpacity })} />
+          </Row>
+        )}
+        {keys.has('cap') && (
+          <Row label={`Line cap${hint('cap')}`}>
+            <Segmented value={mixed.has('cap') ? ('' as Look['cap']) : (value.cap ?? 'butt')} options={CAPS} onChange={(cap) => set({ cap })} />
+          </Row>
+        )}
+        {keys.has('join') && (
+          <Row label={`Line join${hint('join')}`}>
+            <Segmented value={mixed.has('join') ? ('' as Look['join']) : (value.join ?? 'miter')} options={JOINS} onChange={(join) => set({ join })} />
+          </Row>
+        )}
+        </More>
       )}
     </>
   );
@@ -286,15 +277,15 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
       )}
       {hasFill && (
         <Row label={`Fill colour${hint('fill')}`}>
-          <SwatchRow value={value.fill ?? ''} mixed={mixed.has('fill')} onChange={(fill) => set({ fill })} noneTitle="No fill" />
+          <ColorInput value={value.fill ?? ''} mixed={mixed.has('fill')} allowNone noneTitle="No fill" onChange={(fill) => set({ fill })} />
         </Row>
       )}
       {keys.has('fill2') && fillKind === 'gradient' && !mixed.has('fillKind') && (
         <>
           <Row label={`Gradient colour${hint('fill2')}`}>
-            <SwatchRow value={value.fill2 ?? ''} mixed={mixed.has('fill2')} onChange={(fill2) => set({ fill2: fill2 || '#bb9af7' })} noneTitle="Default" />
+            <ColorInput value={value.fill2 ?? ''} mixed={mixed.has('fill2')} onChange={(fill2) => set({ fill2: fill2 || '#bb9af7' })} />
           </Row>
-          <Row label={`Gradient angle${hint('gradAngle')}`}>
+          <Row label={`Gradient angle${hint('gradAngle')}`} stacked>
             <span className="row-gap">
               <Segmented value={value.gradAngle ?? 90} options={[0, 90, 180, 270].map((a) => ({ value: a, label: `${a}°` }))} onChange={(gradAngle) => set({ gradAngle })} />
               <NumberInput value={value.gradAngle ?? 90} min={0} max={360} step={15} suffix="°" onChange={(gradAngle) => set({ gradAngle })} />
@@ -311,12 +302,12 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
   );
   if (!grouped) {
     return (
-      <Section title={title} id="Style" actions={copyPaste}>
+      <Section title={title} id="Style" menu={copyPaste}>
         {lineRows}
         {fillRows}
         {keys.has('text') && (
           <Row label={`Text colour${hint('text')}`}>
-            <SwatchRow value={value.text ?? ''} mixed={mixed.has('text')} onChange={(text) => set({ text })} noneTitle="Default text colour" />
+            <ColorInput value={value.text ?? ''} mixed={mixed.has('text')} allowNone noneTitle="Default" onChange={(text) => set({ text })} />
           </Row>
         )}
       </Section>
@@ -324,41 +315,47 @@ export function StyleSection({ ids, title = 'Style', extras = {}, noText }: { id
   }
   const hasLine = keys.has('line') || keys.has('width') || keys.has('dash');
   const hasFillSection = keys.has('fill') || keys.has('fillKind');
-  // the copy / paste buttons sit on the first section
-  let first = true;
-  const actions = () => (first ? ((first = false), copyPaste) : undefined);
+  // free text leads with its text; anything else with how it looks
+  const freeText = keys.has('wrapW');
+  const order = (freeText ? ['text', 'fill', 'line'] : ['fill', 'line', 'text']).filter((k) =>
+    k === 'text' ? keys.has('size') : k === 'fill' ? hasFillSection : hasLine,
+  );
+  // the lead section starts open and carries the copy / paste menu
+  const lead = (k: string) => (k === (order[0] ?? 'effects') ? { menu: copyPaste, defaultOpen: true } : {});
+  const text = keys.has('size') && (
+    <Section key="text" title="Text" {...lead('text')}>
+      {extras.textTop}
+      <TextFormatRows value={value} mixed={mixed} keys={keys} onChange={set} />
+      {keys.has('valign') && (
+        <Row label={`Vertical${hint('valign')}`}>
+          <Segmented value={mixed.has('valign') ? ('' as Look['valign']) : (value.valign ?? 'top')} options={VALIGNS} onChange={(valign) => set({ valign })} />
+        </Row>
+      )}
+      {keys.has('wrapW') && (
+        <Row label={`Wrap width${hint('wrapW')}`} hint="Text wraps at this width; 0 keeps each paragraph on one line. Drag the handle on the right edge too">
+          <NumberInput value={value.wrapW ?? 0} min={0} max={4000} suffix="px" onChange={(wrapW) => set({ wrapW })} />
+        </Row>
+      )}
+      {extras.text}
+    </Section>
+  );
+  const fill = hasFillSection && (
+    <Section key="fill" title="Fill" {...lead('fill')} summary={mixed.has('fillKind') ? 'mixed' : fillKind === 'none' ? 'none' : fillKind === 'gradient' ? 'gradient' : <ColourDot c={value.fill ?? ''} />}>
+      {fillRows}
+    </Section>
+  );
+  const line = hasLine && (
+    <Section key="line" title="Line" {...lead('line')} summary={<>{!mixed.has('line') && <ColourDot c={value.line ?? ''} />}{!mixed.has('width') && value.width !== undefined && ` ${+value.width.toFixed(2)}px`}</>}>
+      {lineRows}
+      {extras.line}
+    </Section>
+  );
+  const sections = { text, fill, line };
   return (
     <>
-      {keys.has('size') && (
-        <Section title="Text" actions={actions()}>
-          {extras.textTop}
-          <TextFormatRows value={value} mixed={mixed} keys={keys} onChange={set} />
-          {keys.has('valign') && (
-            <Row label={`Vertical align${hint('valign')}`}>
-              <Segmented value={mixed.has('valign') ? ('' as Look['valign']) : (value.valign ?? 'top')} options={VALIGNS} onChange={(valign) => set({ valign })} />
-            </Row>
-          )}
-          {keys.has('wrapW') && (
-            <Row label={`Wrap width${hint('wrapW')}`} hint="Text wraps at this width; 0 keeps each paragraph on one line. Drag the handle on the right edge too">
-              <NumberInput value={value.wrapW ?? 0} min={0} max={4000} suffix="px" onChange={(wrapW) => set({ wrapW })} />
-            </Row>
-          )}
-          {extras.text}
-        </Section>
-      )}
-      {hasLine && (
-        <Section title="Line" actions={actions()}>
-          {lineRows}
-          {extras.line}
-        </Section>
-      )}
-      {hasFillSection && (
-        <Section title="Fill" actions={actions()}>
-          {fillRows}
-        </Section>
-      )}
+      {order.map((k) => sections[k as keyof typeof sections])}
       {keys.has('opacity') && (
-        <Section title="Effects" actions={actions()}>
+        <Section title="Effects" {...lead('effects')} summary={[value.opacity !== undefined && value.opacity < 1 && `${Math.round(value.opacity * 100)}%`, value.shadow && 'shadow'].filter(Boolean).join(' · ') || undefined}>
           <Row label={`Opacity${hint('opacity')}`}>
             <Percent value={value.opacity ?? 1} onChange={(opacity) => set({ opacity })} />
           </Row>
