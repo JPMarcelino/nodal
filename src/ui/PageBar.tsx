@@ -32,8 +32,18 @@ export function PageBar() {
   useEffect(() => {
     if (!menu) return;
     const close = (e: PointerEvent) => !(e.target as Element).closest?.('.page-menu') && setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setMenu(null);
+    };
     window.addEventListener('pointerdown', close);
-    return () => window.removeEventListener('pointerdown', close);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onKey, true);
+    };
   }, [menu]);
 
   const index = (id: string) => pages.findIndex((p) => p.id === id);
@@ -107,7 +117,7 @@ export function PageBar() {
         // portalled to <body>: .stage is a size container (contain: layout), which would otherwise
         // make it the containing block for this fixed menu and offset its viewport coordinates
         createPortal(
-          <div className="page-menu dropdown" style={{ left: menu.x, bottom: window.innerHeight - menu.y + 4 }} role="menu">
+          <div className="page-menu dropdown" style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 268)), bottom: window.innerHeight - menu.y + 4 }} role="menu">
             <button className="dropdown-item" onClick={run(() => setRenaming(menu.id))}>
               Rename
             </button>
