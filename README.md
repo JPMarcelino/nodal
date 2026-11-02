@@ -6,12 +6,12 @@
 
 Nodal is a fast, good-looking schematic editor. It's one React + TypeScript codebase that runs as:
 
-- a **desktop app for Windows and Linux** (Tauri: small native installers, built by GitHub Actions), and
+- a **desktop app for Windows and Linux** (Tauri: small native installers), and
 - a **web app**: <https://jpmarcelino.github.io/nodal/>
 
 ![Nodal editor](docs/screenshot.png)
 
-**Download:** [latest release](https://github.com/JPMarcelino/nodal/releases/latest). On Windows use the `.msi` or `-setup.exe`; on Linux use the `.AppImage` (`chmod +x`, then run it), `.deb` or `.rpm`.
+**Download:** [latest release](https://github.com/JPMarcelino/nodal/releases/latest). On Windows use the `-setup.exe`; on Linux use the `.AppImage` (`chmod +x`, then run it), `.deb` or `.rpm`.
 
 ## Features
 
@@ -32,8 +32,9 @@ You can search the library, mark favourites (★), and see recently used parts. 
 Many parts can be drawn more than one way. A symbol with types shows a small **types badge** on its tile; **hover** it for a clean popup preview, and **click** it to open a type picker (e.g. N- and P-channel MOSFETs ship with **Type A · standard**, **Type B · source arrow** and **Type C · simplified/gate-bubble**, and diodes, capacitors and inductors have alternates too). The same preview appears on hover in the command palette, and the type travels with the part.
 
 ### Making your own symbols
-Open the symbol editor with **Ctrl+Shift+N**, the **+ New** button, or **Customise symbol** on any part:
-- **Draw:** lines, polylines/polygons, rectangles, circles and text on a grid, plus pins that snap onto the symbol outline
+Open the symbol editor with **Ctrl+Shift+N**, the **+ New** button, or **Customise symbol** on any part. It opens the symbol as a page on the canvas itself, so every drawing tool, the parts library, wires, text, ink and the side panels work on it as on a circuit, with its own undo history; **Save** or **Back** returns to the circuit (which autosave and live sessions keep using meanwhile):
+- **Draw:** lines, polylines/polygons, rectangles, circles and text on a grid; parts placed on the page are drawn into the symbol
+- **Pins:** the *Add pins* tool (**N**) places numbered pin markers that snap onto lead ends; drag to move them, double-click to rename
 - **Style:** line colour, fill colour, line width (presets or any value) and solid or dashed lines, for the selected shapes or for new ones. Leave a colour empty to follow the theme.
 - **Nothing gets lost:** closing with unsaved changes (Esc, ×, or clicking outside) asks whether to save, and your unsaved work is kept, so it can be restored the next time the editor opens.
 - **Chip / IC builder:** type the pin names for each side and the box, leads, labels and pin numbers are generated
@@ -159,7 +160,9 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 The web app can be installed (Chrome/Edge: the install icon in the address bar; iPad/iPhone Safari: **Share → Add to Home Screen**). It then opens in its own window and works offline.
 
 ### Interface
-- Dark and light themes, compact/normal/large UI sizes, minimap, focus mode
+- Dark and light themes, compact/normal/large UI sizes, minimap (click or drag it to move the view), focus mode
+- **Menus work from the keyboard:** **Esc** closes them, the arrow keys walk the items and the neighbouring menus, and any other shortcut closes the menu and runs. Dialogs keep **Tab** inside them and hand focus back when they close.
+- **Large circuits stay responsive:** a thousand parts and wires open, select, drag and undo without stalling.
 - **Command palette** (**Ctrl+K**): run any command or place any part by name. Results are ranked (label and word starts first) with the matched letters highlighted; with nothing typed it lists what you used recently, then every command by menu. Parts show a thumbnail, on/off commands show their state, and **Find** (**Ctrl+F**) works the same way.
 - **Double-click empty canvas** to search for a part and place it right where you clicked (recently used and common parts are listed before you type).
 - **Tooltips** name every button with its shortcut drawn as keys; the tool rail's also say what the tool does. Moving along the rail hands the tooltip from button to button without waiting again.
@@ -207,7 +210,11 @@ npm test           # unit tests (geometry, junctions, symbol grid checks)
 npm run tauri dev  # desktop app (needs Rust + the Tauri system dependencies)
 ```
 
-Releases are built by GitHub Actions. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the Windows (MSI/NSIS) and Linux (AppImage/deb/rpm) installers and attaches them to a GitHub release. Every push to `main` redeploys the web app to GitHub Pages.
+```bash
+npm run deploy:web # build the web app and publish it to the gh-pages branch (GitHub Pages)
+```
+
+Releases: `.github/workflows/release.yml` builds the Windows (NSIS) and Linux (AppImage/deb/rpm) installers for a pushed `v*` tag and attaches them to a GitHub release. While Actions is switched off for this repository, the same installers are built locally in Docker (Linux natively, Windows with `cargo-xwin`, so there is no `.msi`) and uploaded with `gh release`, and the web app is published with `npm run deploy:web`.
 
 ### Adding a built-in symbol
 Symbols use a small drawing language (see `src/model/symbols/dsl.ts`):
