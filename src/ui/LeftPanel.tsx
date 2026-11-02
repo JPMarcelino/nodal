@@ -1,4 +1,5 @@
 import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, Filter, History, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
+import { openSymbolEditor } from '../store/symbolSession';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFold } from './controls';
 import { keysFor, prettyKey } from '../store/commands';
@@ -119,7 +120,7 @@ function Tile({ def }: { def: SymbolDef }) {
             title="Edit symbol"
             onClick={(e) => {
               e.stopPropagation();
-              set({ dialog: 'symbol-editor', editingSymbol: def.id });
+              openSymbolEditor({ editing: def.id });
             }}
           >
             <Pencil size={11} />
@@ -315,7 +316,7 @@ function Library() {
           ) : (
             <div className="empty-note">
               No symbol or shape matches “{q}”.
-              <button className="link-btn" onClick={() => set({ dialog: 'symbol-editor', editingSymbol: null })}>
+              <button className="link-btn" onClick={() => openSymbolEditor()}>
                 Create one →
               </button>
             </div>
@@ -328,7 +329,7 @@ function Library() {
               <div className="lib-cat-head static">
                 <span>My symbols</span>
                 <span className="count">{mine.length}</span>
-                <button className="mini-btn" onClick={() => set({ dialog: 'symbol-editor', editingSymbol: null })} title="Create a new symbol (Ctrl+Shift+N)">
+                <button className="mini-btn" onClick={() => openSymbolEditor()} title="Create a new symbol (Ctrl+Shift+N)">
                   <Plus size={12} /> New
                 </button>
               </div>

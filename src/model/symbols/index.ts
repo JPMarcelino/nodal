@@ -34,7 +34,20 @@ export const BUILTIN_SYMBOLS: SymbolDef[] = [
   ...connectors,
 ];
 
-export const BUILTIN: Record<string, SymbolDef> = Object.fromEntries(BUILTIN_SYMBOLS.map((s) => [s.id, s]));
+/**
+ * Pin marker of the symbol editor's page (see model/symbolPage): a tiny symbol
+ * whose single port is the pin, named by its reference. Not in the library.
+ */
+export const PIN_SYMBOL = '__pin';
+export const PIN_DEF: SymbolDef = sym(PIN_SYMBOL, 'Pin', 'Symbol pins', {
+  w: 20,
+  h: 20,
+  prefix: '',
+  draw: 'SC #f7768e\nW 1.5\nC 10 10 4\nL 10 4 10 16\nL 4 10 16 10',
+  ports: 'p:10,10',
+});
+
+export const BUILTIN: Record<string, SymbolDef> = { ...Object.fromEntries(BUILTIN_SYMBOLS.map((s) => [s.id, s])), [PIN_SYMBOL]: PIN_DEF };
 
 export const MISSING_SYMBOL: SymbolDef = sym('__missing', 'Missing symbol', 'Other', {
   w: 40,

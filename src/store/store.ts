@@ -4,6 +4,8 @@ import { createDoc, groupMembers, normalizeDoc, topGroup, type ShapeTool, type S
 import { setUserLibrary, usedSymbols } from '../model/registry';
 import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
+import type { SymbolSource } from '../model/symbols/dsl';
+import type { SymbolDraft } from './symbolSession';
 import type { CircuitDoc, Dash, Item, Point, Rect, SymbolDef, Tool, WireAngle } from '../model/types';
 import { settleEdit } from '../model/settle';
 import { editPage, itemPage, mergeView, multiPage, normalizePages, resolvePage, viewDoc } from '../model/pages';
@@ -95,6 +97,24 @@ export interface Prefs {
 }
 
 
+/** The symbol editor page in use (see store/symbolSession): the circuit is set aside meanwhile. */
+export interface SymbolSession {
+  /** Symbol being edited; null = a new one. */
+  editing: string | null;
+  /** The symbol's own fields (name, prefix, value…); its drawing and pins come from the page when saved. */
+  meta: SymbolSource;
+  /** Items of the circuit the page was made from; saving swaps them for one instance of the symbol. */
+  seedIds: string[] | null;
+  /** Editing a built-in symbol: saving makes a custom copy (swapped in for selected parts using it). */
+  customising: boolean;
+  /** The fields were changed. */
+  metaDirty: boolean;
+  /** Unsaved work kept from an earlier visit, offered for restoring. */
+  draft: SymbolDraft | null;
+  /** The circuit as it was when the page opened, with its history and view. */
+  stash: Pick<AppState, 'doc' | 'page' | 'past' | 'future' | 'dirty' | 'filePath' | 'view' | 'selection' | 'scope'>;
+}
+
 export interface Toast {
   id: number;
   text: string;
@@ -129,6 +149,8 @@ export interface AppState {
   contextMenu: ContextMenuState | null;
   dialog: Dialog;
   editingSymbol: string | null;
+  /** The symbol editor page is open in place of the circuit. */
+  symbolSession: SymbolSession | null;
   /** Drawing made from a selection, opened in the symbol editor; saving replaces those items with the new symbol. */
   symbolSeed: (SelectionDrawing & { ids: string[] }) | null;
   leftPanel: boolean;
@@ -251,6 +273,7 @@ export const useStore = create<AppState>(() => ({
   contextMenu: null,
   dialog: null,
   editingSymbol: null,
+  symbolSession: null,
   symbolSeed: null,
   leftPanel: true,
   rightPanel: true,
@@ -293,6 +316,9 @@ export function readOnlyNotice() {
   const k = viewModeKey.label();
   toast(`View mode: the circuit can’t be changed${k ? ` (${k} to edit)` : ''}`, 'info');
 }
+
+/** The circuit itself, also while the symbol editor page stands in for it (live sessions share this one). */
+export const sharedDoc = (s: Pick<AppState, 'doc' | 'symbolSession'> = S()) => s.symbolSession?.stash.doc ?? s.doc;
 
 /** The document as the canvas sees it: only the active page's items (see model/pages). */
 export const vdoc = () => viewDoc(S().doc, S().page);
@@ -497,6 +523,14 @@ export function redo() {
  */
 export function applyExternal(patch: (doc: CircuitDoc) => CircuitDoc) {
   const s = S();
+  const sym = s.symbolSession;
+  if (sym) {
+    // the symbol page is open: the change goes to the circuit set aside behind it
+    const st = sym.stash;
+    const doc = patch(st.doc);
+    set({ symbolSession: { ...sym, stash: { ...st, doc, past: st.past.map(patch), future: st.future.map(patch), selection: st.selection.filter((id) => doc.items[id]), scope: liveScope(st.scope, doc) } } });
+    return;
+  }
   if (gestureBase) {
     const same = gestureUndo === gestureBase;
     gestureBase = patch(gestureBase);
@@ -518,7 +552,8 @@ export function replaceDoc(doc: CircuitDoc, filePath: string | null = null) {
   // the incoming document has nothing to do with a running drag: drop the
   // gesture instead of letting its next update clobber the new document
   if (inGesture()) endGesture(false);
-  set({ doc, page: lastPage(doc), past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null, exportArea: null, exportScope: null });
+  if (S().symbolSession) toast('Closed the symbol editor without saving', 'info');
+  set({ symbolSession: null, placing: null, doc, page: lastPage(doc), past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null, exportArea: null, exportScope: null });
 }
 
 export function newDoc() {
@@ -679,14 +714,19 @@ export function pushRecent(id: string) {
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((s, prev) => {
-  if (s.doc === prev.doc || !s.prefs.autosave || autosavePaused) return;
+  // the symbol editor page keeps its own draft (store/symbolSession); the circuit set aside is unchanged
+  if (s.symbolSession && prev.symbolSession && s.doc !== prev.doc) symbolDraftHook.run?.();
+  if (sharedDoc(s) === sharedDoc(prev) || !s.prefs.autosave || autosavePaused) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(autosaveNow, 600);
 });
 
+/** Set by store/symbolSession (which imports this module) to keep the page's draft. */
+export const symbolDraftHook: { run?: () => void } = {};
+
 function autosaveNow() {
   saveTimer = undefined;
-  const doc = S().doc;
+  const doc = sharedDoc();
   // never overwrite the last good autosave with something that isn't a circuit
   if (!doc || typeof doc !== 'object' || doc.format !== 'nodal' || typeof doc.items !== 'object' || !doc.settings) return;
   try {
@@ -706,6 +746,7 @@ if (typeof window !== 'undefined') {
   // leaving with changes that exist nowhere else (autosave off, or not yet saved to the open file)
   window.addEventListener('beforeunload', (e) => {
     const s = S();
+    if (s.symbolSession) return;
     if (!s.dirty || !Object.keys(s.doc.items).length || (s.prefs.autosave && !s.filePath && !autosaveFailed)) return;
     e.preventDefault();
     e.returnValue = '';

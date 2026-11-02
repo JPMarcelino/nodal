@@ -46,6 +46,8 @@ import { focusValueField } from '../store/commands';
 import { pulseAt, usePulses } from './pulses';
 import { openEquation } from '../ui/EquationZone';
 import { useFitHeight } from './fitHeight';
+import { PIN_SYMBOL, nextPinName, snapPin } from '../model/symbolPage';
+import { SymbolOutline } from './SymbolOutline';
 
 /* ------------------------------------------------------------------ */
 /* Targets                                                             */
@@ -188,6 +190,8 @@ export function Canvas() {
   const wirePart = useStore((s) => s.wirePart);
   const tool = useStore((s) => s.tool);
   const placing = useStore((s) => s.placing);
+  /** The symbol editor page is open (its outline and pins get guides). */
+  const symbolMode = useStore((s) => !!s.symbolSession);
   const highlight = useStore((s) => s.highlight);
   const presenting = useExplain((s) => s.presenting !== null);
   const pointerOnCanvas = useStore((s) => s.pointerOnCanvas);
@@ -1390,7 +1394,8 @@ export function Canvas() {
     }
 
     if (placing) {
-      const p = sp(w);
+      // pins land on the ends of the drawing's leads when dropped near one
+      const p = placing.symbol === PIN_SYMBOL ? snapPin(vdoc(), w, sp(w), 10 / S().view.zoom) : sp(w);
       // one part, then back to Select; Shift, the tool lock or the Cadence scheme keep placing copies until Esc
       A.placeArmed(p.x, p.y, e.shiftKey);
       return;
@@ -2391,16 +2396,17 @@ export function Canvas() {
                     : 'default';
 
   const ghostOf = placing ?? (dragSym ? { symbol: dragSym, rot: 0 as const, flipX: false } : null);
+  const ghostAt = ghostOf?.symbol === PIN_SYMBOL ? snapPin(doc, cursor, sp(cursor), 10 / z) : sp(cursor);
   const ghost: ComponentItem | null = ghostOf
     ? {
         id: '__ghost',
         type: 'component',
         symbol: ghostOf.symbol,
-        x: sp(cursor).x,
-        y: sp(cursor).y,
+        x: ghostAt.x,
+        y: ghostAt.y,
         rot: ghostOf.rot,
         flipX: ghostOf.flipX,
-        ref: getSymbol(doc, ghostOf.symbol).prefix + '?',
+        ref: ghostOf.symbol === PIN_SYMBOL ? nextPinName(doc) : getSymbol(doc, ghostOf.symbol).prefix + '?',
         value: getSymbol(doc, ghostOf.symbol).value ?? '',
         props: {},
         showRef: !getSymbol(doc, ghostOf.symbol).hideLabels,
@@ -2479,6 +2485,7 @@ export function Canvas() {
           {scopeBounds && (
             <rect x={scopeBounds.x - 16} y={scopeBounds.y - 16} width={scopeBounds.w + 32} height={scopeBounds.h + 32} rx={10} className="scope-box" strokeWidth={1.5 / z} />
           )}
+          {symbolMode && <SymbolOutline doc={doc} z={z} />}
           <Scene doc={doc} data={data} palette={EDITOR_PALETTE} highlight={highlight} frames={!presenting} xrefs={xrefs} />
 
           {/* unconnected port markers */}
@@ -2855,8 +2862,8 @@ export function Canvas() {
           Drag a rectangle over the region to export · <kbd>Esc</kbd>/<kbd>right-click</kbd> cancel
         </div>
       )}
-      <WelcomeScreen />
-      <IntroCard />
+      {!symbolMode && <WelcomeScreen />}
+      {!symbolMode && <IntroCard />}
       <HintBar
         gesture={!g ? null : g.kind === 'wire' || g.kind === 'polygon' || g.kind === 'path' ? g.kind : g.kind === 'shape' && (g.shape === 'line' || g.shape === 'arrow') ? 'connector' : 'other'}
         editingText={!!editingText}

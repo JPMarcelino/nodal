@@ -1,4 +1,7 @@
 import { sheetNumber, viewDoc } from '../model/pages';
+import { PinPanel, SymbolProps } from './SymbolEditor';
+import { isPin } from '../model/symbolPage';
+import { openSymbolEditor } from '../store/symbolSession';
 import {
   AlignCenterHorizontal,
   ChevronsDownUp,
@@ -752,7 +755,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
         <div>
           <div className="comp-title">{def.valueIsLabel ? c.value : c.ref}</div>
           <div className="comp-sub">{def.name}</div>
-          <button className="link-btn" onClick={() => set({ dialog: 'symbol-editor', editingSymbol: def.id })}>
+          <button className="link-btn" onClick={() => openSymbolEditor({ editing: def.id })}>
             <Pencil size={11} /> {def.custom ? 'Edit symbol' : 'Customise symbol'}
           </button>
         </div>
@@ -1703,6 +1706,7 @@ export function Inspector() {
   const width = usePanelWidth('right', useStore((s) => s.prefs.rightWidth));
   const scrollRef = useRef<HTMLDivElement>(null);
   const locked = useStore(readOnly);
+  const symbolMode = useStore((st) => !!st.symbolSession);
   // with nothing selected, a drawing tool shows its settings for the next thing it adds
   const tool = useStore((s) => s.tool);
   const toolPanel = !items.length && hasToolPanel(tool);
@@ -1711,7 +1715,8 @@ export function Inspector() {
   useEffect(() => setDocTab(false), [tool, selection]);
   const ownTab = toolPanel ? `${TOOL_NAMES[tool]} tool` : items.length ? 'Properties' : null;
   let body: JSX.Element;
-  if (docTab || !ownTab) body = <DocumentPanel />;
+  if (docTab || !ownTab) body = symbolMode ? <SymbolProps /> : <DocumentPanel />;
+  else if (items.length === 1 && isPin(items[0])) body = <PinPanel c={items[0]} />;
   else if (toolPanel) body = tool === 'wire' ? <WireToolPanel /> : <ShapeToolPanel tool={tool as ShapeTool} />;
   else if (items.length === 1 && items[0].type === 'component') body = <ComponentPanel c={items[0]} />;
   else if (items.every((i) => i.type === 'wire' || i.type === 'junction') && items.some((i) => i.type === 'wire'))
@@ -1731,7 +1736,7 @@ export function Inspector() {
           </button>
         )}
         <button className={docTab || !ownTab ? 'active' : ''} onClick={() => setDocTab(true)}>
-          Document
+          {symbolMode ? 'Symbol' : 'Document'}
         </button>
       </div>
       <SectionNav scrollRef={scrollRef} />

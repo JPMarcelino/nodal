@@ -5,7 +5,7 @@ import { resolvePage } from '../model/pages';
 import type { CircuitDoc, Point } from '../model/types';
 import * as A from '../store/actions';
 import { X, useExplain } from '../store/explain';
-import { S, applyExternal, pauseAutosave, replaceDoc, set as setApp, toast, useStore, type AppState } from '../store/store';
+import { S, sharedDoc, applyExternal, pauseAutosave, replaceDoc, set as setApp, toast, useStore, type AppState } from '../store/store';
 import { importRoomKey, newRoomKey, open, randomId, seal } from './crypto';
 import { SyncState, changedKeys, docFromEntries, writeEntries, type Entry } from './sync';
 
@@ -208,7 +208,7 @@ export async function leaveSession(opts?: { keepCopy?: boolean }) {
   if (saveTimer) await saveNow();
   await outbox;
   const viewer = S().viewOnly;
-  const shared = S().doc;
+  const shared = sharedDoc();
   // the host leaving ends the room for everyone, and the relay deletes it
   const ended = !viewer && !!editToken && ws?.readyState === WebSocket.OPEN;
   if (ended) {
@@ -283,14 +283,15 @@ async function connect(r: string, k: string, guest: boolean) {
   sync = new SyncState();
   awaitingRoom = guest;
   if (guest) {
-    const s = S();
+    // the symbol editor page closes on joining (replaceDoc): keep the circuit set aside behind it
+    const s = S().symbolSession?.stash ?? S();
     ownDoc = { doc: s.doc, past: s.past, future: s.future, filePath: s.filePath, dirty: s.dirty, view: s.view };
   }
   connectedOnce = false;
   failures = 0;
   if (!guest) {
-    sync.seed(S().doc);
-    lastSynced = S().doc;
+    sync.seed(sharedDoc());
+    lastSynced = sharedDoc();
   }
   pauseAutosave(true);
   const link = linkFor(r, k);
@@ -403,8 +404,8 @@ async function handle(msg: ServerMsg) {
       } else {
         if (snapshot) mergeRemote(snapshot);
         // whoever opened the room, or reconnects after editing offline, brings the stored copy and the others up to date
-        send('save', sync.snapshot(S().doc));
-        if (connectedOnce && msg.peers.length) send('b', sync.snapshot(S().doc));
+        send('save', sync.snapshot(sharedDoc()));
+        if (connectedOnce && msg.peers.length) send('b', sync.snapshot(sharedDoc()));
       }
       connectedOnce = true;
       failures = 0;
@@ -419,7 +420,7 @@ async function handle(msg: ServerMsg) {
       const editors = Object.values(C().peers)
         .filter((p) => p.edit && p.id !== msg.id)
         .map((p) => p.id);
-      if (!S().viewOnly && [myId, ...editors].sort()[0] === myId) send('b', sync.snapshot(S().doc));
+      if (!S().viewOnly && [myId, ...editors].sort()[0] === myId) send('b', sync.snapshot(sharedDoc()));
       break;
     }
     case 'leave':
@@ -460,7 +461,7 @@ function mergeRemote(entries: Entry[]) {
   const won = sync.accept(entries);
   if (!won.length) return;
   quietly(() => applyExternal((d) => writeEntries(d, won)));
-  lastSynced = S().doc;
+  lastSynced = sharedDoc();
 }
 
 /* ------------------------------------------------------------------ */
@@ -475,7 +476,7 @@ function flushLocal() {
   clearTimeout(flushTimer);
   flushTimer = undefined;
   if (!lastSynced || awaitingRoom) return;
-  const doc = S().doc;
+  const doc = sharedDoc();
   if (doc === lastSynced) return;
   const keys = changedKeys(lastSynced, doc);
   lastSynced = doc;
@@ -495,7 +496,7 @@ function scheduleSave() {
 async function saveNow() {
   clearTimeout(saveTimer);
   saveTimer = undefined;
-  send('save', sync.snapshot(S().doc));
+  send('save', sync.snapshot(sharedDoc()));
   await outbox;
 }
 
@@ -514,8 +515,9 @@ function revertViewerEdit() {
 
 useStore.subscribe((s, prev) => {
   if (!live() || applying) return;
-  if (s.doc !== prev.doc && s.viewOnly && !awaitingRoom) revertViewerEdit();
-  else if (s.doc !== prev.doc && !flushTimer) flushTimer = setTimeout(flushLocal, 50);
+  const changed = sharedDoc(s) !== sharedDoc(prev);
+  if (changed && s.viewOnly && !awaitingRoom) revertViewerEdit();
+  else if (changed && !flushTimer) flushTimer = setTimeout(flushLocal, 50);
   if (s.view !== prev.view && !followApplying && C().following) setC({ following: null });
   if (s.cursor !== prev.cursor || s.selection !== prev.selection || s.view !== prev.view || s.canvasSize !== prev.canvasSize || s.tool !== prev.tool || s.page !== prev.page) schedulePresence();
 });
