@@ -1862,6 +1862,12 @@ select.input {
   max-width: 100%;
 }
 
+/* equal cells that fall into a tidy grid (2×2, not 3 + a lone stretched 1) when they don't fit one row */
+.segmented.even {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+}
+
 .segmented button {
   /* never truncate: share the width, and wrap to a second row if it really doesn't fit */
   flex: 1 0 auto;

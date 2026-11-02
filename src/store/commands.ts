@@ -137,10 +137,10 @@ export const COMMANDS: Command[] = [
   { id: 'tool.junction', label: 'Place no-connect flag', category: 'Tools', keys: ['Shift+X'], run: () => A.startPlacing('no-connect') },
 
   // Arrange
-  { id: 'arrange.rotateCw', label: 'Rotate 90° clockwise', category: 'Arrange', keys: ['R'], run: () => A.rotateSelection(90) },
-  { id: 'arrange.rotateCcw', label: 'Rotate 90° counter-clockwise', category: 'Arrange', keys: ['Alt+R'], run: () => A.rotateSelection(-90) },
-  { id: 'arrange.flipH', label: 'Flip horizontally', category: 'Arrange', keys: ['X'], cadence: ['Shift+R'], run: () => A.flipSelection('x') },
-  { id: 'arrange.flipV', label: 'Flip vertically', category: 'Arrange', keys: ['Y'], run: () => A.flipSelection('y') },
+  { id: 'arrange.rotateCw', label: 'Rotate 90° clockwise', category: 'Arrange', keys: ['R'], run: () => (S().placing || hasSel() ? A.rotateSelection(90) : toast('Select something to rotate first')) },
+  { id: 'arrange.rotateCcw', label: 'Rotate 90° counter-clockwise', category: 'Arrange', keys: ['Alt+R'], run: () => (S().placing || hasSel() ? A.rotateSelection(-90) : toast('Select something to rotate first')) },
+  { id: 'arrange.flipH', label: 'Flip horizontally', category: 'Arrange', keys: ['X'], cadence: ['Shift+R'], run: () => (S().placing || hasSel() ? A.flipSelection('x') : toast('Select something to flip first')) },
+  { id: 'arrange.flipV', label: 'Flip vertically', category: 'Arrange', keys: ['Y'], run: () => (S().placing || hasSel() ? A.flipSelection('y') : toast('Select something to flip first')) },
   { id: 'arrange.group', label: 'Group', category: 'Arrange', keys: ['Mod+G'], run: A.groupSelection },
   { id: 'arrange.renameGroup', label: 'Rename group', category: 'Arrange', keys: [], run: renameGroupCmd, when: () => !!(selectedGroup(vdoc(), S().selection, S().scope) ?? S().scope) },
   { id: 'arrange.ungroup', label: 'Ungroup', category: 'Arrange', keys: ['Mod+Shift+G'], run: A.ungroupSelection },

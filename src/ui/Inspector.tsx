@@ -299,7 +299,7 @@ function DocumentPanel() {
     <>
       <Section title="Circuit">
         <Field label="Name">
-          <TextInput value={name} onChange={(v) => mutate((d) => void (d.name = v || 'Untitled circuit'))} />
+          <TextInput value={name} onChange={(v) => mutate((d) => void (d.name = v.trim() || 'Untitled circuit'))} />
         </Field>
         <Field label="Author">
           <TextInput value={settings.author} onChange={(v) => upd((s) => (s.author = v))} placeholder="Your name" />
@@ -390,6 +390,7 @@ function DocumentPanel() {
         </Field>
         <Field label="Grid style">
           <Segmented
+            className="even"
             value={settings.gridStyle ?? 'dots'}
             options={GRID_STYLES.map((v) => ({ value: v, label: v === 'major' ? 'Major' : GRID_STYLE_NAMES[v], title: GRID_STYLE_NAMES[v] }))}
             onChange={(v) => upd((s) => (s.gridStyle = v))}
@@ -920,7 +921,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
       {wires.length === 1 && (
         <Section title="Label">
           <Field label="Text" hint="Supports maths, e.g. $V_{CC}$">
-            <TextInput value={first.label ?? ''} math focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => updLabel((w) => (w.label = v || undefined))} />
+            <TextInput value={first.label ?? ''} math focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => updLabel((w) => (w.label = v.trim() || undefined))} />
           </Field>
           {first.label && (
             <>
