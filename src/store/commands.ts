@@ -406,7 +406,12 @@ export function cancel() {
   if (s.highlight) return set({ highlight: null });
   if (clearExplainOverlays()) return;
   if (s.wirePart) return set({ wirePart: null });
-  if (s.selection.length) return set({ selection: [] });
+  if (s.selection.length) {
+    set({ selection: [] });
+    // a shape just drawn stays selected; one Escape should still get back to the select tool
+    if (s.tool !== 'select' && !s.prefs.toolLock) A.setTool('select');
+    return;
+  }
   if (A.exitGroup()) return;
   if (s.tool !== 'select') return A.setTool('select');
 }
