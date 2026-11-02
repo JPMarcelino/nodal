@@ -3860,9 +3860,60 @@ select.input {
   stroke-dashoffset: 0;
 }
 
-/* fills up while the pointer rests: the menu opens when the circle closes */
+/* fills up while the pointer rests: the menu opens when the circle closes. Eased, so it
+   starts gently (passing over barely shows) and lands softly as the menu appears */
 .hot-ring.pending .hot-ring-fill {
-  animation: hot-fill 0.55s linear forwards;
+  animation: hot-fill var(--hot-dwell, 0.55s) cubic-bezier(0.45, 0, 0.25, 1) forwards;
+}
+
+.hot-ring-disc {
+  fill: var(--accent);
+  stroke: none;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.hot-ring.pending .hot-ring-disc {
+  animation: hot-disc var(--hot-dwell, 0.55s) cubic-bezier(0.45, 0, 0.25, 1) forwards;
+}
+
+.hot-ring.open .hot-ring-disc {
+  opacity: 0.2;
+  animation: hot-settle 0.32s ease-out;
+}
+
+.hot-ring.open .hot-ring-fill {
+  filter: drop-shadow(0 0 3px var(--accent));
+}
+
+@keyframes hot-disc {
+  from {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+  to {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+}
+
+/* the moment the menu opens: a brief swell that settles back */
+@keyframes hot-settle {
+  from {
+    opacity: 0.36;
+    transform: scale(1.35);
+  }
+  to {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hot-ring.open .hot-ring-disc {
+    animation: none;
+  }
 }
 
 @keyframes hot-fill {
