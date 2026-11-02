@@ -952,8 +952,9 @@ export function rawInk(ids: string[]): string[] {
 }
 
 /**
- * Cleans finished ink strokes up into the line, ellipse or box each looks
- * like (as holding the pen still does while drawing), keeping their weight.
+ * Cleans finished ink strokes up into the line, arrow, arc, ellipse, box or
+ * polygon each looks like (as holding the pen still does while drawing),
+ * keeping their weight.
  */
 export function snapInkToShapes(ids = S().selection) {
   if (readOnly()) return readOnlyNotice();

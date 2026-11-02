@@ -4,7 +4,7 @@ import { calloutAnchor, calloutLayout, callouts, makeAnchor, nextStep } from '..
 import { backZ, drawOrderCached, itemBounds, makeShape } from '../model/doc';
 import { measureText, pointInRect } from '../model/geometry';
 import { useFitHeight } from './fitHeight';
-import { EXPLAIN_COLORS, inkAverageWidth, inkHit, inkOutline, inkCenterPath, inkShapePath, packInk, recognizeShape, shapeCentre, shapePoints, type InkPoint, type InkShapeParams } from '../model/ink';
+import { EXPLAIN_COLORS, inkAverageWidth, inkHit, inkOutline, inkCenterPath, inkShapePath, LiveInkOutline, moveShapeEnd, packInk, recognizeShape, shapeCentre, shapeEndAnchor, shapeEndFollows, shapePoints, type InkPoint, type InkShape, type InkShapeParams } from '../model/ink';
 import { computeNets, type Net } from '../model/netlist';
 import { instanceSymbol } from '../model/registry';
 import { netFlow, resolveNet, type NetFlow, type TraceSeed } from '../model/trace';
@@ -32,6 +32,8 @@ const VANISH_FADE = 700;
 const HOLD_MS = 520;
 /** A faint preview of the shape it would snap to shows this soon into the pause. */
 const PREVIEW_MS = 160;
+/** Drawing straight (Shift): a pause this long fixes a corner and starts the next run from it. */
+const CORNER_MS = 380;
 /** Reveal speed of a traced net (world units / s). */
 const TRACE_SPEED = 900;
 
@@ -47,6 +49,10 @@ type G =
       snap: { shape: InkShapeParams; raw: InkPoint[]; width: number; ref: Point } | null;
       /** Where the stroke would snap if the pen stays still (shown faintly before it does). */
       ghost: { pts: InkPoint[]; kind: InkShapeParams['kind'] } | null;
+      /** Drawing straight (Shift): the corners fixed so far; the run from the last one follows the pen. */
+      verts: Point[] | null;
+      /** The pen's freehand outline, built piece by piece while drawing. */
+      live: LiveInkOutline;
     }
   | { kind: 'laser' }
   | { kind: 'erase'; hits: Set<string>; last: Point }
@@ -87,13 +93,55 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
   /** With the callout tool: whether the pointer is over a note (click edits, drag moves) or a leader's end (drag re-points). */
   const [overCallout, setOverCallout] = useState<'note' | 'anchor' | null>(null);
   const holdTimer = useRef<number>();
+  /** When the pen last moved: one timer checks how long it has been still, instead of re-arming on every move. */
+  const lastMove = useRef(0);
+  /** The shape recognised at the start of a pause (and for how many points), reused when the hold completes. */
+  const pending = useRef<{ len: number; shape: InkShapeParams | null } | null>(null);
+  const stopHold = () => {
+    window.clearTimeout(holdTimer.current);
+    holdTimer.current = undefined;
+    pending.current = null;
+  };
+
+  /*
+   * Ink moves are painted at most once a frame. A freehand stroke goes
+   * straight into its path element (no React render per pointer event);
+   * snapped shapes and straight runs, which change what is drawn, re-render.
+   */
+  const livePath = useRef<SVGPathElement>(null);
+  const paintFrame = useRef(0);
+  const paintRender = useRef(false);
+  const queueInkPaint = (rerender: boolean) => {
+    if (rerender) paintRender.current = true;
+    if (paintFrame.current) return;
+    paintFrame.current = requestAnimationFrame(() => {
+      paintFrame.current = 0;
+      const cur = gRef.current;
+      if (cur?.kind !== 'ink') return;
+      if (paintRender.current) {
+        paintRender.current = false;
+        setG({ ...cur });
+      } else {
+        const pieces = cur.live.frozen.length;
+        const d = liveInkPath(cur);
+        // a stretch just froze into its own path: render it in
+        if (cur.live.frozen.length !== pieces) setG({ ...cur });
+        else livePath.current?.setAttribute('d', d);
+      }
+    });
+  };
+  const cancelInkPaint = () => {
+    cancelAnimationFrame(paintFrame.current);
+    paintFrame.current = 0;
+    paintRender.current = false;
+  };
 
   useEffect(() => {
     gestureSlots.explain = {
       get: () => gRef.current,
       restore: (before) => {
-        window.clearTimeout(holdTimer.current);
-        window.clearTimeout(previewTimer.current);
+        stopHold();
+        cancelInkPaint();
         if (gRef.current === before) return;
         if (inGesture()) endGesture(false);
         gRef.current = null;
@@ -276,29 +324,51 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
 
   const pressure = (e: React.PointerEvent) => (e.pointerType === 'pen' ? e.pressure || 0.5 : 0.5);
 
-  const previewTimer = useRef<number>();
-  const resetHold = (p: Point) => {
-    window.clearTimeout(holdTimer.current);
-    window.clearTimeout(previewTimer.current);
-    previewTimer.current = window.setTimeout(() => {
-      const cur = gRef.current;
-      if (cur?.kind !== 'ink' || cur.snap || cur.pts.length < 4) return;
+  /** Hold-still check: a faint preview a moment into the pause, the snap (or, drawing straight, a corner) once it lasts. */
+  const holdCheck = () => {
+    holdTimer.current = undefined;
+    const cur = gRef.current;
+    if (cur?.kind !== 'ink' || cur.snap) return;
+    const idle = performance.now() - lastMove.current;
+    const later = (ms: number) => {
+      holdTimer.current = window.setTimeout(holdCheck, Math.max(16, ms - idle));
+    };
+    if (cur.verts) {
+      if (idle < CORNER_MS) return later(CORNER_MS);
+      const end = cur.pts[cur.pts.length - 1];
+      const last = cur.verts[cur.verts.length - 1];
+      if (Math.hypot(end.x - last.x, end.y - last.y) * S().view.zoom > 8) {
+        cur.verts = [...cur.verts, { x: end.x, y: end.y }];
+        setGesture(cur);
+        setSnapFlash(Date.now());
+        navigator.vibrate?.(6);
+      }
+      return;
+    }
+    if (cur.pts.length < 4) return;
+    if (idle < PREVIEW_MS) return later(PREVIEW_MS);
+    if (pending.current?.len !== cur.pts.length) {
       const shape = recognizeShape(cur.pts);
+      pending.current = { len: cur.pts.length, shape };
       if (shape) setGesture({ ...cur, ghost: { pts: shapePoints(shape), kind: shape.kind } });
-    }, PREVIEW_MS);
-    holdTimer.current = window.setTimeout(() => {
-      const cur = gRef.current;
-      if (cur?.kind !== 'ink' || cur.snap || cur.pts.length < 4) return;
-      const shape = recognizeShape(cur.pts);
-      if (!shape) return;
-      // the clean shape keeps the weight the stroke was drawn with (the highlighter is even already)
-      const width = cur.highlighter ? cur.width : inkAverageWidth(cur.pts, cur.width);
-      setGesture({ ...cur, pts: shapePoints(shape), snap: { shape, raw: cur.pts, width, ref: cur.still }, ghost: null });
-      setSnapFlash(Date.now());
-      navigator.vibrate?.(8);
-    }, HOLD_MS);
+    }
+    const shape = pending.current.shape;
+    if (!shape) return;
+    if (idle < HOLD_MS) return later(HOLD_MS);
+    const now = gRef.current;
+    if (now?.kind !== 'ink') return;
+    // the clean shape keeps the weight the stroke was drawn with (the highlighter is even already)
+    const width = now.highlighter ? now.width : inkAverageWidth(now.pts, now.width);
+    setGesture({ ...now, pts: shapePoints(shape), snap: { shape, raw: now.pts, width, ref: now.still }, ghost: null });
+    setSnapFlash(Date.now());
+    navigator.vibrate?.(8);
+  };
+  const resetHold = (p: Point) => {
+    lastMove.current = performance.now();
+    pending.current = null;
     const cur = gRef.current;
     if (cur?.kind === 'ink') cur.still = p;
+    if (holdTimer.current === undefined) holdTimer.current = window.setTimeout(holdCheck, PREVIEW_MS);
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -317,7 +387,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
       case 'highlighter': {
         const hl = tool === 'highlighter';
         const width = hl ? (X().size * 4 + 8) / zz : X().size / zz;
-        setGesture({ kind: 'ink', pts: [{ ...w, p: pressure(e) }], highlighter: hl, color: hl ? X().highlightColor : X().color, width, snap: null, ghost: null, still: w });
+        setGesture({ kind: 'ink', pts: [{ ...w, p: pressure(e) }], highlighter: hl, color: hl ? X().highlightColor : X().color, width, snap: null, ghost: null, verts: null, live: new LiveInkOutline(width), still: w });
         resetHold(w);
         return;
       }
@@ -394,7 +464,8 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
 
   const onPointerMove = (e: React.PointerEvent) => {
     const w = toWorld(e.clientX, e.clientY);
-    setCursor(w);
+    // only the laser and the eraser draw at the pointer: other tools skip a render per move
+    if (tool === 'laser' || tool === 'eraser') setCursor(w);
     const cur = gRef.current;
     if (!cur) {
       if (tool === 'callout') {
@@ -420,38 +491,60 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
     switch (cur.kind) {
       case 'ink': {
         if (cur.snap) {
-          // still holding after the snap: the line's end follows the pen; a closed shape scales and turns about its centre
+          // still holding after the snap: an open shape's end follows the pen; a closed one scales and turns about its centre
           const sp = cur.snap.shape;
-          if (sp.kind === 'line') {
-            const end = e.shiftKey ? snapAngle(sp.a, w, 15) : w;
-            setGesture({ ...cur, pts: shapePoints({ ...sp, b: end }) });
+          if (shapeEndFollows(sp)) {
+            const from = shapeEndAnchor(sp)!;
+            const end = e.shiftKey ? snapAngle(from, w, 15) : w;
+            cur.pts = shapePoints(moveShapeEnd(sp, end));
           } else {
             const c = shapeCentre(sp);
             const r0 = Math.hypot(cur.snap.ref.x - c.x, cur.snap.ref.y - c.y);
             const r1 = Math.hypot(w.x - c.x, w.y - c.y);
             const scale = r0 * S().view.zoom > 6 ? Math.max(0.1, r1 / r0) : 1;
             let rot = Math.atan2(w.y - c.y, w.x - c.x) - Math.atan2(cur.snap.ref.y - c.y, cur.snap.ref.x - c.x);
-            // Shift: a perfect circle / square, turned in 15° steps
+            // Shift: a perfect circle / square / regular polygon, turned in 15° steps
             if (e.shiftKey) rot = Math.round(rot / (Math.PI / 12)) * (Math.PI / 12);
             // near the start the turn is noise, not intent
             if (Math.hypot(w.x - cur.snap.ref.x, w.y - cur.snap.ref.y) * S().view.zoom < 6) rot = 0;
-            setGesture({ ...cur, pts: shapePoints(sp, { scale, rot, perfect: e.shiftKey }) });
+            cur.pts = shapePoints(sp, { scale, rot, perfect: e.shiftKey });
           }
+          queueInkPaint(true);
           return;
         }
+        let rerender = false;
         if (e.shiftKey) {
-          setGesture({ ...cur, pts: [cur.pts[0], { ...w, p: pressure(e) }] });
+          // straight runs from corner to corner; a pause fixes a corner
+          if (!cur.verts) cur.verts = [cur.pts[0]];
+          cur.pts = [...cur.verts.map((v) => ({ ...v, p: 0.5 })), { ...w, p: pressure(e) }];
+          rerender = true;
         } else {
+          if (cur.verts) {
+            // let go of Shift: carry on freehand from the straight runs
+            cur.verts = null;
+            cur.live = new LiveInkOutline(cur.width);
+            rerender = true;
+          }
           const evs = (e.nativeEvent.getCoalescedEvents?.() ?? []) as PointerEvent[];
           const add = evs.length ? evs.map((ev) => ({ ...toWorld(ev.clientX, ev.clientY), p: ev.pointerType === 'pen' ? ev.pressure || 0.5 : 0.5 })) : [{ ...w, p: pressure(e) }];
-          cur.pts.push(...add);
-          setGesture(cur);
+          // points closer than about a pixel add nothing but work
+          const gap = 0.6 / S().view.zoom;
+          let last = cur.pts[cur.pts.length - 1];
+          for (const q of add) {
+            if (Math.hypot(q.x - last.x, q.y - last.y) < gap) continue;
+            cur.pts.push(q);
+            last = q;
+          }
         }
         // holding still (after moving) snaps the scribble into a shape
         if (Math.hypot(w.x - cur.still.x, w.y - cur.still.y) * S().view.zoom > 3) {
-          if (cur.ghost) setGesture({ ...cur, ghost: null });
+          if (cur.ghost) {
+            cur.ghost = null;
+            rerender = true;
+          }
           resetHold(w);
         }
+        queueInkPaint(rerender);
         return;
       }
       case 'laser':
@@ -493,18 +586,23 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
   const onPointerUp = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    window.clearTimeout(holdTimer.current);
-    window.clearTimeout(previewTimer.current);
+    stopHold();
+    cancelInkPaint();
     const cur = gRef.current;
     setGesture(null);
     if (!cur) return;
     switch (cur.kind) {
       case 'ink': {
-        const pts = cur.pts;
+        const straight = !cur.snap && cur.verts ? straightRuns(cur.verts, cur.pts[cur.pts.length - 1], S().view.zoom) : null;
+        const pts = straight ? straight.pts : cur.pts;
         if (!cur.highlighter && (X().presenting !== null ? X().presentVanish : X().vanish)) {
           // vanishing ink is kept out of the document
           const snap = cur.snap;
-          const fade = snap ? { d: inkShapePath(pts, snap.shape.kind), stroke: snap.width } : { d: inkOutline(pts, cur.width) };
+          const fade = snap
+            ? { d: inkShapePath(pts, snap.shape.kind), stroke: snap.width }
+            : straight
+              ? { d: inkShapePath(pts, straight.kind), stroke: cur.width }
+              : { d: inkOutline(pts, cur.width) };
           setFading((f) => [...f, { id: ++fadeId, ...fade, color: cur.color, born: performance.now() }]);
           return;
         }
@@ -513,6 +611,8 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
         mutate((d) => {
           const s = makeShape(d as CircuitDoc, 'ink', 0, 0, 1, 1);
           Object.assign(s, packInk(cur.snap ? cur.snap.raw : pts), style, { strokeWidth: Math.round(cur.width * 100) / 100 });
+          // straight runs drawn with Shift are a clean shape from the start
+          if (straight) s.inkShape = straight.kind;
           // highlighter goes under everything, like a marker on paper; pen ink on top
           if (cur.highlighter) s.z = backZ(d as CircuitDoc);
           d.items[s.id] = s;
@@ -639,14 +739,34 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
           {/* stroke being drawn */}
           {g?.kind === 'ink' &&
             (g.highlighter ? (
-              <path d={g.snap ? inkShapePath(g.pts, g.snap.shape.kind) : inkCenterPath(g.pts)} fill="none" stroke={inkColor(g.color, palette)} strokeOpacity={0.36} strokeWidth={g.width} strokeLinecap="round" strokeLinejoin="round" />
-            ) : (
-              g.snap ? (
-                <path d={inkShapePath(g.pts, g.snap.shape.kind)} fill="none" stroke={inkColor(g.color, palette)} strokeWidth={g.snap.width} strokeLinecap="round" strokeLinejoin="round" />
+              g.snap || g.verts ? (
+                <path d={inkShapePath(g.pts, g.snap ? g.snap.shape.kind : 'polyline')} fill="none" stroke={inkColor(g.color, palette)} strokeOpacity={0.36} strokeWidth={g.width} strokeLinecap="round" strokeLinejoin="round" />
               ) : (
-                <path d={inkOutline(g.pts, g.width)} fill={inkColor(g.color, palette)} />
+                <path ref={livePath} d={liveInkPath(g)} fill="none" stroke={inkColor(g.color, palette)} strokeOpacity={0.36} strokeWidth={g.width} strokeLinecap="round" strokeLinejoin="round" />
               )
+            ) : g.snap || g.verts ? (
+              <path d={inkShapePath(g.pts, g.snap ? g.snap.shape.kind : 'polyline')} fill="none" stroke={inkColor(g.color, palette)} strokeWidth={g.snap ? g.snap.width : g.width} strokeLinecap="round" strokeLinejoin="round" />
+            ) : (
+              <>
+                {g.live.frozen.map((d, i) => (
+                  <path key={i} d={d} fill={inkColor(g.color, palette)} />
+                ))}
+                <path ref={livePath} d={liveInkPath(g)} fill={inkColor(g.color, palette)} />
+              </>
             ))}
+          {/* drawing straight: the corners fixed so far, and a ring on the first when the pen is back on it (lifting closes the shape) */}
+          {g?.kind === 'ink' && g.verts && !g.snap && (() => {
+            const end = g.pts[g.pts.length - 1];
+            const closing = g.verts.length >= 3 && Math.hypot(end.x - g.verts[0].x, end.y - g.verts[0].y) * z < 12;
+            return (
+              <g className="ink-corners">
+                {g.verts.map((v, i) => (
+                  <circle key={i} cx={v.x} cy={v.y} r={2.5 / z} className="ink-snap-centre" strokeWidth={1.2 / z} />
+                ))}
+                {closing && <circle cx={g.verts[0].x} cy={g.verts[0].y} r={7 / z} fill="none" stroke={inkColor(g.color, palette)} strokeWidth={1.5 / z} />}
+              </g>
+            );
+          })()}
           {/* the shape a pause would snap to, before it does */}
           {g?.kind === 'ink' && g.ghost && !g.snap && (
             <path d={inkShapePath(g.ghost.pts, g.ghost.kind)} className="ink-snap-ghost" fill="none" stroke={inkColor(g.color, palette)} strokeWidth={Math.max(1, g.width * 0.6)} strokeDasharray={`${6 / z} ${5 / z}`} strokeLinecap="round" />
@@ -655,7 +775,7 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
             <path key={snapFlash} d={inkShapePath(g.pts, g.snap.shape.kind)} className="ink-snap-flash" fill="none" stroke={inkColor(g.color, palette)} strokeWidth={g.highlighter ? g.width : g.snap.width} strokeLinecap="round" strokeLinejoin="round" />
           )}
           {/* the snapped shape's centre while it can still be scaled and turned */}
-          {g?.kind === 'ink' && g.snap && g.snap.shape.kind !== 'line' && (() => {
+          {g?.kind === 'ink' && g.snap && !shapeEndFollows(g.snap.shape) && (() => {
             const c = shapeCentre(g.snap.shape);
             return <circle cx={c.x} cy={c.y} r={3 / z} className="ink-snap-centre" strokeWidth={1.2 / z} />;
           })()}
@@ -724,6 +844,25 @@ export const ExplainLayer = memo(function ExplainLayer({ data, wrapRef }: { data
 /* ------------------------------------------------------------------ */
 /* Pieces                                                              */
 /* ------------------------------------------------------------------ */
+
+/** The stroke being drawn, freehand: a centre line for the highlighter, a tapered outline for the pen. */
+function liveInkPath(g: Extract<G, { kind: 'ink' }>): string {
+  return g.highlighter ? inkCenterPath(g.pts) : g.live.tail(g.pts);
+}
+
+/**
+ * Straight runs drawn with Shift, as the shape to keep: a pause at the end
+ * adds no extra corner, and ending back on the first corner closes a polygon.
+ */
+function straightRuns(verts: Point[], end: Point, zoom: number): { pts: InkPoint[]; kind: InkShape } | null {
+  const near = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y) * zoom < 12;
+  const pts: Point[] = [];
+  for (const p of [...verts, end]) if (!pts.length || Math.hypot(p.x - pts[pts.length - 1].x, p.y - pts[pts.length - 1].y) * zoom > 3) pts.push(p);
+  if (pts.length < 2) return null;
+  const ink = (q: Point): InkPoint => ({ x: q.x, y: q.y, p: 0.5 });
+  if (pts.length >= 4 && near(pts[0], pts[pts.length - 1])) return { pts: [...pts.slice(0, -1), pts[0]].map(ink), kind: 'polygon' };
+  return { pts: pts.map(ink), kind: pts.length === 2 ? 'line' : 'polyline' };
+}
 
 /** `to`, turned about `from` to the nearest multiple of `deg` degrees (same length). */
 function snapAngle(from: Point, to: Point, deg: number): Point {

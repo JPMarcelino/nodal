@@ -27,7 +27,7 @@ const REASON: typeof TOOLS = [
 export const EXPLAIN_HINTS: Record<ExplainTool, JSX.Element> = {
   pen: (
     <>
-      Drag to draw · hold still at the end to snap to a line, ellipse or box, then keep holding to resize and turn it (<kbd>Shift</kbd>: circle, square, 15°) · <kbd>1</kbd>–<kbd>7</kbd> colour · <kbd>[</kbd> <kbd>]</kbd> size
+      Drag to draw · hold still at the end to snap to a line, run of lines, arrow, arc, ellipse, box or polygon, then keep holding to resize and turn it (<kbd>Shift</kbd>: circle, square, regular polygon, 15°) · <kbd>Shift</kbd>-drag for straight lines, pausing to add a corner (end on the start to close the shape) · <kbd>1</kbd>–<kbd>7</kbd> colour · <kbd>[</kbd> <kbd>]</kbd> size
     </>
   ),
   highlighter: (

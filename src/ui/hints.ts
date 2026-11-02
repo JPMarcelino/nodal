@@ -116,9 +116,9 @@ export function hintFor(s: HintState): string | null {
     case 'pan':
       return join(['Drag to pan', `hold ${k('Space')} to pan from any tool`, `${esc} back to select`]);
     case 'pen':
-      return join(['Drag to draw', 'hold still at the end to snap to a line or shape, keep holding to resize it', '1–7 colour', '[ ] size']);
+      return join(['Drag to draw', 'hold still at the end to snap to a line, arrow, arc or shape, keep holding to resize it', 'Shift straight lines (pause for a corner)', '1–7 colour', '[ ] size']);
     case 'highlighter':
-      return join(['Drag to highlight', 'hold still to straighten', 'Shift straight']);
+      return join(['Drag to highlight', 'hold still to straighten', 'Shift straight lines (pause for a corner)']);
     case 'laser':
       return join(['Drag to point', 'the marks fade together when you stop']);
     case 'eraser':

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CALLOUT_AUTO_WRAP, calloutAnchor, calloutLayout, makeAnchor, nextStep } from '../model/callout';
 import { createDoc, itemBounds, makeComponent, makeShape } from '../model/doc';
-import { inkAverageWidth, inkHit, inkOutline, inkPoints, inkShapePath, packInk, recognizeInk, recognizeShape, shapeCentre, shapePoints, type InkPoint } from '../model/ink';
+import { inkAverageWidth, inkHit, inkOutline, inkPoints, inkShapePath, LiveInkOutline, moveShapeEnd, packInk, recognizeInk, recognizeShape, shapeCentre, shapePoints, type InkPoint } from '../model/ink';
 import { deleteItems, extractFragment, insertFragment } from '../model/ops';
 import type { Net } from '../model/netlist';
 import { netFlow, splitAt } from '../model/trace';
@@ -52,6 +52,105 @@ describe('ink', () => {
     for (let i = 10; i >= 0; i--) box.push(P(i * 10, 60));
     for (let i = 10; i >= 0; i--) box.push(P(1, i * 6));
     expect(recognizeInk(box)?.kind).toBe('rect');
+  });
+});
+
+describe('shape recognition', () => {
+  // a steady, repeatable wobble standing in for a hand
+  let seed = 7;
+  const wobble = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 4;
+  const hand = (pts: { x: number; y: number }[]) => pts.map((q) => P(q.x + wobble(), q.y + wobble()));
+  const runs = (v: { x: number; y: number }[], closed: boolean, per = 20) => {
+    const out: { x: number; y: number }[] = [];
+    const n = closed ? v.length : v.length - 1;
+    for (let k = 0; k < n; k++) {
+      const a = v[k];
+      const b = v[(k + 1) % v.length];
+      for (let i = 0; i < per; i++) out.push({ x: a.x + ((b.x - a.x) * i) / per, y: a.y + ((b.y - a.y) * i) / per });
+    }
+    out.push(closed ? v[0] : v[v.length - 1]);
+    return hand(out);
+  };
+  const ngon = (n: number, r: number, inner?: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const a = -Math.PI / 2 + (i * Math.PI * 2) / n;
+      const rr = inner && i % 2 ? inner : r;
+      return { x: 200 + rr * Math.cos(a), y: 200 + rr * Math.sin(a) };
+    });
+  const oval = (rx: number, ry: number, tilt = 0, sweep = Math.PI * 2) =>
+    hand(
+      Array.from({ length: 81 }, (_, i) => {
+        const a = (i / 80) * sweep;
+        const x = rx * Math.cos(a);
+        const y = ry * Math.sin(a);
+        return { x: 200 + x * Math.cos(tilt) - y * Math.sin(tilt), y: 200 + x * Math.sin(tilt) + y * Math.cos(tilt) };
+      }),
+    );
+  const kind = (pts: InkPoint[]) => {
+    const sp = recognizeShape(pts);
+    return sp && 'pts' in sp ? `${sp.kind}:${sp.pts.length}` : sp?.kind;
+  };
+
+  it('finds polygons by their corners', () => {
+    expect(kind(runs(ngon(3, 90), true))).toBe('polygon:3');
+    expect(kind(runs([{ x: 200, y: 100 }, { x: 260, y: 200 }, { x: 200, y: 300 }, { x: 140, y: 200 }], true))).toBe('polygon:4');
+    expect(kind(runs(ngon(5, 90), true))).toBe('polygon:5');
+    expect(kind(runs(ngon(6, 90), true))).toBe('polygon:6');
+    expect(kind(runs(ngon(10, 100, 40), true, 12))).toBe('polygon:10');
+  });
+
+  it('squares up boxes, level or turned, and tells ellipses from polygons', () => {
+    const turned = recognizeShape(runs([{ x: 100, y: 100 }, { x: 250, y: 180 }, { x: 220, y: 236 }, { x: 70, y: 156 }], true));
+    expect(turned?.kind).toBe('rect');
+    expect(turned?.kind === 'rect' && (turned.rot! * 180) / Math.PI).toBeCloseTo(28, -1);
+    expect(kind(oval(80, 80))).toBe('ellipse');
+    const tilted = recognizeShape(oval(100, 45, 0.6));
+    expect(tilted?.kind === 'ellipse' && tilted.rot).toBeCloseTo(0.6, 1);
+    // running on past the start still closes the loop
+    expect(kind(oval(80, 70, 0, Math.PI * 2.3))).toBe('ellipse');
+  });
+
+  it('turns open strokes into lines, runs of lines, arrows and arcs', () => {
+    expect(kind(runs([{ x: 0, y: 0 }, { x: 200, y: 60 }], false, 40))).toBe('line');
+    expect(kind(runs([{ x: 0, y: 0 }, { x: 0, y: 150 }, { x: 120, y: 150 }], false))).toBe('polyline:3');
+    expect(kind(runs([{ x: 0, y: 0 }, { x: 50, y: 80 }, { x: 100, y: 0 }, { x: 150, y: 80 }, { x: 200, y: 0 }], false))).toBe('polyline:5');
+    // one barb, or both drawn there and back: an arrow along the shaft
+    expect(kind(runs([{ x: 0, y: 100 }, { x: 200, y: 100 }, { x: 170, y: 85 }], false))).toBe('arrow:2');
+    expect(kind(runs([{ x: 0, y: 100 }, { x: 200, y: 100 }, { x: 172, y: 84 }, { x: 200, y: 100 }, { x: 172, y: 116 }], false))).toBe('arrow:2');
+    expect(kind(oval(100, 100, 0, Math.PI))).toBe('arc');
+    // a loose squiggle is left as drawn
+    expect(recognizeShape(hand(Array.from({ length: 200 }, (_, i) => ({ x: i * 2, y: 40 * Math.sin(i / 3) }))))).toBeNull();
+  });
+
+  it('draws an arrow with a head and lets its tip follow the pen', () => {
+    const sp = recognizeShape(runs([{ x: 0, y: 100 }, { x: 200, y: 100 }, { x: 170, y: 85 }], false))!;
+    const pts = shapePoints(sp);
+    // shaft, then tip → barb → tip → barb
+    expect(pts).toHaveLength(5);
+    expect(pts[1].x).toBeCloseTo(pts[3].x, 6);
+    expect(pts[2].x).toBeLessThan(pts[1].x);
+    expect(pts[2].y).not.toBeCloseTo(pts[4].y, 0);
+    const moved = shapePoints(moveShapeEnd(sp, { x: 300, y: 40 }));
+    expect(moved[1]).toMatchObject({ x: 300, y: 40 });
+  });
+
+  it('closes polygons and makes them regular on request', () => {
+    const sp = recognizeShape(runs([{ x: 100, y: 100 }, { x: 300, y: 120 }, { x: 180, y: 260 }], true))!;
+    const pts = shapePoints(sp, { perfect: true });
+    expect(pts[0]).toEqual(pts[pts.length - 1]);
+    expect(inkShapePath(pts, 'polygon').endsWith('Z')).toBe(true);
+    const sides = [0, 1, 2].map((i) => Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y));
+    expect(Math.max(...sides) - Math.min(...sides)).toBeLessThan(0.01);
+  });
+
+  it('builds a long live stroke in frozen pieces plus a short tail', () => {
+    const long = Array.from({ length: 3000 }, (_, i) => P(i * 0.5, 50 * Math.sin(i / 150)));
+    const live = new LiveInkOutline(3);
+    for (let n = 2; n <= long.length; n += 25) live.tail(long.slice(0, n));
+    const tail = live.tail(long);
+    expect(live.frozen.length).toBeGreaterThan(3);
+    expect(tail.length).toBeLessThan(inkOutline(long, 3).length / 3);
+    expect([tail, ...live.frozen].join('')).not.toContain('NaN');
   });
 });
 
