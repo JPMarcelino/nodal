@@ -15,7 +15,7 @@ Nodal is a fast, good-looking schematic editor. It's one React + TypeScript code
 
 ## Features
 
-### Symbol library (~240 parts)
+### Built-in symbol library (~240 parts)
 - **Passive:** resistors (US and IEC), variable resistors, potentiometers, trimmers, NTC/PTC thermistors, LDRs, varistors, resistor networks, 4-terminal current-sense resistors, capacitors (ceramic, polarized, bipolar, variable), inductors, coupled inductors, ferrite beads, transformers (center-tapped, dual secondary), crystals, resonators, fuses, polyfuses, spark gaps, gas discharge tubes, antennas
 - **Semiconductors:** diodes, dual diodes, LEDs, Zener, Schottky, tunnel, TVS, varactor, photodiode, laser diode, DIAC, bridge rectifier, NPN/PNP (plain and circled), Darlington, phototransistor, N/P MOSFETs, depletion MOSFET, N/P JFETs, IGBT, SCR, TRIAC, UJT, optocouplers (transistor and TRIAC output), gate driver, vacuum tubes (triode, pentode)
 - **ICs and analog:** op-amps (single and dual), comparator, TL431 shunt reference, voltage reference, LDO with enable, oscillator module, instrumentation amp, 555, linear and adjustable regulators, buck converter, generic 8/14/16-pin ICs, ATmega328P, generic MCU, EEPROM, ADC, DAC, H-bridge, USB-UART
@@ -27,6 +27,14 @@ Nodal is a fast, good-looking schematic editor. It's one React + TypeScript code
 - **Connectors and labels:** net labels, global labels, in/out/bidirectional ports, off-page connector, no-connect flag, terminals, terminal blocks, pin headers (1×2 to 1×12, 2×3 to 2×10), D-sub 9, SMA, bus entry, DC jack, 3.5 mm audio jack, USB, USB-C, RJ45, BNC, plug and socket, banana jack, mounting hole, fiducial
 
 You can search the library, mark favourites (★), and see recently used parts. Click a part to place it, or drag it onto the canvas.
+
+### KiCad library (22,900+ parts)
+The whole official KiCad symbol library (10.0.8) is built in, in the Library panel under **KiCad library**: generic parts (Device, power) and specific ones from 223 libraries — op-amps, comparators, 74xx/4000 logic, ADCs/DACs, regulators and converters, MCUs, FPGAs, memories, interfaces, RF modules, sensors, displays, relays, connectors, valves and SPICE sources. Search finds them below the built-in parts; browse them by group and library. Nothing is downloaded until you search or open a library, then only the symbols shown.
+- Every pin lands on the 10 px grid (KiCad's 50 mil grid maps to one step), however the part is placed or turned.
+- Parts with several units (the gates of a 7400, the halves of a dual op-amp, a power unit) are one part with each unit as a **type**.
+- A placed part is copied into the circuit, so the file opens anywhere, offline too. Description, datasheet and footprint come along as fields.
+- **Import your own KiCad libraries:** drop a `.kicad_sym` file on the canvas (or *File → Import…*) and its parts join *My symbols*.
+- The symbols are © the KiCad library contributors, CC-BY-SA 4.0; designs that use them are not affected (see `kicad/LICENSE.md` on the site). The library is rebuilt with `npx vite-node scripts/build-kicad-library.ts`.
 
 ### Symbol types (several drawings per part)
 Many parts can be drawn more than one way. A symbol with types shows a small **types badge** on its tile; **hover** it for a clean popup preview, and **click** it to open a type picker (e.g. N- and P-channel MOSFETs ship with **Type A · standard**, **Type B · source arrow** and **Type C · simplified/gate-bubble**, and diodes, capacitors and inductors have alternates too). The same preview appears on hover in the command palette, and the type travels with the part.

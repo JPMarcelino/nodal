@@ -36,7 +36,7 @@ import {
   type Fragment,
   type StackMove,
 } from '../model/ops';
-import { getSymbol } from '../model/registry';
+import { adoptKicadSymbol, getSymbol } from '../model/registry';
 import { incrementLabels } from '../model/increment';
 import { deletePolyCorner } from '../model/polygon';
 import { canConvertToPath, convertToPath, hasHeads, pathNodes, setNodeKind, setPathNodes } from '../model/path';
@@ -197,6 +197,8 @@ export function placeComponent(symbol: string, x: number, y: number, rot: 0 | 90
     if (placed?.variantOf && userLibrary[placed.variantOf] && !d.symbols[placed.variantOf]) {
       d.symbols[placed.variantOf] = userLibrary[placed.variantOf];
     }
+    // a KiCad part brings its drawing and all its units along
+    adoptKicadSymbol(d as CircuitDoc, symbol);
     const c = makeComponent(d as CircuitDoc, symbol, x, y, rot, flipX);
     c.group = scope;
     d.items[c.id] = c;

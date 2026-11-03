@@ -7,3 +7,4 @@ src-tauri/gen/schemas
 coverage
 tsconfig.tsbuildinfo
 .wrangler
+kicad-library

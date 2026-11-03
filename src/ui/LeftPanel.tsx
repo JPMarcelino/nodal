@@ -24,8 +24,9 @@ import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
 import { useSettledDoc } from './useSettledDoc';
 import { libraryDrag } from './dragState';
+import { KicadBrowser, KicadResults, useKicadEpoch, useRestoreKicad } from './KicadLibrary';
 
-function Tile({ def }: { def: SymbolDef }) {
+export function Tile({ def }: { def: SymbolDef }) {
   const fav = useStore((s) => s.favorites.includes(def.id));
   const placing = useStore((s) => s.placing?.symbol === def.id);
   const docSymbols = useStore((s) => s.doc.symbols);
@@ -269,6 +270,9 @@ function Library() {
       .map((r) => r.d);
   }, [all, query, extras]);
   const shapeResults = useMemo(() => searchPresets(query), [query]);
+  // KiCad parts kept in favourites and recently used are fetched again after a reload
+  useKicadEpoch();
+  useRestoreKicad(useMemo(() => [...favorites, ...recent], [favorites, recent]));
   const lookup = (id: string) => getSymbol(S().doc, id);
   const byCat = useMemo(() => {
     const m = new Map<string, SymbolDef[]>();
@@ -307,23 +311,26 @@ function Library() {
       </div>
       <div className="lib-scroll">
         {query ? (
-          results.length || shapeResults.length ? (
-            <div className="tiles">
-              {results.map((d) => (
-                <Tile key={d.id} def={d} />
-              ))}
-              {shapeResults.map((p) => (
-                <ShapeTile key={p.id} preset={p} />
-              ))}
-            </div>
-          ) : (
-            <div className="empty-note">
-              No symbol or shape matches “{q}”.
-              <button className="link-btn" onClick={() => openSymbolEditor()}>
-                Create one →
-              </button>
-            </div>
-          )
+          <>
+            {results.length || shapeResults.length ? (
+              <div className="tiles">
+                {results.map((d) => (
+                  <Tile key={d.id} def={d} />
+                ))}
+                {shapeResults.map((p) => (
+                  <ShapeTile key={p.id} preset={p} />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-note">
+                No built-in symbol or shape matches “{q}”.
+                <button className="link-btn" onClick={() => openSymbolEditor()}>
+                  Create one →
+                </button>
+              </div>
+            )}
+            <KicadResults query={query} />
+          </>
         ) : (
           <>
             <Category name="Favourites" defs={favorites.map(lookup).filter((d) => d.id !== '__missing')} />
@@ -349,6 +356,7 @@ function Library() {
             {CATEGORY_ORDER.map((c) => (
               <Category key={c} name={c} defs={byCat.get(c) ?? []} defaultOpen={c === 'Passive' || c === 'Semiconductors' || c === 'Power & Sources'} />
             ))}
+            <KicadBrowser />
             {PRESET_CATEGORIES.map((c) => (
               <ShapeCategory key={c.id} name={c.label} presets={SHAPE_PRESETS.filter((p) => p.category === c.id)} />
             ))}

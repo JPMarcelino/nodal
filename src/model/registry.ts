@@ -12,8 +12,27 @@ export function getUserLibrary(): Record<string, SymbolDef> {
   return userLibrary;
 }
 
+/** KiCad symbols fetched so far this session (see model/kicadLibrary); placing one copies it into the document. */
+const kicadSymbols: Record<string, SymbolDef> = {};
+
+export function registerKicadSymbols(defs: SymbolDef[]) {
+  for (const d of defs) kicadSymbols[d.id] = d;
+}
+
+/** A fetched KiCad symbol, if it is loaded. */
+export const kicadSymbol = (id: string): SymbolDef | undefined => kicadSymbols[id];
+
+/** Copies a loaded KiCad symbol, its base and its other units into the document (so the file stands on its own). */
+export function adoptKicadSymbol(doc: Pick<CircuitDoc, 'symbols'>, id: string) {
+  const def = kicadSymbols[id];
+  if (!def || doc.symbols[id]) return;
+  const base = def.variantOf ? kicadSymbols[def.variantOf] : def;
+  if (!base) return void (doc.symbols[id] = def);
+  for (const d of [base, ...(base.variants ?? []).map((v) => kicadSymbols[v.id])]) if (d && !doc.symbols[d.id]) doc.symbols[d.id] = d;
+}
+
 export function getSymbol(doc: Pick<CircuitDoc, 'symbols'>, id: string): SymbolDef {
-  return doc.symbols[id] ?? userLibrary[id] ?? BUILTIN[id] ?? MISSING_SYMBOL;
+  return doc.symbols[id] ?? userLibrary[id] ?? BUILTIN[id] ?? kicadSymbols[id] ?? MISSING_SYMBOL;
 }
 
 const closedDefs = new WeakMap<SymbolDef, SymbolDef>();
