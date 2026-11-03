@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { create } from 'zustand';
 import type { SvgDrawing } from '../io/svgImport';
+import type { GridFitPreview } from '../model/gridFit';
 import { DEFAULT_SVG_IMPORT, type SvgImportOptions } from '../model/svgDrawing';
 import { Segmented } from './controls';
 
 /*
  * Asks how an SVG should come in (wires or lines, polygons, shapes, symbol
- * recognition). The last answer is remembered and preselected next time.
+ * recognition, and how it gets onto the grid). The last answer is remembered and preselected next time.
  */
 
 const STORE_KEY = 'nodal.svgImport';
@@ -22,16 +23,17 @@ export function lastSvgImportOptions(): SvgImportOptions {
 interface Question {
   name: string;
   drawing: SvgDrawing;
+  fit?: GridFitPreview;
   resolve: (v: SvgImportOptions | null) => void;
 }
 
 const useSvgAsk = create<{ q: Question | null }>(() => ({ q: null }));
 
 /** Shows the import options for one SVG; resolves with the choice, or null when cancelled. */
-export function askSvgImport(name: string, drawing: SvgDrawing): Promise<SvgImportOptions | null> {
+export function askSvgImport(name: string, drawing: SvgDrawing, fit?: GridFitPreview): Promise<SvgImportOptions | null> {
   return new Promise((resolve) => {
     useSvgAsk.getState().q?.resolve(null);
-    useSvgAsk.setState({ q: { name, drawing, resolve } });
+    useSvgAsk.setState({ q: { name, drawing, fit, resolve } });
   });
 }
 
@@ -63,6 +65,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const px = (v: number) => `${+v.toFixed(4)} px`;
+
+/** What the chosen grid option will do, in a sentence. */
+function gridNote(fit: GridFitPreview, how: 'refine' | 'snap'): string {
+  if (how === 'refine')
+    return fit.refined === fit.grid
+      ? `Already fits the ${px(fit.grid)} grid: every point lands on it exactly.`
+      : `Grid ${px(fit.grid)} → ${px(fit.refined)}, so every line end, corner and dot lands on a grid point; sizes stay exact.`;
+  return fit.snapShift < 0.005
+    ? `Already on the ${px(fit.grid)} grid: nothing moves.`
+    : `Points move onto the ${px(fit.grid)} grid, at most ${+fit.snapShift.toFixed(2)} px; paths and connections are kept.`;
+}
 
 export function SvgImportHost() {
   const q = useSvgAsk((s) => s.q);
@@ -117,6 +131,22 @@ function SvgImportDialog({ q }: { q: Question }) {
             onChange={(boxes) => set({ boxes })}
           />
         </div>
+        {q.fit && (
+          <>
+            <div className="svg-import-row">
+              <span>Grid</span>
+              <Segmented
+                value={o.grid ?? 'refine'}
+                options={[
+                  { value: 'refine', label: 'Refine grid', title: 'Make the grid as fine as it must be for every point of the drawing (and the page) to sit on it; the drawing keeps its exact sizes' },
+                  { value: 'snap', label: 'Snap to grid', title: 'Keep the grid; move each point of the drawing onto it, keeping its paths and connections' },
+                ]}
+                onChange={(grid) => set({ grid })}
+              />
+            </div>
+            <span className="muted small">{gridNote(q.fit, o.grid ?? 'refine')}</span>
+          </>
+        )}
         <label className="check" title="Drawings whose geometry matches a library symbol exactly (moved, rotated, flipped or scaled) become that part, wired up at its pins">
           <input type="checkbox" checked={o.symbols} onChange={(e) => set({ symbols: e.target.checked })} /> Recognise library symbols (exact matches)
         </label>

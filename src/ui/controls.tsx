@@ -105,6 +105,8 @@ export function NumberInput({
   const [v, setV] = useState(fmt(value));
   useEffect(() => setV(fmt(value)), [value]);
   const commit = (raw = v) => {
+    // untouched: keep the exact value (the box only shows it to two decimals)
+    if (raw === fmt(value)) return;
     let n = parseFloat(raw);
     if (!Number.isFinite(n)) return setV(fmt(value));
     if (min !== undefined) n = Math.max(min, n);

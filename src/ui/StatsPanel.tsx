@@ -68,7 +68,7 @@ function StatsBody() {
           {b && (
             <>
               <Row label="X, Y" value={`${n(b.x)}, ${n(b.y)} px`} hint="Top-left corner of the selection’s bounding box" />
-              <Row label="W × H" value={`${n(b.w)} × ${n(b.h)} px`} hint={`${+(b.w / grid).toFixed(1)} × ${+(b.h / grid).toFixed(1)} grid squares of ${grid} px`} />
+              <Row label="W × H" value={`${n(b.w)} × ${n(b.h)} px`} hint={`${+(b.w / grid).toFixed(1)} × ${+(b.h / grid).toFixed(1)} grid squares of ${+grid.toFixed(4)} px`} />
             </>
           )}
           {sel.rotation !== undefined && <Row label="Rotation" value={`${+sel.rotation.toFixed(1)}°${sel.flipped ? ' · flipped' : ''}`} />}

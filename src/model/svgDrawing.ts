@@ -19,9 +19,14 @@ export interface SvgImportOptions {
   boxes: 'shapes' | 'outlines';
   /** Replace drawings that exactly match a library symbol with that part. */
   symbols: boolean;
+  /**
+   * Getting onto the grid: refine the grid until every point of the drawing
+   * (and of the page) lies on it, or move each point onto the current grid.
+   */
+  grid?: 'refine' | 'snap';
 }
 
-export const DEFAULT_SVG_IMPORT: SvgImportOptions = { strokes: 'wires', closed: 'strokes', boxes: 'shapes', symbols: false };
+export const DEFAULT_SVG_IMPORT: SvgImportOptions = { strokes: 'wires', closed: 'strokes', boxes: 'shapes', symbols: false, grid: 'refine' };
 
 /** How close (canvas units) two points must be to count as connected. */
 const EPS = 0.75;
@@ -65,7 +70,8 @@ class PointGrid {
  * (when there is more than one item) and offset by `at`.
  */
 export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point, scope?: string, name?: string, opts: SvgImportOptions = DEFAULT_SVG_IMPORT): string[] {
-  const move = (p: Point): Point => ({ x: Math.round((p.x + at.x) * 100) / 100, y: Math.round((p.y + at.y) * 100) / 100 });
+  // rounded only to clear float noise: a drawing fitted to a fine grid keeps its points exactly on it
+  const move = (p: Point): Point => ({ x: Math.round((p.x + at.x) * 1e6) / 1e6, y: Math.round((p.y + at.y) * 1e6) / 1e6 });
   const ids: string[] = [];
   const z0 = Math.max(0, ...Object.values(doc.items).map((i) => i.z ?? 0));
 
@@ -226,7 +232,7 @@ export function insertSvgDrawing(doc: CircuitDoc, drawing: SvgDrawing, at: Point
       const pts = l.closed && l.pts.length > 2 ? [...l.pts, l.pts[0]] : l.pts;
       for (let i = 1; i < pts.length; i++) {
         const a = pts[i - 1], b = pts[i];
-        const s = makeShape(doc, 'line', a.x, a.y, Math.round((b.x - a.x) * 100) / 100, Math.round((b.y - a.y) * 100) / 100);
+        const s = makeShape(doc, 'line', a.x, a.y, Math.round((b.x - a.x) * 1e6) / 1e6, Math.round((b.y - a.y) * 1e6) / 1e6);
         Object.assign(s, { stroke: ink(l.color), strokeWidth: l.width, dash: l.dashed ? 'dashed' : 'solid' });
         addShape(s);
       }

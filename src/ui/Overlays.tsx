@@ -99,7 +99,7 @@ function SnapToggles() {
       >
         {GRID_STYLE_ICONS[gridStyle]}
       </button>
-      {toggle('view.snap', snapOn, 'Snap to grid', <Magnet size={13} />, snapOn ? `${grid}px` : 'off')}
+      {toggle('view.snap', snapOn, 'Snap to grid', <Magnet size={13} />, snapOn ? `${+grid.toFixed(4)}px` : 'off')}
       <span className="status-sep" />
       {toggle('view.alignGuides', align, 'Alignment guides', <Crosshair size={13} />)}
       {toggle('view.spacingGuides', spacing, 'Equal-spacing guides', <Columns3 size={13} />)}

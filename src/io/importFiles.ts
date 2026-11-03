@@ -1,5 +1,6 @@
 import { normalizeDoc } from '../model/doc';
 import { snap } from '../model/geometry';
+import { previewGridFit, snapDrawing } from '../model/gridFit';
 import { docPages, pageItemIds, viewDoc } from '../model/pages';
 import { insertSvgDrawing, type SvgImportOptions } from '../model/svgDrawing';
 import type { CircuitDoc, Point, Rect } from '../model/types';
@@ -154,16 +155,29 @@ export async function importFileText(name: string, text: string, at?: Point, svg
   }
 }
 
-/** Adds an SVG as editable items (grouped), centred on `at`, in one undo step; asks how unless `opts` is given. */
+/** Grid pitch as shown to people: no float noise. */
+const fmtGrid = (g: number) => `${+g.toFixed(4)} px`;
+
+/**
+ * Adds an SVG as editable items (grouped), centred on `at`, in one undo step;
+ * asks how unless `opts` is given. Every point of the drawing ends up on the
+ * grid: either the grid is refined until it does (and still holds whatever is
+ * on the page), or the points are moved onto the current grid.
+ */
 async function importSvgDrawing(fileName: string, text: string, at: Point, opts?: SvgImportOptions) {
   const drawing = svgToDrawing(text);
   const name = fileName.replace(/\.svg$/i, '').trim() || 'Imported SVG';
-  const how = opts ?? (await askSvgImport(name, drawing));
-  if (!how) return;
   const g = S().doc.settings.grid;
+  const place = { x: snap(at.x, g), y: snap(at.y, g) };
+  const fit = previewGridFit(drawing, g, Object.keys(S().doc.items).length > 0, place);
+  const how = opts ?? (await askSvgImport(name, drawing, fit));
+  if (!how) return;
+  const pitch = how.grid === 'snap' ? g : fit.refined;
+  const fitted = snapDrawing(drawing, pitch, place).drawing;
   const ids: string[] = [];
   const ok = mutate((d) => {
-    ids.push(...insertSvgDrawing(d as CircuitDoc, drawing, { x: snap(at.x, g), y: snap(at.y, g) }, S().scope, name, how));
+    if (pitch !== g) d.settings.grid = pitch;
+    ids.push(...insertSvgDrawing(d as CircuitDoc, fitted, place, S().scope, name, how));
   }, ids);
   if (!ok) return;
   const count = (type: string) => ids.filter((id) => S().doc.items[id]?.type === type).length;
@@ -171,7 +185,8 @@ async function importSvgDrawing(fileName: string, text: string, at: Point, opts?
   const [parts, wires] = [count('component'), count('wire')];
   const rest = ids.length - parts - wires;
   const what = [parts && n(parts, 'part'), wires && n(wires, 'wire'), rest && n(rest, wires || parts ? 'other item' : 'item')].filter(Boolean).join(', ');
-  toast(`Imported “${name}” — ${what || 'nothing'} (grouped; double-click to edit inside)`, 'success');
+  const grid = pitch !== g ? `; grid ${fmtGrid(g)} → ${fmtGrid(pitch)}` : '';
+  toast(`Imported “${name}” — ${what || 'nothing'}${grid} (grouped; double-click to edit inside)`, 'success');
 }
 
 /** Imports one file of any supported kind; text formats go through `importFileText`. */
