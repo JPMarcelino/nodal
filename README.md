@@ -150,6 +150,16 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 - Click a version to preview it and see what changed since (added, removed and changed items). **Restore** puts it back as an ordinary edit, so Undo returns to where you were, and in a live session everyone gets it. **Save copy** writes it out as a separate file. Double-click a version to name it.
 - Named versions are kept forever; automatic ones thin out over time (recent ones, then one per hour, then one per day for a month).
 
+### AI agents
+- **Let an AI agent draw for you:** *File → AI agent link* connects Nodal to the agent bridge ([`agent-bridge/`](agent-bridge/README.md)). Through it, Claude Code and other MCP clients — or any program, over HTTP or the command line — can do everything Nodal does: place and wire parts, draw shapes and notes, make symbols, manage pages, run the rule check, read nets, export and take screenshots. About 100 methods in all.
+  ```bash
+  claude mcp add nodal -- node /path/to/nodal/agent-bridge/nodal-agent.mjs mcp
+  ```
+- **You see what it does:** the agent has its own cursor with its name and messages. Each change is briefly outlined. The agent panel shows its goal, progress and every step as it happens; click a step to select what it touched. With *Follow* on, your view keeps the agent's drawing in frame.
+- **It works on its own:** the agent never uses your selection, tool, page or view, and its edits stay off your undo history (it has its own undo). You can keep working, even on another page.
+- **Guard:** while the agent is working, *Protect* keeps your own edits off what it made (*Its work*), off the whole circuit (*Everything*), or not at all (*Off*). It lifts when the agent says it is done, or when you press *Mark done*.
+- The agent can ask you a question in the panel and wait for your reply. Replacing the open circuit saves it as a version first.
+
 ### iPad, tablets and touch
 - **Pinch** to zoom and drag with **two fingers** to pan. **Long-press** opens the context menu.
 - **Two-finger tap** undoes (or cancels the wire you are drawing), **three-finger tap** redoes.
@@ -208,6 +218,7 @@ npm install
 npm run dev        # web app at http://localhost:1420
 npm test           # unit tests (geometry, junctions, symbol grid checks)
 npm run tauri dev  # desktop app (needs Rust + the Tauri system dependencies)
+npm run agent      # the AI agent bridge (see agent-bridge/README.md)
 ```
 
 ```bash

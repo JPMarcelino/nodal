@@ -1,0 +1,13 @@
+{
+  "name": "nodal-agent",
+  "version": "1.0.0",
+  "description": "Lets AI agents (MCP, HTTP, CLI) drive a running Nodal circuit designer.",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "nodal-agent": "nodal-agent.mjs" },
+  "files": ["nodal-agent.mjs", "catalog.json", "README.md"],
+  "scripts": {
+    "prepack": "cp ../src/agent/catalog.json catalog.json"
+  },
+  "engines": { "node": ">=18" }
+}
