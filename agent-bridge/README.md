@@ -11,11 +11,18 @@ There are no dependencies. It needs Node 18 or newer.
 ## Quick start
 
 1. In Nodal: **File → AI agent link**. You can also open the app with `?agent` in the address, or `?agent=<port>` for another port. The agent panel appears at the top right and waits for the bridge.
+
+   **No repository needed.** The app serves the bridge as one file, with the method catalog built in: <https://jpmarcelino.github.io/nodal/nodal-agent.mjs>. The panel has a download link and the commands for your system. **Copy setup for your AI agent** copies instructions you can paste to ChatGPT/Codex, Claude or any other agent that can run commands; it then downloads the bridge, starts it and connects by itself. For example, in PowerShell:
+   ```powershell
+   iwr https://jpmarcelino.github.io/nodal/nodal-agent.mjs -OutFile "$env:USERPROFILE\nodal-agent.mjs"
+   node "$env:USERPROFILE\nodal-agent.mjs"
+   ```
+   Pass call params from a file (`call components.place "@params.json"`) or from stdin (`-`); this avoids shell quoting problems.
 2. Hook up your agent:
 
    **Claude Code** (or any MCP client):
    ```bash
-   claude mcp add nodal -- node /path/to/nodal/agent-bridge/nodal-agent.mjs mcp
+   claude mcp add nodal -- node /path/to/nodal-agent.mjs mcp
    ```
    The MCP server starts the bridge itself, or uses one that is already running. Each method below becomes a tool: `components_place`, `wires_connect`, `doc_screenshot`, and so on. The server's instructions carry the guide (coordinates, item model, wiring tips, the symbol DSL).
 

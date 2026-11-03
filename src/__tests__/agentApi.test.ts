@@ -217,3 +217,17 @@ describe('the guard', () => {
     expect(mutate((d) => void (d.name = 'x'))).toBe(true);
   });
 });
+
+describe('agent setup', () => {
+  it('gives PowerShell steps on Windows and shell steps elsewhere', async () => {
+    const { agentSetupPrompt, setupSteps } = await import('../agent/setup');
+    const win = setupSteps('windows');
+    expect(win.download).toMatch(/^iwr https:\/\/jpmarcelino\.github\.io\/nodal\/nodal-agent\.mjs -OutFile "\$env:USERPROFILE\\nodal-agent\.mjs"$/);
+    expect(win.run).toBe('Start-Process node -ArgumentList "$env:USERPROFILE\\nodal-agent.mjs" -WindowStyle Hidden');
+    expect(setupSteps('unix').download).toBe('curl -fsSL https://jpmarcelino.github.io/nodal/nodal-agent.mjs -o ~/nodal-agent.mjs');
+    setAgent({ url: 'ws://127.0.0.1:5000/app' });
+    expect(setupSteps('windows').call).toBe('node "$env:USERPROFILE\\nodal-agent.mjs" --port 5000 call');
+    expect(agentSetupPrompt('windows')).toContain('http://127.0.0.1:5000/rpc');
+    setAgent({ url: 'ws://127.0.0.1:47821/app' });
+  });
+});
