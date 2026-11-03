@@ -56,6 +56,30 @@ describe('symbol page conversion', () => {
     expect(out.ports).toEqual([expect.objectContaining({ id: '1', x: 0, side: 'left' })]);
   });
 
+  it('keeps pins on the grid once the symbol is placed by its centre', async () => {
+    const { createDoc, makeShape } = await import('../model/doc');
+    const { makePin, pageToSymbol } = await import('../model/symbolPage');
+    const { toWorld } = await import('../model/geometry');
+    const doc = createDoc();
+    // a drawing 190 wide, pins at the top and bottom of x = 90
+    const line = makeShape(doc, 'line', 0, 40, 190, 0);
+    doc.items[line.id] = line;
+    for (const y of [0, 80]) {
+      const pin = makePin(doc, { x: 90, y });
+      doc.items[pin.id] = pin;
+    }
+    const out = pageToSymbol(doc)!;
+    expect(out.w % 20).toBe(0);
+    expect(out.h % 20).toBe(0);
+    for (const rot of [0, 90, 180, 270] as const) {
+      for (const p of out.ports) {
+        const at = toWorld({ x: 300, y: 300, rot, flipX: false }, out, p.x, p.y);
+        expect(at.x % 10).toBe(0);
+        expect(at.y % 10).toBe(0);
+      }
+    }
+  });
+
   it('refuses two pins with one name', async () => {
     const { createDoc } = await import('../model/doc');
     const { makePin, pageToSymbol } = await import('../model/symbolPage');
