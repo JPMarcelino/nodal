@@ -95,27 +95,41 @@ export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Poin
 }
 
 /**
- * Solders wires together where they cross: each wire is split at `pt` and
- * all pieces meet at one shared junction. Returns the junction id, or null
- * when fewer than two of the wires actually pass through the point.
+ * Solders wires together where they cross: every wire passing through `pt`
+ * is split there and all pieces meet at one shared junction. A wire that
+ * loops back over itself passes through twice and is split at both passes.
+ * Returns the junction id, or null when fewer than two passes go through.
  */
 export function solderWires(doc: CircuitDoc, wireIds: string[], pt: Point): string | null {
-  const hits: { id: string; seg: number }[] = [];
-  for (const id of wireIds) {
-    const w = doc.items[id];
-    if (!w || w.type !== 'wire') continue;
-    const full = wirePolyline(doc, w);
-    for (let i = 0; i < full.length - 1; i++) {
-      if (projectOnSegment(pt, full[i], full[i + 1]).d < 0.5) {
-        hits.push({ id, seg: i });
-        break;
-      }
-    }
-  }
-  if (hits.length < 2) return null;
+  const ids = [...new Set(wireIds)];
+  if (ids.reduce((n, id) => n + passesAt(doc, id, pt).length, 0) < 2) return null;
   const jid = uid('j');
-  for (const h of hits) splitWire(doc, h.id, h.seg, pt, jid);
+  const queue = [...ids];
+  while (queue.length) {
+    const id = queue.pop()!;
+    const seg = passesAt(doc, id, pt)[0];
+    if (seg === undefined) continue;
+    const before = new Set(Object.keys(doc.items));
+    splitWire(doc, id, seg, pt, jid);
+    // the far half may pass through the point again (a wire looping over itself)
+    queue.push(id, ...Object.keys(doc.items).filter((k) => !before.has(k) && doc.items[k].type === 'wire'));
+  }
   return jid;
+}
+
+/** Segments where wire `id` runs through `pt` (ending on the point is not running through it). */
+function passesAt(doc: CircuitDoc, id: string, pt: Point): number[] {
+  const w = doc.items[id];
+  if (!w || w.type !== 'wire') return [];
+  const full = wirePolyline(doc, w);
+  const out: number[] = [];
+  for (let i = 0; i < full.length - 1; i++) {
+    if (projectOnSegment(pt, full[i], full[i + 1]).d >= 0.5) continue;
+    // a bend is counted once, on the segment leaving it
+    if (eq(full[i + 1], pt) || (i === 0 && eq(full[0], pt))) continue;
+    out.push(i);
+  }
+  return out;
 }
 
 /** Connects a loose wire end to whatever it is touching (see TouchTarget). Returns false if nothing changed. */
@@ -149,10 +163,14 @@ export function solderTouch(doc: CircuitDoc, wireId: string, end: 'a' | 'b', tar
       const o = doc.items[target.wire];
       if (!o || o.type !== 'wire') return false;
       // re-find the segment: the stored index may be stale
-      const full = wirePolyline(doc, o);
-      const seg = full.findIndex((q, i) => i < full.length - 1 && projectOnSegment(pt, q, full[i + 1]).d < 0.5);
-      if (seg < 0) return false;
-      w[end] = { kind: 'junction', id: splitWire(doc, o.id, seg, pt) };
+      const seg = passesAt(doc, o.id, pt)[0];
+      if (seg === undefined) return false;
+      const before = new Set(Object.keys(doc.items));
+      const jid = splitWire(doc, o.id, seg, pt);
+      // landing on its own route: the loose end may now belong to the split-off half
+      const holder = w[end].kind === 'free' ? w : Object.keys(doc.items).filter((k) => !before.has(k)).map((k) => doc.items[k]).find((it): it is WireItem => it.type === 'wire' && it[end].kind === 'free' && eq(endpointInfo(doc, it[end])!.pt, pt));
+      if (!holder) return false;
+      holder[end] = { kind: 'junction', id: jid };
       return true;
     }
   }

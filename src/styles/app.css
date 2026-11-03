@@ -3803,11 +3803,16 @@ select.input {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
-  padding: 0 8px;
+  min-height: 30px;
+  min-width: 0;
+  padding: 4px 8px;
   border-radius: 8px;
   color: var(--text-dim);
   text-align: left;
+}
+
+.hot-item > svg {
+  flex-shrink: 0;
 }
 
 .hot-item:hover {
@@ -3821,14 +3826,18 @@ select.input {
 }
 
 .hot-item-label {
+  flex-shrink: 0;
   font-size: 0.9em;
+  white-space: nowrap;
 }
 
 .hot-item-hint {
+  min-width: 0;
   margin-left: auto;
   font-size: 0.75em;
+  line-height: 1.25;
   color: var(--text-faint);
-  white-space: nowrap;
+  text-align: right;
 }
 
 /* hover-menu hint rings on the canvas */
