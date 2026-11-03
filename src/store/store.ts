@@ -379,6 +379,21 @@ export function setPage(page: string): boolean {
 /* ------------------------------------------------------------------ */
 
 const HISTORY_LIMIT = 300;
+
+/**
+ * Set by agent/guard: why a local edit from `before` to `after` may not go
+ * ahead (it would change work an AI agent is still doing), or null. Checked by
+ * every local edit path; the agent's own changes come in through applyExternal.
+ */
+export const editGuard: { check?: (before: CircuitDoc, after: CircuitDoc) => string | null; notice?: (why: string) => void } = {};
+
+function guarded(before: CircuitDoc, after: CircuitDoc): boolean {
+  if (before === after || !editGuard.check) return false;
+  const why = editGuard.check(before, after);
+  if (why) editGuard.notice?.(why);
+  return !!why;
+}
+
 let gestureBase: CircuitDoc | null = null;
 let allowGestureMutate = false;
 
@@ -425,6 +440,7 @@ export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: strin
     if (selection) set({ selection });
     return true;
   }
+  if (guarded(s.doc, next)) return false;
   set({
     doc: next,
     past: gestureBase ? s.past : [...s.past.slice(-HISTORY_LIMIT), s.doc],
@@ -453,7 +469,9 @@ export function rebaseGesture() {
 export function gestureUpdate(recipe: (d: Draft<CircuitDoc>, base: CircuitDoc) => void) {
   if (!gestureBase || readOnly()) return;
   const base = gestureBase;
-  set({ doc: editPage(base, S().page, recipe) });
+  const next = editPage(base, S().page, recipe);
+  if (guarded(base, next)) return;
+  set({ doc: next });
 }
 
 /** Settles a committed gesture on the active page (see settleEdit). */
@@ -473,7 +491,13 @@ export function endGesture(commit = true) {
     set({ doc: base });
     return;
   }
-  if (s.doc !== base) set({ doc: settlePage(base, s.doc), past: [...s.past.slice(-HISTORY_LIMIT), base], future: [], dirty: true });
+  if (s.doc === base) return;
+  const settled = settlePage(base, s.doc);
+  if (guarded(base, settled)) {
+    set({ doc: base });
+    return;
+  }
+  set({ doc: settled, past: [...s.past.slice(-HISTORY_LIMIT), base], future: [], dirty: true });
 }
 
 export const inGesture = () => gestureBase !== null;
@@ -503,6 +527,7 @@ export function undo() {
   const s = S();
   if (!s.past.length || readOnly(s)) return;
   const prev = s.past[s.past.length - 1];
+  if (guarded(s.doc, prev)) return;
   set({ doc: prev, past: s.past.slice(0, -1), future: [s.doc, ...s.future], dirty: true, selection: s.selection.filter((id) => prev.items[id]), wirePart: null, scope: liveScope(s.scope, prev) });
   followChange(s.doc, prev);
 }
@@ -512,6 +537,7 @@ export function redo() {
   const s = S();
   if (!s.future.length || readOnly(s)) return;
   const next = s.future[0];
+  if (guarded(s.doc, next)) return;
   set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]), wirePart: null, scope: liveScope(s.scope, next) });
   followChange(s.doc, next);
 }

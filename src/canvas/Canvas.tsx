@@ -31,6 +31,7 @@ import { constrain45, packPoly, polyHit } from '../model/polygon';
 import { cubicAt, dragHandle, insertNode, isSmooth, minNodes, moveNode, nearestOnPath, pathD, pathNodes, pathSegs, setNodeKind, setPathNodes, type PathNode } from '../model/path';
 import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
+import { AgentPresence } from '../agent/AgentPresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
 import { HoverEdit } from '../ui/HoverEdit';
@@ -2876,6 +2877,7 @@ export function Canvas() {
             </g>
           )}
           <RemotePresence doc={doc} polys={data.polys} z={z} />
+          <AgentPresence doc={doc} z={z} />
         </g>
       </svg>
       {quickItem && quickBounds && !quickItem.locked && quickId && (

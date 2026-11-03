@@ -18,6 +18,7 @@ import { useExplain } from './store/explain';
 import { AskHost } from './ui/Ask';
 import { SvgImportHost } from './ui/SvgImportDialog';
 import { StatsPanel } from './ui/StatsPanel';
+import { AgentPanel } from './agent/AgentPanel';
 import { Tooltips } from './ui/Tooltips';
 import { usePanelWidth } from './ui/PanelResizer';
 import { EquationHost } from './ui/EquationZone';
@@ -130,6 +131,7 @@ export function App() {
           <ToolRail />
           <Canvas />
           <StatsPanel />
+          <AgentPanel />
           {showTimeline && <Timeline />}
           {!symbolMode && <PageBar />}
         </main>

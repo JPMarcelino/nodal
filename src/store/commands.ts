@@ -14,6 +14,8 @@ import { docPages, pageIndex } from '../model/pages';
 import { canvasActions } from './canvasActions';
 import { copyStyle, pasteStyle } from '../ui/StyleSection';
 import { PIN_SYMBOL, openSymbolEditor, saveSymbolEditor } from './symbolSession';
+import { setAgentLink } from '../agent/link';
+import { A as agentState } from '../agent/state';
 
 export interface Command {
   id: string;
@@ -53,6 +55,7 @@ export const COMMANDS: Command[] = [
   { id: 'file.exportArea', label: 'Export canvas area…', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
   { id: 'file.print', label: 'Print…', category: 'File', keys: ['Mod+P'], run: filePrint },
   { id: 'collab.share', label: 'Share & collaborate…', category: 'File', keys: ['Mod+Alt+S'], run: () => set({ dialog: 'share' }) },
+  { id: 'agent.link', label: 'AI agent link', category: 'File', keys: [], run: () => setAgentLink(!agentState().enabled), checked: () => agentState().enabled, keywords: 'ai agent mcp claude automation api bridge llm' },
   { id: 'collab.exportLib', label: 'Export my symbol library', category: 'File', keys: [], run: exportLibraryFile },
   { id: 'collab.exportTemplate', label: 'Export selection as a template', category: 'File', keys: [], run: () => exportTemplateFile(S().selection), when: hasSel },
 

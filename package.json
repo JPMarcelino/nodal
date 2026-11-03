@@ -13,7 +13,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "agent": "node agent-bridge/nodal-agent.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",
