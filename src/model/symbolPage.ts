@@ -194,10 +194,7 @@ export interface PageSymbol {
   origin: Point;
 }
 
-const floor10 = (v: number) => Math.floor(v / 10) * 10;
-const ceil10 = (v: number) => Math.max(10, Math.ceil(v / 10) * 10);
-
-/** The symbol's outline on the page: the drawing and every pin, out to the 10 px grid (null when the page is empty). */
+/** The symbol's outline on the page: the drawing and every pin, out to the grid (null when the page is empty). */
 export function symbolBox(doc: CircuitDoc): { x: number; y: number; w: number; h: number } | null {
   const s = pageToSymbol(doc);
   return s && { x: s.origin.x, y: s.origin.y, w: s.w, h: s.h };
@@ -228,9 +225,14 @@ export function pageToSymbol(doc: CircuitDoc): PageSymbol | null {
       ys.splice(-2, 2, drawing.origin.y + b.y0, drawing.origin.y + b.y1);
     }
   }
-  const origin = { x: floor10(Math.min(...xs)), y: floor10(Math.min(...ys)) };
-  const w = ceil10(Math.max(...xs) - origin.x);
-  const h = ceil10(Math.max(...ys) - origin.y);
+  // a part is placed (and snapped) by its centre, so the box is an even number of grid
+  // steps across: then the centre is a grid point and pins on the grid stay on it
+  const g = doc.settings.grid > 0 ? doc.settings.grid : 10;
+  const floorG = (v: number) => Math.floor(v / g) * g;
+  const ceil2G = (v: number) => Math.max(2 * g, Math.ceil(v / (2 * g)) * 2 * g);
+  const origin = { x: floorG(Math.min(...xs)), y: floorG(Math.min(...ys)) };
+  const w = ceil2G(Math.max(...xs) - origin.x);
+  const h = ceil2G(Math.max(...ys) - origin.y);
   const shift = drawing ? { x: drawing.origin.x - origin.x, y: drawing.origin.y - origin.y } : { x: 0, y: 0 };
   const prims = drawing ? drawing.prims.map((p) => movePrimBy(p, shift.x, shift.y)) : [];
   const seen = new Set<string>();
