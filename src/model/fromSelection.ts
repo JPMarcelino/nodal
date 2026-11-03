@@ -162,9 +162,9 @@ function stylePrim(p: Prim, s: ShapeItem): Prim {
     }
   }
   // no outline: drawn without a stroke
-  if (!stroked && 'fill' in out && out.fill !== 'none') {
+  if (!stroked) {
     if (out.t === 'rect') out.sw = 0;
-    else (out as { w?: number }).w = 0;
+    else if ('w' in out) (out as { w?: number }).w = 0;
   }
   // the default width follows the part's line width instead of being fixed
   if (out.t === 'rect' ? out.sw === 2 : 'w' in out && out.w === 2) {
