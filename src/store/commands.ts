@@ -52,6 +52,7 @@ export const COMMANDS: Command[] = [
   { id: 'file.copySvg', label: 'Copy selection as SVG', category: 'File', keys: ['Mod+Alt+C'], run: copyAsSvg },
   { id: 'file.copyPng', label: 'Copy selection as image (PNG)', category: 'File', keys: ['Mod+Alt+Shift+P'], run: copyAsPng },
   { id: 'file.exportSelection', label: 'Export selection…', category: 'File', keys: ['Mod+Alt+E'], run: () => exportSelection(), when: hasSel },
+  { id: 'file.exportAllPages', label: 'Export all pages…', category: 'File', keys: [], run: () => openExport({ allPages: true }), when: () => docPages(S().doc).length > 1, keywords: 'png svg dxf zip every pages sheets images' },
   { id: 'file.exportArea', label: 'Export canvas area…', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
   { id: 'file.print', label: 'Print…', category: 'File', keys: ['Mod+P'], run: filePrint },
   { id: 'collab.share', label: 'Share & collaborate…', category: 'File', keys: ['Mod+Alt+S'], run: () => set({ dialog: 'share' }) },
@@ -281,7 +282,7 @@ for (const c of COMMANDS) {
  * While the symbol editor page stands in for the circuit, Save saves the
  * symbol, and commands about the circuit's file or pages wait until it closes.
  */
-const SYMBOL_PAGE_OK = new Set(['file.import', 'file.export', 'file.print', 'file.copyPng', 'file.copySvg', 'file.exportSelection', 'file.exportArea']);
+const SYMBOL_PAGE_OK = new Set(['file.import', 'file.export', 'file.print', 'file.copyPng', 'file.copySvg', 'file.exportSelection', 'file.exportArea', 'file.exportAllPages']);
 for (const c of COMMANDS) {
   const run = c.run;
   if (c.id === 'wire.highlightNet') {

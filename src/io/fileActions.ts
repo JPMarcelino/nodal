@@ -1,7 +1,7 @@
 import { itemBounds, normalizeDoc, safeColour, uid } from '../model/doc';
 import { rectsIntersect } from '../model/geometry';
 import { prepareMath } from '../model/latex';
-import { normalizePages, pagesWithItems } from '../model/pages';
+import { docPages, normalizePages, pagesWithItems, viewDoc } from '../model/pages';
 import { sampleDoc } from '../model/sample';
 import { toBomCsv, toKicadNetlist, toSpiceNetlist } from '../model/netlist';
 import type { CircuitDoc, Rect } from '../model/types';
@@ -15,6 +15,7 @@ import { extractFragment } from '../model/ops';
 import { isDesktop, nodalFileFormat, openAnyFile, parseJsonText, sanitizeName, saveFile, type NodalFileFormat } from './files';
 import { importFileText } from './importFiles';
 import { pngWithScene, sceneFromFile, sceneJson, svgWithScene } from './embeddedScene';
+import { uniqueNames, zipFiles } from './zip';
 import { ask } from '../ui/Ask';
 import { saveVersion } from './versionStore';
 
@@ -318,6 +319,59 @@ export async function doExport(kind: ExportKind, opts: Partial<SvgOptions> & { s
         break;
     }
     if (res !== false) toast(`Exported ${part ? 'selection as ' : ''}${kind === 'bom' ? 'BOM' : kind.toUpperCase()}`, 'success');
+  } catch (e) {
+    toast(`Export failed: ${(e as Error).message}`, 'error');
+  }
+}
+
+/** True when a page view has something an export would draw (its items, or its drawing frame). */
+export function pageHasContent(view: CircuitDoc): boolean {
+  return !!view.settings.titleBlock || Object.values(view.items).some((it) => !it.hidden);
+}
+
+/** The pages of the open circuit an all-pages export covers, in tab order: every page with something on it. */
+export function exportablePages(doc: CircuitDoc = S().doc): { id: string; name: string; view: CircuitDoc }[] {
+  return docPages(doc)
+    .map((p) => ({ id: p.id, name: p.name, view: viewDoc(doc, p.id) }))
+    .filter((p) => pageHasContent(p.view));
+}
+
+/**
+ * Exports every page as its own picture (or DXF), packed into one .zip named
+ * after the circuit; files are numbered in page order so they sort the way the
+ * tabs do. A circuit with a single page to export saves that file directly.
+ */
+export async function exportAllPages(kind: 'png' | 'svg' | 'dxf', opts: { theme?: 'light' | 'dark'; background?: boolean; scale?: number; scene?: boolean } = {}) {
+  const full = S().doc;
+  const pages = exportablePages(full);
+  if (!pages.length) return toast('Nothing to export: every page is empty', 'info');
+  const img = imageExportOptions();
+  const look: SvgOptions & { scale: number } = { theme: opts.theme ?? img.theme, background: opts.background ?? img.background, padding: 20, scale: opts.scale ?? img.scale };
+  const withScene = opts.scene ?? img.scene;
+  const filter = { png: { name: 'PNG image', extensions: ['png'] }, svg: { name: 'SVG image', extensions: ['svg'] }, dxf: { name: 'AutoCAD DXF', extensions: ['dxf'] } }[kind];
+  try {
+    await prepareMath(full);
+    const files: { name: string; data: Uint8Array }[] = [];
+    const enc = new TextEncoder();
+    const width = String(pages.length).length;
+    for (const [i, p] of pages.entries()) {
+      let data: string | Blob;
+      if (kind === 'dxf') data = exportDxf(p.view);
+      else data = await imageFile(kind, p.view, look, withScene ? sceneJson(pagesWithItems(p.view)) : null);
+      const bytes = typeof data === 'string' ? enc.encode(data) : new Uint8Array(await data.arrayBuffer());
+      const label = sanitizeName(p.name.trim() || `Page ${i + 1}`);
+      files.push({ name: `${String(i + 1).padStart(width, '0')} ${label}.${kind}`, data: bytes });
+    }
+    const label = kind.toUpperCase();
+    if (files.length === 1) {
+      const res = await saveFile(new Blob([files[0].data as BlobPart], { type: kind === 'png' ? 'image/png' : kind === 'svg' ? 'image/svg+xml' : 'text/plain' }), `${sanitizeName(full.name)}.${kind}`, [filter]);
+      if (res !== false) toast(`Exported ${label}`, 'success');
+      return;
+    }
+    const names = uniqueNames(files.map((f) => f.name));
+    const zip = zipFiles(files.map((f, i) => ({ name: names[i], data: f.data })));
+    const res = await saveFile(zip, `${sanitizeName(full.name)} (${label}, ${files.length} pages).zip`, [{ name: 'ZIP archive', extensions: ['zip'] }]);
+    if (res !== false) toast(`Exported ${files.length} pages as ${label} (zip)`, 'success');
   } catch (e) {
     toast(`Export failed: ${(e as Error).message}`, 'error');
   }
