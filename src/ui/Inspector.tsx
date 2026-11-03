@@ -381,9 +381,9 @@ function DocumentPanel() {
         </Field>
       </Section>
       <SheetSection />
-      <Section title="Canvas" defaultOpen={false} summary={`${settings.grid}px grid${settings.snap ? ' · snap' : ''}`}>
+      <Section title="Canvas" defaultOpen={false} summary={`${+settings.grid.toFixed(4)}px grid${settings.snap ? ' · snap' : ''}`}>
         <Field label="Grid">
-          <NumberInput value={settings.grid} min={2} max={100} suffix="px" onChange={(v) => upd((s) => (s.grid = v))} />
+          <NumberInput value={settings.grid} min={0.01} max={100} suffix="px" onChange={(v) => upd((s) => (s.grid = v))} />
         </Field>
         <Field label="Show grid">
           <Toggle checked={settings.showGrid} onChange={(v) => upd((s) => (s.showGrid = v))} />
