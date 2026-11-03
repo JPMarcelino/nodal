@@ -28,6 +28,11 @@ fi
 
 git -C "$out" rm -rqf --ignore-unmatch .
 cp -r dist/. "$out"/
+# the KiCad symbol library (built once; rebuilt when the converter changes)
+if [ ! -f kicad-library/index.json ] || [ -n "$(find src/io/kicadSymbols.ts src/model/kicadLibrary.ts scripts/build-kicad-library.ts -newer kicad-library/index.json)" ]; then
+  npx vite-node scripts/build-kicad-library.ts
+fi
+cp -r kicad-library "$out"/kicad
 touch "$out"/.nojekyll
 git -C "$out" add -A
 if git -C "$out" diff --cached --quiet; then

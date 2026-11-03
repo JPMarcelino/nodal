@@ -4,7 +4,8 @@ import { previewGridFit, snapDrawing } from '../model/gridFit';
 import { docPages, pageItemIds, viewDoc } from '../model/pages';
 import { insertSvgDrawing, type SvgImportOptions } from '../model/svgDrawing';
 import type { CircuitDoc, Point, Rect } from '../model/types';
-import { S, mutate, readOnly, readOnlyNotice, toast } from '../store/store';
+import { S, mergeUserSymbols, mutate, readOnly, readOnlyNotice, toast } from '../store/store';
+import { kicadToSymbols } from './kicadSymbols';
 import { askSvgImport } from '../ui/SvgImportDialog';
 import { openAnyFile, parseJsonText } from './files';
 import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from './imageImport';
@@ -83,7 +84,7 @@ function scenePageHint(name: string, text: string): string | undefined {
 
 /** Everything "Import file…" and drag & drop understand. */
 export const IMPORT_FILTER = [
-  { name: 'Nodal files, SVG, PDF and images', extensions: ['nodal', 'json', 'svg', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'] },
+  { name: 'Nodal files, KiCad symbols, SVG, PDF and images', extensions: ['nodal', 'json', 'kicad_sym', 'svg', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'] },
 ];
 
 export const viewCentre = (): Point => {
@@ -107,6 +108,17 @@ export async function importFileText(name: string, text: string, at?: Point, svg
       toast(`Inserted ${ids.length} item${ids.length === 1 ? '' : 's'} copied from Nodal`, 'success');
       return;
     }
+    // a KiCad symbol library: its parts join My symbols
+    if (/\.kicad_sym$/i.test(name) || trimmed.startsWith('(kicad_symbol_lib')) {
+      const lib = baseName(name.replace(/\.kicad_sym$/i, ''));
+      const defs = kicadToSymbols(text, lib, 'My symbols').map((d) => ({ ...d, custom: true }));
+      if (!defs.length) throw new Error('This KiCad file has no symbols');
+      const fresh = Object.fromEntries(defs.filter((d) => !S().userLibrary[d.id]).map((d) => [d.id, d]));
+      const n = Object.values(fresh).filter((d) => !d.variantOf).length;
+      if (n) mergeUserSymbols(fresh);
+      toast(n ? `Added ${n} KiCad symbol${n > 1 ? 's' : ''} from “${lib}” to My symbols` : 'These KiCad symbols are already in My symbols', n ? 'success' : 'info');
+      return;
+    }
     // an SVG exported with its circuit inside is that circuit, not a drawing
     const embedded = sceneFromSvgText(text);
     if (!embedded && (/\.svg$/i.test(name) || (trimmed.startsWith('<') && /<svg[\s>]/i.test(text)))) {
@@ -121,7 +133,7 @@ export async function importFileText(name: string, text: string, at?: Point, svg
     try {
       data = parseJsonText(embedded ?? text);
     } catch {
-      throw new Error('Nodal can import circuits (.nodal), symbol libraries, templates, SVG, PDF and images');
+      throw new Error('Nodal can import circuits (.nodal), symbol libraries (Nodal or KiCad), templates, SVG, PDF and images');
     }
     switch (data?.format) {
       case 'nodal': {

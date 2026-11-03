@@ -919,6 +919,44 @@ body.is-resizing-panel .stage {
   letter-spacing: 0;
 }
 
+/* KiCad library: groups, then libraries inside them */
+.kicad-body,
+.kicad-group > .kicad-lib {
+  padding-left: 10px;
+}
+
+.lib-cat-head.sub {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  padding-top: 5px;
+  padding-bottom: 4px;
+}
+
+.kicad-credit {
+  font-size: 0.85em;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.kicad-credit:hover {
+  color: var(--text-dim);
+  text-decoration: underline;
+}
+
+.lib-cat-head .kicad-credit {
+  margin-right: 4px;
+}
+
+.kicad-more {
+  display: block;
+  margin: 0 auto 8px;
+}
+
 .tiles {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));

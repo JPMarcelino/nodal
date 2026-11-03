@@ -33,9 +33,34 @@ function agentBridge(): Plugin {
   };
 }
 
+/**
+ * The KiCad symbol library (built into kicad-library/ by
+ * scripts/build-kicad-library.ts) at ./kicad/ while developing; the deploy
+ * script copies it next to the built app.
+ */
+function kicadLibrary(): Plugin {
+  const root = new URL('./kicad-library/', import.meta.url);
+  return {
+    name: 'nodal-kicad-library',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const m = /\/kicad\/([\w./+-]+\.(?:json|md))$/.exec(decodeURIComponent(req.url?.split('?')[0] ?? ''));
+        if (!m || m[1].includes('..')) return next();
+        try {
+          const body = readFileSync(new URL(m[1], root));
+          res.setHeader('content-type', m[1].endsWith('.md') ? 'text/markdown; charset=utf-8' : 'application/json');
+          res.end(body);
+        } catch {
+          next();
+        }
+      });
+    },
+  };
+}
+
 // BASE_PATH is set by the GitHub Pages workflow; desktop builds use relative paths.
 export default defineConfig({
-  plugins: [react(), agentBridge()],
+  plugins: [react(), agentBridge(), kicadLibrary()],
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   base: process.env.BASE_PATH ?? './',
   clearScreen: false,
