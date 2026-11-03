@@ -25,6 +25,8 @@ export interface ExportAreaJob {
 export interface ExportScope {
   ids?: string[];
   clip?: Rect;
+  /** The Export dialog opens on "All pages" (a picture of every page, in one .zip). */
+  allPages?: boolean;
 }
 
 export interface Placing {
@@ -86,6 +88,8 @@ export interface Prefs {
   exportScene?: boolean;
   /** Theme of every image export (unset = the app's theme). */
   exportTheme?: 'light' | 'dark';
+  /** The drawing format the Export dialog has picked (unset = PNG). */
+  exportFormat?: 'png' | 'svg' | 'dxf';
   /** Tool lock: placing a part keeps the part armed instead of returning to Select. */
   toolLock: boolean;
   /** The quiet hint line at the bottom of the canvas: the next useful action for the tool in hand. */
