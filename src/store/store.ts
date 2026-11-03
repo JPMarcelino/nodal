@@ -746,8 +746,12 @@ if (typeof window !== 'undefined') {
   // leaving with changes that exist nowhere else (autosave off, or not yet saved to the open file)
   window.addEventListener('beforeunload', (e) => {
     const s = S();
-    if (s.symbolSession) return;
-    if (!s.dirty || !Object.keys(s.doc.items).length || (s.prefs.autosave && !s.filePath && !autosaveFailed)) return;
+    // the symbol editor page keeps its own draft, but the circuit set aside behind it (and work
+    // that is not drafted, a symbol made from the selection) still needs the warning
+    const sym = s.symbolSession;
+    const dirty = sym ? sym.stash.dirty || (!!sym.seedIds && s.dirty) : s.dirty;
+    const doc = sharedDoc(s);
+    if (!dirty || !Object.keys(doc.items).length || (s.prefs.autosave && !s.filePath && !autosaveFailed)) return;
     e.preventDefault();
     e.returnValue = '';
   });

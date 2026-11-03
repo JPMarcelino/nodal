@@ -152,7 +152,9 @@ export function primsToShapes(doc: CircuitDoc, prims: Prim[]): ShapeItem[] {
           const c = curved[i];
           const closed = c ? c.closed : f.closed;
           const nodes = c ? c.nodes : closed ? closeLoop(nodesOf(f.pts)) : nodesOf(f.pts);
-          if (nodes.length < (closed ? 3 : 2)) return;
+          // a closed outline needs three corners, or two curved stretches (a lens closed on itself)
+          const fewest = closed && !nodes.some((n) => n.in || n.out) ? 3 : 2;
+          if (nodes.length < fewest) return;
           add('polygon', p, closed ? packPath(nodes) : { ...packPath(nodes, true), fill: 'none', fillOpacity: 0 });
         });
         break;
