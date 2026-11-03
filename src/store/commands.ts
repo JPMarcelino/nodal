@@ -369,7 +369,12 @@ function focusMode() {
 
 function focusSearch() {
   set({ leftPanel: true, leftTab: 'library' });
-  setTimeout(() => (document.getElementById('library-search') as HTMLInputElement | null)?.focus(), 30);
+  // the old query is selected, so typing starts a new search
+  setTimeout(() => {
+    const el = document.getElementById('library-search') as HTMLInputElement | null;
+    el?.focus();
+    el?.select();
+  }, 30);
 }
 
 /** Renames the selected group (or the one being edited) in place on the canvas. */
