@@ -1,0 +1,1 @@
+[{"prims":[{"t":"line","pts":[20,0,20,10]},{"t":"line","pts":[20,60,20,50]},{"t":"text","x":6,"y":49.5,"size":10,"anchor":"middle","text":"U"},{"t":"line","pts":[5,10,5,20,35,40]},{"t":"rect","x":12,"y":10,"w":16,"h":40,"fill":"none"}],"ports":[{"id":"1","name":"1","x":20,"y":0,"side":"top"},{"id":"2","name":"2","x":20,"y":60,"side":"bottom"}],"w":40,"h":60}]

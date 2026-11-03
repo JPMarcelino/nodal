@@ -1,0 +1,1 @@
+[{"prims":[{"t":"line","pts":[10,40,10,20]},{"t":"circle","cx":10,"cy":14,"r":6,"fill":"none"}],"ports":[{"id":"1","name":"1","x":10,"y":40,"side":"bottom"}],"w":20,"h":40}]
