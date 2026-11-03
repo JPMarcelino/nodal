@@ -82,7 +82,7 @@ export function HotSpotMenu({
           <Sub>Top wire hops over the ones below · drag to reorder</Sub>
           <OrderList doc={doc} data={data} wires={stack.map((s) => s.wire)} names={dedupe(stack.map((s) => netName(s.wire)))} onHold={onHold} />
           <Actions>
-            <Item icon={<CircleDot size={14} />} label="Solder here" hint="join into one net" onClick={() => run((d) => applySolder(d, spot, data), `Soldered ${stack.length} wires`, true)} />
+            <Item icon={<CircleDot size={14} />} label="Solder here" hint="join into one net" onClick={() => run((d) => applySolder(d, spot, data), stack.length > 1 ? `Soldered ${stack.length} wires` : 'Soldered', true)} />
           </Actions>
         </>
       );
@@ -253,7 +253,7 @@ function DotEditor({ doc, id }: { doc: CircuitDoc; id: string }) {
 /** The spot can vanish while the menu is open (wire moved, deleted, soldered…). */
 function spotStillValid(spot: HotSpot, doc: CircuitDoc, data: SceneData): boolean {  switch (spot.kind) {
     case 'crossing':
-      return crossingStack(data.crossings, spot.pt, 1).length >= 2;
+      return data.crossings.some((c) => Math.hypot(c.pt.x - spot.pt.x, c.pt.y - spot.pt.y) <= 1);
     case 'junction':
       return !!doc.items[spot.id];
     case 'pinTouch':

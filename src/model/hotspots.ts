@@ -50,7 +50,7 @@ export function computeHotSpots(doc: CircuitDoc, polys: Map<string, Point[]>, cr
       const ep = w[end];
       if (ep.kind !== 'free') continue;
       const pt = { x: ep.x, y: ep.y };
-      const target = touchTarget(ix, w.id, pt);
+      const target = touchTarget(ix, w.id, end, pt);
       if (!target) {
         out.push({ kind: 'end', pt, wire: w.id, end });
         continue;
@@ -157,12 +157,14 @@ function wireThroughPoint(doc: CircuitDoc, ix: DocIndex, pt: Point, comp: string
   return null;
 }
 
-function touchTarget(ix: DocIndex, self: string, pt: Point): TouchTarget | null {
+/** What the loose end `self.end` at `pt` rests on; a wire looping back onto its own route counts too. */
+function touchTarget(ix: DocIndex, self: string, end: 'a' | 'b', pt: Point): TouchTarget | null {
   for (const p of ix.ports.near(pt)) if (eq(p.pt, pt)) return { kind: 'port', comp: p.comp, port: p.port };
   for (const j of ix.junctions.near(pt)) if (eq(j.pt, pt)) return { kind: 'junction', id: j.id };
-  for (const e of ix.ends.near(pt)) if (e.wire !== self && eq(e.pt, pt)) return { kind: 'end', wire: e.wire, end: e.end };
+  for (const e of ix.ends.near(pt)) if ((e.wire !== self || e.end !== end) && eq(e.pt, pt)) return { kind: 'end', wire: e.wire, end: e.end };
   for (const s of ix.segs.near(pt)) {
-    if (s.wire === self) continue;
+    // the end's own segment starts or stops right here
+    if (s.wire === self && (eq(s.a, pt) || eq(s.b, pt))) continue;
     if (projectOnSegment(pt, s.a, s.b).d < 0.5) return { kind: 'wire', wire: s.wire, seg: s.i };
   }
   return null;
