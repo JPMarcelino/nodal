@@ -165,27 +165,79 @@ export function attachSpots(doc: Pick<CircuitDoc, 'items' | 'symbols'>, it: Item
 
 export interface GlueHit {
   attach: Attach;
-  /** Where the end lands (a spot, or the pointer for a floating end). */
+  /** Where the end lands (a spot, a point on the edge, or the pointer for a floating end). */
   pt: Point;
 }
+
+/** Nearest point to `p` on segment a–b. */
+function onSegment(p: Point, a: Point, b: Point): Point {
+  const ex = b.x - a.x;
+  const ey = b.y - a.y;
+  const l2 = ex * ex + ey * ey;
+  const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * ex + (p.y - a.y) * ey) / l2)) : 0;
+  return { x: a.x + t * ex, y: a.y + t * ey };
+}
+
+/**
+ * The point of a target's outline nearest to local point `l`, in local
+ * coordinates. Works in the box's own scale (local times half-size), so the
+ * nearest is nearest in the world too.
+ */
+export function nearestOnOutline(f: TargetFrame, l: Point): Point {
+  const su = Math.max(Math.hypot(f.u.x, f.u.y), 1e-9);
+  const sv = Math.max(Math.hypot(f.v.x, f.v.y), 1e-9);
+  const P = { x: l.x * su, y: l.y * sv };
+  let q: Point;
+  if (f.outline === 'rect') {
+    const inside = Math.abs(P.x) <= su && Math.abs(P.y) <= sv;
+    if (!inside) q = { x: Math.max(-su, Math.min(su, P.x)), y: Math.max(-sv, Math.min(sv, P.y)) };
+    // from inside: straight out to the closer side
+    else if (su - Math.abs(P.x) <= sv - Math.abs(P.y)) q = { x: Math.sign(P.x || 1) * su, y: P.y };
+    else q = { x: P.x, y: Math.sign(P.y || 1) * sv };
+  } else if (f.outline === 'ellipse') {
+    // the point straight out from the centre: close enough to the nearest for a glue point
+    const d = Math.hypot(l.x, l.y) > 1e-9 ? l : { x: 1, y: 0 };
+    const t = rayHit(f, d);
+    q = { x: d.x * t * su, y: d.y * t * sv };
+  } else {
+    const pts = f.outline.map((o) => ({ x: o.x * su, y: o.y * sv }));
+    q = pts[0];
+    let best = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const c = onSegment(P, pts[i], pts[(i + 1) % pts.length]);
+      const d = Math.hypot(c.x - P.x, c.y - P.y);
+      if (d < best) {
+        best = d;
+        q = c;
+      }
+    }
+  }
+  return { x: q.x / su, y: q.y / sv };
+}
+
+/** How much nearer than `tol` the pointer has to be for a connection point to win over the plain edge. */
+export const SPOT_PULL = 0.6;
 
 /**
  * What an end dropped at `p` glues to: the frontmost attachable item under it
  * (`tol` around its outline counts; areas only take ends along their edge).
- * Within `tol` of a connection point it is pinned there; elsewhere inside it
- * floats. `exclude` skips the connector itself.
+ * Close to a connection point (`SPOT_PULL` of `tol`) it is pinned there;
+ * within `tol` of the edge it is pinned to that exact spot of the edge, so
+ * small moves slide it along rather than jumping between points; further
+ * inside it floats. `exclude` skips the connector itself.
  */
 export function findGlue(doc: CircuitDoc, p: Point, tol: number, exclude?: string): GlueHit | null {
   const rank = drawOrderCached(doc);
   const cands = Object.values(doc.items)
     .filter((it) => it.id !== exclude && !it.hidden && canAttach(it))
     .sort((a, b) => rank.get(b.id)! - rank.get(a.id)!);
-  // a connection point near the pointer wins, on whatever item it is
+  // a connection point right by the pointer wins, on whatever item it is
+  const pull = tol * SPOT_PULL;
   let spot: { id: string; s: AttachSpot; d: number } | null = null;
   for (const it of cands) {
     for (const s of attachSpots(doc, it)) {
       const d = dist(s.pt, p);
-      if (d <= tol && (!spot || d < spot.d)) spot = { id: it.id, s, d };
+      if (d <= pull && (!spot || d < spot.d)) spot = { id: it.id, s, d };
     }
   }
   if (spot) return { attach: { id: spot.id, fx: spot.s.fx, fy: spot.s.fy }, pt: spot.s.pt };
@@ -194,6 +246,14 @@ export function findGlue(doc: CircuitDoc, p: Point, tol: number, exclude?: strin
     const l = toLocal(f, p);
     const pa = tol / Math.max(Math.hypot(f.u.x, f.u.y), 1e-9);
     const pb = tol / Math.max(Math.hypot(f.v.x, f.v.y), 1e-9);
+    const e = nearestOnOutline(f, l);
+    const ePt = fromLocal(f, e.x, e.y);
+    // anywhere along the edge: pinned to that very spot of it
+    if (dist(ePt, p) <= tol) {
+      const fx = Math.round(((e.x + 1) / 2) * 1e4) / 1e4;
+      const fy = Math.round(((e.y + 1) / 2) * 1e4) / 1e4;
+      return { attach: { id: it.id, fx, fy }, pt: fromLocal(f, 2 * fx - 1, 2 * fy - 1) };
+    }
     const inside =
       f.outline === 'rect'
         ? Math.abs(l.x) <= 1 + pa && Math.abs(l.y) <= 1 + pb
@@ -202,7 +262,7 @@ export function findGlue(doc: CircuitDoc, p: Point, tol: number, exclude?: strin
           : pointInPolygon(l, f.outline);
     // areas (zones, containers, pictures) hold things: only their edge takes an end, not their inside
     const area = it.type === 'shape' && (it.kind === 'zone' || it.kind === 'image' || !!it.container);
-    if (inside && area && Math.abs(l.x) < 1 - pa && Math.abs(l.y) < 1 - pb) continue;
+    if (inside && area) continue;
     if (inside) return { attach: { id: it.id }, pt: p };
   }
   return null;

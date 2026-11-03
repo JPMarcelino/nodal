@@ -5863,6 +5863,15 @@ body.is-presenting .group-crumbs {
   fill: none;
   pointer-events: none;
 }
+.space-guide.echo {
+  opacity: 0.55;
+}
+.space-guide-label {
+  fill: #e5489b;
+  font-family: var(--font-mono, monospace);
+  pointer-events: none;
+  user-select: none;
+}
 
 /* ==================================================================== */
 /* Version history                                                       */

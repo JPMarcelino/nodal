@@ -2842,7 +2842,18 @@ export function Canvas() {
                   sg.axis === 'x'
                     ? `M${gp.from} ${at}H${gp.to}M${gp.from} ${at - t}v${2 * t}M${gp.to} ${at - t}v${2 * t}`
                     : `M${at} ${gp.from}V${gp.to}M${at - t} ${gp.from}h${2 * t}M${at - t} ${gp.to}h${2 * t}`;
-                return <path key={`s${sg.axis}${n}`} d={d} className="space-guide" strokeWidth={1.25 / z} />;
+                // the gaps beside the moving box carry their size; matching gaps elsewhere are marked more lightly
+                const mx = (gp.from + gp.to) / 2;
+                return (
+                  <g key={`s${sg.axis}${n}`}>
+                    <path d={d} className={gp.own ? 'space-guide' : 'space-guide echo'} strokeWidth={1.25 / z} />
+                    {gp.own && (
+                      <text x={sg.axis === 'x' ? mx : at + 4 / z} y={sg.axis === 'x' ? at + 12 / z : mx} className="space-guide-label" fontSize={10 / z} textAnchor={sg.axis === 'x' ? 'middle' : 'start'} dominantBaseline={sg.axis === 'x' ? 'auto' : 'middle'}>
+                        {Math.round(sg.gap * 10) / 10}
+                      </text>
+                    )}
+                  </g>
+                );
               }),
             )}
           {g?.kind === 'wire' && (() => {
@@ -3072,13 +3083,17 @@ function GlueMarkers({ doc, glue, z }: { doc: CircuitDoc; glue: GlueHit; z: numb
   const turned = it.type === 'shape' && shapeRot(it) ? it : null;
   const b = turned ? shapeBox(turned) : itemBounds(doc, it);
   const a = glue.attach;
+  const spots = attachSpots(doc, it);
+  const onSpot = (s: { fx: number; fy: number }) => isFixed(a) && Math.abs(s.fx - a.fx!) < 1e-3 && Math.abs(s.fy - a.fy!) < 1e-3;
   return (
     <g pointerEvents="none">
       {b && <rect x={b.x - 3} y={b.y - 3} width={b.w + 6} height={b.h + 6} rx={4} className="glue-outline" strokeWidth={1.5 / z} transform={turned ? shapeTransform(turned) : undefined} />}
-      {attachSpots(doc, it).map((s, i) => {
-        const on = isFixed(a) && Math.abs(s.fx - a.fx!) < 1e-3 && Math.abs(s.fy - a.fy!) < 1e-3;
+      {spots.map((s, i) => {
+        const on = onSpot(s);
         return <circle key={i} cx={s.pt.x} cy={s.pt.y} r={(on ? 4.5 : 3) / z} className={on ? 'glue-spot active' : 'glue-spot'} strokeWidth={1.2 / z} />;
       })}
+      {/* pinned somewhere along the edge, between the offered points */}
+      {isFixed(a) && !spots.some(onSpot) && <circle cx={glue.pt.x} cy={glue.pt.y} r={4 / z} className="glue-spot active" strokeWidth={1.2 / z} />}
     </g>
   );
 }
