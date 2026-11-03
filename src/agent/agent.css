@@ -123,6 +123,28 @@
   user-select: all;
 }
 
+.agent-steps {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.agent-steps li + li {
+  margin-top: 4px;
+}
+
+.agent-steps a {
+  color: var(--agent);
+  font-weight: 600;
+}
+
+.agent-copy {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
 .agent-url {
   display: flex;
   align-items: center;

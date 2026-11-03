@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, ChevronDown, ChevronUp, Eye, Lock, Undo2, X } from 'lucide-react';
+import { Bot, ChevronDown, ChevronUp, Copy, Eye, Lock, Undo2, X } from 'lucide-react';
 import { docPages, resolvePage } from '../model/pages';
-import { goToItems, select, setPage, sharedDoc, useStore } from '../store/store';
+import { goToItems, select, setPage, sharedDoc, toast, useStore } from '../store/store';
 import { revealItems } from '../store/actions';
 import { answerQuestion } from './api';
 import { releaseAgent, setAgentLink } from './link';
 import { DEFAULT_AGENT_URL, setAgent, useAgent, type AgentLogEntry, type GuardMode } from './state';
 import { runCall } from './run';
+import { agentSetupPrompt, bridgeFileUrl, setupSteps } from './setup';
 import './agent.css';
 
 const GUARDS: { value: GuardMode; label: string; title: string }[] = [
@@ -50,6 +51,7 @@ export function AgentPanel() {
   const working = a.status === 'working';
   const state = !a.connected ? (a.enabled ? 'waiting' : 'off') : working ? 'working' : a.status === 'done' ? 'done' : 'idle';
   const stateLabel = { off: 'Link off', waiting: 'Waiting for the bridge', idle: a.clients ? 'Agent connected' : 'Bridge ready', working: 'Working', done: 'Done' }[state];
+  const steps = setupSteps();
   const shared = sharedDoc();
   const agentPage = a.page && resolvePage(shared, a.page);
   const cursorPage = a.cursor?.page ?? agentPage;
@@ -94,11 +96,33 @@ export function AgentPanel() {
         <div className="agent-body">
           {!a.connected && (
             <div className="agent-setup">
-              <p>
-                Start the bridge on this computer, then point your agent at it:
-                <code>node agent-bridge/nodal-agent.mjs</code>
-                MCP (Claude Code and others): <code>claude mcp add nodal -- node &lt;nodal&gt;/agent-bridge/nodal-agent.mjs mcp</code>
-              </p>
+              <p>Agents reach Nodal through a small bridge program on this computer (Node.js 18+).</p>
+              <ol className="agent-steps">
+                <li>
+                  <a href={bridgeFileUrl()} download="nodal-agent.mjs">
+                    Download the bridge
+                  </a>{' '}
+                  or: <code>{steps.download}</code>
+                </li>
+                <li>
+                  Run it and leave it running: <code>{steps.runForeground}</code>
+                </li>
+                <li>
+                  Your agent calls it from the command line, over HTTP, or as an MCP server: <code>{steps.mcp}</code>
+                </li>
+              </ol>
+              <button
+                className="agent-btn primary agent-copy"
+                title="Instructions an AI agent (ChatGPT, Codex, Claude…) can follow to download the bridge, start it and connect"
+                onClick={() =>
+                  void navigator.clipboard
+                    .writeText(agentSetupPrompt())
+                    .then(() => toast('Copied — paste it to your AI agent', 'success'))
+                    .catch(() => toast('Couldn’t copy to the clipboard', 'error'))
+                }
+              >
+                <Copy size={13} /> Copy setup for your AI agent
+              </button>
               <label className="agent-url">
                 Bridge
                 <input value={url} onChange={(e) => setUrl(e.target.value)} onBlur={() => url !== a.url && setAgentLink(true, url || DEFAULT_AGENT_URL)} spellCheck={false} />

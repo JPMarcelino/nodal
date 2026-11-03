@@ -4,7 +4,7 @@
  *
  *   node nodal-agent.mjs [serve]          run the bridge (HTTP + the app's WebSocket) on 127.0.0.1:47821
  *   node nodal-agent.mjs mcp              MCP server over stdio (starts the bridge too, or uses a running one)
- *   node nodal-agent.mjs call <method> [json-params]
+ *   node nodal-agent.mjs call <method> [json-params | @file.json | -]
  *   node nodal-agent.mjs methods          list every method
  *   node nodal-agent.mjs events           stream the activity feed
  *   node nodal-agent.mjs token            print the HTTP token
@@ -68,7 +68,9 @@ function loadCatalog() {
   }
   return { version: 0, guide: '', methods: [] };
 }
-let catalog = loadCatalog();
+/** The catalog baked in by the web app's build (the downloadable single-file bridge); null in the repo. */
+const EMBEDDED_CATALOG = null;
+let catalog = EMBEDDED_CATALOG ?? loadCatalog();
 
 /** "number — what it is" → JSON schema. Types: string, number, integer, boolean, object, any, T[], or a|b|c. */
 export function paramSchema(spec) {
@@ -571,8 +573,10 @@ async function main() {
       return runMcp();
     case 'call': {
       const [method, raw] = rest;
-      if (!method) throw new Error('usage: nodal-agent call <method> [json-params]');
-      const params = raw ? JSON.parse(raw) : {};
+      if (!method) throw new Error('usage: nodal-agent call <method> [json-params | @file.json | -]');
+      // params inline, from a file, or from stdin ("-"): shells such as PowerShell mangle quotes in inline JSON
+      const text = raw === '-' ? readFileSync(0, 'utf8') : raw?.startsWith('@') ? readFileSync(raw.slice(1), 'utf8') : raw;
+      const params = text ? JSON.parse(text) : {};
       const b = await connectBridge();
       const res = await b.call(method, params);
       process.stdout.write(`${JSON.stringify(res, null, 2)}\n`);

@@ -155,6 +155,7 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
   ```bash
   claude mcp add nodal -- node /path/to/nodal/agent-bridge/nodal-agent.mjs mcp
   ```
+- **No setup beyond Node.js:** the agent panel links to the bridge as a single file (`nodal-agent.mjs`, served by the app itself) and shows the commands to run it. *Copy setup for your AI agent* copies instructions that ChatGPT/Codex, Claude or any agent with a shell can follow to download the bridge, start it and connect.
 - **You see what it does:** the agent has its own cursor with its name and messages. Each change is briefly outlined. The agent panel shows its goal, progress and every step as it happens; click a step to select what it touched. With *Follow* on, your view keeps the agent's drawing in frame.
 - **It works on its own:** the agent never uses your selection, tool, page or view, and its edits stay off your undo history (it has its own undo). You can keep working, even on another page.
 - **Guard:** while the agent is working, *Protect* keeps your own edits off what it made (*Its work*), off the whole circuit (*Everything*), or not at all (*Off*). It lifts when the agent says it is done, or when you press *Mark done*.
