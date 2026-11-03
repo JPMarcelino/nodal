@@ -65,6 +65,23 @@ describe('spaceMove', () => {
     expect(spaceMove(box(98), [box(0), box(50)], 0, 0, 6, true, { x: true }).dx).toBe(0);
   });
 
+  it('matches a gap from anywhere, and marks every pair spaced the same', () => {
+    // a row elsewhere (y 200) is spaced 40 apart; beside the lone box at 0, x = 60 matches it
+    const others = [box(0), box(0, 200), box(60, 200), box(120, 200)];
+    const r = spaceMove(box(57), others, 0, 0, 6, true);
+    expect(r.dx).toBe(3);
+    const g = r.guides.find((gd) => gd.axis === 'x')!;
+    expect(g.gap).toBe(40);
+    expect(g.gaps.filter((gp) => gp.own).map((gp) => [gp.from, gp.to])).toEqual([[20, 60]]);
+    expect(g.gaps.filter((gp) => !gp.own).length).toBe(2);
+  });
+
+  it('marks the whole evenly spaced run, not just the nearest pair', () => {
+    const r = spaceMove(box(152), [box(0), box(50), box(100)], 0, 0, 6, true);
+    expect(r.dx).toBe(-2);
+    expect(r.guides[0].gaps.length).toBe(3);
+  });
+
   it('ignores items outside the row', () => {
     expect(spaceMove(box(98), [box(0, 200), box(50, 200)], 0, 0, 6, true).guides).toEqual([]);
   });
