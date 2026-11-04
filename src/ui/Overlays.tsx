@@ -1,10 +1,11 @@
-import { CheckCircle2, Columns3, Crosshair, Grid2x2, Grid3x3, Grip, Hash, Info, Magnet, Plus, Type, XCircle } from 'lucide-react';
-import type { CSSProperties, ReactNode } from 'react';
+import { CheckCircle2, ChevronDown, Columns3, Crosshair, Grid2x2, Grid3x3, Grip, Hash, Info, Magnet, Plus, Type, XCircle } from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { GridStyle, Tool } from '../model/types';
-import { GRID_STYLE_NAMES } from '../model/doc';
-import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
+import { GRID_SIZES, GRID_STYLE_NAMES } from '../model/doc';
+import { COMMAND_MAP, keysFor, prettyKey, setGridSize } from '../store/commands';
 import { dismissToast, useStore } from '../store/store';
 import { isExplainTool } from '../store/explain';
+import { NumberInput } from './controls';
 
 const DRAG = 'Drag to draw · Esc returns to select';
 const TOOL_HINT: Record<Tool, string> = {
@@ -62,7 +63,80 @@ export function StatusBar() {
 
 const GRID_STYLE_ICONS: Record<GridStyle, ReactNode> = { dots: <Grip size={13} />, lines: <Hash size={13} />, crosses: <Plus size={13} />, major: <Grid2x2 size={13} /> };
 
-/** One-click toggles for the grid (and its style), snapping, the kinds of guide and part names / values, without going through menus. */
+const gridText = (g: number) => `${+g.toFixed(4)}`;
+
+/** The grid / snap step: an always-visible chip with the current size and a menu of common steps. */
+function GridSizeMenu({ grid, disabled }: { grid: number; disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => {
+      if (ref.current?.contains(e.target as Node)) return;
+      // commit a half-typed custom size before the menu (and its input) goes away
+      (document.activeElement as HTMLElement | null)?.blur();
+      setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  // the View menu, context menu and command palette open it from anywhere
+  useEffect(() => {
+    const openIt = () => !disabled && setOpen(true);
+    window.addEventListener('nodal:grid-size', openIt);
+    return () => window.removeEventListener('nodal:grid-size', openIt);
+  }, [disabled]);
+  const pick = (size: number) => {
+    setGridSize(size);
+    setOpen(false);
+  };
+  const isOn = (size: number) => Math.abs(size - grid) < 1e-9;
+  return (
+    <span className="status-pop" ref={ref}>
+      <button
+        className={`status-toggle grid-size-btn${open ? ' open' : ''}`}
+        onClick={() => setOpen(!open)}
+        title={`Grid size: ${gridText(grid)} px — click to change`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Grid size ${gridText(grid)} pixels`}
+        disabled={disabled}
+      >
+        <span className="grid-size-value">{gridText(grid)}</span>
+        <span className="grid-size-unit">px</span>
+        <ChevronDown size={11} className="grid-size-chev" />
+      </button>
+      {open && (
+        <div className="dropdown grid-size-dropdown" role="dialog" aria-label="Grid size">
+          <div className="grid-size-head">
+            <span>Grid size</span>
+            <span className="muted small">snap step</span>
+          </div>
+          <div className="grid-size-presets">
+            {GRID_SIZES.map((size) => (
+              <button key={size} className={`grid-size-preset${isOn(size) ? ' on' : ''}`} onClick={() => pick(size)} aria-pressed={isOn(size)} title={`${size} px grid`}>
+                {size}
+                <span>px</span>
+              </button>
+            ))}
+          </div>
+          <label className="grid-size-custom">
+            <span>Custom</span>
+            <NumberInput value={grid} min={0.01} max={100} suffix="px" onChange={setGridSize} />
+          </label>
+          <div className="grid-size-note">Grid lines, snapping and nudges all use this step.</div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+/** One-click toggles for the grid (its style and size), snapping, the kinds of guide and part names / values, without going through menus. */
 function SnapToggles() {
   const showGrid = useStore((s) => s.doc.settings.showGrid);
   const snapOn = useStore((s) => s.doc.settings.snap);
@@ -99,7 +173,8 @@ function SnapToggles() {
       >
         {GRID_STYLE_ICONS[gridStyle]}
       </button>
-      {toggle('view.snap', snapOn, 'Snap to grid', <Magnet size={13} />, snapOn ? `${+grid.toFixed(4)}px` : 'off')}
+      <GridSizeMenu grid={grid} disabled={viewOnly} />
+      {toggle('view.snap', snapOn, 'Snap to grid', <Magnet size={13} />)}
       <span className="status-sep" />
       {toggle('view.alignGuides', align, 'Alignment guides', <Crosshair size={13} />)}
       {toggle('view.spacingGuides', spacing, 'Equal-spacing guides', <Columns3 size={13} />)}

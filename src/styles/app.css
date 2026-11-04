@@ -2710,6 +2710,134 @@ select.input {
   opacity: 0.35;
 }
 
+.status-pop {
+  position: relative;
+  display: inline-flex;
+}
+
+.grid-size-btn {
+  gap: 3px;
+  padding: 0 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid-size-value {
+  font-weight: 500;
+}
+
+.grid-size-unit {
+  color: var(--text-faint);
+  font-size: 0.86em;
+}
+
+.grid-size-chev {
+  opacity: 0.7;
+  transition: transform 0.12s;
+}
+
+.grid-size-btn.open {
+  color: var(--text);
+  background: var(--panel-3);
+  opacity: 1;
+}
+
+.grid-size-btn.open .grid-size-chev {
+  transform: rotate(180deg);
+}
+
+.dropdown.grid-size-dropdown {
+  top: auto;
+  bottom: calc(100% + 7px);
+  left: auto;
+  right: 0;
+  min-width: 236px;
+  padding: 10px;
+  font-size: 1rem;
+  line-height: 1.35;
+  animation: pop-up 0.12s ease-out;
+}
+
+@keyframes pop-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+.grid-size-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 2px 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.grid-size-head .muted {
+  font-weight: 400;
+}
+
+.grid-size-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.grid-size-preset {
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.grid-size-preset span {
+  margin-left: 2px;
+  color: var(--text-faint);
+  font-size: 0.78em;
+}
+
+.grid-size-preset:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.grid-size-preset.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.grid-size-preset.on span {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.grid-size-custom {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.92em;
+}
+
+.grid-size-custom .input {
+  height: 28px;
+}
+
+.grid-size-note {
+  margin: 8px 2px 0;
+  color: var(--text-faint);
+  font-size: 0.84em;
+}
+
 .status-sep {
   width: 1px;
   height: 14px;
