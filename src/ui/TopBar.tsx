@@ -60,7 +60,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
     label: 'Arrange',
     items: [
       'arrange.rotateCw', 'arrange.rotateCcw', 'arrange.flipH', 'arrange.flipV', '-',
-      'arrange.group', 'arrange.ungroup', 'arrange.enterGroup', 'arrange.exitGroup', 'arrange.toPath', '-',
+      'arrange.group', 'arrange.ungroup', 'arrange.enterGroup', 'arrange.exitGroup', 'arrange.toPath', 'connector.curve', '-',
       'arrange.alignLeft', 'arrange.alignHCenter', 'arrange.alignRight', 'arrange.alignTop', 'arrange.alignVCenter', 'arrange.alignBottom', 'arrange.distH', 'arrange.distV', '-',
       'arrange.sameWidth', 'arrange.sameHeight', 'arrange.sameSize', '-',
       'arrange.front', 'arrange.forward', 'arrange.backward', 'arrange.back',
@@ -362,8 +362,8 @@ const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string; alt?: 
   { tool: 'ellipse', icon: <Circle size={17} />, label: 'Ellipse', cmd: 'tool.ellipse', desc: 'Drag to draw an ellipse' },
   { tool: 'polygon', icon: <Pentagon size={17} />, label: 'Polygon', cmd: 'tool.polygon', desc: 'Click for corners · click the first one to close' },
   { tool: 'path', icon: <Route size={17} />, label: 'Path', cmd: 'tool.path', desc: 'Click for corners, drag for curves' },
-  { tool: 'line', icon: <Minus size={17} style={{ transform: 'rotate(-45deg)' }} />, label: 'Line', cmd: 'tool.line', desc: 'Ends attach to shapes and parts · Shift for 45°' },
-  { tool: 'arrow', icon: <ArrowUpRight size={17} />, label: 'Arrow', cmd: 'tool.arrow', desc: 'Ends attach to shapes and parts · Shift for 45°' },
+  { tool: 'line', icon: <Minus size={17} style={{ transform: 'rotate(-45deg)' }} />, label: 'Line', cmd: 'tool.line', desc: 'Ends attach to shapes and parts · Shift for 15° steps · drag the + to bow it' },
+  { tool: 'arrow', icon: <ArrowUpRight size={17} />, label: 'Arrow', cmd: 'tool.arrow', desc: 'Ends attach to shapes and parts · Shift for 15° steps · drag the + to bow it' },
   { tool: 'text', icon: <Type size={17} />, label: 'Text', cmd: 'tool.text', desc: 'Click to place text · $…$ typesets maths' },
   { tool: 'frame', icon: <Frame size={17} />, label: 'Presentation frame', cmd: 'tool.frame', desc: 'Drag an area to show as a step when presenting' },
 ];

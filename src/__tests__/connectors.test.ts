@@ -213,6 +213,27 @@ describe('following targets', () => {
     expect(s.from).toBeUndefined();
     near({ x: s.x, y: s.y }, { x: 100, y: 30 });
   });
+
+  it('moves a connector rigidly with its group, letting go of an outside target', () => {
+    const { doc, c } = twoBoxes();
+    c.group = 'g1';
+    doc.groups.g1 = { id: 'g1', name: 'G' };
+    const was = resolveConnector(doc, c);
+    translateItems(structuredClone(doc), doc, new Set([c.id]), 40, 20);
+    const s = doc.items[c.id] as ShapeItem;
+    expect(s.from).toBeUndefined();
+    expect(s.to).toBeUndefined();
+    near(resolveConnector(doc, s).start, { x: was.start.x + 40, y: was.start.y + 20 });
+    near(resolveConnector(doc, s).end, { x: was.end.x + 40, y: was.end.y + 20 });
+  });
+
+  it('keeps a connector glued when it moves on its own outside a group', () => {
+    const { doc, c } = twoBoxes();
+    translateItems(structuredClone(doc), doc, new Set([c.id]), 10, 10);
+    const s = doc.items[c.id] as ShapeItem;
+    expect(s.from).toBeDefined();
+    expect(s.to).toBeDefined();
+  });
 });
 
 describe('copying', () => {

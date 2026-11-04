@@ -1123,7 +1123,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
               <Field label="Head size">
                 <NumberInput value={first.headSize ?? defaultHeadSize(first.strokeWidth)} min={2} max={80} suffix="px" onChange={(v) => upd((s) => (s.headSize = v))} />
               </Field>
-              <Field label="Route" hint="Elbow: square corners, routed round the ends' sides. Drag the + on a stretch to add a bend; double-click a bend to remove it">
+              <Field label="Route" hint="Elbow: square corners, routed round the ends' sides. Curved: a smooth arch. Drag the + on a plain line to bow it (Alt: sharp corner); double-click a bend to remove it">
                 <Segmented
                   value={first.route ?? 'straight'}
                   options={ROUTE_OPTIONS}

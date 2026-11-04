@@ -1,7 +1,7 @@
 import type { Tool } from '../model/types';
 
 /** What is selected, as far as the hint line cares. */
-export type HintSel = 'part' | 'label' | 'wire' | 'labelledWire' | 'shape' | 'text' | 'other';
+export type HintSel = 'part' | 'label' | 'wire' | 'labelledWire' | 'shape' | 'connector' | 'text' | 'other';
 
 /** Gesture in progress on the canvas that changes what the next step is. */
 export type HintGesture = 'wire' | 'polygon' | 'path' | 'connector' | 'other';
@@ -104,7 +104,7 @@ export function hintFor(s: HintState): string | null {
       return join(['Drag to draw an ellipse', `${esc} back to select`]);
     case 'line':
     case 'arrow':
-      return join([`Drag to draw ${s.tool === 'line' ? 'a line' : 'an arrow'}`, 'start or end on a shape or part to attach it', 'Shift 45°', `${esc} back to select`]);
+      return join([`Drag to draw ${s.tool === 'line' ? 'a line' : 'an arrow'}`, 'start or end on a shape or part to attach it', 'Shift 15° steps', `${esc} back to select`]);
     case 'polygon':
       return join(['Click the corners', 'click the first one again to close', `${esc} back to select`]);
     case 'path':
@@ -158,6 +158,8 @@ function selectHint(s: HintState, cmd: (id: string, what: string) => string | nu
       return join(['Click a segment to select it, then Del removes it', 'Alt-drag on a wire to branch', cmd('wire.highlightNet', 'highlights the net'), cmd('wire.reroute', 're-routes')]);
     case 'text':
       return join(['Double-click to edit the text', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
+    case 'connector':
+      return join(['Drag the + in the middle to bow it into a curve', 'Alt-drag the + for a sharp corner', 'drag an end to attach it', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
     case 'shape':
       return join(['Drag a handle to resize', 'double-click to add text', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
     default:

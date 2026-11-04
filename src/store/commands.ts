@@ -4,6 +4,7 @@ import { exportLibraryFile, exportTemplateFile } from '../io/sharing';
 import { selectionToDrawing } from '../model/fromSelection';
 import { GRID_SIZES, GRID_STYLES, GRID_STYLE_NAMES, selectedGroup } from '../model/doc';
 import { computeNets, netOfWire } from '../model/netlist';
+import { isConnector } from '../model/connectors';
 import * as A from './actions';
 import { clearExplainOverlays } from './explain';
 import { startPresenting } from '../ui/Presenter';
@@ -164,6 +165,15 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.sameHeight', label: 'Make same height', category: 'Arrange', keys: [], run: () => A.matchSize('height') },
   { id: 'arrange.sameSize', label: 'Make same size', category: 'Arrange', keys: [], run: () => A.matchSize('both') },
   { id: 'arrange.toPath', label: 'Convert to path', category: 'Arrange', keys: [], run: A.convertSelectionToPath, when: hasSel },
+  {
+    id: 'connector.curve',
+    label: 'Curve / straighten selected lines and arrows',
+    category: 'Arrange',
+    keys: [],
+    run: toggleConnectorCurve,
+    when: () => S().selection.some((id) => isConnector(vdoc().items[id])),
+    keywords: 'curve arc arch bow bend rounded smooth straighten line arrow',
+  },
   { id: 'arrange.enterGroup', label: 'Enter group', category: 'Arrange', keys: ['Mod+Enter'], cadence: ['E', 'Shift+E', 'Mod+Enter'], run: () => S().selection[0] && A.enterGroup(S().selection[0]) },
   { id: 'arrange.exitGroup', label: 'Return from group', category: 'Arrange', keys: [], cadence: ['Shift+B'], run: () => void A.exitGroup() },
 
@@ -320,6 +330,21 @@ function cycleGridStyle() {
     s.showGrid = true;
   });
   toast(`Grid: ${GRID_STYLE_NAMES[next].toLowerCase()}`);
+}
+
+function toggleConnectorCurve() {
+  const shapes = S().selection.map((id) => vdoc().items[id]).filter(isConnector);
+  if (!shapes.length) return;
+  const straighten = shapes.every((s) => s.route === 'curved');
+  mutate((d) => {
+    for (const s of shapes) {
+      const cur = d.items[s.id];
+      if (!isConnector(cur) || cur.locked) continue;
+      if (straighten) delete cur.route;
+      else cur.route = 'curved';
+    }
+  });
+  toast(straighten ? 'Lines straightened' : 'Lines curved');
 }
 
 /** Sets the grid / snap step, clamped to the range the document accepts. */

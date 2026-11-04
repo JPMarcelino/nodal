@@ -27,6 +27,7 @@ function selKind(doc: CircuitDoc, it: Item | undefined): HintSel {
   }
   if (it.type === 'shape') {
     if (it.kind === 'text') return 'text';
+    if (it.kind === 'line' || it.kind === 'arrow') return 'connector';
     if (it.kind === 'rect' || it.kind === 'zone' || it.kind === 'ellipse' || it.kind === 'polygon') return 'shape';
   }
   return 'other';

@@ -29,6 +29,17 @@ export { pointInPolygon } from './path';
 /** Whether `p` touches a polygon shape: its outline (curves included), or anywhere inside when it is filled. */
 export const polyHit = (s: ShapeItem, p: Point, tol: number): boolean => pathHit(s, p, tol);
 
+/** `p` pulled onto the nearest `stepDeg` direction from `from` (Shift while drawing). */
+export function constrainAngle(from: Point, p: Point, stepDeg: number): Point {
+  const dx = p.x - from.x;
+  const dy = p.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (!len) return p;
+  const step = (stepDeg * Math.PI) / 180;
+  const a = Math.round(Math.atan2(dy, dx) / step) * step;
+  return { x: from.x + Math.cos(a) * len, y: from.y + Math.sin(a) * len };
+}
+
 /** `p` pulled onto the nearest 45° direction from `from` (Shift while drawing). */
 export function constrain45(from: Point, p: Point): Point {
   const dx = p.x - from.x;

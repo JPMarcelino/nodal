@@ -68,6 +68,7 @@ import { openExport } from '../io/fileActions';
 import * as A from '../store/actions';
 import { COMMAND_MAP, keysFor, openGridSizeMenu, prettyKey, setGridSize } from '../store/commands';
 import { GRID_SIZES } from '../model/doc';
+import { isConnector } from '../model/connectors';
 import { S, activePage, readOnly, set, useStore, type ContextMenuState, useViewDoc } from '../store/store';
 import { docPages } from '../model/pages';
 import { canConvertToPath } from '../model/path';
@@ -167,6 +168,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
   const t = doc.items[target];
   const locked = items.length > 0 && items.every((i) => i.locked);
   const convertible = items.some((i) => i.type === 'shape' && !i.locked && canConvertToPath(i));
+  const connectors = items.filter(isConnector);
   const lone = items.length === 1 ? items[0] : undefined;
   const callouts = items.some((i) => i.type === 'shape' && i.kind === 'callout');
   const anchored = items.some((i) => i.type === 'shape' && i.kind === 'callout' && !!i.anchor?.id && !i.locked);
@@ -195,6 +197,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
           convertible && cmd('arrange.toPath', 'Convert to path', <Route size={I} />),
         ),
       },
+      connectors.length > 0 && cmd('connector.curve', connectors.every((c) => c.route === 'curved') ? 'Straighten line' : 'Curve line', <Spline size={I} />),
       multi && {
         label: 'Align',
         icon: <AlignStartVertical size={I} />,

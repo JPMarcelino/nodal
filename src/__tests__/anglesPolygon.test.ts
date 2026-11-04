@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDoc, itemBounds, makeShape } from '../model/doc';
-import { constrain45, deletePolyCorner, dragPolyPart, packPoly, pointInPolygon, polyHit, polyPoints } from '../model/polygon';
+import { constrain45, constrainAngle, deletePolyCorner, dragPolyPart, packPoly, pointInPolygon, polyHit, polyPoints } from '../model/polygon';
 import type { ComponentItem, ShapeItem, WireItem } from '../model/types';
 import { sampleDoc } from '../model/sample';
 import { toSpiceNetlist } from '../model/netlist';
@@ -86,6 +86,15 @@ describe('polygon shapes', () => {
   it('Shift constrains to 45° keeping diagonals on the grid', () => {
     expect(constrain45({ x: 0, y: 0 }, { x: 100, y: 10 })).toEqual({ x: 100, y: 0 });
     expect(constrain45({ x: 0, y: 0 }, { x: 60, y: 40 })).toEqual({ x: 50, y: 50 });
+  });
+
+  it('line and arrow Shift uses 15° steps, keeping the drag length and reaching 30°', () => {
+    const p = constrainAngle({ x: 0, y: 0 }, { x: 100, y: 55 }, 15);
+    expect((Math.atan2(p.y, p.x) * 180) / Math.PI).toBeCloseTo(30, 6);
+    expect(Math.hypot(p.x, p.y)).toBeCloseTo(Math.hypot(100, 55), 6);
+    const diag = constrainAngle({ x: 0, y: 0 }, { x: 70, y: 70 }, 15);
+    expect(diag.x).toBeCloseTo(70, 6);
+    expect(diag.y).toBeCloseTo(70, 6);
   });
 });
 
