@@ -5,7 +5,7 @@ import { attachedWires, drawOrderCached, groupMembers, groupTags, itemBounds, la
 import { withContents } from '../model/containers';
 import { getPreset, makePresetShape } from '../model/shapePresets';
 import { PresetShape } from './PresetShape';
-import { componentBounds, dist, eq, measureText, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
+import { componentBounds, dist, eq, measureText, nearEllipse, pointInEllipse, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, followParts, rotateShapeBy, scaleItems, selectionPivot, translateDetached, translateItems } from '../model/ops';
 import { dragRotation, fromShapeFrame, HANDLE_ROT_KINDS, rectCentre, resizeInFrame, rotateDeg, shapeBox, shapeRot, shapeTransform, toShapeFrame } from '../model/rotation';
 import { getSymbol, instanceSymbol } from '../model/registry';
@@ -27,7 +27,7 @@ import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, da
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
-import { constrain45, packPoly, polyHit } from '../model/polygon';
+import { constrain45, constrainAngle, packPoly, polyHit } from '../model/polygon';
 import { cubicAt, dragHandle, insertNode, isSmooth, minNodes, moveNode, nearestOnPath, pathD, pathNodes, pathSegs, setNodeKind, setPathNodes, type PathNode } from '../model/path';
 import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
@@ -550,6 +550,13 @@ export function Canvas() {
         if (s.kind === 'text' || s.kind === 'image' || s.kind === 'callout') return pointInRect(p, r, 4) && 'strong';
         if (s.kind === 'ink') return inkHit(s, p, t) && (s.highlighter ? 'weak' : 'strong');
         const seeThrough = s.fillOpacity < 0.5;
+        if (s.kind === 'ellipse') {
+          // hit the drawn oval, not its bounding box: the invisible corners stay free for what is behind it
+          const onEdge = nearEllipse(p, r, t + s.strokeWidth / 2);
+          if (!onEdge && !pointInEllipse(p, r)) return false;
+          if (onEdge) return 'strong';
+          return s.fillOpacity > 0 && (seeThrough ? 'weak' : 'strong');
+        }
         if (s.kind === 'polygon') {
           if (!polyHit(s, p, t)) return false;
           // inside the outline only through the fill: see-through fills are weak
@@ -1553,10 +1560,13 @@ export function Canvas() {
       }
       beginGesture();
       if (ch.part === 'mid') {
-        // a new bend in the middle of the stretch, dragged straight away
+        // a new bend in the middle of the stretch, dragged straight away; on a
+        // plain line that first bend makes an arch (Alt keeps a sharp corner)
+        const bow = !e.altKey && !singleShape.pts?.length && (singleShape.route ?? 'straight') === 'straight';
         gestureUpdate((d) => {
           const s = d.items[id] as ShapeItem;
           s.pts = [...(s.pts ?? []).slice(0, ch.idx), { x: Math.round(ch.p.x), y: Math.round(ch.p.y) }, ...(s.pts ?? []).slice(ch.idx)];
+          if (bow) s.route = 'curved';
         });
         setGesture({ kind: 'conn', id, part: 'bend', idx: ch.idx, moved: true, glue: null });
         return;
@@ -1901,7 +1911,9 @@ export function Canvas() {
         if (g.shape === 'line' || g.shape === 'arrow') {
           // over a shape or part the end glues to it: onto a connection point, or floating on its outline
           const glueB = glueAt(w, e.altKey);
-          const cur = glueB && isFixed(glueB.attach) ? glueB.pt : e.altKey ? w : sp(w);
+          const p = glueB && isFixed(glueB.attach) ? glueB.pt : e.altKey ? w : sp(w);
+          // Shift offers 15° steps, so 30°, 60° and the like are still within reach
+          const cur = e.shiftKey && !glueB ? constrainAngle(g.start, p, 15) : p;
           setGesture({ ...g, cur, glueB });
           break;
         }
@@ -3126,6 +3138,10 @@ function HoverOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; poly
   const turned = it.type === 'shape' && shapeRot(it) ? it : null;
   const b = turned ? shapeBox(turned) : itemBounds(doc, it);
   if (!b) return null;
+  // an oval shows its own outline: a rectangle round it would say the corners were clickable
+  if (it.type === 'shape' && it.kind === 'ellipse') {
+    return <ellipse cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2 + 4} ry={b.h / 2 + 4} className="hover-box" strokeWidth={1 / z} transform={turned ? shapeTransform(turned) : undefined} />;
+  }
   return <rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} rx={4} className="hover-box" strokeWidth={1 / z} transform={turned ? shapeTransform(turned) : undefined} />;
 }
 

@@ -49,6 +49,12 @@ describe('hintFor', () => {
     expect(hint({ selection: ['label', 'label'] })).toContain('Ctrl+Alt+D duplicates with the next numbers');
   });
 
+  it('a selected line or arrow shows how to bow it into a curve', () => {
+    const h = hint({ selection: ['connector'] })!;
+    expect(h).toContain('bow it into a curve');
+    expect(h).toContain('Alt-drag the + for a sharp corner');
+  });
+
   it('net label: rename and duplicate-increment; labelled wire: drag along the wire', () => {
     expect(hint({ selection: ['label'] })).toContain('Ctrl+Alt+D duplicates with the next number');
     expect(hint({ selection: ['labelledWire'] })).toContain('Drag the label along the wire');

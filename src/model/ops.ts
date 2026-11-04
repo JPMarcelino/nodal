@@ -1,7 +1,7 @@
 import { current, isDraft } from 'immer';
 import { withContents } from './containers';
 import { connectorsOf, detachConnector, fromLocal, isConnector, isFixed, resolveConnector, targetFrame, toLocal } from './connectors';
-import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
+import { attachedWires, docBounds, drawOrder, groupChain, groupMembers, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
 import { componentBounds, eq, pointInRect, projectOnSegment, rectsIntersect, rotate, segmentIntersectsRect, simplify, snap, unionRects } from './geometry';
 import { routeLeg, routeObstacles } from './route';
 import { inkPoints, packInk } from './ink';
@@ -929,6 +929,30 @@ function endpointNow(doc: CircuitDoc, ep: Endpoint, fallback: Point): Point {
 
 export function translateItems(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, dx: number, dy: number) {
   transformItems(base, doc, ids, (p) => ({ x: p.x + dx, y: p.y + dy }));
+  releaseGroupGlue(base, doc, ids, dx, dy);
+}
+
+/**
+ * A group carries its members as one body. A connector in a fully selected
+ * group therefore moves with it even when an end was glued to something
+ * outside the group: the glue is released and the end keeps the spot it had
+ * when the move began, carried along by the group.
+ */
+function releaseGroupGlue(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, dx: number, dy: number) {
+  for (const b of Object.values(base.items)) {
+    if (!isConnector(b) || b.locked || !b.group || (!b.from && !b.to)) continue;
+    const members = groupMembers(base, b.group);
+    if (!members.length || !members.every((id) => ids.has(id))) continue;
+    const s = doc.items[b.id] as ShapeItem | undefined;
+    if (!s) continue;
+    const p = resolveConnector(base, b);
+    s.x = p.start.x + dx;
+    s.y = p.start.y + dy;
+    s.w = p.end.x - p.start.x;
+    s.h = p.end.y - p.start.y;
+    delete s.from;
+    delete s.to;
+  }
 }
 
 /**
