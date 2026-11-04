@@ -84,20 +84,23 @@ describe('parts landing on wires', () => {
     const out = settleEdit(prev, moved);
     // the wire now runs 0 → R2 and R2 → 400; nothing left between R2's pins
     expect(coverage(out, 100, 260, 340)).toBe(0);
-    const nets = computeNets(out).map((n) => n.pins.length);
-    expect(nets.filter((n) => n === 1).length).toBeGreaterThanOrEqual(2);
-    expect(r1.id).toBeTruthy();
+    // R2 sits in series: its pins are on two different nets
+    const netOf = (port: string) => computeNets(out).findIndex((n) => n.pins.some((p) => p.comp === r2.id && p.port === port));
+    expect(netOf('1')).not.toBe(netOf('2'));
+    // R1 was lying on the wire all along, across both pins: touching, so shorted, as drawn
+    expect(joined(out)).toContain(`${r1.ref}.1+${r1.ref}.2+${r2.ref}.1`);
   });
 
-  it('a wire dragged over a pin does not connect to it', () => {
+  it('a wire dragged across a part touches its pins, so it connects to them (what you see is what you get)', () => {
     const prev = docWith([wire('w', F(0, 50), F(400, 50))]);
     const r = R(prev, 100, 100);
     const next = produce(prev, (d) => void Object.assign(d.items.w, { a: F(0, 100), b: F(400, 100) }));
     const out = settleEdit(prev, next);
-    expect(wires(out).every((w) => w.a.kind === 'free' && w.b.kind === 'free')).toBe(true);
-    expect(joined(out)).toEqual([]);
-    expect(r).toBeTruthy();
+    // split at both pins: the stretch across the body shorts the part, as drawn
+    expect(wires(out).filter((w) => [w.a, w.b].some((ep) => ep.kind === 'port' && ep.comp === r.id))).toHaveLength(3);
+    expect(joined(out)).toEqual([`${r.ref}.1+${r.ref}.2`]);
   });
+
 });
 
 describe('wires never lie on top of each other', () => {

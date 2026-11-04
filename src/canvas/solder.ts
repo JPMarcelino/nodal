@@ -1,6 +1,6 @@
 import type { HotSpot } from '../model/hotspots';
 import { attachedWires } from '../model/doc';
-import { cleanup, solderPinToWire, solderTouch, solderWires, unsolderJunction, unsolderPort } from '../model/ops';
+import { cleanup, solderWires, unsolderJunction, unsolderPort } from '../model/ops';
 import type { CircuitDoc } from '../model/types';
 import { crossingStack } from '../model/wires';
 import type { SceneData } from './Scene';
@@ -11,8 +11,6 @@ export type SolderAction = 'solder' | 'unsolder';
 export function solderActionFor(spot: HotSpot): SolderAction | null {
   switch (spot.kind) {
     case 'crossing':
-    case 'touch':
-    case 'pinTouch':
       return 'solder';
     case 'junction':
     case 'pin':
@@ -32,18 +30,6 @@ export function applySolder(d: CircuitDoc, spot: HotSpot, data: SceneData): stri
       ok = !!solderWires(d, wires, spot.pt);
       break;
     }
-    case 'touch': {
-      if (d.items[spot.wire]?.locked) return 'Locked wires cannot be soldered';
-      const t = spot.target;
-      if ((t.kind === 'wire' || t.kind === 'end') && d.items[t.wire]?.locked) return 'Locked wires cannot be soldered';
-      if (t.kind === 'junction' && d.items[t.id]?.locked) return 'Locked wires cannot be soldered';
-      ok = solderTouch(d, spot.wire, spot.end, spot.target);
-      break;
-    }
-    case 'pinTouch':
-      if (d.items[spot.wire]?.locked) return 'Locked wires cannot be soldered';
-      ok = solderPinToWire(d, spot.comp, spot.port, spot.wire);
-      break;
     case 'junction': {
       if (d.items[spot.id]?.locked) return 'Locked wires cannot be unsoldered';
       if (attachedWires(d, spot.id).some((id) => d.items[id]?.locked)) return 'Locked wires cannot be unsoldered';

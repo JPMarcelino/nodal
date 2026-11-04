@@ -78,11 +78,11 @@ describe('turning and flipping a lone part', () => {
     expect(reach(twice, c, 'K')).toEqual(['100,0']);
   });
 
-  it('does not short a part whose leads are dragged on top of each other', () => {
+  it('a part dragged so its leads lie on top of each other is shorted, as drawn', () => {
     const { d, c } = diode();
     const n = commit(d, (x) => translateItems(d, x, new Set([c]), 200, 0));
-    expect(reach(n, c, 'A')).toEqual(['-100,0']);
-    expect(reach(n, c, 'K')).toEqual(['100,0']);
+    // the K lead now runs back across pin A: touching is connecting
+    expect(nets(n)).toEqual([`${c}.A ${c}.K`]);
   });
 });
 

@@ -178,36 +178,38 @@ export function solderTouch(doc: CircuitDoc, wireId: string, end: 'a' | 'b', tar
 
 /**
  * Undoes a solder junction: wires that run straight through it become one
- * wire again (crossing, so they hop), any other branch is detached and left
- * as a loose end touching the point.
+ * wire again (crossing, so they hop), and every other branch is pulled back
+ * a grid step, leaving a loose end clear of the point (an end still touching
+ * would still be connected).
  */
 export function unsolderJunction(doc: CircuitDoc, jid: string): { through: number; detached: number } | null {
   const j = doc.items[jid];
   if (!j || j.type !== 'junction') return null;
-  const r = detachEnds(doc, (ep) => refersTo(ep, jid), { x: j.x, y: j.y }, j.group);
+  const r = detachEnds(doc, (ep) => refersTo(ep, jid), { x: j.x, y: j.y }, j.group, true);
   delete doc.items[jid];
   cleanup(doc);
   return r;
 }
 
-/** Same as unsolderJunction, for a component pin: everything on the pin is disconnected. */
+/** Same as unsolderJunction, for a component pin: every wire on the pin is pulled back off it (a wire running across a pin would still touch it). */
 export function unsolderPort(doc: CircuitDoc, comp: string, port: string): { through: number; detached: number } | null {
   const c = doc.items[comp];
   if (!c || c.type !== 'component') return null;
   const at = endpointInfo(doc, { kind: 'port', comp, port });
   if (!at) return null;
-  const r = detachEnds(doc, (ep) => ep.kind === 'port' && ep.comp === comp && ep.port === port, at.pt, c.group);
+  const r = detachEnds(doc, (ep) => ep.kind === 'port' && ep.comp === comp && ep.port === port, at.pt, c.group, false);
   cleanup(doc);
   return r;
 }
 
 /**
- * Detaches every wire end matching `isHere` (all at point `pt`). Ends leaving
- * in opposite directions are paired and rejoined into one straight-through
- * wire; the rest become free ends at `pt`.
+ * Detaches every wire end matching `isHere` (all at point `pt`). With
+ * `through`, ends leaving in opposite directions are paired and rejoined into
+ * one straight-through wire; the rest are pulled back along their wire by a
+ * grid step (at most half their first segment) and left loose.
  */
-function detachEnds(doc: CircuitDoc, isHere: (ep: Endpoint) => boolean, pt: Point, group?: string): { through: number; detached: number } {
-  const ends: { w: WireItem; end: 'a' | 'b'; dir: Point }[] = [];
+function detachEnds(doc: CircuitDoc, isHere: (ep: Endpoint) => boolean, pt: Point, group: string | undefined, through: boolean): { through: number; detached: number } {
+  const ends: { w: WireItem; end: 'a' | 'b'; dir: Point; len: number }[] = [];
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'wire') continue;
     const full = wirePolyline(doc, it);
@@ -215,15 +217,15 @@ function detachEnds(doc: CircuitDoc, isHere: (ep: Endpoint) => boolean, pt: Poin
     for (const end of ['a', 'b'] as const) {
       if (!isHere(it[end])) continue;
       const [p, q] = end === 'a' ? [full[0], full[1]] : [full[full.length - 1], full[full.length - 2]];
-      const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
-      ends.push({ w: it, end, dir: { x: (q.x - p.x) / len, y: (q.y - p.y) / len } });
+      const len = Math.hypot(q.x - p.x, q.y - p.y);
+      ends.push({ w: it, end, dir: { x: (q.x - p.x) / (len || 1), y: (q.y - p.y) / (len || 1) }, len });
     }
   }
   // keep every route exactly as drawn while the ends change
   for (const e of ends) e.w.pts = wirePolyline(doc, e.w).slice(1, -1);
   const used = new Set<number>();
-  let through = 0;
-  for (let i = 0; i < ends.length; i++) {
+  let joined = 0;
+  for (let i = 0; i < ends.length && through; i++) {
     if (used.has(i)) continue;
     const k = ends.findIndex((e, n) => n > i && !used.has(n) && e.w !== ends[i].w && e.dir.x * ends[i].dir.x + e.dir.y * ends[i].dir.y < -0.99);
     if (k < 0) continue;
@@ -233,15 +235,27 @@ function detachEnds(doc: CircuitDoc, isHere: (ep: Endpoint) => boolean, pt: Poin
     doc.items[nj] = { id: nj, type: 'junction', x: pt.x, y: pt.y, group };
     ends[i].w[ends[i].end] = { kind: 'junction', id: nj };
     ends[k].w[ends[k].end] = { kind: 'junction', id: nj };
-    through++;
+    joined++;
   }
   let detached = 0;
+  const step = doc.settings.grid || 10;
   ends.forEach((e, i) => {
     if (used.has(i)) return;
-    e.w[e.end] = { kind: 'free', x: pt.x, y: pt.y };
+    const back = Math.min(step, e.len / 2);
+    e.w[e.end] = { kind: 'free', x: pt.x + e.dir.x * back, y: pt.y + e.dir.y * back };
     detached++;
   });
-  return { through, detached };
+  return { through: joined, detached };
+}
+
+/** Connects a junction dot that lies on the run of a wire: the wire is split at the dot and both halves end on it. */
+export function solderDotToWire(doc: CircuitDoc, jid: string, wireId: string): boolean {
+  const j = doc.items[jid];
+  if (!j || j.type !== 'junction') return false;
+  const seg = passesAt(doc, wireId, { x: j.x, y: j.y })[0];
+  if (seg === undefined) return false;
+  splitWire(doc, wireId, seg, { x: j.x, y: j.y }, jid);
+  return true;
 }
 
 /** Connects a pin that lies on a wire: the wire is split there and both halves attach to the pin. */
@@ -454,6 +468,8 @@ function collapseWire(doc: CircuitDoc, w: WireItem): boolean {
   return true;
 }
 
+const sub = (a: Point, b: Point): Point => ({ x: a.x - b.x, y: a.y - b.y });
+
 function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: string): boolean {
   const w1 = doc.items[w1id] as WireItem;
   const w2 = doc.items[w2id] as WireItem;
@@ -478,6 +494,12 @@ function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: strin
   if (refersTo(w2.b, jid)) {
     p2 = p2.reverse();
     b2 = w2.a;
+  }
+  // wires folding back over each other stay two: one wire retracing its route would lose the stretch it doubles over
+  if (p1.length >= 2 && p2.length >= 2) {
+    const u = sub(p1[p1.length - 2], p1[p1.length - 1]);
+    const v = sub(p2[1], p2[0]);
+    if (Math.abs(u.x * v.y - u.y * v.x) < 1e-9 && u.x * v.x + u.y * v.y > 0) return false;
   }
   w1.a = a1;
   w1.b = b2;

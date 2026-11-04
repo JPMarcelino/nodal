@@ -110,47 +110,6 @@ export function HotSpotMenu({
       );
       break;
     }
-    case 'touch': {
-      const t = spot.target;
-      const what =
-        t.kind === 'port'
-          ? `pin ${(doc.items[t.comp] as { ref?: string } | undefined)?.ref ?? '?'}.${portName(doc, t.comp, t.port)}`
-          : t.kind === 'junction'
-            ? 'a junction'
-            : `${netName(t.wire)}${t.kind === 'end' ? ' (end)' : ''}`;
-      body = (
-        <>
-          <Title>Touching, not connected</Title>
-          <Sub>
-            {netName(spot.wire)} ends on {what}
-          </Sub>
-          <Actions>
-            <Item icon={<CircleDot size={14} />} label="Solder here" hint="connect" onClick={() => run((d) => applySolder(d, spot, data), 'Soldered', true)} />
-            <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(spot.wire)} />
-          </Actions>
-        </>
-      );
-      break;
-    }
-    case 'pinTouch':
-      body = (
-        <>
-          <Title>Pin on a wire, not connected</Title>
-          <Sub>
-            {pinLabel(doc, spot.comp, spot.port)} sits on {netName(spot.wire)}
-          </Sub>
-          <Actions>
-            <Item
-              icon={<CircleDot size={14} />}
-              label="Solder here"
-              hint="connect the pin"
-              onClick={() => run((d) => applySolder(d, spot, data), `Soldered ${pinLabel(doc, spot.comp, spot.port)}`, true)}
-            />
-            <Item icon={<Waypoints size={14} />} label="Select net" onClick={() => selectNet(spot.wire)} />
-          </Actions>
-        </>
-      );
-      break;
     case 'pin': {
       const wire = Object.values(doc.items).find((it) => it.type === 'wire' && [it.a, it.b].some((ep) => ep.kind === 'port' && ep.comp === spot.comp && ep.port === spot.port));
       body = (
@@ -256,11 +215,8 @@ function spotStillValid(spot: HotSpot, doc: CircuitDoc, data: SceneData): boolea
       return data.crossings.some((c) => Math.hypot(c.pt.x - spot.pt.x, c.pt.y - spot.pt.y) <= 1);
     case 'junction':
       return !!doc.items[spot.id];
-    case 'pinTouch':
-      return !!doc.items[spot.comp] && !!doc.items[spot.wire];
     case 'pin':
       return Object.values(doc.items).some((it) => it.type === 'wire' && [it.a, it.b].some((ep) => ep.kind === 'port' && ep.comp === spot.comp && ep.port === spot.port));
-    case 'touch':
     case 'end': {
       const w = doc.items[spot.wire];
       const ep = w?.type === 'wire' ? w[spot.end] : null;
