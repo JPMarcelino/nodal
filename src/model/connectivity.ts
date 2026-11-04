@@ -14,7 +14,7 @@ import { wirePolyline } from './wires';
  * wire. Two wire runs crossing each other are the only things that touch
  * without connecting, and they are drawn with a hop. Wires stay separate
  * items either way; touching only puts them on the same net.
-
+ *
  * There are no exceptions: a wire laid across a part's pins shorts it, as it
  * would on paper, and the ERC shows it.
  *
