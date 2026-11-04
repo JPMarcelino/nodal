@@ -25,7 +25,8 @@ describe('electrical rules check', () => {
     const doc = createDoc();
     const r = place(doc, 'resistor', 0, 0);
     expect(rules(doc)).toContain('unconnected-pin');
-    const v = place(doc, 'vcc', 200, -200);
+    // off to the left, so the wire from pin 1 does not run back across pin 2 (that would touch it)
+    const v = place(doc, 'vcc', -200, -200);
     wire(doc, r, '1', v, 'VCC');
     const issues = runErc(doc).filter((i) => i.items.includes(r.id) && i.rule === 'unconnected-pin');
     expect(issues).toHaveLength(1);
@@ -76,24 +77,26 @@ describe('electrical rules check', () => {
     expect(runErc(doc).filter((i) => i.rule === 'stacked-parts')).toHaveLength(0);
   });
 
-  it('keys touching-end findings per page, so ignoring one does not hide the other', () => {
+  it('a wire ending on another is connected, and only on its own page', () => {
     const doc = createDoc();
     const p2 = addPage(doc, 'Two');
-    const mkTouch = (page?: string) => {
+    const mkTee = (page?: string) => {
       const span: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: 0, y: 0 }, b: { kind: 'free', x: 100, y: 0 }, pts: [], ...(page ? { page } : {}) };
       const prod: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: 50, y: 0 }, b: { kind: 'free', x: 50, y: 100 }, pts: [], ...(page ? { page } : {}) };
       doc.items[span.id] = span;
       doc.items[prod.id] = prod;
+      return prod;
     };
-    mkTouch();
-    mkTouch(p2);
-    const found = runErc(doc).filter((i) => i.rule === 'touching-end');
-    expect(found).toHaveLength(2);
-    expect(new Set(found.map((i) => i.key)).size).toBe(2);
-    const { active, ignored } = splitIgnored(found, [found[0].key]);
-    expect(ignored).toHaveLength(1);
-    expect(active).toHaveLength(1);
+    const one = mkTee();
+    const two = mkTee(p2);
+    // one net per page: the same spot on another page is somewhere else
+    expect(computeNets(doc).filter((n) => n.wires.length).map((n) => n.wires.length)).toEqual([2, 2]);
+    const loose = runErc(doc).filter((i) => i.rule === 'loose-end');
+    // the stub's top end rests on the span, so only its bottom end and the span's two ends hang loose
+    expect(loose.filter((i) => i.items[0] === one.id).map((i) => i.at)).toEqual([{ x: 50, y: 100 }]);
+    expect(loose.filter((i) => i.items[0] === two.id).map((i) => i.at)).toEqual([{ x: 50, y: 100 }]);
   });
+
 
   it('does not flag a net label joined by a wire label as single-use', () => {
     const doc = createDoc();

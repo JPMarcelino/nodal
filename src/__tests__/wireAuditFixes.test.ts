@@ -32,19 +32,20 @@ describe('merging wires at a junction', () => {
     d.items[r1.id] = r1;
     const r2 = makeComponent(d, 'resistor', 500, 100);
     d.items[r2.id] = r2;
-    const p1 = P(r1.id, '1');
+    // R1's right pin (80, 100): a wire from its left pin would run across the right one, and touch it
+    const p1 = P(r1.id, '2');
     const p2 = P(r2.id, '1');
     d.items.j = { id: 'j', type: 'junction', x: 100, y: 100 };
     d.items.w1 = wire('w1', p1, J('j'), { label: 'A' });
     d.items.w2 = wire('w2', J('j'), F(200, 100), { label: 'B' });
     d.items.w3 = wire('w3', F(100, 40), J('j'));
     d.items.w4 = wire('w4', F(400, 100), p2, { label: 'B' });
-    expect(netWith(d, r1.id, '1')!.pins.map((p) => p.ref)).toEqual(['R1', 'R2']);
+    expect(netWith(d, r1.id, '2')!.pins.map((p) => p.ref)).toEqual(['R1', 'R2']);
 
     deleteItems(d, ['w3']);
 
     // deleting an unrelated stub used to merge w1 and w2, dropping the name B
-    const net = netWith(d, r1.id, '1')!;
+    const net = netWith(d, r1.id, '2')!;
     expect(net.pins.map((p) => p.ref)).toEqual(['R1', 'R2']);
     expect(net.names).toEqual(expect.arrayContaining(['A', 'B']));
   });

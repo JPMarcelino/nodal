@@ -5,6 +5,7 @@ import { computeHotSpots } from '../model/hotspots';
 import { createDoc, makeComponent, uid } from '../model/doc';
 import { computeNets } from '../model/netlist';
 import { solderWires } from '../model/ops';
+import { joinTouches } from '../model/touches';
 import type { CircuitDoc, JunctionItem, Point, WireItem } from '../model/types';
 import { computeHops, portPosition, wireCrossings, wireCrossingsChanged, wirePolyline, type Crossing } from '../model/wires';
 
@@ -45,64 +46,6 @@ describe('applySolder respects locks', () => {
     expect(data.crossings).toHaveLength(1);
     const before = snap(doc);
     expect(applySolder(doc, { kind: 'crossing', pt: { x: 50, y: 50 } }, data)).toBe('Locked wires cannot be soldered');
-    expect(snap(doc)).toEqual(before);
-  });
-
-  it('refuses a touch when the loose wire is locked', () => {
-    const doc = createDoc();
-    freeWire(doc, 0, 0, 200, 0);
-    const branch = freeWire(doc, 50, 0, 50, 100);
-    const t = computeHotSpots(doc, polysOf(doc), []).find((h) => h.kind === 'touch');
-    expect(t?.kind).toBe('touch');
-    if (t?.kind !== 'touch') return;
-    expect(t.wire).toBe(branch.id);
-    (doc.items[t.wire] as WireItem).locked = true;
-    const before = snap(doc);
-    expect(applySolder(doc, t, sceneData())).toBe('Locked wires cannot be soldered');
-    expect(snap(doc)).toEqual(before);
-  });
-
-  it('refuses a touch when the wire it rests on is locked', () => {
-    const doc = createDoc();
-    const top = freeWire(doc, 0, 0, 200, 0);
-    freeWire(doc, 50, 0, 50, 100);
-    const t = computeHotSpots(doc, polysOf(doc), []).find((h) => h.kind === 'touch');
-    expect(t?.kind).toBe('touch');
-    if (t?.kind !== 'touch') return;
-    expect(t.target.kind).toBe('wire');
-    top.locked = true;
-    const before = snap(doc);
-    expect(applySolder(doc, t, sceneData())).toBe('Locked wires cannot be soldered');
-    expect(snap(doc)).toEqual(before);
-  });
-
-  it('refuses a touch when the junction it rests on is locked', () => {
-    const doc = createDoc();
-    const w = freeWire(doc, 0, 0, 100, 0);
-    const jid = uid('j');
-    const j: JunctionItem = { id: jid, type: 'junction', x: 100, y: 0, locked: true };
-    doc.items[jid] = j;
-    const t = computeHotSpots(doc, polysOf(doc), []).find((h) => h.kind === 'touch');
-    expect(t?.kind).toBe('touch');
-    if (t?.kind !== 'touch') return;
-    expect(t.wire).toBe(w.id);
-    expect(t.target).toEqual({ kind: 'junction', id: jid });
-    const before = snap(doc);
-    expect(applySolder(doc, t, sceneData())).toBe('Locked wires cannot be soldered');
-    expect(snap(doc)).toEqual(before);
-  });
-
-  it('refuses a pinTouch when the wire is locked', () => {
-    const doc = createDoc();
-    const c = makeComponent(doc, 'resistor', 100, 100);
-    doc.items[c.id] = c;
-    const at = portPosition(doc, c, '1')!;
-    const w = freeWire(doc, at.pt.x - 100, at.pt.y, at.pt.x + 100, at.pt.y);
-    w.locked = true;
-    const before = snap(doc);
-    expect(applySolder(doc, { kind: 'pinTouch', pt: { ...at.pt }, comp: c.id, port: '1', wire: w.id }, sceneData())).toBe(
-      'Locked wires cannot be soldered',
-    );
     expect(snap(doc)).toEqual(before);
   });
 
@@ -193,15 +136,15 @@ describe('a wire looping back over its own route', () => {
     expect(endsOn(doc, jn!.id)).toBe(4);
   });
 
-  it('solders a loose end resting on its own route', () => {
+  it('joins a loose end resting on its own route', () => {
     const doc = createDoc();
     const w: WireItem = { id: uid('w'), type: 'wire', a: { kind: 'free', x: 0, y: 0 }, b: { kind: 'free', x: 50, y: 0 }, pts: [{ x: 100, y: 0 }, { x: 100, y: 50 }, { x: 50, y: 50 }], routing: 'straight' };
     doc.items[w.id] = w;
-    const t = computeHotSpots(doc, polysOf(doc), []).find((h) => h.kind === 'touch');
-    expect(t?.kind).toBe('touch');
-    expect(applySolder(doc, t!, sceneData())).toBeNull();
-    const jn = Object.values(doc.items).find((i): i is JunctionItem => i.type === 'junction');
-    expect(endsOn(doc, jn!.id)).toBe(3);
-    expect(computeNets(doc).filter((n) => n.wires.length)).toHaveLength(1);
+    expect(computeHotSpots(doc, polysOf(doc), []).some((h) => h.kind === 'end' && h.end === 'b')).toBe(false);
+    const out = joinTouches(doc);
+    const jn = Object.values(out.items).find((i): i is JunctionItem => i.type === 'junction');
+    expect(endsOn(out, jn!.id)).toBe(3);
+    expect(computeNets(out).filter((n) => n.wires.length)).toHaveLength(1);
   });
+
 });

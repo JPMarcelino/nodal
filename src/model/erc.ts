@@ -1,5 +1,6 @@
 import { computeHotSpots } from './hotspots';
 import { toWorld } from './geometry';
+import { contactLinks } from './connectivity';
 import { computeNets, touchingPins } from './netlist';
 import { docPages, itemPage, viewDoc } from './pages';
 import { instanceSymbol } from './registry';
@@ -29,7 +30,6 @@ export type ErcRule =
   | 'single-label'
   | 'shorted-nets'
   | 'loose-end'
-  | 'touching-end'
   | 'stacked-parts'
   | 'nc-connected';
 
@@ -42,7 +42,6 @@ export const ERC_RULES: Record<ErcRule, string> = {
   'single-label': 'Net labels used only once',
   'shorted-nets': 'Differently named nets joined together',
   'loose-end': 'Wire ends left hanging',
-  'touching-end': 'Wire ends touching something without connecting',
   'stacked-parts': 'Parts stacked on top of each other',
   'nc-connected': 'No-connect flags on wired pins',
 };
@@ -110,6 +109,14 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
       if (!c || c.type !== 'component') continue;
       wired.set(`${ep.comp}:${ep.port}`, (wired.get(`${ep.comp}:${ep.port}`) ?? 0) + 1);
     }
+  }
+  // a wire end, wire or dot resting on a pin connects it as surely as a wire attached to it
+  for (const link of contactLinks(doc)) {
+    const pin = link.find((k) => k.startsWith('p:'));
+    const other = link.find((k) => k !== pin);
+    if (!pin || !other || other.startsWith('p:')) continue;
+    const k = pin.slice(2);
+    if (!wired.has(k)) wired.set(k, 1);
   }
   const touching = touchingPins(doc);
   const touched = new Set(touching.flat());
@@ -189,27 +196,12 @@ export function runErc(doc: CircuitDoc): ErcIssue[] {
     const page = viewDoc(doc, p.id);
     const polys = new Map<string, Point[]>();
     for (const it of Object.values(page.items)) if (it.type === 'wire' && !it.hidden) polys.set(it.id, wirePolyline(page, it));
-    return computeHotSpots(page, polys, []).map((h) => ({ h, page: p.id }));
+    return computeHotSpots(page, polys, []);
   });
-  for (const { h, page } of hotSpots) {
-    if (h.kind === 'end' || h.kind === 'touch' || h.kind === 'pinTouch') unfinished.add(h.wire);
-    if (h.kind === 'end') {
-      issues.push({ key: `loose-end:${h.wire}:${h.end}`, rule: 'loose-end', severity: 'warning', message: 'Wire end is not connected to anything', items: [h.wire], at: h.pt });
-    } else if (h.kind === 'touch' || h.kind === 'pinTouch') {
-      const what =
-        h.kind === 'pinTouch'
-          ? describePin(doc, h.comp, h.port)
-          : h.target.kind === 'port'
-            ? describePin(doc, h.target.comp, h.target.port)
-            : h.target.kind === 'junction'
-              ? 'a junction'
-              : h.target.kind === 'end'
-                ? 'another wire end'
-                : 'a wire';
-      const message =
-        h.kind === 'pinTouch' ? `${what} lies on a wire without connecting to it — solder it` : `Wire end touches ${what} without connecting — solder it`;
-      issues.push({ key: `touching-end:${page}:${h.kind}:${h.pt.x},${h.pt.y}`, rule: 'touching-end', severity: 'warning', message, items: [h.wire], at: h.pt });
-    }
+  for (const h of hotSpots) {
+    if (h.kind !== 'end') continue;
+    unfinished.add(h.wire);
+    issues.push({ key: `loose-end:${h.wire}:${h.end}`, rule: 'loose-end', severity: 'warning', message: 'Wire end is not connected to anything', items: [h.wire], at: h.pt });
   }
 
   /* ----------------------------- nets ------------------------------- */
@@ -301,11 +293,3 @@ export function splitIgnored(issues: ErcIssue[], ignored: readonly string[] | un
 
 const isLabelLike = (def: SymbolDef) => !!def.valueIsLabel;
 
-function describePin(doc: CircuitDoc, comp: string, port: string) {
-  const c = doc.items[comp];
-  if (!c || c.type !== 'component') return 'a pin';
-  const def = instanceSymbol(doc, c);
-  const name = def.ports.find((p) => p.id === port)?.name ?? port;
-  if (!isPart(def)) return def.valueIsLabel ? `label “${c.value}”` : def.name.toLowerCase();
-  return `${c.ref || def.name} pin ${name}`;
-}

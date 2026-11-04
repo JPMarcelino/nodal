@@ -71,9 +71,11 @@ You can also share without a live session. Open **File → Share & collaborate�
 ### Wiring
 - Drag from any pin to draw a wire, or press **W** and click to add bends. Wires stay orthogonal; press **Space** to flip the elbow and **Backspace** to remove the last bend.
 - **Quick add (chain parts):** with one part selected, **Ctrl+Shift+←/→/↑/↓** places a copy of it (same value, fields and style; next reference designator) a short wire away in that direction, wired from the pin facing that way (turned if needed so a pin faces back, e.g. a resistor chained downward stands up), skipping occupied spots. The copy is selected, so pressing again builds a chain; one undo removes the part and its wire.
-- Ending a wire on another wire creates a **junction** automatically. **Alt-drag** on a wire starts a branch from it.
+- **If it touches, it's connected, unless it hops** (as in Cadence and KiCad). A wire end, a pin or a junction dot connects to whatever it lands on: another wire's end, a bend or the middle of a wire, a pin or a dot. Two wires crossing are the only things that touch without connecting, and they are drawn with a hop. Wires stay separate pieces; touching only puts them on the same net, which the Nets panel, net highlighting, wire names, the ERC and every netlist export all use.
+- Ending a wire on another wire creates a **junction** automatically, and so does any touch left by an edit (moving, pasting, importing), so the dot is drawn and the wires follow when a part or junction is dragged. **Alt-drag** on a wire starts a branch from it.
 - **Crossings hop:** where wires cross without connecting, a small arc is drawn (you can switch to a gap or a plain crossing).
-- **Placing parts onto wires connects them:** a pin set down exactly on a loose wire end takes that end, and a part dropped across a wire is inserted into it (the wire is split at its pins, and the piece that would short the part is removed). Wires dragged over pins don't connect by accident.
+- **Placing parts onto wires connects them:** a pin set down exactly on a loose wire end takes that end, and a part dropped across a wire is inserted into it (the wire is split at its pins, and the piece that would short the part is removed). A wire dragged across a pin touches it, so it connects there.
+- **Unsolder** a junction or pin from its hover menu: wires running straight through become one crossing wire again, and every other branch is pulled back a grid step so it really lets go.
 - **Wires never lie on top of each other:** if a wire is drawn, dragged or moved along another one, the shared stretch is merged into a single run with junctions at its ends, so what looks connected is connected.
 - Dragging a segment that ends at a junction takes the junction along; the other wires there bend to stay attached.
 - Junction dots appear wherever three or more conductors meet. Deleting a branch merges the remaining wire back into one.
@@ -104,7 +106,7 @@ The **Explain** button at the end of the tool rail opens a toolbar of annotation
 Ink and callouts are saved with the circuit and exported. Traced nets are temporary; **Esc** clears them.
 
 ### Checking the circuit
-- **Check tab** (**Ctrl+Alt+R**): a live electrical rules check. It lists unconnected pins (open power pins are errors), duplicate reference designators, supply rails shorted together, net labels used only once, nets that reach a single pin, loose wire ends, wire ends touching something without connecting, no-connect flags on wired pins, and parts stacked on the same spot. Markers show each problem on the canvas; click one to select and zoom to it. Put a **no-connect flag** (**Shift+X**) on pins you leave open on purpose.
+- **Check tab** (**Ctrl+Alt+R**): a live electrical rules check. It lists unconnected pins (open power pins are errors), duplicate reference designators, supply rails shorted together, net labels used only once, nets that reach a single pin, loose wire ends, no-connect flags on wired pins, and parts stacked on the same spot. Markers show each problem on the canvas; click one to select and zoom to it. Put a **no-connect flag** (**Shift+X**) on pins you leave open on purpose.
 - **Find** (**Ctrl+F**): jump to any part (by reference, value or any field), net, label or text.
 - Pins of two parts that touch are connected, just as if a wire joined them.
 
