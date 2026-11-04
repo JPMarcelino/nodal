@@ -2,7 +2,7 @@ import { copyAsPng, copyAsSvg, exportSelection, fileNew, fileOpen, filePrint, fi
 import { importFile } from '../io/importFiles';
 import { exportLibraryFile, exportTemplateFile } from '../io/sharing';
 import { selectionToDrawing } from '../model/fromSelection';
-import { GRID_STYLES, GRID_STYLE_NAMES, selectedGroup } from '../model/doc';
+import { GRID_SIZES, GRID_STYLES, GRID_STYLE_NAMES, selectedGroup } from '../model/doc';
 import { computeNets, netOfWire } from '../model/netlist';
 import * as A from './actions';
 import { clearExplainOverlays } from './explain';
@@ -198,6 +198,9 @@ export const COMMANDS: Command[] = [
   { id: 'view.labelGuides', label: 'Guides for part names and values', category: 'View', keys: ['Alt+Shift+N'], run: () => togglePref('labelGuides', 'Label guides'), checked: () => S().prefs.labelGuides, keywords: 'text label ref value align' },
   { id: 'view.grid', label: 'Toggle grid', category: 'View', keys: ['G'], run: () => mutateSettings((s) => (s.showGrid = !s.showGrid)), checked: () => vdoc().settings.showGrid },
   { id: 'view.gridStyle', label: 'Grid style: dots → lines → crosses → major lines', category: 'View', keys: [], run: () => cycleGridStyle(), keywords: 'grid dots lines crosses major look' },
+  { id: 'view.gridSize', label: 'Grid size…', category: 'View', keys: [], run: () => openGridSizeMenu(), keywords: 'grid spacing step pixels snap size finer coarser' },
+  { id: 'view.gridSizeSmaller', label: 'Smaller grid step', category: 'View', keys: ['['], run: () => stepGridSize(-1), keywords: 'grid size spacing finer smaller increase density' },
+  { id: 'view.gridSizeBigger', label: 'Larger grid step', category: 'View', keys: [']'], run: () => stepGridSize(1), keywords: 'grid size spacing coarser larger decrease density' },
   { id: 'view.snap', label: 'Toggle snap to grid', category: 'View', keys: ["Mod+'"], run: () => mutateSettings((s) => (s.snap = !s.snap)), checked: () => vdoc().settings.snap },
   { id: 'view.library', label: 'Toggle library panel', category: 'View', keys: ['Mod+B'], run: () => set((s) => ({ leftPanel: !s.leftPanel })), checked: () => S().leftPanel },
   { id: 'view.inspector', label: 'Toggle properties panel', category: 'View', keys: ['Mod+I'], run: () => set((s) => ({ rightPanel: !s.rightPanel })), checked: () => S().rightPanel },
@@ -267,7 +270,7 @@ export const EDIT_COMMANDS: ReadonlySet<string> = new Set([
   'page.new', 'page.rename', 'page.duplicate', 'page.delete', 'page.moveLeft', 'page.moveRight',
   'wire.reroute', 'wire.hops', 'wire.corners',
   // these are stored in the circuit, so they are edits too
-  'view.refs', 'view.values', 'view.wireLabels', 'view.grid', 'view.snap',
+  'view.refs', 'view.values', 'view.wireLabels', 'view.grid', 'view.gridSize', 'view.gridSizeSmaller', 'view.gridSizeBigger', 'view.snap',
   'symbols.edit', 'symbols.fromSelection',
 ]);
 
@@ -306,9 +309,8 @@ for (const c of COMMANDS) {
 export const COMMAND_MAP = new Map(COMMANDS.map((c) => [c.id, c]));
 
 function mutateSettings(fn: (s: import('../model/types').DocSettings) => void) {
-  mutate((d) => fn(d.settings));
+  return mutate((d) => fn(d.settings));
 }
-
 
 function cycleGridStyle() {
   const cur = vdoc().settings.gridStyle ?? 'dots';
@@ -318,6 +320,28 @@ function cycleGridStyle() {
     s.showGrid = true;
   });
   toast(`Grid: ${GRID_STYLE_NAMES[next].toLowerCase()}`);
+}
+
+/** Sets the grid / snap step, clamped to the range the document accepts. */
+export function setGridSize(size: number) {
+  if (readOnly()) return A.readOnlyNotice();
+  if (!Number.isFinite(size)) return;
+  const next = +Math.min(100, Math.max(0.01, size)).toFixed(4);
+  if (Math.abs(next - vdoc().settings.grid) < 1e-9) return;
+  if (!mutateSettings((s) => (s.grid = next))) return;
+  toast(`Grid size: ${next} px`);
+}
+
+/** Steps to the next preset grid size (or halves / doubles a custom one). */
+export function stepGridSize(dir: -1 | 1) {
+  const cur = vdoc().settings.grid;
+  const next = (dir > 0 ? GRID_SIZES : [...GRID_SIZES].reverse()).find((v) => (dir > 0 ? v > cur + 1e-9 : v < cur - 1e-9));
+  setGridSize(next ?? (dir > 0 ? cur * 2 : cur / 2));
+}
+
+/** Opens the grid-size menu in the status bar (from the View menu or the command palette). */
+export function openGridSizeMenu() {
+  window.dispatchEvent(new Event('nodal:grid-size'));
 }
 
 function togglePref(key: 'spacingGuides' | 'labelGuides', what: string) {

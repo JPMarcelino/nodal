@@ -381,8 +381,8 @@ function DocumentPanel() {
         </Field>
       </Section>
       <SheetSection />
-      <Section title="Canvas" defaultOpen={false} summary={`${+settings.grid.toFixed(4)}px grid${settings.snap ? ' · snap' : ''}`}>
-        <Field label="Grid">
+      <Section title="Grid & canvas" id="canvas" defaultOpen={false} summary={`${+settings.grid.toFixed(4)}px grid${settings.snap ? ' · snap' : ''}`}>
+        <Field label="Grid size" hint="Spacing of the grid and of one snap step (0.01–100 px)">
           <NumberInput value={settings.grid} min={0.01} max={100} suffix="px" onChange={(v) => upd((s) => (s.grid = v))} />
         </Field>
         <Field label="Show grid">
