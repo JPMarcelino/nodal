@@ -1549,12 +1549,16 @@ export function Canvas() {
     const ch = singleShape && !singleShape.locked && isConnector(singleShape) ? connHandleAt(singleShape, w) : null;
     if (singleShape && ch) {
       const id = singleShape.id;
-      if (ch.part === 'bend' && isDouble) {
-        // double-click a bend removes it
+      if (ch.part === 'bend' && (isDouble || e.shiftKey)) {
+        // double-click or Shift-click a bend removes it
         mutate((d) => {
           const s = d.items[id] as ShapeItem;
           s.pts?.splice(ch.idx, 1);
-          if (!s.pts?.length) delete s.pts;
+          if (!s.pts?.length) {
+            delete s.pts;
+            // a bend that turned a plain line into an arch takes the arch with it
+            if (s.route === 'curved') delete s.route;
+          }
         });
         return;
       }

@@ -159,7 +159,7 @@ function selectHint(s: HintState, cmd: (id: string, what: string) => string | nu
     case 'text':
       return join(['Double-click to edit the text', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
     case 'connector':
-      return join(['Drag the + in the middle to bow it into a curve', 'Alt-drag the + for a sharp corner', 'drag an end to attach it', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
+      return join(['Drag the + in the middle to bow it into a curve', 'Alt-drag the + for a sharp corner', 'Shift-click a point to remove it', 'drag an end to attach it', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
     case 'shape':
       return join(['Drag a handle to resize', 'double-click to add text', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
     default:
