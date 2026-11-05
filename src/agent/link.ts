@@ -40,6 +40,7 @@ function connect() {
   }
   ws = sock;
   sock.onopen = () => {
+    if (ws !== sock) return;
     backoff = 1000;
     setAgent({ connected: true, linkError: null });
     const doc = sharedDoc();
@@ -47,6 +48,7 @@ function connect() {
     logAgent({ kind: 'system', text: 'Connected to the agent bridge' });
   };
   sock.onmessage = (ev) => {
+    if (ws !== sock) return;
     let msg: { type?: string; id?: unknown; method?: string; params?: Record<string, unknown>; count?: number };
     try {
       msg = JSON.parse(String(ev.data));
@@ -66,9 +68,12 @@ function connect() {
     }
   };
   sock.onerror = () => {
+    if (ws !== sock) return;
     setAgent({ linkError: `No agent bridge at ${url}` });
   };
   sock.onclose = () => {
+    // a socket replaced by a newer one (URL changed, link restarted) must not touch the new link
+    if (ws !== sock) return;
     const was = A().connected;
     ws = null;
     setAgent({ connected: false });

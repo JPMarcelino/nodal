@@ -4,7 +4,7 @@ import { exportSvg } from '../io/export';
 import { createDoc, makeComponent, uid } from '../model/doc';
 import { computeNets } from '../model/netlist';
 import { unsolderJunction } from '../model/ops';
-import { addPage } from '../model/pages';
+import { addPage, editPage } from '../model/pages';
 import { settleEdit } from '../model/settle';
 import { insertSvgDrawing } from '../model/svgDrawing';
 import { joinTouches } from '../model/touches';
@@ -134,6 +134,14 @@ describe('recording touches (settle)', () => {
     wire(d, F(100, 0), F(100, 100), [], { locked: true });
     expect(joinTouches(d)).toBe(d);
     expect(wireNets(d)).toHaveLength(1);
+  });
+
+  it('records a tee on a page of a multi-page circuit', () => {
+    const d = createDoc();
+    const p2 = addPage(d, 'Two');
+    const first = editPage(d, p2, (x) => void wire(x as CircuitDoc, F(0, 0), F(200, 0)), settleEdit);
+    const out = editPage(first, p2, (x) => void wire(x as CircuitDoc, F(100, 0), F(100, 100)), settleEdit);
+    expect(Object.values(out.items).filter((i) => i.type === 'junction')).toHaveLength(1);
   });
 
   it('never changes what is connected (random drawings)', () => {
