@@ -13,6 +13,14 @@ function polysOf(doc: CircuitDoc): Map<string, Point[]> {
 
 const locked = (doc: CircuitDoc, id: string) => !!doc.items[id]?.locked;
 
+/** Whether the items sit on more than one page: a page view keeps the whole page list but only one page's items. */
+function spansPages(doc: CircuitDoc): boolean {
+  if (!multiPage(doc)) return false;
+  const pages = new Set<string>();
+  for (const it of Object.values(doc.items)) if (it.page) pages.add(it.page);
+  return pages.size > 1;
+}
+
 /** Records one touch as a connection; false when a locked wire is in the way or the touch is gone (looked for again next round). */
 function join(doc: CircuitDoc, t: Touch): boolean {
   switch (t.kind) {
@@ -37,10 +45,10 @@ function join(doc: CircuitDoc, t: Touch): boolean {
  * dot or pin lying on a wire's run splits the wire there. Locked wires are
  * left as they are (they stay connected all the same). Works on one page (a
  * page view, as settling and exporting use); returns `doc` unchanged when
- * there is nothing to record, or when it holds several pages.
+ * there is nothing to record, or when its items span several pages.
  */
 export function joinTouches(doc: CircuitDoc): CircuitDoc {
-  if (multiPage(doc) || !findTouches(doc, polysOf(doc)).length) return doc;
+  if (spansPages(doc) || !findTouches(doc, polysOf(doc)).length) return doc;
   return produce(doc, (d) => {
     const draft = d as CircuitDoc;
     let any = false;
