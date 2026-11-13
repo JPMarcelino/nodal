@@ -1,0 +1,5211 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Nodal Agent Bridge API",
+    "version": "1.4.5",
+    "description": "Local HTTP API of the Nodal agent bridge (`nodal-agent.mjs`). It lets AI agents, scripts and other programs drive a running Nodal window (web or desktop): place and wire parts, draw, manage pages and symbols, run the electrical rules check, read nets, export and take screenshots. Each change shows up live on the canvas with the agent's own cursor and stays off the user's undo history.\n\nThe bridge listens on 127.0.0.1 only. Start it with `node nodal-agent.mjs` (download: https://jpmarcelino.github.io/nodal/nodal-agent.mjs), then open Nodal and choose File -> AI agent link. All circuit operations are JSON-RPC style calls to `POST /rpc` with `{method, params}`; pick a method from the examples list. The same methods are available as MCP tools (`claude mcp add nodal -- node nodal-agent.mjs mcp`).\n\nNodal agent API. You drive a live Nodal window: every edit appears on the user's canvas as you make it, with your own cursor and an activity log. Your work is independent of the user's selection, tool, page and viewport: always pass explicit ids, coordinates and (optionally) a page; nothing here reads what the user clicked. Edits you make are not on the user's undo stack (use history.undo for yours).\n\nWorkflow: session.start {name, goal} first, then build, then session.done {summary}. While you are working the user may be prevented from editing what you made (the guard; the user decides). Use session.say to narrate, doc.screenshot to look at the result, check.run to verify wiring.\n\nCoordinates: world pixels, x right, y DOWN. The grid is doc.settings.grid (default 10); keep parts and wire points on it. A typical 2-pin part (resistor) is 60–80 px long. Rotation is 0/90/180/270 clockwise.\n\nItems (doc.items, keyed by id): component (a placed symbol: symbol, x, y = its centre, rot, flipX, ref like R1, value like 10k, props), wire (a, b endpoints + pts bends), junction (solder dot x, y), shape (kind rect|zone|ellipse|polygon|line|arrow|text|image|ink|callout|frame, box x y w h, styling). Wire endpoints: {kind:'port', comp, port} | {kind:'junction', id} | {kind:'free', x, y}.\n\nWiring: prefer wires.connect with port targets ({ref:'R1', port:'2'} or {comp:id, port:'name or id'}); it routes orthogonally around parts and makes junctions where you land on a wire. components.ports tells you each pin's id, name and absolute position. Nets also join by name: place 'net-label' / 'gnd' / 'vcc' symbols with the same value on several pins.\n\nPages: a document has one or more pages; methods taking 'page' default to your working page (session.setPage), never the user's page.\n\nSymbols: symbols.list / symbols.get give the library (ids like 'resistor', 'capacitor', 'dc-source', 'gnd', 'vcc', 'net-label', 'opamp'). symbols.create adds a custom symbol drawn in the symbol DSL: one command per line — W w (stroke width), SC colour, FC colour, DA 1|0 (dashed), L x1 y1 x2 y2 … (polyline), G … (closed polygon, GF filled, GB background-filled), R x y w h [rx] (RF, RB), C cx cy r (CF, CB), E cx cy rx ry, A cx cy r a1 a2 (arc, degrees clockwise from +x), P <svg path> (PF, PB), T x y size s|m|e text. Ports: 'name:x,y name2:x,y' in symbol-local px (origin top-left).\n\nBatching: batch {calls:[{method, params}]} runs many edits as ONE step (one undo, one repaint); later calls can use ids from earlier ones via \"$0.id\" / \"$2.ids.0\" strings (result of call #n, dotted path).\n\nErrors come back as {error:{code, message}}. Read-only methods never change anything.",
+    "license": {
+      "name": "MIT",
+      "url": "https://github.com/JPMarcelino/nodal/blob/main/LICENSE"
+    }
+  },
+  "externalDocs": {
+    "description": "Agent bridge README",
+    "url": "https://github.com/JPMarcelino/nodal/blob/main/agent-bridge/README.md"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:{port}",
+      "description": "Local agent bridge",
+      "variables": {
+        "port": {
+          "default": "47821",
+          "description": "NODAL_AGENT_PORT / --port"
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "Bridge",
+      "description": "Status and discovery"
+    },
+    {
+      "name": "Circuit",
+      "description": "Drive the linked Nodal window"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Bridge"
+        ],
+        "summary": "Bridge status and whether a Nodal window is linked",
+        "operationId": "health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "bridge": {
+                      "type": "string",
+                      "description": "Bridge version"
+                    },
+                    "app": {
+                      "type": "boolean",
+                      "description": "A Nodal window is linked"
+                    },
+                    "appInfo": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "doc": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/methods": {
+      "get": {
+        "tags": [
+          "Bridge"
+        ],
+        "summary": "The method catalog (guide and every method with its parameters)",
+        "operationId": "methods",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "integer"
+                    },
+                    "guide": {
+                      "type": "string"
+                    },
+                    "methods": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "params": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "mutates": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc": {
+      "post": {
+        "tags": [
+          "Circuit"
+        ],
+        "summary": "Call a method on the linked Nodal window",
+        "operationId": "rpc",
+        "description": "Runs one of the 107 methods. Calls run one at a time, in order. Use `batch` to apply several calls in one go (later calls can refer to earlier results as `$0.id`). Waits up to NODAL_AGENT_WAIT_MS (15 s) for a Nodal window to link.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Call_nodal_describe"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_nodal_ping"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_session_start"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_session_status"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_session_say"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_session_progress"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_session_done"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_session_setPage"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_session_pointAt"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_session_log"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_session_waitForUser"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_app_state"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_app_prefs"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_app_setPrefs"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_app_toast"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_app_commands"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_app_runCommand"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_user_select"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_user_show"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_user_setPage"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_user_setFollow"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_get"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_summary"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_new"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_load"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_rename"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_settings"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_setSettings"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_insert"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_save"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_export"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_screenshot"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_doc_stats"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_pages_list"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_pages_add"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_pages_rename"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_pages_delete"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_pages_duplicate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_pages_move"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_list"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_get"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_create"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_update"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_delete"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_move"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_moveTo"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_rotate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_rotateShape"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_flip"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_scale"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_align"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_distribute"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_matchSize"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_restack"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_duplicate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_moveToPage"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_lock"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_hide"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_style"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_getStyle"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_find"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_items_template"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_groups_list"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_groups_create"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_groups_ungroup"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_groups_rename"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_components_place"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_components_placeMany"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_components_ports"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_components_setSymbol"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_components_annotate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_wires_connect"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_wires_connectMany"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_wires_path"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_wires_reroute"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_wires_junction"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_wires_unsolder"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_wires_label"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_wires_deletePart"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_shapes_add"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_shapes_presets"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_shapes_addPreset"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_shapes_connect"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_shapes_note"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_shapes_toPath"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbols_list"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbols_categories"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbols_get"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbols_create"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbols_fromSvg"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbols_fromItems"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbols_delete"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbols_importLibrary"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbols_exportLibrary"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_nets_list"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_nets_of"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_check_run"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_check_ignore"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_history_undo"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_history_redo"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_history_steps"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_versions_save"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_versions_list"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_versions_restore"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbolEditor_open"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_symbolEditor_close"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Call_batch"
+                  }
+                ]
+              },
+              "examples": {
+                "nodal_describe": {
+                  "summary": "nodal.describe: This guide plus every method with its parameters.",
+                  "value": {
+                    "method": "nodal.describe",
+                    "params": {}
+                  }
+                },
+                "nodal_ping": {
+                  "summary": "nodal.ping: Checks the app is connected; returns its version and the open document's id and ",
+                  "value": {
+                    "method": "nodal.ping",
+                    "params": {}
+                  }
+                },
+                "session_start": {
+                  "summary": "session.start: Starts (or restarts) your work session: shows you in the app as working, with yo",
+                  "value": {
+                    "method": "session.start",
+                    "params": {}
+                  }
+                },
+                "session_status": {
+                  "summary": "session.status: Your session (status, guard mode chosen by the user, working page, items you own",
+                  "value": {
+                    "method": "session.status",
+                    "params": {}
+                  }
+                },
+                "session_say": {
+                  "summary": "session.say: Shows a message to the user (activity log and a bubble at your cursor).",
+                  "value": {
+                    "method": "session.say",
+                    "params": {
+                      "text": "string"
+                    }
+                  }
+                },
+                "session_progress": {
+                  "summary": "session.progress: Updates the progress shown in the agent panel.",
+                  "value": {
+                    "method": "session.progress",
+                    "params": {}
+                  }
+                },
+                "session_done": {
+                  "summary": "session.done: Marks your work finished: the guard is lifted and the user gets a notification w",
+                  "value": {
+                    "method": "session.done",
+                    "params": {}
+                  }
+                },
+                "session_setPage": {
+                  "summary": "session.setPage: Sets your working page (default target of every edit). Does not change what the ",
+                  "value": {
+                    "method": "session.setPage",
+                    "params": {
+                      "page": "string"
+                    }
+                  }
+                },
+                "session_pointAt": {
+                  "summary": "session.pointAt: Moves your cursor (what the user sees you looking at) to a point or to items.",
+                  "value": {
+                    "method": "session.pointAt",
+                    "params": {}
+                  }
+                },
+                "session_log": {
+                  "summary": "session.log: Recent entries of the activity log the user sees.",
+                  "value": {
+                    "method": "session.log",
+                    "params": {}
+                  }
+                },
+                "session_waitForUser": {
+                  "summary": "session.waitForUser: Waits until the user replies in the agent panel (or the timeout passes) and retu",
+                  "value": {
+                    "method": "session.waitForUser",
+                    "params": {
+                      "question": "string"
+                    }
+                  }
+                },
+                "app_state": {
+                  "summary": "app.state: What the user is doing: page in view, selection, tool, viewport, theme, open dia",
+                  "value": {
+                    "method": "app.state",
+                    "params": {}
+                  }
+                },
+                "app_prefs": {
+                  "summary": "app.prefs: Reads the app preferences.",
+                  "value": {
+                    "method": "app.prefs",
+                    "params": {}
+                  }
+                },
+                "app_setPrefs": {
+                  "summary": "app.setPrefs: Changes app preferences (theme, wireAvoid, wireAngle, showMinimap, autosave…). A",
+                  "value": {
+                    "method": "app.setPrefs",
+                    "params": {
+                      "patch": "string"
+                    }
+                  }
+                },
+                "app_toast": {
+                  "summary": "app.toast: Shows a short notification at the bottom of the window.",
+                  "value": {
+                    "method": "app.toast",
+                    "params": {
+                      "text": "string"
+                    }
+                  }
+                },
+                "app_commands": {
+                  "summary": "app.commands: Lists the app's UI commands (menu / palette entries) with ids and shortcuts.",
+                  "value": {
+                    "method": "app.commands",
+                    "params": {}
+                  }
+                },
+                "app_runCommand": {
+                  "summary": "app.runCommand: Runs a UI command exactly as the user would (it acts on the USER's selection, pa",
+                  "value": {
+                    "method": "app.runCommand",
+                    "params": {
+                      "id": "string"
+                    }
+                  }
+                },
+                "user_select": {
+                  "summary": "user.select: Selects items for the user (switching the user's page if needed) — e.g. to show ",
+                  "value": {
+                    "method": "user.select",
+                    "params": {
+                      "ids": "string"
+                    }
+                  }
+                },
+                "user_show": {
+                  "summary": "user.show: Moves the user's view to items or a rectangle (switching page if needed).",
+                  "value": {
+                    "method": "user.show",
+                    "params": {}
+                  }
+                },
+                "user_setPage": {
+                  "summary": "user.setPage: Switches the page the user is looking at.",
+                  "value": {
+                    "method": "user.setPage",
+                    "params": {
+                      "page": "string"
+                    }
+                  }
+                },
+                "user_setFollow": {
+                  "summary": "user.setFollow: Turns 'follow the agent' on or off (the user's view tracks your edits). The user",
+                  "value": {
+                    "method": "user.setFollow",
+                    "params": {
+                      "on": "string"
+                    }
+                  }
+                },
+                "doc_get": {
+                  "summary": "doc.get: The whole document as JSON (format 'nodal'), or one page of it.",
+                  "value": {
+                    "method": "doc.get",
+                    "params": {}
+                  }
+                },
+                "doc_summary": {
+                  "summary": "doc.summary: Compact overview: name, pages with item counts, bounds, every part (ref, symbol,",
+                  "value": {
+                    "method": "doc.summary",
+                    "params": {}
+                  }
+                },
+                "doc_new": {
+                  "summary": "doc.new: Replaces the open circuit with a new empty one (the old one is kept as a version",
+                  "value": {
+                    "method": "doc.new",
+                    "params": {}
+                  }
+                },
+                "doc_load": {
+                  "summary": "doc.load: Replaces the open circuit with the given document (object or JSON text). The old",
+                  "value": {
+                    "method": "doc.load",
+                    "params": {
+                      "doc": "string"
+                    }
+                  }
+                },
+                "doc_rename": {
+                  "summary": "doc.rename: Renames the circuit.",
+                  "value": {
+                    "method": "doc.rename",
+                    "params": {
+                      "name": "string"
+                    }
+                  }
+                },
+                "doc_settings": {
+                  "summary": "doc.settings: Reads the document settings (grid, wire style, hops, junction size, colours, tit",
+                  "value": {
+                    "method": "doc.settings",
+                    "params": {}
+                  }
+                },
+                "doc_setSettings": {
+                  "summary": "doc.setSettings: Changes document settings; nested objects (wire, sheet) are merged.",
+                  "value": {
+                    "method": "doc.setSettings",
+                    "params": {
+                      "patch": "string"
+                    }
+                  }
+                },
+                "doc_insert": {
+                  "summary": "doc.insert: Inserts another circuit or fragment (its items get new ids) offset by dx, dy on ",
+                  "value": {
+                    "method": "doc.insert",
+                    "params": {
+                      "doc": "string"
+                    }
+                  }
+                },
+                "doc_save": {
+                  "summary": "doc.save: Saves the circuit: desktop app writes to its file (or 'path'); the web app downl",
+                  "value": {
+                    "method": "doc.save",
+                    "params": {}
+                  }
+                },
+                "doc_export": {
+                  "summary": "doc.export: Exports and returns the content: svg / dxf / spice / kicad / bom / json as text,",
+                  "value": {
+                    "method": "doc.export",
+                    "params": {
+                      "format": "string"
+                    }
+                  }
+                },
+                "doc_screenshot": {
+                  "summary": "doc.screenshot: Renders a page (or items / an area) to a PNG so you can see the drawing. Returns",
+                  "value": {
+                    "method": "doc.screenshot",
+                    "params": {}
+                  }
+                },
+                "doc_stats": {
+                  "summary": "doc.stats: Counts of parts, wires, junctions, shapes, nets and pages.",
+                  "value": {
+                    "method": "doc.stats",
+                    "params": {}
+                  }
+                },
+                "pages_list": {
+                  "summary": "pages.list: Pages in tab order with item counts; marks your working page and the user's page",
+                  "value": {
+                    "method": "pages.list",
+                    "params": {}
+                  }
+                },
+                "pages_add": {
+                  "summary": "pages.add: Adds a page; returns its id.",
+                  "value": {
+                    "method": "pages.add",
+                    "params": {}
+                  }
+                },
+                "pages_rename": {
+                  "summary": "pages.rename: Renames a page.",
+                  "value": {
+                    "method": "pages.rename",
+                    "params": {
+                      "page": "string",
+                      "name": "string"
+                    }
+                  }
+                },
+                "pages_delete": {
+                  "summary": "pages.delete: Deletes a page and everything on it (not the last page).",
+                  "value": {
+                    "method": "pages.delete",
+                    "params": {
+                      "page": "string"
+                    }
+                  }
+                },
+                "pages_duplicate": {
+                  "summary": "pages.duplicate: Copies a page with all its items; returns the new page id.",
+                  "value": {
+                    "method": "pages.duplicate",
+                    "params": {
+                      "page": "string"
+                    }
+                  }
+                },
+                "pages_move": {
+                  "summary": "pages.move: Moves a page to a position in the tab row (0 = first).",
+                  "value": {
+                    "method": "pages.move",
+                    "params": {
+                      "page": "string",
+                      "to": "string"
+                    }
+                  }
+                },
+                "items_list": {
+                  "summary": "items.list: Lists items compactly, filtered. Components show ref / symbol / value; wires the",
+                  "value": {
+                    "method": "items.list",
+                    "params": {}
+                  }
+                },
+                "items_get": {
+                  "summary": "items.get: Full items by id (or component ref), with bounds; components also get their pins",
+                  "value": {
+                    "method": "items.get",
+                    "params": {
+                      "ids": "string"
+                    }
+                  }
+                },
+                "items_create": {
+                  "summary": "items.create: Creates raw items (any type, full control of fields). Missing ids are generated;",
+                  "value": {
+                    "method": "items.create",
+                    "params": {
+                      "items": "string"
+                    }
+                  }
+                },
+                "items_update": {
+                  "summary": "items.update: Changes fields of items (shallow merge; nested objects like style / labelStyle /",
+                  "value": {
+                    "method": "items.update",
+                    "params": {
+                      "ids": "string",
+                      "patch": "string"
+                    }
+                  }
+                },
+                "items_delete": {
+                  "summary": "items.delete: Deletes items; wires attached to deleted parts keep their shape.",
+                  "value": {
+                    "method": "items.delete",
+                    "params": {
+                      "ids": "string"
+                    }
+                  }
+                },
+                "items_move": {
+                  "summary": "items.move: Moves items by dx, dy; connected wires follow (like dragging).",
+                  "value": {
+                    "method": "items.move",
+                    "params": {
+                      "ids": "string",
+                      "dx": 0,
+                      "dy": 0
+                    }
+                  }
+                },
+                "items_moveTo": {
+                  "summary": "items.moveTo: Moves items so the first one's position (x, y) lands at the given point; the res",
+                  "value": {
+                    "method": "items.moveTo",
+                    "params": {
+                      "ids": "string",
+                      "x": 0,
+                      "y": 0
+                    }
+                  }
+                },
+                "items_rotate": {
+                  "summary": "items.rotate: Turns items a quarter (or half) turn about their common centre (or 'pivot'); wir",
+                  "value": {
+                    "method": "items.rotate",
+                    "params": {
+                      "ids": "string",
+                      "deg": 0
+                    }
+                  }
+                },
+                "items_rotateShape": {
+                  "summary": "items.rotateShape: Turns one shape by any angle about its centre (or a pivot).",
+                  "value": {
+                    "method": "items.rotateShape",
+                    "params": {
+                      "id": "string",
+                      "deg": 0
+                    }
+                  }
+                },
+                "items_flip": {
+                  "summary": "items.flip: Mirrors items left-right (x) or up-down (y).",
+                  "value": {
+                    "method": "items.flip",
+                    "params": {
+                      "ids": "string",
+                      "axis": "string"
+                    }
+                  }
+                },
+                "items_scale": {
+                  "summary": "items.scale: Scales items about a pivot (default their centre).",
+                  "value": {
+                    "method": "items.scale",
+                    "params": {
+                      "ids": "string",
+                      "factor": 0
+                    }
+                  }
+                },
+                "items_align": {
+                  "summary": "items.align: Aligns items' edges or centres.",
+                  "value": {
+                    "method": "items.align",
+                    "params": {
+                      "ids": "string",
+                      "mode": "string"
+                    }
+                  }
+                },
+                "items_distribute": {
+                  "summary": "items.distribute: Spaces items evenly along an axis.",
+                  "value": {
+                    "method": "items.distribute",
+                    "params": {
+                      "ids": "string",
+                      "axis": "string"
+                    }
+                  }
+                },
+                "items_matchSize": {
+                  "summary": "items.matchSize: Gives shapes the size of the first one.",
+                  "value": {
+                    "method": "items.matchSize",
+                    "params": {
+                      "ids": "string",
+                      "mode": "string"
+                    }
+                  }
+                },
+                "items_restack": {
+                  "summary": "items.restack: Changes stacking order.",
+                  "value": {
+                    "method": "items.restack",
+                    "params": {
+                      "ids": "string",
+                      "dir": "string"
+                    }
+                  }
+                },
+                "items_duplicate": {
+                  "summary": "items.duplicate: Copies items (with the wires between them) offset by dx, dy, optionally onto ano",
+                  "value": {
+                    "method": "items.duplicate",
+                    "params": {
+                      "ids": "string"
+                    }
+                  }
+                },
+                "items_moveToPage": {
+                  "summary": "items.moveToPage: Moves items to another page.",
+                  "value": {
+                    "method": "items.moveToPage",
+                    "params": {
+                      "ids": "string",
+                      "page": "string"
+                    }
+                  }
+                },
+                "items_lock": {
+                  "summary": "items.lock: Locks or unlocks items.",
+                  "value": {
+                    "method": "items.lock",
+                    "params": {
+                      "ids": "string",
+                      "locked": "string"
+                    }
+                  }
+                },
+                "items_hide": {
+                  "summary": "items.hide: Hides or shows items.",
+                  "value": {
+                    "method": "items.hide",
+                    "params": {
+                      "ids": "string",
+                      "hidden": "string"
+                    }
+                  }
+                },
+                "items_style": {
+                  "summary": "items.style: Applies a look to any items, with the Style panel's keys: line (colour), fill, f",
+                  "value": {
+                    "method": "items.style",
+                    "params": {
+                      "ids": "string",
+                      "look": "string"
+                    }
+                  }
+                },
+                "items_getStyle": {
+                  "summary": "items.getStyle: Reads the look of items (common values, and which keys differ).",
+                  "value": {
+                    "method": "items.getStyle",
+                    "params": {
+                      "ids": "string"
+                    }
+                  }
+                },
+                "items_find": {
+                  "summary": "items.find: Finds items by text in refs, values, wire labels, shape text and props, across a",
+                  "value": {
+                    "method": "items.find",
+                    "params": {
+                      "text": "string"
+                    }
+                  }
+                },
+                "items_template": {
+                  "summary": "items.template: Items (with the wires between them) as a reusable template file (format 'nodal-t",
+                  "value": {
+                    "method": "items.template",
+                    "params": {
+                      "ids": "string"
+                    }
+                  }
+                },
+                "groups_list": {
+                  "summary": "groups.list: Groups with their members.",
+                  "value": {
+                    "method": "groups.list",
+                    "params": {}
+                  }
+                },
+                "groups_create": {
+                  "summary": "groups.create: Groups items; returns the group id.",
+                  "value": {
+                    "method": "groups.create",
+                    "params": {
+                      "ids": "string"
+                    }
+                  }
+                },
+                "groups_ungroup": {
+                  "summary": "groups.ungroup: Takes items out of their (outermost) groups.",
+                  "value": {
+                    "method": "groups.ungroup",
+                    "params": {
+                      "ids": "string"
+                    }
+                  }
+                },
+                "groups_rename": {
+                  "summary": "groups.rename: Renames a group.",
+                  "value": {
+                    "method": "groups.rename",
+                    "params": {
+                      "group": "string",
+                      "name": "string"
+                    }
+                  }
+                },
+                "components_place": {
+                  "summary": "components.place: Places a part from the library, centred on x, y. Returns its id, ref and pins wi",
+                  "value": {
+                    "method": "components.place",
+                    "params": {
+                      "symbol": "string",
+                      "x": 0,
+                      "y": 0
+                    }
+                  }
+                },
+                "components_placeMany": {
+                  "summary": "components.placeMany: Places several parts in one step (same fields as components.place each).",
+                  "value": {
+                    "method": "components.placeMany",
+                    "params": {
+                      "parts": "string"
+                    }
+                  }
+                },
+                "components_ports": {
+                  "summary": "components.ports: Pins of a part: id, name, absolute position, side, and what is connected (wires,",
+                  "value": {
+                    "method": "components.ports",
+                    "params": {
+                      "id": "string"
+                    }
+                  }
+                },
+                "components_setSymbol": {
+                  "summary": "components.setSymbol: Swaps the symbol a part is drawn with (e.g. another type of the same part), keep",
+                  "value": {
+                    "method": "components.setSymbol",
+                    "params": {
+                      "id": "string",
+                      "symbol": "string"
+                    }
+                  }
+                },
+                "components_annotate": {
+                  "summary": "components.annotate: Renumbers every part's reference left-to-right, top-to-bottom, page by page.",
+                  "value": {
+                    "method": "components.annotate",
+                    "params": {}
+                  }
+                },
+                "wires_connect": {
+                  "summary": "wires.connect: Draws a wire between two targets, routed orthogonally around parts. A target is ",
+                  "value": {
+                    "method": "wires.connect",
+                    "params": {
+                      "from": "string",
+                      "to": "string"
+                    }
+                  }
+                },
+                "wires_connectMany": {
+                  "summary": "wires.connectMany: Several wires.connect in one step; returns their ids (null where nothing was dra",
+                  "value": {
+                    "method": "wires.connectMany",
+                    "params": {
+                      "wires": "string"
+                    }
+                  }
+                },
+                "wires_path": {
+                  "summary": "wires.path: Draws a wire exactly through given points (no routing); ends snap to pins, junct",
+                  "value": {
+                    "method": "wires.path",
+                    "params": {
+                      "points": "string"
+                    }
+                  }
+                },
+                "wires_reroute": {
+                  "summary": "wires.reroute: Re-routes wires around parts (all wires on the page when no ids).",
+                  "value": {
+                    "method": "wires.reroute",
+                    "params": {}
+                  }
+                },
+                "wires_junction": {
+                  "summary": "wires.junction: Joins wires that cross or meet at a point with a solder dot (or adds a free junc",
+                  "value": {
+                    "method": "wires.junction",
+                    "params": {
+                      "x": 0,
+                      "y": 0
+                    }
+                  }
+                },
+                "wires_unsolder": {
+                  "summary": "wires.unsolder: Removes a junction (the wires through it stay joined as one) or disconnects a pi",
+                  "value": {
+                    "method": "wires.unsolder",
+                    "params": {}
+                  }
+                },
+                "wires_label": {
+                  "summary": "wires.label: Names a wire (its net) and places the label.",
+                  "value": {
+                    "method": "wires.label",
+                    "params": {
+                      "id": "string",
+                      "label": "string"
+                    }
+                  }
+                },
+                "wires_deletePart": {
+                  "summary": "wires.deletePart: Deletes one bend (node) or one segment of a wire: an end segment shortens it, a ",
+                  "value": {
+                    "method": "wires.deletePart",
+                    "params": {
+                      "id": "string",
+                      "kind": "string",
+                      "index": "string"
+                    }
+                  }
+                },
+                "shapes_add": {
+                  "summary": "shapes.add: Adds a shape. Boxes use x, y, w, h; line / arrow use from / to (points or {id} t",
+                  "value": {
+                    "method": "shapes.add",
+                    "params": {
+                      "kind": "string"
+                    }
+                  }
+                },
+                "shapes_presets": {
+                  "summary": "shapes.presets: Lists the shape presets (flowchart, arrows, basic).",
+                  "value": {
+                    "method": "shapes.presets",
+                    "params": {}
+                  }
+                },
+                "shapes_addPreset": {
+                  "summary": "shapes.addPreset: Adds a preset shape (e.g. a flowchart decision).",
+                  "value": {
+                    "method": "shapes.addPreset",
+                    "params": {
+                      "preset": "string",
+                      "x": 0,
+                      "y": 0
+                    }
+                  }
+                },
+                "shapes_connect": {
+                  "summary": "shapes.connect: Draws a connector (arrow or line) glued between two items, so it follows them.",
+                  "value": {
+                    "method": "shapes.connect",
+                    "params": {
+                      "from": "string",
+                      "to": "string"
+                    }
+                  }
+                },
+                "shapes_note": {
+                  "summary": "shapes.note: Adds a callout pointing at items (or a point) with text — handy to explain your ",
+                  "value": {
+                    "method": "shapes.note",
+                    "params": {
+                      "text": "string"
+                    }
+                  }
+                },
+                "shapes_toPath": {
+                  "summary": "shapes.toPath: Turns rectangles, ellipses and unattached lines into editable paths (polygons wi",
+                  "value": {
+                    "method": "shapes.toPath",
+                    "params": {
+                      "ids": "string"
+                    }
+                  }
+                },
+                "symbols_list": {
+                  "summary": "symbols.list: Library symbols (built-in, the user's and the document's), filtered.",
+                  "value": {
+                    "method": "symbols.list",
+                    "params": {}
+                  }
+                },
+                "symbols_categories": {
+                  "summary": "symbols.categories: Symbol categories with counts.",
+                  "value": {
+                    "method": "symbols.categories",
+                    "params": {}
+                  }
+                },
+                "symbols_get": {
+                  "summary": "symbols.get: A symbol's full definition: size, pins (id, name, local x, y, side), fields, pre",
+                  "value": {
+                    "method": "symbols.get",
+                    "params": {
+                      "id": "string"
+                    }
+                  }
+                },
+                "symbols_create": {
+                  "summary": "symbols.create: Creates (or replaces) a custom symbol from DSL source; it is stored in the docum",
+                  "value": {
+                    "method": "symbols.create",
+                    "params": {
+                      "name": "string",
+                      "draw": "string",
+                      "ports": "string",
+                      "w": 0,
+                      "h": 0
+                    }
+                  }
+                },
+                "symbols_fromSvg": {
+                  "summary": "symbols.fromSvg: Creates a custom symbol from SVG markup (its drawing), with pins you name.",
+                  "value": {
+                    "method": "symbols.fromSvg",
+                    "params": {
+                      "name": "string",
+                      "svg": "string"
+                    }
+                  }
+                },
+                "symbols_fromItems": {
+                  "summary": "symbols.fromItems: Turns items into a new symbol; with replace, they are swapped for one instance o",
+                  "value": {
+                    "method": "symbols.fromItems",
+                    "params": {
+                      "ids": "string",
+                      "name": "string"
+                    }
+                  }
+                },
+                "symbols_delete": {
+                  "summary": "symbols.delete: Removes a custom symbol from the user's library (parts using it keep their copy)",
+                  "value": {
+                    "method": "symbols.delete",
+                    "params": {
+                      "id": "string"
+                    }
+                  }
+                },
+                "symbols_importLibrary": {
+                  "summary": "symbols.importLibrary: Adds the symbols of a Nodal library file (format 'nodal-library') to the user's ",
+                  "value": {
+                    "method": "symbols.importLibrary",
+                    "params": {
+                      "library": "string"
+                    }
+                  }
+                },
+                "symbols_exportLibrary": {
+                  "summary": "symbols.exportLibrary: The user's library as a Nodal library file (to save or share).",
+                  "value": {
+                    "method": "symbols.exportLibrary",
+                    "params": {}
+                  }
+                },
+                "nets_list": {
+                  "summary": "nets.list: Electrical nets: name, label names, wires and pins (ref.port).",
+                  "value": {
+                    "method": "nets.list",
+                    "params": {}
+                  }
+                },
+                "nets_of": {
+                  "summary": "nets.of: The net of a pin or wire.",
+                  "value": {
+                    "method": "nets.of",
+                    "params": {}
+                  }
+                },
+                "check_run": {
+                  "summary": "check.run: Runs the electrical rules check: unconnected pins, duplicate refs, shorts, loose",
+                  "value": {
+                    "method": "check.run",
+                    "params": {}
+                  }
+                },
+                "check_ignore": {
+                  "summary": "check.ignore: Marks rule-check issues as ignored (or not).",
+                  "value": {
+                    "method": "check.ignore",
+                    "params": {
+                      "keys": "string"
+                    }
+                  }
+                },
+                "history_undo": {
+                  "summary": "history.undo: Undoes your last step (only yours; refused if the user has changed the same item",
+                  "value": {
+                    "method": "history.undo",
+                    "params": {}
+                  }
+                },
+                "history_redo": {
+                  "summary": "history.redo: Redoes your last undone step.",
+                  "value": {
+                    "method": "history.redo",
+                    "params": {}
+                  }
+                },
+                "history_steps": {
+                  "summary": "history.steps: Your steps so far (labels, item counts), newest last.",
+                  "value": {
+                    "method": "history.steps",
+                    "params": {}
+                  }
+                },
+                "versions_save": {
+                  "summary": "versions.save: Saves a named version of the circuit in its version history.",
+                  "value": {
+                    "method": "versions.save",
+                    "params": {}
+                  }
+                },
+                "versions_list": {
+                  "summary": "versions.list: Saved versions of the open circuit.",
+                  "value": {
+                    "method": "versions.list",
+                    "params": {}
+                  }
+                },
+                "versions_restore": {
+                  "summary": "versions.restore: Opens a saved version in place of the circuit (the current state is saved as a v",
+                  "value": {
+                    "method": "versions.restore",
+                    "params": {
+                      "id": "string"
+                    }
+                  }
+                },
+                "symbolEditor_open": {
+                  "summary": "symbolEditor.open: Opens the user's symbol editor page on a symbol (or a new one). UI action.",
+                  "value": {
+                    "method": "symbolEditor.open",
+                    "params": {}
+                  }
+                },
+                "symbolEditor_close": {
+                  "summary": "symbolEditor.close: Closes the symbol editor page without saving.",
+                  "value": {
+                    "method": "symbolEditor.close",
+                    "params": {}
+                  }
+                },
+                "batch": {
+                  "summary": "batch: Runs several calls as ONE step (one undo step, one repaint). Strings like \"$0.id",
+                  "value": {
+                    "method": "batch",
+                    "params": {
+                      "calls": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "`{result}` on success or `{error}` if the method failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {},
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Body is not JSON or has no method",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request from a web origin that is not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "tags": [
+          "Bridge"
+        ],
+        "summary": "Activity feed (server-sent events)",
+        "operationId": "events",
+        "description": "Server-sent events: the user marking work done, blocked edits, connects. Each event is `data: {kind, text, ...}`.",
+        "responses": {
+          "200": {
+            "description": "Event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Token created on first run in ~/.config/nodal-agent/token (print it with `node nodal-agent.mjs token`)."
+      }
+    },
+    "schemas": {
+      "Call_nodal_describe": {
+        "type": "object",
+        "title": "nodal.describe",
+        "description": "This guide plus every method with its parameters.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "nodal.describe"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "description": "only this method"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_nodal_ping": {
+        "type": "object",
+        "title": "nodal.ping",
+        "description": "Checks the app is connected; returns its version and the open document's id and name.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "nodal.ping"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_session_start": {
+        "type": "object",
+        "title": "session.start",
+        "description": "Starts (or restarts) your work session: shows you in the app as working, with your name and goal. Call before editing.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "session.start"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "how you are shown (e.g. 'Claude')"
+              },
+              "goal": {
+                "type": "string",
+                "description": "one line on what you are about to do"
+              },
+              "color": {
+                "type": "string",
+                "description": "CSS colour of your cursor"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_session_status": {
+        "type": "object",
+        "title": "session.status",
+        "description": "Your session (status, guard mode chosen by the user, working page, items you own, follow mode) and whether the circuit can be edited at all.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "session.status"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_session_say": {
+        "type": "object",
+        "title": "session.say",
+        "description": "Shows a message to the user (activity log and a bubble at your cursor).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "session.say"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "info",
+                  "success",
+                  "warning",
+                  "error"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "text"
+            ]
+          }
+        }
+      },
+      "Call_session_progress": {
+        "type": "object",
+        "title": "session.progress",
+        "description": "Updates the progress shown in the agent panel.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "session.progress"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "what you are doing now"
+              },
+              "fraction": {
+                "type": "number",
+                "description": "0…1"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_session_done": {
+        "type": "object",
+        "title": "session.done",
+        "description": "Marks your work finished: the guard is lifted and the user gets a notification with your summary.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "session.done"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_session_setPage": {
+        "type": "object",
+        "title": "session.setPage",
+        "description": "Sets your working page (default target of every edit). Does not change what the user looks at.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "session.setPage"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string",
+                "description": "page id or name"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "page"
+            ]
+          }
+        }
+      },
+      "Call_session_pointAt": {
+        "type": "object",
+        "title": "session.pointAt",
+        "description": "Moves your cursor (what the user sees you looking at) to a point or to items.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "session.pointAt"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_session_log": {
+        "type": "object",
+        "title": "session.log",
+        "description": "Recent entries of the activity log the user sees.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "session.log"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "integer",
+                "description": "default 50"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_session_waitForUser": {
+        "type": "object",
+        "title": "session.waitForUser",
+        "description": "Waits until the user replies in the agent panel (or the timeout passes) and returns their reply. Use for questions that need a human decision.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "session.waitForUser"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "question": {
+                "type": "string",
+                "description": "shown in the panel with a reply box"
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "description": "default 120000, max 600000"
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "optional quick answers shown as buttons"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "question"
+            ]
+          }
+        }
+      },
+      "Call_app_state": {
+        "type": "object",
+        "title": "app.state",
+        "description": "What the user is doing: page in view, selection, tool, viewport, theme, open dialog, read-only modes, file path, unsaved changes, live-session status, symbol editor open.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "app.state"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_app_prefs": {
+        "type": "object",
+        "title": "app.prefs",
+        "description": "Reads the app preferences.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "app.prefs"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_app_setPrefs": {
+        "type": "object",
+        "title": "app.setPrefs",
+        "description": "Changes app preferences (theme, wireAvoid, wireAngle, showMinimap, autosave…). Affects the user's UI.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "app.setPrefs"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "patch": {
+                "type": "object",
+                "description": "keys of app.prefs"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "patch"
+            ]
+          }
+        }
+      },
+      "Call_app_toast": {
+        "type": "object",
+        "title": "app.toast",
+        "description": "Shows a short notification at the bottom of the window.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "app.toast"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "info",
+                  "success",
+                  "error"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "text"
+            ]
+          }
+        }
+      },
+      "Call_app_commands": {
+        "type": "object",
+        "title": "app.commands",
+        "description": "Lists the app's UI commands (menu / palette entries) with ids and shortcuts.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "app.commands"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "filter by words"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_app_runCommand": {
+        "type": "object",
+        "title": "app.runCommand",
+        "description": "Runs a UI command exactly as the user would (it acts on the USER's selection, page and view — prefer the dedicated methods for edits).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "app.runCommand"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "from app.commands"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "Call_user_select": {
+        "type": "object",
+        "title": "user.select",
+        "description": "Selects items for the user (switching the user's page if needed) — e.g. to show them what you mean.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "user.select"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids"
+            ]
+          }
+        }
+      },
+      "Call_user_show": {
+        "type": "object",
+        "title": "user.show",
+        "description": "Moves the user's view to items or a rectangle (switching page if needed).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "user.show"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rect": {
+                "type": "object",
+                "description": "{x,y,w,h}"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_user_setPage": {
+        "type": "object",
+        "title": "user.setPage",
+        "description": "Switches the page the user is looking at.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "user.setPage"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "page"
+            ]
+          }
+        }
+      },
+      "Call_user_setFollow": {
+        "type": "object",
+        "title": "user.setFollow",
+        "description": "Turns 'follow the agent' on or off (the user's view tracks your edits). The user can change it too.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "user.setFollow"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "on": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "on"
+            ]
+          }
+        }
+      },
+      "Call_doc_get": {
+        "type": "object",
+        "title": "doc.get",
+        "description": "The whole document as JSON (format 'nodal'), or one page of it.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.get"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string",
+                "description": "only this page's items"
+              },
+              "symbols": {
+                "type": "boolean",
+                "description": "include custom symbol definitions (default true)"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_doc_summary": {
+        "type": "object",
+        "title": "doc.summary",
+        "description": "Compact overview: name, pages with item counts, bounds, every part (ref, symbol, value, position) and how many wires / shapes / nets there are.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.summary"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string",
+                "description": "one page only"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_doc_new": {
+        "type": "object",
+        "title": "doc.new",
+        "description": "Replaces the open circuit with a new empty one (the old one is kept as a version in history first). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.new"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_doc_load": {
+        "type": "object",
+        "title": "doc.load",
+        "description": "Replaces the open circuit with the given document (object or JSON text). The old one is kept as a version first. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.load"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "doc": {
+                "description": "any — a Nodal document object or its JSON text"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "doc"
+            ]
+          }
+        }
+      },
+      "Call_doc_rename": {
+        "type": "object",
+        "title": "doc.rename",
+        "description": "Renames the circuit. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.rename"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "name"
+            ]
+          }
+        }
+      },
+      "Call_doc_settings": {
+        "type": "object",
+        "title": "doc.settings",
+        "description": "Reads the document settings (grid, wire style, hops, junction size, colours, title block, sheet…).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.settings"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_doc_setSettings": {
+        "type": "object",
+        "title": "doc.setSettings",
+        "description": "Changes document settings; nested objects (wire, sheet) are merged. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.setSettings"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "patch": {
+                "type": "object",
+                "description": "keys of doc.settings"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "patch"
+            ]
+          }
+        }
+      },
+      "Call_doc_insert": {
+        "type": "object",
+        "title": "doc.insert",
+        "description": "Inserts another circuit or fragment (its items get new ids) offset by dx, dy on a page. Returns the new ids. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.insert"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "doc": {
+                "description": "any — Nodal document, fragment ({format:'nodal-fragment', items, groups, symbols}) or template, object or JSON text"
+              },
+              "dx": {
+                "type": "number"
+              },
+              "dy": {
+                "type": "number"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "doc"
+            ]
+          }
+        }
+      },
+      "Call_doc_save": {
+        "type": "object",
+        "title": "doc.save",
+        "description": "Saves the circuit: desktop app writes to its file (or 'path'); the web app downloads it.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.save"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "desktop only: file to write"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_doc_export": {
+        "type": "object",
+        "title": "doc.export",
+        "description": "Exports and returns the content: svg / dxf / spice / kicad / bom / json as text, png as base64.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.export"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "format": {
+                "type": "string",
+                "enum": [
+                  "svg",
+                  "png",
+                  "dxf",
+                  "spice",
+                  "kicad",
+                  "bom",
+                  "json"
+                ]
+              },
+              "page": {
+                "type": "string"
+              },
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "only these items"
+              },
+              "rect": {
+                "type": "object",
+                "description": "{x,y,w,h} world area"
+              },
+              "theme": {
+                "type": "string",
+                "enum": [
+                  "light",
+                  "dark"
+                ]
+              },
+              "background": {
+                "type": "boolean"
+              },
+              "scale": {
+                "type": "number",
+                "description": "png resolution (default 2)"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "format"
+            ]
+          }
+        }
+      },
+      "Call_doc_screenshot": {
+        "type": "object",
+        "title": "doc.screenshot",
+        "description": "Renders a page (or items / an area) to a PNG so you can see the drawing. Returns base64 PNG plus its world bounds.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.screenshot"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string"
+              },
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rect": {
+                "type": "object",
+                "description": "{x,y,w,h}"
+              },
+              "theme": {
+                "type": "string",
+                "enum": [
+                  "light",
+                  "dark"
+                ]
+              },
+              "maxSize": {
+                "type": "integer",
+                "description": "longest side in px (default 1600)"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_doc_stats": {
+        "type": "object",
+        "title": "doc.stats",
+        "description": "Counts of parts, wires, junctions, shapes, nets and pages.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "doc.stats"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_pages_list": {
+        "type": "object",
+        "title": "pages.list",
+        "description": "Pages in tab order with item counts; marks your working page and the user's page.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "pages.list"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_pages_add": {
+        "type": "object",
+        "title": "pages.add",
+        "description": "Adds a page; returns its id. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "pages.add"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "after": {
+                "type": "string",
+                "description": "page id"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_pages_rename": {
+        "type": "object",
+        "title": "pages.rename",
+        "description": "Renames a page. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "pages.rename"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "page",
+              "name"
+            ]
+          }
+        }
+      },
+      "Call_pages_delete": {
+        "type": "object",
+        "title": "pages.delete",
+        "description": "Deletes a page and everything on it (not the last page). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "pages.delete"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "page"
+            ]
+          }
+        }
+      },
+      "Call_pages_duplicate": {
+        "type": "object",
+        "title": "pages.duplicate",
+        "description": "Copies a page with all its items; returns the new page id. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "pages.duplicate"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "page"
+            ]
+          }
+        }
+      },
+      "Call_pages_move": {
+        "type": "object",
+        "title": "pages.move",
+        "description": "Moves a page to a position in the tab row (0 = first). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "pages.move"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string"
+              },
+              "to": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "page",
+              "to"
+            ]
+          }
+        }
+      },
+      "Call_items_list": {
+        "type": "object",
+        "title": "items.list",
+        "description": "Lists items compactly, filtered. Components show ref / symbol / value; wires their ends; shapes kind and text.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.list"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string",
+                "description": "default your working page; 'all' for every page"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "component",
+                  "wire",
+                  "junction",
+                  "shape"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "description": "shape kind"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "rect": {
+                "type": "object",
+                "description": "{x,y,w,h}: only items touching it"
+              },
+              "text": {
+                "type": "string",
+                "description": "matches ref, value, label or text"
+              },
+              "limit": {
+                "type": "integer",
+                "description": "default 500"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_items_get": {
+        "type": "object",
+        "title": "items.get",
+        "description": "Full items by id (or component ref), with bounds; components also get their pins' positions.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.get"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "ids or refs"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids"
+            ]
+          }
+        }
+      },
+      "Call_items_create": {
+        "type": "object",
+        "title": "items.create",
+        "description": "Creates raw items (any type, full control of fields). Missing ids are generated; components get default ref / value / props from their symbol when omitted. Wire endpoints may name parts by ref. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.create"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "partial Item objects with at least type"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "items"
+            ]
+          }
+        }
+      },
+      "Call_items_update": {
+        "type": "object",
+        "title": "items.update",
+        "description": "Changes fields of items (shallow merge; nested objects like style / labelStyle / props are merged). 'unset' removes fields. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.update"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "ids or refs"
+              },
+              "patch": {
+                "type": "object"
+              },
+              "unset": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "patch"
+            ]
+          }
+        }
+      },
+      "Call_items_delete": {
+        "type": "object",
+        "title": "items.delete",
+        "description": "Deletes items; wires attached to deleted parts keep their shape. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.delete"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids"
+            ]
+          }
+        }
+      },
+      "Call_items_move": {
+        "type": "object",
+        "title": "items.move",
+        "description": "Moves items by dx, dy; connected wires follow (like dragging). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.move"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "dx": {
+                "type": "number"
+              },
+              "dy": {
+                "type": "number"
+              },
+              "detach": {
+                "type": "boolean",
+                "description": "leave connections behind instead"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "dx",
+              "dy"
+            ]
+          }
+        }
+      },
+      "Call_items_moveTo": {
+        "type": "object",
+        "title": "items.moveTo",
+        "description": "Moves items so the first one's position (x, y) lands at the given point; the rest keep their offsets. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.moveTo"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "x",
+              "y"
+            ]
+          }
+        }
+      },
+      "Call_items_rotate": {
+        "type": "object",
+        "title": "items.rotate",
+        "description": "Turns items a quarter (or half) turn about their common centre (or 'pivot'); wires follow. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.rotate"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "deg": {
+                "type": "number",
+                "enum": [
+                  90,
+                  -90,
+                  180
+                ]
+              },
+              "pivot": {
+                "type": "object",
+                "description": "{x,y}"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "deg"
+            ]
+          }
+        }
+      },
+      "Call_items_rotateShape": {
+        "type": "object",
+        "title": "items.rotateShape",
+        "description": "Turns one shape by any angle about its centre (or a pivot). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.rotateShape"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "deg": {
+                "type": "number"
+              },
+              "pivot": {
+                "type": "object",
+                "description": "{x,y}"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id",
+              "deg"
+            ]
+          }
+        }
+      },
+      "Call_items_flip": {
+        "type": "object",
+        "title": "items.flip",
+        "description": "Mirrors items left-right (x) or up-down (y). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.flip"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "axis": {
+                "type": "string",
+                "enum": [
+                  "x",
+                  "y"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "axis"
+            ]
+          }
+        }
+      },
+      "Call_items_scale": {
+        "type": "object",
+        "title": "items.scale",
+        "description": "Scales items about a pivot (default their centre). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.scale"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "factor": {
+                "type": "number"
+              },
+              "pivot": {
+                "type": "object",
+                "description": "{x,y}"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "factor"
+            ]
+          }
+        }
+      },
+      "Call_items_align": {
+        "type": "object",
+        "title": "items.align",
+        "description": "Aligns items' edges or centres. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.align"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "left",
+                  "hcenter",
+                  "right",
+                  "top",
+                  "vcenter",
+                  "bottom"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "mode"
+            ]
+          }
+        }
+      },
+      "Call_items_distribute": {
+        "type": "object",
+        "title": "items.distribute",
+        "description": "Spaces items evenly along an axis. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.distribute"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "axis": {
+                "type": "string",
+                "enum": [
+                  "x",
+                  "y"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "axis"
+            ]
+          }
+        }
+      },
+      "Call_items_matchSize": {
+        "type": "object",
+        "title": "items.matchSize",
+        "description": "Gives shapes the size of the first one. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.matchSize"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "width",
+                  "height",
+                  "both"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "mode"
+            ]
+          }
+        }
+      },
+      "Call_items_restack": {
+        "type": "object",
+        "title": "items.restack",
+        "description": "Changes stacking order. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.restack"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "dir": {
+                "type": "string",
+                "enum": [
+                  "forward",
+                  "backward",
+                  "front",
+                  "back"
+                ]
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "dir"
+            ]
+          }
+        }
+      },
+      "Call_items_duplicate": {
+        "type": "object",
+        "title": "items.duplicate",
+        "description": "Copies items (with the wires between them) offset by dx, dy, optionally onto another page; returns new ids. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.duplicate"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "dx": {
+                "type": "number",
+                "description": "default 2 grid steps"
+              },
+              "dy": {
+                "type": "number",
+                "description": "default 2 grid steps"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids"
+            ]
+          }
+        }
+      },
+      "Call_items_moveToPage": {
+        "type": "object",
+        "title": "items.moveToPage",
+        "description": "Moves items to another page. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.moveToPage"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "page"
+            ]
+          }
+        }
+      },
+      "Call_items_lock": {
+        "type": "object",
+        "title": "items.lock",
+        "description": "Locks or unlocks items. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.lock"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "locked": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "locked"
+            ]
+          }
+        }
+      },
+      "Call_items_hide": {
+        "type": "object",
+        "title": "items.hide",
+        "description": "Hides or shows items. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.hide"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "hidden": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "hidden"
+            ]
+          }
+        }
+      },
+      "Call_items_style": {
+        "type": "object",
+        "title": "items.style",
+        "description": "Applies a look to any items, with the Style panel's keys: line (colour), fill, fillOpacity, width, dash, text (text colour), size, bold, italic, underline, allCaps, font (''|serif|mono), align, valign, wrapW, lineOpacity, cap, join, radius, fillKind (none|solid|gradient), fill2, gradAngle, opacity, shadow. Keys that don't apply to an item are ignored. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.style"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "look": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "look"
+            ]
+          }
+        }
+      },
+      "Call_items_getStyle": {
+        "type": "object",
+        "title": "items.getStyle",
+        "description": "Reads the look of items (common values, and which keys differ).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.getStyle"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids"
+            ]
+          }
+        }
+      },
+      "Call_items_find": {
+        "type": "object",
+        "title": "items.find",
+        "description": "Finds items by text in refs, values, wire labels, shape text and props, across all pages.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.find"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "text"
+            ]
+          }
+        }
+      },
+      "Call_items_template": {
+        "type": "object",
+        "title": "items.template",
+        "description": "Items (with the wires between them) as a reusable template file (format 'nodal-template'); doc.insert puts it back.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "items.template"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids"
+            ]
+          }
+        }
+      },
+      "Call_groups_list": {
+        "type": "object",
+        "title": "groups.list",
+        "description": "Groups with their members.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "groups.list"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_groups_create": {
+        "type": "object",
+        "title": "groups.create",
+        "description": "Groups items; returns the group id. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "groups.create"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids"
+            ]
+          }
+        }
+      },
+      "Call_groups_ungroup": {
+        "type": "object",
+        "title": "groups.ungroup",
+        "description": "Takes items out of their (outermost) groups. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "groups.ungroup"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids"
+            ]
+          }
+        }
+      },
+      "Call_groups_rename": {
+        "type": "object",
+        "title": "groups.rename",
+        "description": "Renames a group. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "groups.rename"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "group": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "group",
+              "name"
+            ]
+          }
+        }
+      },
+      "Call_components_place": {
+        "type": "object",
+        "title": "components.place",
+        "description": "Places a part from the library, centred on x, y. Returns its id, ref and pins with absolute positions (wire to those). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "components.place"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "symbol": {
+                "type": "string",
+                "description": "symbol id"
+              },
+              "x": {
+                "type": "number",
+                "description": "centre"
+              },
+              "y": {
+                "type": "number",
+                "description": "centre"
+              },
+              "rot": {
+                "type": "number",
+                "enum": [
+                  0,
+                  90,
+                  180,
+                  270
+                ]
+              },
+              "flipX": {
+                "type": "boolean"
+              },
+              "ref": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              },
+              "props": {
+                "type": "object"
+              },
+              "showRef": {
+                "type": "boolean"
+              },
+              "showValue": {
+                "type": "boolean"
+              },
+              "page": {
+                "type": "string"
+              },
+              "style": {
+                "type": "object",
+                "description": "color, fill, lineWidth, dash, scale, labelColor…"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "symbol",
+              "x",
+              "y"
+            ]
+          }
+        }
+      },
+      "Call_components_placeMany": {
+        "type": "object",
+        "title": "components.placeMany",
+        "description": "Places several parts in one step (same fields as components.place each). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "components.placeMany"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "parts": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "parts"
+            ]
+          }
+        }
+      },
+      "Call_components_ports": {
+        "type": "object",
+        "title": "components.ports",
+        "description": "Pins of a part: id, name, absolute position, side, and what is connected (wires, net name).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "components.ports"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "id or ref"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "Call_components_setSymbol": {
+        "type": "object",
+        "title": "components.setSymbol",
+        "description": "Swaps the symbol a part is drawn with (e.g. another type of the same part), keeping its position and labels. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "components.setSymbol"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id",
+              "symbol"
+            ]
+          }
+        }
+      },
+      "Call_components_annotate": {
+        "type": "object",
+        "title": "components.annotate",
+        "description": "Renumbers every part's reference left-to-right, top-to-bottom, page by page. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "components.annotate"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_wires_connect": {
+        "type": "object",
+        "title": "wires.connect",
+        "description": "Draws a wire between two targets, routed orthogonally around parts. A target is a pin {ref|comp, port}, a junction {junction}, a point on a wire {wire, x, y} (makes a junction there) or a loose point {x, y}. Returns the wire id. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "wires.connect"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "object",
+                "description": "target"
+              },
+              "to": {
+                "type": "object",
+                "description": "target"
+              },
+              "via": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "bend points {x,y} to pass through"
+              },
+              "angle": {
+                "type": "string",
+                "enum": [
+                  "ortho",
+                  "45",
+                  "any"
+                ]
+              },
+              "route": {
+                "type": "boolean",
+                "description": "route around parts (default true)"
+              },
+              "style": {
+                "type": "object",
+                "description": "{color, width, radius, dash}"
+              },
+              "label": {
+                "type": "string",
+                "description": "wire name"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "from",
+              "to"
+            ]
+          }
+        }
+      },
+      "Call_wires_connectMany": {
+        "type": "object",
+        "title": "wires.connectMany",
+        "description": "Several wires.connect in one step; returns their ids (null where nothing was drawn). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "wires.connectMany"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "wires": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "each {from, to, via?, angle?, style?, label?}"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "wires"
+            ]
+          }
+        }
+      },
+      "Call_wires_path": {
+        "type": "object",
+        "title": "wires.path",
+        "description": "Draws a wire exactly through given points (no routing); ends snap to pins, junctions or wires lying on them. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "wires.path"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "[{x,y}, …] at least 2"
+              },
+              "style": {
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "points"
+            ]
+          }
+        }
+      },
+      "Call_wires_reroute": {
+        "type": "object",
+        "title": "wires.reroute",
+        "description": "Re-routes wires around parts (all wires on the page when no ids). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "wires.reroute"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_wires_junction": {
+        "type": "object",
+        "title": "wires.junction",
+        "description": "Joins wires that cross or meet at a point with a solder dot (or adds a free junction). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "wires.junction"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "wires": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      },
+      "Call_wires_unsolder": {
+        "type": "object",
+        "title": "wires.unsolder",
+        "description": "Removes a junction (the wires through it stay joined as one) or disconnects a pin. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "wires.unsolder"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "junction": {
+                "type": "string"
+              },
+              "comp": {
+                "type": "string"
+              },
+              "port": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_wires_label": {
+        "type": "object",
+        "title": "wires.label",
+        "description": "Names a wire (its net) and places the label. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "wires.label"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "at": {
+                "type": "number",
+                "description": "0…1 along the wire"
+              },
+              "side": {
+                "type": "string",
+                "enum": [
+                  "above",
+                  "below",
+                  "left",
+                  "right"
+                ]
+              },
+              "hidden": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id",
+              "label"
+            ]
+          }
+        }
+      },
+      "Call_wires_deletePart": {
+        "type": "object",
+        "title": "wires.deletePart",
+        "description": "Deletes one bend (node) or one segment of a wire: an end segment shortens it, a middle one splits it in two. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "wires.deletePart"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "wire"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "node",
+                  "segment"
+                ]
+              },
+              "index": {
+                "type": "integer",
+                "description": "node index (0 = end a) or segment index"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id",
+              "kind",
+              "index"
+            ]
+          }
+        }
+      },
+      "Call_shapes_add": {
+        "type": "object",
+        "title": "shapes.add",
+        "description": "Adds a shape. Boxes use x, y, w, h; line / arrow use from / to (points or {id} to glue to an item) and optional bends; polygon / path use points; text uses text and fontSize; callout uses text and anchor {x,y} or {id}; image uses src (data URL); ink uses points with optional pressure p. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "shapes.add"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "rect",
+                  "zone",
+                  "ellipse",
+                  "polygon",
+                  "line",
+                  "arrow",
+                  "text",
+                  "image",
+                  "ink",
+                  "callout",
+                  "frame"
+                ]
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "w": {
+                "type": "number"
+              },
+              "h": {
+                "type": "number"
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "polygon / ink / line points"
+              },
+              "from": {
+                "type": "object",
+                "description": "line/arrow start {x,y} or {id, fx?, fy?}"
+              },
+              "to": {
+                "type": "object",
+                "description": "line/arrow end"
+              },
+              "text": {
+                "type": "string"
+              },
+              "props": {
+                "type": "object",
+                "description": "any ShapeItem fields (stroke, fill, fillOpacity, strokeWidth, dash, radius, fontSize, textColor, bold, route, headEnd…)"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "kind"
+            ]
+          }
+        }
+      },
+      "Call_shapes_presets": {
+        "type": "object",
+        "title": "shapes.presets",
+        "description": "Lists the shape presets (flowchart, arrows, basic).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "shapes.presets"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_shapes_addPreset": {
+        "type": "object",
+        "title": "shapes.addPreset",
+        "description": "Adds a preset shape (e.g. a flowchart decision). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "shapes.addPreset"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "preset": {
+                "type": "string"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "w": {
+                "type": "number"
+              },
+              "h": {
+                "type": "number"
+              },
+              "text": {
+                "type": "string"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "preset",
+              "x",
+              "y"
+            ]
+          }
+        }
+      },
+      "Call_shapes_connect": {
+        "type": "object",
+        "title": "shapes.connect",
+        "description": "Draws a connector (arrow or line) glued between two items, so it follows them. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "shapes.connect"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "item id"
+              },
+              "to": {
+                "type": "string",
+                "description": "item id"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "arrow",
+                  "line"
+                ]
+              },
+              "route": {
+                "type": "string",
+                "enum": [
+                  "straight",
+                  "elbow",
+                  "curved"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "props": {
+                "type": "object"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "from",
+              "to"
+            ]
+          }
+        }
+      },
+      "Call_shapes_note": {
+        "type": "object",
+        "title": "shapes.note",
+        "description": "Adds a callout pointing at items (or a point) with text — handy to explain your work. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "shapes.note"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "text"
+            ]
+          }
+        }
+      },
+      "Call_shapes_toPath": {
+        "type": "object",
+        "title": "shapes.toPath",
+        "description": "Turns rectangles, ellipses and unattached lines into editable paths (polygons with curves). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "shapes.toPath"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids"
+            ]
+          }
+        }
+      },
+      "Call_symbols_list": {
+        "type": "object",
+        "title": "symbols.list",
+        "description": "Library symbols (built-in, the user's and the document's), filtered.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbols.list"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "words in name, id, category or keywords"
+              },
+              "category": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer",
+                "description": "default 100"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_symbols_categories": {
+        "type": "object",
+        "title": "symbols.categories",
+        "description": "Symbol categories with counts.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbols.categories"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_symbols_get": {
+        "type": "object",
+        "title": "symbols.get",
+        "description": "A symbol's full definition: size, pins (id, name, local x, y, side), fields, prefix, types, and its DSL source.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbols.get"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "Call_symbols_create": {
+        "type": "object",
+        "title": "symbols.create",
+        "description": "Creates (or replaces) a custom symbol from DSL source; it is stored in the document and, optionally, in the user's library. Returns its id. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbols.create"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "draw": {
+                "type": "string",
+                "description": "symbol DSL"
+              },
+              "ports": {
+                "type": "string",
+                "description": "'name:x,y …'"
+              },
+              "w": {
+                "type": "number"
+              },
+              "h": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "prefix": {
+                "type": "string",
+                "description": "e.g. U"
+              },
+              "value": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "string",
+                "description": "'key:Label=default, …'"
+              },
+              "keywords": {
+                "type": "string"
+              },
+              "hideLabels": {
+                "type": "boolean"
+              },
+              "saveToLibrary": {
+                "type": "boolean",
+                "description": "default true"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "name",
+              "draw",
+              "ports",
+              "w",
+              "h"
+            ]
+          }
+        }
+      },
+      "Call_symbols_fromSvg": {
+        "type": "object",
+        "title": "symbols.fromSvg",
+        "description": "Creates a custom symbol from SVG markup (its drawing), with pins you name. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbols.fromSvg"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "svg": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "string",
+                "description": "'name:x,y …' in the result's coordinates"
+              },
+              "size": {
+                "type": "number",
+                "description": "longest side, default 80"
+              },
+              "prefix": {
+                "type": "string"
+              },
+              "saveToLibrary": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "name",
+              "svg"
+            ]
+          }
+        }
+      },
+      "Call_symbols_fromItems": {
+        "type": "object",
+        "title": "symbols.fromItems",
+        "description": "Turns items into a new symbol; with replace, they are swapped for one instance of it. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbols.fromItems"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "name": {
+                "type": "string"
+              },
+              "replace": {
+                "type": "boolean",
+                "description": "default true"
+              },
+              "prefix": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "ids",
+              "name"
+            ]
+          }
+        }
+      },
+      "Call_symbols_delete": {
+        "type": "object",
+        "title": "symbols.delete",
+        "description": "Removes a custom symbol from the user's library (parts using it keep their copy).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbols.delete"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "Call_symbols_importLibrary": {
+        "type": "object",
+        "title": "symbols.importLibrary",
+        "description": "Adds the symbols of a Nodal library file (format 'nodal-library') to the user's library.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbols.importLibrary"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "library": {
+                "description": "any — library object or its JSON text"
+              },
+              "overwrite": {
+                "type": "boolean",
+                "description": "replace symbols with the same id"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "library"
+            ]
+          }
+        }
+      },
+      "Call_symbols_exportLibrary": {
+        "type": "object",
+        "title": "symbols.exportLibrary",
+        "description": "The user's library as a Nodal library file (to save or share).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbols.exportLibrary"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_nets_list": {
+        "type": "object",
+        "title": "nets.list",
+        "description": "Electrical nets: name, label names, wires and pins (ref.port).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "nets.list"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string",
+                "description": "only nets touching this page"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_nets_of": {
+        "type": "object",
+        "title": "nets.of",
+        "description": "The net of a pin or wire.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "nets.of"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "wire": {
+                "type": "string"
+              },
+              "comp": {
+                "type": "string",
+                "description": "id or ref"
+              },
+              "port": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_check_run": {
+        "type": "object",
+        "title": "check.run",
+        "description": "Runs the electrical rules check: unconnected pins, duplicate refs, shorts, loose ends… (issues the user chose to ignore are listed apart).",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "check.run"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_check_ignore": {
+        "type": "object",
+        "title": "check.ignore",
+        "description": "Marks rule-check issues as ignored (or not). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "check.ignore"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "ignored": {
+                "type": "boolean",
+                "description": "default true"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "keys"
+            ]
+          }
+        }
+      },
+      "Call_history_undo": {
+        "type": "object",
+        "title": "history.undo",
+        "description": "Undoes your last step (only yours; refused if the user has changed the same items since). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "history.undo"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "force": {
+                "type": "boolean",
+                "description": "undo even over later changes"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_history_redo": {
+        "type": "object",
+        "title": "history.redo",
+        "description": "Redoes your last undone step. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "history.redo"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_history_steps": {
+        "type": "object",
+        "title": "history.steps",
+        "description": "Your steps so far (labels, item counts), newest last.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "history.steps"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_versions_save": {
+        "type": "object",
+        "title": "versions.save",
+        "description": "Saves a named version of the circuit in its version history.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "versions.save"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_versions_list": {
+        "type": "object",
+        "title": "versions.list",
+        "description": "Saved versions of the open circuit.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "versions.list"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_versions_restore": {
+        "type": "object",
+        "title": "versions.restore",
+        "description": "Opens a saved version in place of the circuit (the current state is saved as a version first). (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "versions.restore"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "Call_symbolEditor_open": {
+        "type": "object",
+        "title": "symbolEditor.open",
+        "description": "Opens the user's symbol editor page on a symbol (or a new one). UI action.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbolEditor.open"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "symbol": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_symbolEditor_close": {
+        "type": "object",
+        "title": "symbolEditor.close",
+        "description": "Closes the symbol editor page without saving.",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "symbolEditor.close"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "Call_batch": {
+        "type": "object",
+        "title": "batch",
+        "description": "Runs several calls as ONE step (one undo step, one repaint). Strings like \"$0.id\" refer to earlier results (call index, dotted path). Stops at the first error and undoes the whole batch. (Changes the circuit; undoable with history.undo.)",
+        "required": [
+          "method"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "batch"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "properties": {
+              "calls": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "[{method, params}]"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "required": [
+              "calls"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
