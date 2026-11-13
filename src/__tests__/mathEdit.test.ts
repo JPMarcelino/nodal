@@ -62,6 +62,44 @@ describe('equation editor typing', () => {
   it('escapes dollars so the formula stays one formula', () => {
     expect(typed('$5')).toBe('\\$5');
   });
+  it('keeps the caret inside the row when an edit follows Shift+End', () => {
+    // Shift+End at the end sets an anchor level with the caret; deleting then used to leave it past the row
+    const e = new EqEditor();
+    e.typeText('ab');
+    e.end(true);
+    e.backspace();
+    e.moveRight(false);
+    e.moveLeft(false);
+    expect(e.toTex()).toBe('a');
+    // a pending \name resolving moves the caret too: no stale anchor may be left behind there either
+    const f = new EqEditor();
+    f.typeText('x\\hat');
+    f.end(true);
+    f.type(' ');
+    f.moveRight(false);
+    f.moveLeft(false);
+    expect(f.toTex()).toBe('\\hat{x}');
+  });
+  it('a selection is still taken when it is wrapped in brackets or a script', () => {
+    // tryFunction runs first on ( [ { _ ^; it may only drop the anchor when it really folds a function name
+    const e = new EqEditor();
+    e.typeText('a+b');
+    e.home(true);
+    e.type('(');
+    expect(e.toTex()).toBe('\\left(a+b\\right)');
+    const f = new EqEditor();
+    f.typeText('a+b');
+    f.home(true);
+    f.type('^');
+    expect(f.toTex()).toBe('{}^{}');
+  });
+  it('wraps a selected function name in brackets instead of folding it first', () => {
+    const e = new EqEditor();
+    e.typeText('sin');
+    e.home(true);
+    e.type('(');
+    expect(e.toTex()).toBe('\\left(sin\\right)');
+  });
   it('undo restores the previous state', () => {
     const e = new EqEditor();
     e.type('x');

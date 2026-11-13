@@ -14,6 +14,7 @@ import { S, activePage, readOnly, viewModeKey, redo, set, setPrefs, setTheme, ne
 import { docPages, pageIndex } from '../model/pages';
 import { canvasActions } from './canvasActions';
 import { copyStyle, pasteStyle } from '../ui/StyleSection';
+import { setFolds } from '../ui/controls';
 import { PIN_SYMBOL, openSymbolEditor, saveSymbolEditor } from './symbolSession';
 import { setAgentLink } from '../agent/link';
 import { A as agentState } from '../agent/state';
@@ -437,6 +438,32 @@ function focusValue() {
   focusValueField();
 }
 
+/** The inspector section that holds the selection's value / content field (F2 and double-click jump to it). */
+function valueSectionId(): string | null {
+  const it = vdoc().items[S().selection[0]];
+  if (!it) return null;
+  // a pin's name field lives in the symbol editor's own section, not the part's Properties
+  if (it.type === 'component') return it.symbol === PIN_SYMBOL ? 'sym-pin' : 'Properties';
+  if (it.type === 'wire') return 'Label';
+  if (it.type === 'shape') {
+    if (it.kind === 'callout') return 'Note';
+    if (it.kind === 'frame') return 'Frame';
+    if (it.kind === 'image' || it.kind === 'ink') return null;
+    return 'Text';
+  }
+  return null;
+}
+
+function focusAndGlow(el: HTMLInputElement | HTMLTextAreaElement) {
+  el.scrollIntoView({ block: 'nearest' });
+  el.focus();
+  el.select();
+  el.classList.remove('attention');
+  void el.offsetWidth; // restart the glow if it is still running
+  el.classList.add('attention');
+  setTimeout(() => el.classList.remove('attention'), 1200);
+}
+
 /**
  * Opens the inspector and puts the cursor in the selection's value field,
  * with a short glow so the eye finds it across the screen.
@@ -445,14 +472,15 @@ export function focusValueField() {
   set({ rightPanel: true });
   setTimeout(() => {
     const el = document.querySelector<HTMLInputElement>('[data-focus="value"]');
-    if (!el) return;
-    el.scrollIntoView({ block: 'nearest' });
-    el.focus();
-    el.select();
-    el.classList.remove('attention');
-    void el.offsetWidth; // restart the glow if it is still running
-    el.classList.add('attention');
-    setTimeout(() => el.classList.remove('attention'), 1200);
+    if (el) return focusAndGlow(el);
+    // sections start folded: open the one holding the value, then look again once it has rendered
+    const section = valueSectionId();
+    if (!section) return;
+    setFolds({ [`s:${section}`]: true });
+    setTimeout(() => {
+      const el2 = document.querySelector<HTMLInputElement>('[data-focus="value"]');
+      if (el2) focusAndGlow(el2);
+    }, 30);
   }, 30);
 }
 
