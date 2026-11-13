@@ -2,7 +2,7 @@ import { normalizePages } from '../model/pages';
 import { migrateItems, safeColour, uid } from '../model/doc';
 import type { CircuitDoc } from '../model/types';
 import { pruneAutos, sameContent, type Version } from '../model/versions';
-import { S, inGesture, mutate, set, toast, useStore } from '../store/store';
+import { S, inGesture, mutate, set, sharedDoc, toast, useStore } from '../store/store';
 
 /*
  * Version history: restore points of each document, kept in IndexedDB on this
@@ -132,7 +132,8 @@ async function prune(docId: string) {
 /** Saves a named version of the open document. */
 export async function saveNamedVersion(label: string) {
   try {
-    const v = await saveVersion(S().doc, label || defaultLabel(), false);
+    // the circuit behind the symbol editor page, which is not a document of its own
+    const v = await saveVersion(sharedDoc(), label || defaultLabel(), false);
     if (v) toast(`Saved version “${v.label}”`, 'success');
   } catch (e) {
     toast(`Could not save the version: ${(e as Error).message}`, 'error');
@@ -147,6 +148,8 @@ export function defaultLabel(t = Date.now()): string {
 export async function restoreVersion(v: Version) {
   // restoring under a running drag would be discarded by its next update
   if (inGesture()) return toast('Finish the drag first, then restore the version', 'info');
+  // the history follows the circuit behind the symbol editor page: restoring there would replace the page
+  if (S().symbolSession) return toast('Save or cancel the symbol first, then restore the version', 'info');
   const cur = S().doc;
   try {
     await saveVersion(cur, `Before restoring “${v.label || 'autosave'}”`, true);
@@ -180,7 +183,8 @@ function autoTick() {
     idleTimer = setTimeout(autoTick, IDLE);
     return;
   }
-  const doc = S().doc;
+  // the circuit behind the symbol editor page, which is not a document of its own
+  const doc = sharedDoc();
   if (!doc.id) return;
   const last = lastSaved.get(doc.id);
   if (last && Date.now() - last.t < AUTO_EVERY) {
@@ -196,17 +200,20 @@ export function startVersionHistory() {
   if (started || typeof indexedDB === 'undefined') return;
   started = true;
   // the document as it was opened is the first restore point
-  void saveVersion(S().doc, '', true).catch(() => {});
+  void saveVersion(sharedDoc(), '', true).catch(() => {});
   // switching away (another tab or app, closing, the iPad going to sleep): keep a restore point
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') void saveVersion(S().doc, '', true).catch(() => {});
+    if (document.visibilityState === 'hidden') void saveVersion(sharedDoc(), '', true).catch(() => {});
   });
   useStore.subscribe((s, prev) => {
-    if (s.doc === prev.doc) return;
-    if (s.doc.id !== prev.doc.id) {
+    // the symbol editor page stands in for the circuit but is not a document: versions follow the circuit
+    const doc = sharedDoc(s);
+    const was = sharedDoc(prev);
+    if (doc === was) return;
+    if (doc.id !== was.id) {
       // a different document was opened: keep the one being closed, and the one opened as it arrived
-      void saveVersion(prev.doc, '', true)
-        .then(() => saveVersion(s.doc, '', true))
+      void saveVersion(was, '', true)
+        .then(() => saveVersion(doc, '', true))
         .catch(() => {});
       return;
     }
