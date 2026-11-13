@@ -1,6 +1,6 @@
 import { Copy, CopyPlus, LogIn, LogOut, Radio } from 'lucide-react';
 import { useState } from 'react';
-import { PEER_COLORS, isHost, joinSession, leaveSession, parseLink, setMyColor, setMyName, startSession, useCollab } from '../collab/session';
+import { COLLAB_ENABLED, PEER_COLORS, isHost, joinSession, leaveSession, parseLink, setMyColor, setMyName, startSession, useCollab } from '../collab/session';
 import { toast, useStore } from '../store/store';
 import { ask } from './Ask';
 
@@ -52,6 +52,19 @@ export function LiveSession() {
       setBusy(false);
     }
   };
+
+  if (!COLLAB_ENABLED)
+    return (
+      <section className="live-session">
+        <div className="live-head">
+          <Radio size={18} />
+          <div>
+            <b>Live collaboration</b>
+            <div className="muted small">Live sessions are turned off in this build. Nothing is sent to a collaboration server.</div>
+          </div>
+        </div>
+      </section>
+    );
 
   return (
     <section className="live-session">

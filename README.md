@@ -196,6 +196,33 @@ The web app can be installed (Chrome/Edge: the install icon in the address bar; 
 - **Welcome screen** on an empty page: place a part, open or import a file, the command palette, the example circuit or a live session, your most recent circuits on this device (with thumbnails), and a row of common parts that you can place with one click. It goes as soon as anything is placed. A first visit opens the example circuit with a small card that offers a blank one instead.
 - **Feedback as you work**: a short ring where a part is set down or a wire snaps onto a pin; dragging a part from the library shows it snapped where it will land; double-click or **F2** jumps to the value field with a glow; a tick replaces the unsaved dot after saving; inside a group a breadcrumb shows where you are and leaves any level in one click.
 
+## Security and privacy
+
+Nodal is built so circuits can stay on your machine.
+
+- **No telemetry.** No analytics, crash reporting, tracking or update checks. Fonts and libraries are bundled, so the app loads nothing from third-party CDNs.
+- **Your circuits stay local.** Autosave, version history and your symbol library live in the browser's storage on this device (or in files you save, in the desktop app). Nothing is uploaded unless you start a live session.
+- **What does go over the network,** and only when you use it:
+  - *KiCad library:* the web app reads the part index and the symbols you open from its own site. The desktop app reads them from `jpmarcelino.github.io` (only which symbols you browse is visible there, never your circuit).
+  - *Live sessions:* only when you click **Start live session** or open a session link. The circuit is end-to-end encrypted (AES-GCM with a random 128-bit key per room, kept in the link's `#fragment`, which browsers never send to a server). The relay only stores and forwards ciphertext. Share links are view-only, enforced by the relay. A room is deleted when the host ends it, or 24 hours after its last edit.
+  - *Add-library links:* a `#addLibrary=` link downloads that one file after you confirm; symbols are rebuilt from plain fields, so nothing in it can run.
+  - *AI agent link:* off unless you turn it on, and it only ever connects to a bridge **on this computer** (`ws://127.0.0.1` / `localhost`). The bridge listens on 127.0.0.1 only, needs a token for every call, and refuses requests from other websites.
+- **Content-Security-Policy:** the built app runs only its own scripts and can't load plugins. Nothing injected through a file, symbol or link can run code.
+- **Imported files are sanitised:** SVGs lose scripts, event handlers and external references; colours are plain values only; PNG/SVG pictures carry only the circuit they show.
+
+### Company builds
+
+Build the web or desktop app with these variables (in the environment or a `.env.production` file) to keep everything in-house:
+
+| Variable | Effect |
+| --- | --- |
+| `VITE_COLLAB_URL=off` | Turns live sessions off completely: the relay address isn't even in the build, and the Share dialog says so. |
+| `VITE_COLLAB_URL=wss://relay.example.com` | Uses your own relay instead (deploy [`collab-server/`](collab-server) to your own Cloudflare account with `npx wrangler deploy`). |
+| `VITE_PUBLIC_APP_URL=https://nodal.example.com/` | Where share links made in the desktop app point. |
+| `VITE_KICAD_URL=https://nodal.example.com/kicad/` | Where the desktop app reads the KiCad library (host the `kicad-library/` folder there). |
+
+For example: `VITE_COLLAB_URL=off npm run build:web`, then host `dist/` (plus `kicad-library/` as `kicad/`) on an internal server.
+
 ## Keyboard shortcuts
 
 Press **?** in the app for the full list. You can rebind any shortcut in Settings.

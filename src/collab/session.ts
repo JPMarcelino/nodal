@@ -22,9 +22,15 @@ import { SyncState, changedKeys, docFromEntries, writeEntries, type Entry } from
  * deletes it and disconnects everyone.
  */
 
+/**
+ * The relay for live sessions. A company build can point it at its own relay
+ * (VITE_COLLAB_URL=wss://…, see collab-server/) or turn live sessions off
+ * entirely (VITE_COLLAB_URL=off): then nothing ever connects to a relay.
+ */
 export const COLLAB_URL: string = import.meta.env.VITE_COLLAB_URL ?? 'wss://nodal-collab.nodal-collab.workers.dev';
+export const COLLAB_ENABLED = !!COLLAB_URL && COLLAB_URL !== 'off';
 /** Links made from the desktop app point at the web app, so anyone can open them. */
-export const PUBLIC_APP_URL = 'https://jpmarcelino.github.io/nodal/';
+export const PUBLIC_APP_URL: string = import.meta.env.VITE_PUBLIC_APP_URL || 'https://jpmarcelino.github.io/nodal/';
 
 export interface PeerView {
   /** World point at the centre of their canvas. */
@@ -183,6 +189,7 @@ export function parseLink(text: string): { room: string; key: string } | null {
 
 /** Opens a new room with the current circuit and returns its share link. */
 export async function startSession(): Promise<string> {
+  if (!COLLAB_ENABLED) throw new Error('Live sessions are turned off in this build');
   const r = randomId(12);
   const k = newRoomKey();
   rememberToken(r, randomId(24));
@@ -192,6 +199,10 @@ export async function startSession(): Promise<string> {
 
 /** Joins the room in a share link, replacing the open circuit with the shared one. */
 export async function joinSession(link: string): Promise<boolean> {
+  if (!COLLAB_ENABLED) {
+    toast('Live sessions are turned off in this build', 'error');
+    return false;
+  }
   const parsed = parseLink(link);
   if (!parsed) {
     toast('That is not a Nodal session link', 'error');
@@ -258,7 +269,7 @@ export function follow(id: string | null) {
 
 /** Joins the session in the page URL, if there is one (web). */
 export function joinFromUrl() {
-  if (isDesktop()) return;
+  if (isDesktop() || !COLLAB_ENABLED) return;
   const check = () => {
     if (parseLink(location.hash)) void joinSession(location.hash);
   };

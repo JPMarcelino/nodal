@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync } from 'node:fs';
 import type { Plugin } from 'vite';
@@ -58,9 +58,55 @@ function kicadLibrary(): Plugin {
   };
 }
 
+/**
+ * Content-Security-Policy for the built app (web and desktop). Scripts only
+ * come from the app itself, so nothing injected through a file, a symbol or a
+ * share link can run. Network access is limited to the app's own files, the
+ * live-session relay (when turned on), an agent bridge on this computer, the
+ * desktop app's KiCad library host, and https downloads the user asks for
+ * (add-library links). ipc: / ipc.localhost are the desktop app's own IPC.
+ */
+function contentSecurityPolicy(env: Record<string, string | undefined>): Plugin {
+  const collab = env.VITE_COLLAB_URL ?? 'wss://nodal-collab.nodal-collab.workers.dev';
+  const origin = (u: string | undefined) => {
+    try {
+      return u ? new URL(u).origin : '';
+    } catch {
+      return '';
+    }
+  };
+  const connect = [
+    "'self'",
+    collab && collab !== 'off' ? origin(collab) : '',
+    'ws://127.0.0.1:*',
+    'ws://localhost:*',
+    'https:',
+    'ipc:',
+    'http://ipc.localhost',
+  ].filter(Boolean);
+  const policy = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "media-src 'self' data: blob:",
+    "worker-src 'self' blob:",
+    `connect-src ${connect.join(' ')}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'none'",
+  ].join('; ');
+  return {
+    name: 'nodal-csp',
+    apply: 'build',
+    transformIndexHtml: (html) => html.replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${policy}" />`),
+  };
+}
+
 // BASE_PATH is set by the GitHub Pages workflow; desktop builds use relative paths.
-export default defineConfig({
-  plugins: [react(), agentBridge(), kicadLibrary()],
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), agentBridge(), kicadLibrary(), contentSecurityPolicy({ ...loadEnv(mode, process.cwd(), 'VITE_'), ...process.env })],
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   base: process.env.BASE_PATH ?? './',
   clearScreen: false,
@@ -72,4 +118,4 @@ export default defineConfig({
     chunkSizeWarningLimit: 1500,
   },
   test: { environment: 'node' },
-} as any);
+}) as any);

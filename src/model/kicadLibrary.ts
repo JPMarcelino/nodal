@@ -80,6 +80,9 @@ export function kicadGroup(lib: string): string {
 /** Where the library is served: next to the web app, or the hosted copy for the desktop app. */
 export function kicadBase(): string {
   const tauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  // a company build can serve the library from its own host (VITE_KICAD_URL=https://…/kicad/)
+  const own = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_KICAD_URL : undefined;
+  if (own) return own.endsWith('/') ? own : `${own}/`;
   if (tauri) return 'https://jpmarcelino.github.io/nodal/kicad/';
   const base = typeof import.meta !== 'undefined' ? (import.meta.env?.BASE_URL ?? './') : './';
   return `${base}kicad/`;
