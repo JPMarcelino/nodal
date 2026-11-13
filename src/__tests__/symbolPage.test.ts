@@ -42,6 +42,26 @@ describe('symbol page conversion', () => {
     expect((prims[3] as { x: number }).x).toBeCloseTo(20, 0);
   });
 
+  it('keeps a closed path that comes down to two curved nodes', async () => {
+    const { createDoc } = await import('../model/doc');
+    const { primsToShapes, pageToSymbol } = await import('../model/symbolPage');
+    const doc = createDoc();
+    const shapes = primsToShapes(doc, [
+      // two cubic stretches that end back on the start: a lens, closed with two nodes
+      { t: 'path', d: 'M 20 40 Q 14 26 22 24 Q 28 30 20 40 Z', fill: 'solid' },
+      // two plain corners still enclose nothing: dropped, as before
+      { t: 'path', d: 'M 0 0 L 10 0 Z', fill: 'none' },
+    ]);
+    expect(shapes.length).toBe(1);
+    expect(shapes[0].kind).toBe('polygon');
+    expect(shapes[0].poly!.length).toBe(4);
+    for (const s of shapes) doc.items[s.id] = s;
+    const out = pageToSymbol(doc)!;
+    expect(out.prims.length).toBe(1);
+    expect(out.prims[0]).toMatchObject({ t: 'path', fill: 'solid' });
+    expect((out.prims[0] as { d: string }).d.endsWith('Z')).toBe(true);
+  });
+
   it('draws parts placed on the page into the symbol', async () => {
     const { createDoc, makeComponent } = await import('../model/doc');
     const { makePin, pageToSymbol } = await import('../model/symbolPage');

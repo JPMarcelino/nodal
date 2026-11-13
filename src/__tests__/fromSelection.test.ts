@@ -103,6 +103,30 @@ describe('create symbol from selection', () => {
     expect(headStart).toEqual({ t: 'poly', pts: [0, 0, 10, -4.5, 10, 4.5], fill: 'solid' });
   });
 
+  it('draws an unstroked shape without an outline, arrowheads included', () => {
+    let arrowId = '';
+    let rectId = '';
+    const doc = produce(createDoc(), (d) => {
+      const a = makeShape(d as CircuitDoc, 'arrow', 100, 100, 60, 0);
+      a.stroke = 'none';
+      a.strokeWidth = 0;
+      a.headEnd = 'filled';
+      d.items[a.id] = a;
+      arrowId = a.id;
+      const r = makeShape(d as CircuitDoc, 'rect', 200, 100, 40, 20);
+      r.stroke = 'none';
+      r.strokeWidth = 0;
+      d.items[r.id] = r;
+      rectId = r.id;
+    });
+    const arrow = selectionToDrawing(doc, [arrowId])!;
+    // the filled head has no width key of its own: it must still get a zero outline
+    expect(arrow.prims[0]).toMatchObject({ t: 'line', w: 0 });
+    expect(arrow.prims[1]).toMatchObject({ t: 'poly', fill: 'solid', w: 0 });
+    const rect = selectionToDrawing(doc, [rectId])!;
+    expect(rect.prims[0]).toMatchObject({ t: 'rect', sw: 0 });
+  });
+
   it('swaps ellipse rx/ry when the component is rotated 90 degrees', () => {
     const def: SymbolDef = {
       id: 'test-ellipse',

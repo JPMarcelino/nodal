@@ -6,7 +6,7 @@ import { circuitToText, NODAL_FILTER, openFromHistory } from '../io/fileActions'
 import { sanitizeName, saveFile } from '../io/files';
 import { defaultLabel, deleteVersion, listOtherCircuits, listVersions, onVersionsChanged, renameVersion, restoreVersion, saveNamedVersion } from '../io/versionStore';
 import { countParts, diffDocs, type Version } from '../model/versions';
-import { toast, useStore } from '../store/store';
+import { sharedDoc, toast, useStore } from '../store/store';
 import { confirmDelete } from './Ask';
 
 const dayOf = (t: number) => new Date(t).toDateString();
@@ -83,7 +83,8 @@ function OtherCircuits({ docId }: { docId: string | undefined }) {
 
 function Preview({ v }: { v: Version }) {
   const theme = useStore((s) => s.prefs.theme);
-  const doc = useStore((s) => s.doc);
+  // the circuit behind the symbol editor page: the history is the circuit's
+  const doc = useStore((s) => sharedDoc(s));
   const src = useMemo(() => {
     try {
       // the version's first page (a version restores every page)
@@ -143,7 +144,7 @@ function Preview({ v }: { v: Version }) {
 }
 
 export function HistoryPanel() {
-  const docId = useStore((s) => s.doc.id);
+  const docId = useStore((s) => sharedDoc(s).id);
   const versions = useVersions(docId);
   const [name, setName] = useState('');
   const [picked, setPicked] = useState<string | null>(null);

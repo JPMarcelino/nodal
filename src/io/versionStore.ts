@@ -148,6 +148,8 @@ export function defaultLabel(t = Date.now()): string {
 export async function restoreVersion(v: Version) {
   // restoring under a running drag would be discarded by its next update
   if (inGesture()) return toast('Finish the drag first, then restore the version', 'info');
+  // the history follows the circuit behind the symbol editor page: restoring there would replace the page
+  if (S().symbolSession) return toast('Save or cancel the symbol first, then restore the version', 'info');
   const cur = S().doc;
   try {
     await saveVersion(cur, `Before restoring “${v.label || 'autosave'}”`, true);
