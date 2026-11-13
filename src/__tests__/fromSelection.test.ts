@@ -97,7 +97,7 @@ describe('create symbol from selection', () => {
     expect(drawing.h % 20).toBe(0);
     expect(drawing.prims.length).toBe(3);
     const [line, headEnd, headStart] = drawing.prims;
-    expect(line).toEqual({ t: 'line', pts: [0, 0, 60, 0], w: 2 });
+    expect(line).toEqual({ t: 'line', pts: [0, 0, 60, 0] }); // the default width follows the part's line width
     // head size defaults to 4 + strokeWidth * 3 = 10, barbs 10 * 0.45 wide
     expect(headEnd).toEqual({ t: 'poly', pts: [60, 0, 50, 4.5, 50, -4.5], fill: 'solid' });
     expect(headStart).toEqual({ t: 'poly', pts: [0, 0, 10, -4.5, 10, 4.5], fill: 'solid' });

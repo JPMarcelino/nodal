@@ -5,7 +5,7 @@ import { createDoc, makeShape } from '../model/doc';
 import { flipItems } from '../model/ops';
 import { measureRich, wrapRich } from '../model/richText';
 import { measureTextShape, shapeText } from '../model/shapeText';
-import { applyLook, gradientLine, lookOf } from '../model/style';
+import { applyLook, gradientLine, lookOf, strokeNoun, strokeNounOf } from '../model/style';
 import type { CircuitDoc, ShapeItem } from '../model/types';
 
 function docWith(...shapes: ShapeItem[]): CircuitDoc {
@@ -189,5 +189,24 @@ describe('gradient line', () => {
     const s = { ...makeShape(d0, 'rect', 0, 0, 200, 100), fill: '#ff0000', fillOpacity: 1, gradient: { to: '#0000ff', angle: 0 } } as ShapeItem;
     d0.items[s.id] = s;
     expect(exportSvg(d0, { theme: 'light', background: false, padding: 10 }).svg).toContain('gradientUnits="userSpaceOnUse"');
+  });
+});
+
+describe('line or outline', () => {
+  const doc = createDoc();
+  const shape = (kind: ShapeItem['kind'], extra: Partial<ShapeItem> = {}) => ({ ...makeShape(doc, kind, 0, 0, 40, 20), ...extra });
+
+  it('calls the stroke of lines, arrows, ink and open paths a line', () => {
+    for (const k of ['line', 'arrow', 'ink'] as const) expect(strokeNoun(shape(k))).toBe('Line');
+    expect(strokeNoun(shape('polygon', { open: true }))).toBe('Line');
+  });
+
+  it('calls the edge of a closed shape an outline', () => {
+    for (const k of ['rect', 'zone', 'ellipse', 'polygon', 'frame'] as const) expect(strokeNoun(shape(k))).toBe('Outline');
+  });
+
+  it('names both for a mixed selection', () => {
+    expect(strokeNounOf([shape('rect'), shape('ellipse')])).toBe('Outline');
+    expect(strokeNounOf([shape('rect'), shape('line')])).toBe('Line & outline');
   });
 });

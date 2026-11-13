@@ -1,7 +1,7 @@
 import type { Tool } from '../model/types';
 
 /** What is selected, as far as the hint line cares. */
-export type HintSel = 'part' | 'label' | 'wire' | 'labelledWire' | 'shape' | 'text' | 'other';
+export type HintSel = 'part' | 'label' | 'wire' | 'labelledWire' | 'shape' | 'connector' | 'text' | 'other';
 
 /** Gesture in progress on the canvas that changes what the next step is. */
 export type HintGesture = 'wire' | 'polygon' | 'path' | 'connector' | 'other';
@@ -104,7 +104,7 @@ export function hintFor(s: HintState): string | null {
       return join(['Drag to draw an ellipse', `${esc} back to select`]);
     case 'line':
     case 'arrow':
-      return join([`Drag to draw ${s.tool === 'line' ? 'a line' : 'an arrow'}`, 'start or end on a shape or part to attach it', 'Shift 45°', `${esc} back to select`]);
+      return join([`Drag to draw ${s.tool === 'line' ? 'a line' : 'an arrow'}`, 'start or end on a shape or part to attach it', 'Shift 15° steps', `${esc} back to select`]);
     case 'polygon':
       return join(['Click the corners', 'click the first one again to close', `${esc} back to select`]);
     case 'path':
@@ -116,9 +116,9 @@ export function hintFor(s: HintState): string | null {
     case 'pan':
       return join(['Drag to pan', `hold ${k('Space')} to pan from any tool`, `${esc} back to select`]);
     case 'pen':
-      return join(['Drag to draw', 'hold still at the end to snap to a line or shape, keep holding to resize it', '1–7 colour', '[ ] size']);
+      return join(['Drag to draw', 'hold still at the end to snap to a line, arrow, arc or shape, keep holding to resize it', 'Shift straight lines (pause for a corner)', '1–7 colour', '[ ] size']);
     case 'highlighter':
-      return join(['Drag to highlight', 'hold still to straighten', 'Shift straight']);
+      return join(['Drag to highlight', 'hold still to straighten', 'Shift straight lines (pause for a corner)']);
     case 'laser':
       return join(['Drag to point', 'the marks fade together when you stop']);
     case 'eraser':
@@ -134,7 +134,7 @@ export function hintFor(s: HintState): string | null {
 function selectHint(s: HintState, cmd: (id: string, what: string) => string | null, pair: (a: string, b: string, what: string) => string | null): string | null {
   const sel = s.selection;
   if (!sel.length) {
-    return join(['Click a part or wire to select it, drag to select an area', cmd('tool.wire', 'draws wires'), cmd('view.search', 'finds parts'), cmd('help.palette', 'opens the command palette')]);
+    return join(['Click a part or wire to select it, drag to select an area', cmd('tool.wire', 'draws wires'), `${s.key('Alt')}-drag from a pin to wire it`, cmd('view.search', 'finds parts'), cmd('help.palette', 'opens the command palette')]);
   }
   if (sel.length > 1) {
     const labels = sel.every((t) => t === 'label' || t === 'labelledWire');
@@ -149,7 +149,7 @@ function selectHint(s: HintState, cmd: (id: string, what: string) => string | nu
   }
   switch (sel[0]) {
     case 'part':
-      return join([cmd('arrange.rotateCw', 'rotates'), pair('arrange.flipH', 'arrange.flipV', 'flip'), 'drag a corner to resize', cmd('edit.duplicate', 'duplicates'), cmd('edit.quickAddRight', '(or another arrow) chains a wired copy'), cmd('edit.properties', 'edits the value')]);
+      return join([cmd('arrange.rotateCw', 'rotates'), pair('arrange.flipH', 'arrange.flipV', 'flip'), 'drag a corner to resize', `${s.key('Alt')}-drag a pin to wire it`, cmd('edit.duplicate', 'duplicates'), cmd('edit.quickAddRight', '(or another arrow) chains a wired copy'), cmd('edit.properties', 'edits the value')]);
     case 'label':
       return join([cmd('edit.properties', 'renames the net'), 'drag its name to move it', cmd('edit.duplicateIncrement', 'duplicates with the next number (D0 → D1)'), cmd('arrange.rotateCw', 'rotates')]);
     case 'labelledWire':
@@ -158,6 +158,8 @@ function selectHint(s: HintState, cmd: (id: string, what: string) => string | nu
       return join(['Click a segment to select it, then Del removes it', 'Alt-drag on a wire to branch', cmd('wire.highlightNet', 'highlights the net'), cmd('wire.reroute', 're-routes')]);
     case 'text':
       return join(['Double-click to edit the text', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
+    case 'connector':
+      return join(['Drag the + in the middle to bow it into a curve', 'Alt-drag the + for a sharp corner', 'Shift-click a point to remove it', 'drag an end to attach it', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
     case 'shape':
       return join(['Drag a handle to resize', 'double-click to add text', cmd('edit.duplicate', 'duplicates'), cmd('edit.lock', 'locks')]);
     default:

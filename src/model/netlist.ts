@@ -1,3 +1,4 @@
+import { contactLinks } from './connectivity';
 import { toWorld } from './geometry';
 import { stripMath } from './latex';
 import { docPages, itemPage, multiPage, resolvePage } from './pages';
@@ -116,8 +117,10 @@ export function refreshTouching(
     }
   }
   const touching = new Set(prevTouching);
-  for (const [cell, old] of before) {
-    for (const key of old ?? []) touching.delete(key);
+  // drop every old key first: a pin that moved from one changed cell to
+  // another must not be dropped again after its new cell added it back
+  for (const old of before.values()) for (const key of old ?? []) touching.delete(key);
+  for (const cell of before.keys()) {
     const list = cells.get(cell) ?? [];
     if (new Set(list).size > 1) for (const key of list) touching.add(key);
   }
@@ -152,7 +155,13 @@ class DSU {
   }
 }
 
-/** Computes electrical nets. Wires joined by junctions/ports share a net; wire labels name their net like net-label and rail symbols, and equal names are joined. Hidden labels name the net too. */
+/**
+ * Computes electrical nets. Wires attached to the same pin or junction share a
+ * net, and so does everything that touches (see connectivity.ts: if it
+ * touches, it is connected, unless it hops). Wire labels name their net like
+ * net-label and rail symbols, and equal names are joined. Hidden labels name
+ * the net too.
+ */
 export function computeNets(doc: CircuitDoc, opts?: { ignoreLabels?: boolean }): Net[] {
   const dsu = new DSU();
   const comps = Object.values(doc.items).filter((i): i is ComponentItem => i.type === 'component');
@@ -164,6 +173,7 @@ export function computeNets(doc: CircuitDoc, opts?: { ignoreLabels?: boolean }):
     dsu.union(a, b);
   }
   for (const group of touchingPins(doc)) for (const k of group.slice(1)) dsu.union(`p:${group[0]}`, `p:${k}`);
+  for (const [a, b] of contactLinks(doc)) dsu.union(a, b);
   const labelOf = new Map<string, string>();
   const wireLabelOf = new Map<string, string>();
   const byLabel = new Map<string, string>();

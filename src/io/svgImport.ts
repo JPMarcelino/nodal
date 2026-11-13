@@ -1,5 +1,6 @@
 import { closeLoop, type PathNode } from '../model/path';
 import type { Fill, Prim } from '../model/types';
+import { recognizeShapes } from './svgShapes';
 
 /*
  * SVG → symbol primitives. Geometry is converted exactly (no sampling): paths
@@ -757,6 +758,8 @@ export function subpathNodes(segs: Seg[]): ({ nodes: PathNode[]; closed: boolean
  * Converts SVG markup into an editable drawing at its own size (capped at
  * 2000 px), centred on (0, 0): strokes become polylines (for wires), plain
  * rectangles / circles / ellipses become boxes, small dots become junctions.
+ * Loose segments are joined and outlines that are really rectangles,
+ * circles or ellipses are read as such (see recognizeShapes).
  */
 export function svgToDrawing(text: string): SvgDrawing {
   const { shapes, texts, b } = readSvg(text);
@@ -809,5 +812,5 @@ export function svgToDrawing(text: string): SvgDrawing {
     }
   }
   for (const t of texts) out.texts.push({ x: X(t.x), y: Y(t.y), size: Math.max(4, r2(t.size * k)), anchor: t.anchor, text: t.text, color: t.color || '#000000' });
-  return out;
+  return recognizeShapes(out);
 }

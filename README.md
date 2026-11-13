@@ -6,16 +6,16 @@
 
 Nodal is a fast, good-looking schematic editor. It's one React + TypeScript codebase that runs as:
 
-- a **desktop app for Windows and Linux** (Tauri: small native installers, built by GitHub Actions), and
+- a **desktop app for Windows and Linux** (Tauri: small native installers), and
 - a **web app**: <https://jpmarcelino.github.io/nodal/>
 
 ![Nodal editor](docs/screenshot.png)
 
-**Download:** [latest release](https://github.com/JPMarcelino/nodal/releases/latest). On Windows use the `.msi` or `-setup.exe`; on Linux use the `.AppImage` (`chmod +x`, then run it), `.deb` or `.rpm`.
+**Download:** [latest release](https://github.com/JPMarcelino/nodal/releases/latest). On Windows use the `-setup.exe`; on Linux use the `.AppImage` (`chmod +x`, then run it), `.deb` or `.rpm`.
 
 ## Features
 
-### Symbol library (~240 parts)
+### Built-in symbol library (~240 parts)
 - **Passive:** resistors (US and IEC), variable resistors, potentiometers, trimmers, NTC/PTC thermistors, LDRs, varistors, resistor networks, 4-terminal current-sense resistors, capacitors (ceramic, polarized, bipolar, variable), inductors, coupled inductors, ferrite beads, transformers (center-tapped, dual secondary), crystals, resonators, fuses, polyfuses, spark gaps, gas discharge tubes, antennas
 - **Semiconductors:** diodes, dual diodes, LEDs, Zener, Schottky, tunnel, TVS, varactor, photodiode, laser diode, DIAC, bridge rectifier, NPN/PNP (plain and circled), Darlington, phototransistor, N/P MOSFETs, depletion MOSFET, N/P JFETs, IGBT, SCR, TRIAC, UJT, optocouplers (transistor and TRIAC output), gate driver, vacuum tubes (triode, pentode)
 - **ICs and analog:** op-amps (single and dual), comparator, TL431 shunt reference, voltage reference, LDO with enable, oscillator module, instrumentation amp, 555, linear and adjustable regulators, buck converter, generic 8/14/16-pin ICs, ATmega328P, generic MCU, EEPROM, ADC, DAC, H-bridge, USB-UART
@@ -28,12 +28,21 @@ Nodal is a fast, good-looking schematic editor. It's one React + TypeScript code
 
 You can search the library, mark favourites (★), and see recently used parts. Click a part to place it, or drag it onto the canvas.
 
+### KiCad library (22,900+ parts)
+The whole official KiCad symbol library (10.0.8) is built in, in the Library panel under **KiCad library**: generic parts (Device, power) and specific ones from 223 libraries — op-amps, comparators, 74xx/4000 logic, ADCs/DACs, regulators and converters, MCUs, FPGAs, memories, interfaces, RF modules, sensors, displays, relays, connectors, valves and SPICE sources. Search finds them below the built-in parts; browse them by group and library. Nothing is downloaded until you search or open a library, then only the symbols shown.
+- Every pin lands on the 10 px grid (KiCad's 50 mil grid maps to one step), however the part is placed or turned.
+- Parts with several units (the gates of a 7400, the halves of a dual op-amp, a power unit) are one part with each unit as a **type**.
+- A placed part is copied into the circuit, so the file opens anywhere, offline too. Description, datasheet and footprint come along as fields.
+- **Import your own KiCad libraries:** drop a `.kicad_sym` file on the canvas (or *File → Import…*) and its parts join *My symbols*.
+- The symbols are © the KiCad library contributors, CC-BY-SA 4.0; designs that use them are not affected (see `kicad/LICENSE.md` on the site). The library is rebuilt with `npx vite-node scripts/build-kicad-library.ts`.
+
 ### Symbol types (several drawings per part)
 Many parts can be drawn more than one way. A symbol with types shows a small **types badge** on its tile; **hover** it for a clean popup preview, and **click** it to open a type picker (e.g. N- and P-channel MOSFETs ship with **Type A · standard**, **Type B · source arrow** and **Type C · simplified/gate-bubble**, and diodes, capacitors and inductors have alternates too). The same preview appears on hover in the command palette, and the type travels with the part.
 
 ### Making your own symbols
-Open the symbol editor with **Ctrl+Shift+N**, the **+ New** button, or **Customise symbol** on any part:
-- **Draw:** lines, polylines/polygons, rectangles, circles and text on a grid, plus pins that snap onto the symbol outline
+Open the symbol editor with **Ctrl+Shift+N**, the **+ New** button, or **Customise symbol** on any part. It opens the symbol as a page on the canvas itself, so every drawing tool, the parts library, wires, text, ink and the side panels work on it as on a circuit, with its own undo history; **Save** or **Back** returns to the circuit (which autosave and live sessions keep using meanwhile):
+- **Draw:** lines, polylines/polygons, rectangles, circles and text on a grid; parts placed on the page are drawn into the symbol
+- **Pins:** the *Add pins* tool (**N**) places numbered pin markers that snap onto lead ends; drag to move them, double-click to rename
 - **Style:** line colour, fill colour, line width (presets or any value) and solid or dashed lines, for the selected shapes or for new ones. Leave a colour empty to follow the theme.
 - **Nothing gets lost:** closing with unsaved changes (Esc, ×, or clicking outside) asks whether to save, and your unsaved work is kept, so it can be restored the next time the editor opens.
 - **Chip / IC builder:** type the pin names for each side and the box, leads, labels and pin numbers are generated
@@ -62,9 +71,11 @@ You can also share without a live session. Open **File → Share & collaborate�
 ### Wiring
 - Drag from any pin to draw a wire, or press **W** and click to add bends. Wires stay orthogonal; press **Space** to flip the elbow and **Backspace** to remove the last bend.
 - **Quick add (chain parts):** with one part selected, **Ctrl+Shift+←/→/↑/↓** places a copy of it (same value, fields and style; next reference designator) a short wire away in that direction, wired from the pin facing that way (turned if needed so a pin faces back, e.g. a resistor chained downward stands up), skipping occupied spots. The copy is selected, so pressing again builds a chain; one undo removes the part and its wire.
-- Ending a wire on another wire creates a **junction** automatically. **Alt-drag** on a wire starts a branch from it.
+- **If it touches, it's connected, unless it hops** (as in Cadence and KiCad). A wire end, a pin or a junction dot connects to whatever it lands on: another wire's end, a bend or the middle of a wire, a pin or a dot. Two wires crossing are the only things that touch without connecting, and they are drawn with a hop. Wires stay separate pieces; touching only puts them on the same net, which the Nets panel, net highlighting, wire names, the ERC and every netlist export all use.
+- Ending a wire on another wire creates a **junction** automatically, and so does any touch left by an edit (moving, pasting, importing), so the dot is drawn and the wires follow when a part or junction is dragged. **Alt-drag** on a wire starts a branch from it.
 - **Crossings hop:** where wires cross without connecting, a small arc is drawn (you can switch to a gap or a plain crossing).
-- **Placing parts onto wires connects them:** a pin set down exactly on a loose wire end takes that end, and a part dropped across a wire is inserted into it (the wire is split at its pins, and the piece that would short the part is removed). Wires dragged over pins don't connect by accident.
+- **Placing parts onto wires connects them:** a pin set down exactly on a loose wire end takes that end, and a part dropped across a wire is inserted into it (the wire is split at its pins, and the piece that would short the part is removed). A wire dragged across a pin touches it, so it connects there.
+- **Unsolder** a junction or pin from its hover menu: wires running straight through become one crossing wire again, and every other branch is pulled back a grid step so it really lets go.
 - **Wires never lie on top of each other:** if a wire is drawn, dragged or moved along another one, the shared stretch is merged into a single run with junctions at its ends, so what looks connected is connected.
 - Dragging a segment that ends at a junction takes the junction along; the other wires there bend to stay attached.
 - Junction dots appear wherever three or more conductors meet. Deleting a branch merges the remaining wire back into one.
@@ -84,7 +95,7 @@ You can also share without a live session. Open **File → Share & collaborate�
 
 ### Explaining a circuit
 The **Explain** button at the end of the tool rail opens a toolbar of annotation tools.
-- **Pen** (**D**): freehand ink, pressure-sensitive with a stylus. Hold still at the end of a stroke to snap it to a line, ellipse or box (a faint preview shows what it will snap to just before it does). The clean shape keeps the weight you drew with (an even stroke with no tapered ends or seam), and while you keep holding you can move the pen to resize and turn it about its centre; **Shift** makes it a perfect circle or square and turns in 15° steps (a line's end snaps to 15° too). One undo turns a snapped shape back into the stroke you drew. Strokes drawn earlier can be snapped later: right-click → *Annotation → Snap ink to shapes*, or the inspector. **Shift** while drawing draws straight. **1**–**7** pick a colour, **[** / **]** change the size. Optional vanishing ink fades after a few seconds.
+- **Pen** (**D**): freehand ink, pressure-sensitive with a stylus. Hold still at the end of a stroke to snap it to a clean shape (a faint preview shows what it will snap to just before it does): a line, a run of straight lines (an L, a zigzag), an arrow (draw the shaft and flick back a barb or two), an arc, an ellipse (tilted too), a box (level or turned) or a polygon (triangle, diamond, pentagon, hexagon, star…); a loose squiggle stays as drawn. The clean shape keeps the weight you drew with (an even stroke with no tapered ends or seam), and while you keep holding you can move the pen to resize and turn it about its centre; **Shift** makes it a perfect circle, square or regular polygon and turns in 15° steps (the end of a line or arrow snaps to 15° too). One undo turns a snapped shape back into the stroke you drew. Strokes drawn earlier can be snapped later: right-click → *Annotation → Snap ink to shapes*, or the inspector. **Shift** while drawing draws straight lines: pause for a moment to fix a corner and carry on in a new direction, and end back on the first corner to close the shape. **1**–**7** pick a colour, **[** / **]** change the size. Optional vanishing ink fades after a few seconds.
 - **Highlighter** (**I**): translucent marker drawn under the circuit.
 - **Laser pointer** (**K**): marks stay while you keep pointing and fade out together a moment after you stop, so a circle drawn round something stays whole. Visible to others in a live session.
 - **Eraser** (**U**): drag over ink or callouts.
@@ -95,7 +106,7 @@ The **Explain** button at the end of the tool rail opens a toolbar of annotation
 Ink and callouts are saved with the circuit and exported. Traced nets are temporary; **Esc** clears them.
 
 ### Checking the circuit
-- **Check tab** (**Ctrl+Alt+R**): a live electrical rules check. It lists unconnected pins (open power pins are errors), duplicate reference designators, supply rails shorted together, net labels used only once, nets that reach a single pin, loose wire ends, wire ends touching something without connecting, no-connect flags on wired pins, and parts stacked on the same spot. Markers show each problem on the canvas; click one to select and zoom to it. Put a **no-connect flag** (**Shift+X**) on pins you leave open on purpose.
+- **Check tab** (**Ctrl+Alt+R**): a live electrical rules check. It lists unconnected pins (open power pins are errors), duplicate reference designators, supply rails shorted together, net labels used only once, nets that reach a single pin, loose wire ends, no-connect flags on wired pins, and parts stacked on the same spot. Markers show each problem on the canvas; click one to select and zoom to it. Put a **no-connect flag** (**Shift+X**) on pins you leave open on purpose.
 - **Find** (**Ctrl+F**): jump to any part (by reference, value or any field), net, label or text.
 - Pins of two parts that touch are connected, just as if a wire joined them.
 
@@ -149,6 +160,17 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 - Click a version to preview it and see what changed since (added, removed and changed items). **Restore** puts it back as an ordinary edit, so Undo returns to where you were, and in a live session everyone gets it. **Save copy** writes it out as a separate file. Double-click a version to name it.
 - Named versions are kept forever; automatic ones thin out over time (recent ones, then one per hour, then one per day for a month).
 
+### AI agents
+- **Let an AI agent draw for you:** *File → AI agent link* connects Nodal to the agent bridge ([`agent-bridge/`](agent-bridge/README.md)). Through it, Claude Code and other MCP clients — or any program, over HTTP or the command line — can do everything Nodal does: place and wire parts, draw shapes and notes, make symbols, manage pages, run the rule check, read nets, export and take screenshots. About 100 methods in all.
+  ```bash
+  claude mcp add nodal -- node /path/to/nodal/agent-bridge/nodal-agent.mjs mcp
+  ```
+- **No setup beyond Node.js:** the agent panel links to the bridge as a single file (`nodal-agent.mjs`, served by the app itself) and shows the commands to run it. *Copy setup for your AI agent* copies instructions that ChatGPT/Codex, Claude or any agent with a shell can follow to download the bridge, start it and connect.
+- **You see what it does:** the agent has its own cursor with its name and messages. Each change is briefly outlined. The agent panel shows its goal, progress and every step as it happens; click a step to select what it touched. With *Follow* on, your view keeps the agent's drawing in frame.
+- **It works on its own:** the agent never uses your selection, tool, page or view, and its edits stay off your undo history (it has its own undo). You can keep working, even on another page.
+- **Guard:** while the agent is working, *Protect* keeps your own edits off what it made (*Its work*), off the whole circuit (*Everything*), or not at all (*Off*). It lifts when the agent says it is done, or when you press *Mark done*.
+- The agent can ask you a question in the panel and wait for your reply. Replacing the open circuit saves it as a version first.
+
 ### iPad, tablets and touch
 - **Pinch** to zoom and drag with **two fingers** to pan. **Long-press** opens the context menu.
 - **Two-finger tap** undoes (or cancels the wire you are drawing), **three-finger tap** redoes.
@@ -159,7 +181,9 @@ Write `$…$` for inline maths or `$$…$$` for display maths in free text, zone
 The web app can be installed (Chrome/Edge: the install icon in the address bar; iPad/iPhone Safari: **Share → Add to Home Screen**). It then opens in its own window and works offline.
 
 ### Interface
-- Dark and light themes, compact/normal/large UI sizes, minimap, focus mode
+- Dark and light themes, compact/normal/large UI sizes, minimap (click or drag it to move the view), focus mode
+- **Menus work from the keyboard:** **Esc** closes them, the arrow keys walk the items and the neighbouring menus, and any other shortcut closes the menu and runs. Dialogs keep **Tab** inside them and hand focus back when they close.
+- **Large circuits stay responsive:** a thousand parts and wires open, select, drag and undo without stalling.
 - **Command palette** (**Ctrl+K**): run any command or place any part by name. Results are ranked (label and word starts first) with the matched letters highlighted; with nothing typed it lists what you used recently, then every command by menu. Parts show a thumbnail, on/off commands show their state, and **Find** (**Ctrl+F**) works the same way.
 - **Double-click empty canvas** to search for a part and place it right where you clicked (recently used and common parts are listed before you type).
 - **Tooltips** name every button with its shortcut drawn as keys; the tool rail's also say what the tool does. Moving along the rail hands the tooltip from button to button without waiting again.
@@ -189,7 +213,8 @@ Press **?** in the app for the full list. You can rebind any shortcut in Setting
 | Place last used part | `P` | Search library | `/` |
 | Tool lock (keep placing) | `Shift+Q` | Quick add a wired copy of the part | `Ctrl+Shift+←/→/↑/↓` |
 | Zoom in / out / fit / 100% | `=` / `-` / `F` / `Ctrl+0` | Zoom to selection | `Shift+2` |
-| Grid / Snap | `G` / `Ctrl+'` | Minimap | `Alt+M` |
+| Grid / Snap | `G` / `Ctrl+'` | Grid size finer / coarser | `[` / `]` |
+| Minimap | `Alt+M` | | |
 | Bring to front / send to back | `Ctrl+Shift+]` / `Ctrl+Shift+[` | Bring forward / back | `Ctrl+]` / `Ctrl+[` |
 | Align left/right/top/bottom | `Alt+←/→/↑/↓` | Distribute H / V | `Alt+Shift+H` / `Alt+Shift+V` |
 | Highlight net | `N` | Re-route wire | `Shift+W` |
@@ -205,9 +230,14 @@ npm install
 npm run dev        # web app at http://localhost:1420
 npm test           # unit tests (geometry, junctions, symbol grid checks)
 npm run tauri dev  # desktop app (needs Rust + the Tauri system dependencies)
+npm run agent      # the AI agent bridge (see agent-bridge/README.md)
 ```
 
-Releases are built by GitHub Actions. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the Windows (MSI/NSIS) and Linux (AppImage/deb/rpm) installers and attaches them to a GitHub release. Every push to `main` redeploys the web app to GitHub Pages.
+```bash
+npm run deploy:web # build the web app and publish it to the gh-pages branch (GitHub Pages)
+```
+
+Releases: `.github/workflows/release.yml` builds the Windows (NSIS) and Linux (AppImage/deb/rpm) installers for a pushed `v*` tag and attaches them to a GitHub release. While Actions is switched off for this repository, the same installers are built locally in Docker (Linux natively, Windows with `cargo-xwin`, so there is no `.msi`) and uploaded with `gh release`, and the web app is published with `npm run deploy:web`.
 
 ### Adding a built-in symbol
 Symbols use a small drawing language (see `src/model/symbols/dsl.ts`):

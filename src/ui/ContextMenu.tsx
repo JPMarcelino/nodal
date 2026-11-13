@@ -10,6 +10,7 @@ import {
   ArrowDownToLine,
   ArrowUpToLine,
   BringToFront,
+  Check,
   ChevronRight,
   Circle,
   ClipboardPaste,
@@ -65,8 +66,10 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { openExport } from '../io/fileActions';
 import * as A from '../store/actions';
-import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
-import { S, activePage, set, useStore, type ContextMenuState, useViewDoc } from '../store/store';
+import { COMMAND_MAP, keysFor, openGridSizeMenu, prettyKey, setGridSize } from '../store/commands';
+import { GRID_SIZES } from '../model/doc';
+import { isConnector } from '../model/connectors';
+import { S, activePage, readOnly, set, useStore, type ContextMenuState, useViewDoc } from '../store/store';
 import { docPages } from '../model/pages';
 import { canConvertToPath } from '../model/path';
 import { setX } from '../store/explain';
@@ -78,6 +81,8 @@ interface Entry {
   run?: () => void;
   key?: string;
   danger?: boolean;
+  /** Ticked (instead of its icon) in menus that choose one of a set. */
+  on?: boolean;
   sub?: Row[];
 }
 type Row = Entry | '-';
@@ -98,6 +103,7 @@ const rows = (...r: (Row | null | false | '' | undefined)[]): Row[] => {
 };
 
 function canvasMenu(menu: ContextMenuState): { strip: Entry[]; list: Row[] } {
+  const grid = S().doc.settings.grid;
   return {
     strip: [
       { label: 'Paste here', icon: <ClipboardPaste size={15} />, run: () => void A.paste(menu.world), key: keysFor('edit.paste')[0] },
@@ -130,6 +136,15 @@ function canvasMenu(menu: ContextMenuState): { strip: Entry[]; list: Row[] } {
           cmd('view.100', 'Zoom to 100%', <Focus size={I} />),
           '-',
           cmd('view.grid', 'Grid', <Grid3x3 size={I} />),
+          !readOnly() && {
+            label: 'Grid size',
+            icon: <Grid3x3 size={I} />,
+            sub: rows(
+              ...GRID_SIZES.map((size) => ({ label: `${size} px`, on: Math.abs(size - grid) < 1e-9, run: () => setGridSize(size) })),
+              '-',
+              { label: 'Other…', run: () => openGridSizeMenu() },
+            ),
+          },
           cmd('view.snap', 'Snap to grid', <Magnet size={I} />),
           cmd('view.alignGuides', 'Alignment guides', <Crosshair size={I} />),
           cmd('view.spacingGuides', 'Spacing guides', <Columns3 size={I} />),
@@ -153,6 +168,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
   const t = doc.items[target];
   const locked = items.length > 0 && items.every((i) => i.locked);
   const convertible = items.some((i) => i.type === 'shape' && !i.locked && canConvertToPath(i));
+  const connectors = items.filter(isConnector);
   const lone = items.length === 1 ? items[0] : undefined;
   const callouts = items.some((i) => i.type === 'shape' && i.kind === 'callout');
   const anchored = items.some((i) => i.type === 'shape' && i.kind === 'callout' && !!i.anchor?.id && !i.locked);
@@ -181,6 +197,7 @@ function itemMenu(doc: CircuitDoc, target: string, selection: string[]): { strip
           convertible && cmd('arrange.toPath', 'Convert to path', <Route size={I} />),
         ),
       },
+      connectors.length > 0 && cmd('connector.curve', connectors.every((c) => c.route === 'curved') ? 'Straighten line' : 'Curve line', <Spline size={I} />),
       multi && {
         label: 'Align',
         icon: <AlignStartVertical size={I} />,
@@ -352,7 +369,7 @@ function Panel({ list, strip, className, sub = false }: { list: Row[]; strip?: E
                 e.run?.();
               }}
             >
-              <span className="ctx-icon">{e.icon}</span>
+              <span className="ctx-icon">{e.on ? <Check size={I} /> : e.icon}</span>
               <span className="ctx-label">{e.label}</span>
               {e.sub ? <ChevronRight size={13} className="ctx-chev" /> : e.key ? <kbd>{prettyKey(e.key)}</kbd> : null}
             </button>

@@ -68,6 +68,27 @@ describe('resolving glued ends', () => {
     expect(findGlue(doc, { x: 40, y: 20 }, 5)?.attach).toEqual({ id: a.id });
     expect(findGlue(doc, { x: 200, y: 200 }, 5)).toBeNull();
   });
+
+  it('pins anywhere along an edge, and only snaps to a point when right by it', () => {
+    const { doc, a } = twoBoxes();
+    // a third of the way along the top edge, just above it: pinned there, not pulled to the middle
+    const top = findGlue(doc, { x: 33, y: -3 }, 8)!;
+    expect(top.attach).toEqual({ id: a.id, fx: 0.33, fy: 0 });
+    near(top.pt, { x: 33, y: 0 });
+    // 6 away from the right side's middle: on the edge, not the point (a small nudge lets go of it)
+    expect(findGlue(doc, { x: 100, y: 36 }, 8)?.attach).toEqual({ id: a.id, fx: 1, fy: 0.6 });
+    // 2 away: the point
+    expect(findGlue(doc, { x: 100, y: 32 }, 8)?.attach).toEqual({ id: a.id, fx: 1, fy: 0.5 });
+  });
+
+  it('pins along a turned shape\'s edge where it is drawn', () => {
+    const doc = createDoc();
+    const r = add(doc, 'rect', 0, 0, 100, 40, { rot: 90 });
+    // turned a quarter round its centre (50, 20): it spans x 30…70, y -30…70; its drawn right side is x = 70
+    const g = findGlue(doc, { x: 71, y: 0 }, 8)!;
+    expect(g.attach.id).toBe(r.id);
+    near(g.pt, { x: 70, y: 0 });
+  });
 });
 
 describe('routes', () => {
@@ -191,6 +212,27 @@ describe('following targets', () => {
     const s = doc.items[c.id] as ShapeItem;
     expect(s.from).toBeUndefined();
     near({ x: s.x, y: s.y }, { x: 100, y: 30 });
+  });
+
+  it('moves a connector rigidly with its group, letting go of an outside target', () => {
+    const { doc, c } = twoBoxes();
+    c.group = 'g1';
+    doc.groups.g1 = { id: 'g1', name: 'G' };
+    const was = resolveConnector(doc, c);
+    translateItems(structuredClone(doc), doc, new Set([c.id]), 40, 20);
+    const s = doc.items[c.id] as ShapeItem;
+    expect(s.from).toBeUndefined();
+    expect(s.to).toBeUndefined();
+    near(resolveConnector(doc, s).start, { x: was.start.x + 40, y: was.start.y + 20 });
+    near(resolveConnector(doc, s).end, { x: was.end.x + 40, y: was.end.y + 20 });
+  });
+
+  it('keeps a connector glued when it moves on its own outside a group', () => {
+    const { doc, c } = twoBoxes();
+    translateItems(structuredClone(doc), doc, new Set([c.id]), 10, 10);
+    const s = doc.items[c.id] as ShapeItem;
+    expect(s.from).toBeDefined();
+    expect(s.to).toBeDefined();
   });
 });
 

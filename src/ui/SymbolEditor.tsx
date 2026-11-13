@@ -1,337 +1,158 @@
-import { Cpu, Code2, History, Layers, PenLine, Pencil, Trash2, Upload } from 'lucide-react';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { ArrowLeft, Code2, Cpu, History, Layers, Pencil, Pin, Save, Trash2, Upload } from 'lucide-react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
-import { uid } from '../model/doc';
-import { replaceWithInstance } from '../model/fromSelection';
-import { compileSource, parseDraw, parsePorts, primsToDsl, sourceOf, type SymbolSource } from '../model/symbols/dsl';
+import { compileSource, parseDraw, parsePorts } from '../model/symbols/dsl';
 import { baseSymbols, getSymbol, variantDefs } from '../model/registry';
 import { CATEGORY_ORDER } from '../model/symbols';
-import type { CircuitDoc, PortDef, Prim, SymbolDef, VariantRef } from '../model/types';
-import { S, deleteUserSymbol, mutate, saveUserSymbol, set, toast, useStore } from '../store/store';
+import { PIN_SYMBOL, pagePins, pageToSymbol, pinId } from '../model/symbolPage';
+import { inferSide } from '../model/symbols/dsl';
+import type { ComponentItem, PortDef, Prim, SymbolDef } from '../model/types';
+import * as A from '../store/actions';
+import { S, mutate, select, set, toast, useStore } from '../store/store';
+import {
+  closeSymbolEditor,
+  dismissSymbolDraft,
+  openSymbolEditor,
+  removeSymbolType,
+  replaceSymbolPage,
+  restoreSymbolDraft,
+  saveSymbolEditor,
+  setSymbolMeta,
+  symbolCode,
+  symbolDirty,
+} from '../store/symbolSession';
 import { svgToPrims } from '../io/svgImport';
 import { Modal } from './Dialogs';
-import { SymbolDrawPane, type Snap } from './SymbolDrawPane';
-import { Field, NumberInput, TextInput } from './controls';
+import { Field, NumberInput, Section, TextInput } from './controls';
 
-type Tab = 'draw' | 'chip' | 'svg' | 'code';
+/*
+ * The symbol editor is a page on the canvas (see store/symbolSession): every
+ * drawing tool, the parts library and the side panels work on it as on any
+ * circuit. This file holds its bar along the top of the canvas, the Symbol tab
+ * of the right panel (name, prefix, types…), the pin panel and the generator
+ * tools (chip builder, SVG import, code).
+ */
 
-const blank = (): SymbolSource => ({
-  id: '',
-  name: 'New symbol',
-  category: 'My symbols',
-  w: 80,
-  h: 40,
-  draw: 'L 0 20 20 20\nRB 20 10 40 20 3\nL 60 20 80 20',
-  ports: '1:0,20 2:80,20',
-  prefix: 'U',
-  value: '',
-  fields: '',
-  keywords: '',
-  variantOf: '',
-  variantName: '',
-});
+type ToolTab = 'chip' | 'svg' | 'code';
 
 const r20 = (v: number) => Math.max(20, Math.round(v / 20) * 20);
 
-/** Unsaved work in the editor, kept so closing by mistake (or a crash) loses nothing. */
-const DRAFT_KEY = 'nodal.symbolDraft';
-interface Draft {
-  /** Symbol being edited, or '' for a new one. */
-  key: string;
-  t: number;
-  src: SymbolSource;
-}
-const readDraft = (): Draft | null => {
-  try {
-    return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null');
-  } catch {
-    return null;
-  }
-};
-const clearDraft = () => localStorage.removeItem(DRAFT_KEY);
-
-
-export function SymbolEditor() {
-  const editing = useStore((s) => s.editingSymbol);
-  const original = useMemo<SymbolDef | null>(() => (editing ? getSymbol(S().doc, editing) : null), [editing]);
-  /** Set when the editor was opened with "Create symbol from selection". */
-  const seed = useMemo(() => (editing ? null : S().symbolSeed), [editing]);
-  const [src, setSrc] = useState<SymbolSource>(() => {
-    if (!original && seed) return { ...blank(), w: seed.w, h: seed.h, draw: primsToDsl(seed.prims), ports: '' };
-    if (!original) return blank();
-    const keep = original.custom || !!original.variantOf; // editing a type keeps its id/name
-    return {
-      ...sourceOf(original),
-      id: keep ? original.id : '',
-      name: keep ? original.name : `${original.name} (custom)`,
-      category: keep ? original.category : 'My symbols',
-    };
-  });
-  const [prims, setPrims] = useState<Prim[]>(() => safePrims(src.draw));
-  const [ports, setPorts] = useState<PortDef[]>(() => safePorts(src.ports, src.w, src.h));
-  const [, rerender] = useReducer((n: number) => n + 1, 0);
-  const [tab, setTab] = useState<Tab>('draw');
-  /** The draw pane uses Esc first (cancel / back to select / deselect); only then does Esc close the editor. */
-  const escRef = useRef<(() => boolean) | null>(null);
+/** The strip along the top of the canvas while a symbol is open: pins, generators, cancel and save. */
+export function SymbolBar() {
+  const session = useStore((s) => s.symbolSession);
+  const doc = useStore((s) => s.doc);
+  const placingPins = useStore((s) => s.placing?.symbol === PIN_SYMBOL);
+  const past = useStore((s) => s.past.length);
+  const [tools, setTools] = useState<ToolTab | null>(null);
+  const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const past = useRef<Snap[]>([]);
-  const future = useRef<Snap[]>([]);
-  /** Key of the last coalescing edit (typing in a field, nudging) so a burst becomes one undo step. */
-  const lastKey = useRef<string | null>(null);
-  const stateRef = useRef<Snap>({ src, prims, ports });
-  stateRef.current = { src, prims, ports };
-
-  const snapshot = (): Snap => ({
-    src: { ...stateRef.current.src },
-    prims: [...stateRef.current.prims],
-    ports: stateRef.current.ports.map((p) => ({ ...p })),
-  });
-
-  const write = (n: Snap) => {
-    stateRef.current = n;
-    setSrc(n.src);
-    setPrims(n.prims);
-    setPorts(n.ports);
-    rerender();
-  };
-
-  /**
-   * Applies an editing change with the editor's own undo/redo history.
-   * `history`: true records an undo step, false doesn't (live drag updates),
-   * a string key records one step for a run of edits sharing that key.
-   */
-  const apply = (mut: (s: Snap) => void, history: boolean | string = true) => {
-    const key = typeof history === 'string' ? history : null;
-    if (history && (key === null || key !== lastKey.current)) {
-      past.current = [...past.current.slice(-150), snapshot()];
-      future.current = [];
-    }
-    if (history) lastKey.current = key;
-    const next = snapshot();
-    mut(next);
-    // keep the DSL text in sync with the structured drawing
-    next.src = { ...next.src, draw: primsToDsl(next.prims), ports: next.ports.map((p) => `${p.id}:${p.x},${p.y}`).join(' ') };
-    write(next);
-  };
-
-  const undoEd = () => {
-    const prev = past.current.pop();
-    if (!prev) return;
-    lastKey.current = null;
-    future.current = [...future.current, snapshot()];
-    write(prev);
-  };
-
-  const redoEd = () => {
-    const nxt = future.current.pop();
-    if (!nxt) return;
-    lastKey.current = null;
-    past.current = [...past.current, snapshot()];
-    write(nxt);
-  };
-
-  const hist = { canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
-
-  /* ---------------------- drafts and closing ---------------------- */
-
-  const draftKey = editing ?? '';
-  /** Anything changed since the editor opened. */
-  const dirty = past.current.length > 0;
-  const [confirmClose, setConfirmClose] = useState(false);
-  const [draft, setDraft] = useState<Draft | null>(() => {
-    const d = seed ? null : readDraft();
-    return d && d.key === draftKey && JSON.stringify(d.src) !== JSON.stringify(src) ? d : null;
-  });
-
-  // keep unsaved work while editing
-  useEffect(() => {
-    if (!dirty || seed) return;
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ key: draftKey, t: Date.now(), src } satisfies Draft));
-      } catch {
-        /* storage full: nothing to do */
-      }
-    }, 400);
-    return () => clearTimeout(t);
-  }, [src, dirty, seed, draftKey]);
-
-  const closeEditor = () => {
-    clearDraft();
-    set({ dialog: null, editingSymbol: null, symbolSeed: null });
-  };
-  const requestClose = () => (dirty ? setConfirmClose(true) : closeEditor());
-  /** Esc: the draw pane uses it first (cancel, deselect); then it asks before closing with unsaved changes. */
-  const onEscape = () => {
-    if (confirmClose) {
-      setConfirmClose(false);
-      return true;
-    }
-    if (tab === 'draw' && escRef.current?.()) return true;
-    if (dirty) {
-      setConfirmClose(true);
-      return true;
-    }
-    return false;
-  };
-  const restoreDraft = (d: Draft) => {
-    apply((s) => {
-      s.src = { ...d.src };
-      s.prims = safePrims(d.src.draw);
-      s.ports = safePorts(d.src.ports, d.src.w, d.src.h);
-    });
-    setDraft(null);
-  };
-
-  const preview = useMemo<SymbolDef | null>(() => {
+  const pins = useMemo(() => pagePins(doc), [doc]);
+  // the tool rail and other overlays along the top of the canvas sit below the bar, however many rows it wraps to
+  const barRef = useRef<HTMLDivElement>(null);
+  // the room the bar has (side panels can float over the canvas): labels give way to icons as it narrows
+  const [fit, setFit] = useState<'' | ' compact' | ' tiny'>('');
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const stage = bar?.parentElement;
+    if (!bar || !stage) return;
+    const place = () => {
+      const w = bar.clientWidth;
+      setFit(w < 520 ? ' tiny' : w < 860 ? ' compact' : '');
+      stage.style.setProperty('--symbar', `${Math.ceil(bar.offsetTop + bar.offsetHeight)}px`);
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(bar);
+    return () => {
+      ro.disconnect();
+      stage.style.removeProperty('--symbar');
+    };
+  }, [session !== null]);
+  const problem = useMemo(() => {
     try {
-      return compileSource({ ...src, id: src.id || 'preview' });
-    } catch {
+      pageToSymbol(doc);
       return null;
-    }
-  }, [src]);
-
-  const validate = () => {
-    const problems = ports.filter((p) => !(p.x === 0 || p.y === 0 || p.x === src.w || p.y === src.h));
-    if (problems.length) throw new Error(`Pin ${problems[0].name} must sit on the symbol's outline`);
-    const ids = new Set<string>();
-    for (const p of ports) {
-      if (ids.has(p.id)) throw new Error(`Two pins are named "${p.id}"`);
-      ids.add(p.id);
-    }
-  };
-
-  const save = (asNew: boolean) => {
-    try {
-      validate();
-      // ---- Save the drawing as an extra "type" of an existing symbol ----
-      if (src.variantOf) {
-        const base = getSymbol(S().doc, src.variantOf);
-        const vid = !asNew && src.id ? src.id : `user-type-${slug(variantName)}-${uid('').slice(-5)}`;
-        const def = compileSource({ ...src, id: vid, name: base.name, category: base.category, prefix: base.prefix, value: src.value || base.value || '', variants: undefined });
-        // the type inherits the base's identity, labels and fields
-        def.name = base.name;
-        def.category = base.category;
-        def.prefix = base.prefix;
-        def.fields = base.fields;
-        def.hideLabels = base.hideLabels;
-        def.valueIsLabel = base.valueIsLabel;
-        def.variantOf = base.id;
-        def.variantName = variantName;
-        const ref: VariantRef = { id: vid, name: variantName };
-        const mergedBase: SymbolDef = { ...base, variants: [...(base.variants ?? []).filter((v) => v.id !== ref.id), ref] };
-        saveUserSymbol(def);
-        saveUserSymbol(mergedBase);
-        // one document edit, so undo puts the whole addition back at once
-        mutate((d) => {
-          d.symbols[vid] = def;
-          d.symbols[base.id] = mergedBase;
-        });
-        toast(`Added “${variantName}” as a type of ${base.name}`, 'success');
-        closeEditor();
-        return;
-      }
-      // ---- Save as a standalone symbol ----
-      const id = !asNew && src.id ? src.id : `user-${slug(src.name)}-${uid('').slice(-5)}`;
-      // keep the current type list only when overwriting the same symbol; a copy starts without its types
-      const existing = !asNew && src.id ? getSymbol(S().doc, id) : null;
-      const def = compileSource({ ...src, id, variants: existing?.id === id ? existing.variants : undefined });
-      saveUserSymbol(def);
-      // made from a selection: one undoable step swaps those items for the new symbol
-      if (seed) {
-        let placed = '';
-        mutate((d) => void (placed = replaceWithInstance(d as CircuitDoc, seed.ids, def, seed.origin)));
-        set({ selection: placed ? [placed] : [] });
-        toast(`Saved “${def.name}” and placed it in place of the selection`, 'success');
-        closeEditor();
-        return;
-      }
-      // keep the document copy in sync so placed parts update
-      if (S().doc.symbols[id]) mutate((d) => void (d.symbols[id] = def));
-      // when customising a built-in symbol for a selected part, swap it in
-      if (original && !original.custom) {
-        const targets = S().selection.filter((sid) => {
-          const it = S().doc.items[sid];
-          return it?.type === 'component' && it.symbol === original.id;
-        });
-        if (targets.length) {
-          mutate((d) => {
-            d.symbols[id] = def;
-            for (const t of targets) {
-              const c = d.items[t];
-              if (c.type === 'component') c.symbol = id;
-            }
-          });
-        }
-      }
-      toast(`Saved “${def.name}” to My symbols`, 'success');
-      closeEditor();
     } catch (e) {
-      setError((e as Error).message);
+      return (e as Error).message;
     }
+  }, [doc]);
+  if (!session) return null;
+  void past;
+  const { meta, editing, seedIds, draft } = session;
+  const title = seedIds ? 'New symbol from the selection' : editing ? (session.customising ? `Customising “${getSymbol(session.stash.doc, editing).name}”` : 'Editing symbol') : 'New symbol';
+  const save = (asNew = false) => {
+    const err = saveSymbolEditor(asNew);
+    setError(err);
+    if (err) toast(err, 'error');
   };
-
-  /** Removes a type from a base symbol; parts using it fall back to the base drawing. */
-  const removeType = (baseId: string, vid: string) => {
-    const base = getSymbol(S().doc, baseId);
-    const merged: SymbolDef = { ...base, variants: (base.variants ?? []).filter((v) => v.id !== vid) };
-    saveUserSymbol(merged);
-    deleteUserSymbol(vid);
-    mutate((d) => {
-      d.symbols[baseId] = merged;
-      delete d.symbols[vid];
-      for (const it of Object.values(d.items)) {
-        if (it.type === 'component' && it.symbol === vid) it.symbol = baseId;
-      }
-    }, undefined, { allPages: true });
-    toast(`Removed that type of ${base.name}`, 'success');
-  };
-
-  const bases = useMemo(() => baseSymbols({ symbols: S().doc.symbols }), []);
-  const baseId = src.variantOf || (original?.variants?.length ? original.id : '');
-  const manageBase = baseId ? getSymbol(S().doc, baseId) : null;
-  const manageTypes = manageBase ? [manageBase, ...variantDefs({ symbols: S().doc.symbols }, manageBase)] : [];
-  const variantName = (src.variantName ?? '').trim() || `Type ${(manageBase?.variants?.length ?? 0) + 1}`;
-
+  const cancel = () => (symbolDirty() ? setConfirm(true) : closeSymbolEditor());
+  const togglePins = () => (placingPins ? set({ placing: null }) : A.startPlacing(PIN_SYMBOL));
   return (
-    <Modal title={original ? (original.custom ? `Edit symbol — ${original.name}` : `Customise “${original.name}”`) : seed ? 'Create a symbol from the selection' : 'Create a symbol'} onClose={requestClose} onEscape={onEscape} width={1080} className="symbol-editor">
+    <div className={`symbol-bar${fit}`} role="toolbar" aria-label="Symbol editor" ref={barRef}>
+      <button className="secondary-btn" onClick={cancel} title="Back to the circuit without saving">
+        <ArrowLeft size={14} /> <span className="sb-label">Circuit</span>
+      </button>
+      <div className="symbol-bar-title">
+        <span className="symbol-bar-kicker">{title}</span>
+        <input className="input symbol-bar-name" value={meta.name} aria-label="Symbol name" onChange={(e) => setSymbolMeta({ name: e.target.value })} />
+      </div>
+      <span className="divider" />
+      <button className={placingPins ? 'secondary-btn active' : 'secondary-btn'} onClick={togglePins} title="Add pins: click where wires should connect — near a lead's end it snaps onto it (N; Esc to stop)">
+        <Pin size={14} /> <span className="sb-label">Add pins</span>
+      </button>
+      <span className={pins.length ? 'symbol-bar-count' : 'symbol-bar-count warn'} title="Pins of the symbol (select one to rename it)">
+        {pins.length} pin{pins.length === 1 ? '' : 's'}
+      </span>
+      <span className="divider" />
+      <button className="icon-btn" title="Chip / IC builder: generate an IC outline from pin names" onClick={() => setTools('chip')}>
+        <Cpu size={15} />
+      </button>
+      <button className="icon-btn" title="Import an SVG drawing as the symbol" onClick={() => setTools('svg')}>
+        <Upload size={15} />
+      </button>
+      <button className="icon-btn" title="Symbol code (drawing commands and pin list)" onClick={() => setTools('code')}>
+        <Code2 size={15} />
+      </button>
+      <span className="grow" />
+      {(error || problem) && <span className="symbol-bar-error">{problem ?? error}</span>}
+      {meta.id && !meta.variantOf && (
+        <button className="secondary-btn" onClick={() => save(true)} title="Save as a new symbol, leaving the original as it was">
+          <span className="sb-label">Save as </span>copy
+        </button>
+      )}
+      <button className="primary-btn" onClick={() => save(false)} disabled={!!problem} title="Save the symbol and go back to the circuit (Ctrl+S)">
+        <Save size={14} /> <span className="sb-label">{meta.variantOf ? (meta.id ? 'Save this type' : 'Add this type') : meta.id ? 'Save symbol' : 'Add to My symbols'}</span>
+        <span className="sb-short">Save</span>
+      </button>
       {draft && (
-        <div className="se-banner">
-          <History size={15} />
-          <span>
-            Unsaved changes from {new Date(draft.t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} were kept.
-          </span>
-          <button className="primary-btn" onClick={() => restoreDraft(draft)}>
+        <div className="symbol-bar-banner">
+          <History size={14} />
+          <span>Unsaved changes from {new Date(draft.t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} were kept.</span>
+          <button className="primary-btn" onClick={restoreSymbolDraft}>
             Restore them
           </button>
-          <button
-            className="secondary-btn"
-            onClick={() => {
-              clearDraft();
-              setDraft(null);
-            }}
-          >
+          <button className="secondary-btn" onClick={dismissSymbolDraft}>
             Discard
           </button>
         </div>
       )}
-      {confirmClose && (
-        <div className="se-confirm-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setConfirmClose(false)}>
+      {confirm && (
+        <div className="se-confirm-backdrop" onPointerDown={(e) => e.target === e.currentTarget && setConfirm(false)}>
           <div className="se-confirm" role="alertdialog" aria-label="Unsaved changes">
             <strong>Save your changes to this symbol?</strong>
-            <span className="muted small">If you close without saving, your changes are lost.</span>
+            <span className="muted small">If you go back without saving, your changes are lost.</span>
             <div className="btn-row">
-              <button className="secondary-btn danger" onClick={closeEditor}>
+              <button className="secondary-btn danger" onClick={closeSymbolEditor}>
                 Don’t save
               </button>
               <span className="grow" />
-              <button className="secondary-btn" autoFocus onClick={() => setConfirmClose(false)}>
+              <button className="secondary-btn" autoFocus onClick={() => setConfirm(false)}>
                 Keep editing
               </button>
               <button
                 className="primary-btn"
                 onClick={() => {
-                  setConfirmClose(false);
+                  setConfirm(false);
                   save(false);
                 }}
               >
@@ -341,206 +162,274 @@ export function SymbolEditor() {
           </div>
         </div>
       )}
-      <div className="se-layout">
-        <div className="se-main">
-          <div className="tabs inline">
-            <button className={tab === 'draw' ? 'active' : ''} onClick={() => setTab('draw')}>
-              <PenLine size={13} /> Draw
-            </button>
-            <button className={tab === 'chip' ? 'active' : ''} onClick={() => setTab('chip')}>
-              <Cpu size={13} /> Chip / IC builder
-            </button>
-            <button className={tab === 'svg' ? 'active' : ''} onClick={() => setTab('svg')}>
-              <Upload size={13} /> Import SVG
-            </button>
-            <button className={tab === 'code' ? 'active' : ''} onClick={() => setTab('code')}>
-              <Code2 size={13} /> Code
-            </button>
-          </div>
-          {seed && !ports.length && (
-            <p className="se-seed-hint">
-              Drawn from your selection. Add pins where connections should go (on the outline), then save: the selection is replaced by the new symbol, and wires ending on a pin stay connected.
-            </p>
-          )}
-          {tab === 'draw' && <SymbolDrawPane src={src} apply={apply} prims={prims} ports={ports} onUndo={undoEd} onRedo={redoEd} canUndo={hist.canUndo} canRedo={hist.canRedo} escRef={escRef} />}
-          {tab === 'chip' && (
-            <ChipBuilder
-              onBuild={(b) => {
-                apply((s) => {
-                  s.src.w = b.w;
-                  s.src.h = b.h;
-                  if (!s.src.prefix) s.src.prefix = 'U';
-                  s.prims = b.prims;
-                  s.ports = b.ports;
-                });
-                setTab('draw');
-              }}
-            />
-          )}
-          {tab === 'svg' && (
-            <SvgImport
-              onImport={(p, w, h) => {
-                apply((s) => {
-                  s.src.w = w;
-                  s.src.h = h;
-                  s.prims = p;
-                  s.ports = [];
-                });
-                setTab('draw');
-                toast('Imported — now add pins with the Pin tool');
-              }}
-            />
-          )}
-          {tab === 'code' && (
-            <CodePane
-              src={src}
-              onApply={(draw, portsText) => {
-                try {
-                  const p = parseDraw(draw);
-                  const pt = parsePorts(portsText, src.w, src.h);
-                  apply((s) => {
-                    s.prims = p;
-                    s.ports = pt;
-                    s.src.draw = draw;
-                    s.src.ports = portsText;
-                  });
-                  setError(null);
-                } catch (e) {
-                  setError((e as Error).message);
-                }
-              }}
-            />
-          )}
-        </div>
-        <div className="se-side">
-          <div className="se-preview">{preview ? <SymbolPreview def={preview} size={150} ports /> : <span className="muted">Invalid symbol</span>}</div>
-          <Field label="Name">
-            <TextInput value={src.name} onChange={(name) => apply((s) => void (s.src.name = name), 'name')} />
-          </Field>
-          <Field label="Category">
-            <select className="input" value={src.category} onChange={(e) => apply((s) => void (s.src.category = e.target.value))}>
-              {['My symbols', ...CATEGORY_ORDER].map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Ref prefix" hint="R for resistors, U for ICs, Q for transistors…">
-            <TextInput value={src.prefix} onChange={(prefix) => apply((s) => void (s.src.prefix = prefix), 'prefix')} />
-          </Field>
-          <Field label="Default value">
-            <TextInput value={src.value} onChange={(value) => apply((s) => void (s.src.value = value), 'value')} placeholder="e.g. 10kΩ" />
-          </Field>
-          <Field label="Fields" hint="Comma separated, e.g. Package=0805, Voltage=50V">
-            <TextInput value={src.fields} onChange={(fields) => apply((s) => void (s.src.fields = fields), 'fields')} placeholder="Package=0805, Tolerance=1%" />
-          </Field>
-          <Field label="Search words">
-            <TextInput value={src.keywords} onChange={(keywords) => apply((s) => void (s.src.keywords = keywords), 'keywords')} />
-          </Field>
-          <div className="se-types">
-            <Field label="Drawing type" hint="Offer this drawing as an extra “type” of an existing symbol">
-              <select
-                className="input"
-                value={src.variantOf ?? ''}
-                onChange={(e) =>
-                  apply((s) => {
-                    s.src.variantOf = e.target.value || undefined;
-                    if (!e.target.value) s.src.variantName = '';
-                  })
-                }
-              >
-                <option value="">— standalone symbol —</option>
-                {bases.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} · {b.category}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {src.variantOf && (
-              <Field label="Type name" hint="Shown in the type picker, e.g. “Type B · source arrow”">
-                <input className="input" value={src.variantName ?? ''} onChange={(e) => apply((s) => void (s.src.variantName = e.target.value), 'vname')} placeholder="Type B" />
-              </Field>
-            )}
-            {manageBase && (
-              <div className="se-type-list">
-                <div className="se-type-head">
-                  <Layers size={12} /> {manageTypes.length} type{manageTypes.length === 1 ? '' : 's'} of {manageBase.name}
-                </div>
-                {manageTypes.map((t, i) => (
-                  <div key={t.id} className={t.id === src.id ? 'se-type-row active' : 'se-type-row'}>
-                    <span className="se-type-prev">
-                      <SymbolPreview def={t} size={28} />
-                    </span>
-                    <span className="se-type-label">{i === 0 ? 'Type A · standard' : t.variantName || t.name}</span>
-                    <button className="mini-btn" title="Edit this type" onClick={() => set({ editingSymbol: t.id })}>
-                      <Pencil size={11} />
-                    </button>
-                    {t.id !== manageBase.id && (
-                      <button className="mini-btn" title="Delete this type" onClick={() => removeType(manageBase.id, t.id)}>
-                        <Trash2 size={11} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="se-pins">
-            <b>{ports.length} pins</b>
-            {ports.map((p, i) => (
-              <span key={i} className="pin-chip">
-                <input
-                  value={p.id}
-                  onChange={(e) => {
-                    const id = e.target.value.replace(/[\s:,]/g, '_');
-                    apply((s) => void (s.ports[i] = { ...s.ports[i], id, name: id }), `pin-${i}`);
-                  }}
-                />
-                <button onClick={() => apply((s) => void s.ports.splice(i, 1))}>×</button>
-              </span>
-            ))}
-          </div>
-          {error && <div className="error-note">{error}</div>}
-          <div className="btn-row">
-            {src.id && !src.variantOf && (
-              <button className="secondary-btn" onClick={() => save(true)}>
-                Save as copy
-              </button>
-            )}
-            <button className="primary-btn" onClick={() => save(false)}>
-              {src.variantOf ? (src.id ? 'Save this type' : 'Add this type') : src.id ? 'Save changes' : 'Add to My symbols'}
-            </button>
-          </div>
-        </div>
+      {tools && <SymbolTools tab={tools} setTab={setTools} />}
+    </div>
+  );
+}
+
+/** Generators that replace the page's drawing: chip builder, SVG import, symbol code. */
+function SymbolTools({ tab, setTab }: { tab: ToolTab; setTab: (t: ToolTab | null) => void }) {
+  const [err, setErr] = useState<string | null>(null);
+  const done = () => setTab(null);
+  return (
+    <Modal title="Symbol generators" onClose={done} width={760} className="symbol-editor">
+      <div className="tabs inline">
+        <button className={tab === 'chip' ? 'active' : ''} onClick={() => setTab('chip')}>
+          <Cpu size={13} /> Chip / IC builder
+        </button>
+        <button className={tab === 'svg' ? 'active' : ''} onClick={() => setTab('svg')}>
+          <Upload size={13} /> Import SVG
+        </button>
+        <button className={tab === 'code' ? 'active' : ''} onClick={() => setTab('code')}>
+          <Code2 size={13} /> Code
+        </button>
       </div>
+      <p className="muted small">These replace what is on the symbol page (Undo brings it back).</p>
+      {tab === 'chip' && (
+        <ChipBuilder
+          onBuild={(b) => {
+            replaceSymbolPage(b.prims, b.ports);
+            if (!S().symbolSession?.meta.prefix) setSymbolMeta({ prefix: 'U' });
+            done();
+          }}
+        />
+      )}
+      {tab === 'svg' && (
+        <SvgImport
+          onImport={(p) => {
+            replaceSymbolPage(p, []);
+            done();
+            toast('Imported: now add pins where wires should connect');
+          }}
+        />
+      )}
+      {tab === 'code' && (
+        <CodePane
+          src={symbolCode()}
+          onApply={(draw, portsText) => {
+            try {
+              replaceSymbolPage(parseDraw(draw), parsePorts(portsText, 1e6, 1e6));
+              done();
+            } catch (e) {
+              setErr((e as Error).message);
+            }
+          }}
+        />
+      )}
+      {err && <div className="error-note">{err}</div>}
     </Modal>
   );
 }
 
-function slug(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'symbol';
+/** Symbol tab of the right panel: what the symbol is called and how it is placed. */
+export function SymbolProps() {
+  const session = useStore((s) => s.symbolSession);
+  const doc = useStore((s) => s.doc);
+  const pins = useMemo(() => pagePins(doc), [doc]);
+  const built = useMemo(() => {
+    try {
+      return pageToSymbol(doc);
+    } catch {
+      return null;
+    }
+  }, [doc]);
+  const preview = useMemo<SymbolDef | null>(() => {
+    if (!session || !built) return null;
+    try {
+      const src = { ...session.meta, id: 'preview', w: built.w, h: built.h, draw: '', ports: '' };
+      const def = compileSource(src);
+      return { ...def, prims: built.prims, ports: built.ports };
+    } catch {
+      return null;
+    }
+  }, [session, built]);
+  const bases = useMemo(() => baseSymbols({ symbols: session?.stash.doc.symbols ?? {} }), [session?.stash.doc]);
+  if (!session) return null;
+  const { meta, stash } = session;
+  const baseId = meta.variantOf || (session.editing && getSymbol(stash.doc, session.editing).variants?.length ? session.editing : '');
+  const manageBase = baseId ? getSymbol(stash.doc, baseId) : null;
+  const manageTypes = manageBase ? [manageBase, ...variantDefs({ symbols: stash.doc.symbols }, manageBase)] : [];
+  return (
+    <div className="symbol-props">
+      <div className="se-preview">{preview ? <SymbolPreview def={preview} size={140} ports /> : <span className="muted">Nothing drawn yet</span>}</div>
+      {built && (
+        <div className="muted small symbol-props-size">
+          {built.w} × {built.h} px · {built.ports.length} pin{built.ports.length === 1 ? '' : 's'}
+        </div>
+      )}
+      <Section title="Symbol" defaultOpen id="sym-props">
+        <Field label="Name">
+          <TextInput value={meta.name} onChange={(name) => setSymbolMeta({ name })} />
+        </Field>
+        <Field label="Category">
+          <select className="input" value={meta.category} onChange={(e) => setSymbolMeta({ category: e.target.value })}>
+            {['My symbols', ...CATEGORY_ORDER].map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Ref prefix" hint="R for resistors, U for ICs, Q for transistors…">
+          <TextInput value={meta.prefix} onChange={(prefix) => setSymbolMeta({ prefix })} />
+        </Field>
+        <Field label="Default value">
+          <TextInput value={meta.value} onChange={(value) => setSymbolMeta({ value })} placeholder="e.g. 10kΩ" />
+        </Field>
+        <Field label="Fields" hint="Comma separated, e.g. Package=0805, Voltage=50V">
+          <TextInput value={meta.fields} onChange={(fields) => setSymbolMeta({ fields })} placeholder="Package=0805, Tolerance=1%" />
+        </Field>
+        <Field label="Search words">
+          <TextInput value={meta.keywords} onChange={(keywords) => setSymbolMeta({ keywords })} />
+        </Field>
+      </Section>
+      <Section title={`Pins (${pins.length})`} defaultOpen id="sym-pins">
+        <PinList pins={pins} box={built ? { x: built.origin.x, y: built.origin.y, w: built.w, h: built.h } : null} />
+      </Section>
+      <Section title="Types" id="sym-types" summary={meta.variantOf ? 'extra type' : 'standalone'}>
+        <Field label="Drawing type" hint="Offer this drawing as an extra “type” of an existing symbol">
+          <select
+            className="input"
+            value={meta.variantOf ?? ''}
+            onChange={(e) => setSymbolMeta({ variantOf: e.target.value || undefined, ...(e.target.value ? {} : { variantName: '' }) })}
+          >
+            <option value="">— standalone symbol —</option>
+            {bases.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} · {b.category}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {meta.variantOf && (
+          <Field label="Type name" hint="Shown in the type picker, e.g. “Type B · source arrow”">
+            <TextInput value={meta.variantName ?? ''} onChange={(variantName) => setSymbolMeta({ variantName })} placeholder="Type B" />
+          </Field>
+        )}
+        {manageBase && (
+          <div className="se-type-list">
+            <div className="se-type-head">
+              <Layers size={12} /> {manageTypes.length} type{manageTypes.length === 1 ? '' : 's'} of {manageBase.name}
+            </div>
+            {manageTypes.map((t, i) => (
+              <div key={t.id} className={t.id === meta.id ? 'se-type-row active' : 'se-type-row'}>
+                <span className="se-type-prev">
+                  <SymbolPreview def={t} size={28} />
+                </span>
+                <span className="se-type-label">{i === 0 ? 'Type A · standard' : t.variantName || t.name}</span>
+                <button className="mini-btn" title="Edit this type" onClick={() => openSymbolEditor({ editing: t.id })}>
+                  <Pencil size={11} />
+                </button>
+                {t.id !== manageBase.id && (
+                  <button className="mini-btn" title="Delete this type" onClick={() => removeSymbolType(manageBase.id, t.id)}>
+                    <Trash2 size={11} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+      <Section title="Page" id="sym-page" summary={`grid ${doc.settings.grid}`}>
+        <Field label="Grid" hint="Pins stay on the 10 px grid wires use; a finer grid helps with small details">
+          <select className="input" value={doc.settings.grid} onChange={(e) => mutate((d) => void (d.settings.grid = +e.target.value), undefined, { allPages: true })}>
+            {[1, 2, 5, 10, 20].map((g) => (
+              <option key={g} value={g}>
+                {g} px
+              </option>
+            ))}
+          </select>
+        </Field>
+      </Section>
+      <p className="muted small symbol-props-help">
+        Draw with any tool, place parts from the library (they become part of the drawing), and add pins where wires connect. Save turns the page into the symbol.
+      </p>
+    </div>
+  );
 }
 
-function safePrims(d: string): Prim[] {
-  try {
-    return parseDraw(d);
-  } catch {
-    return [];
-  }
+/** Pins in order: rename, find, delete; and which side of the outline each leaves from. */
+function PinList({ pins, box }: { pins: ComponentItem[]; box: { x: number; y: number; w: number; h: number } | null }) {
+  const selection = useStore((s) => s.selection);
+  const names = new Map<string, number>();
+  for (const p of pins) names.set(pinId(p.ref), (names.get(pinId(p.ref)) ?? 0) + 1);
+  return (
+    <div className="pin-list">
+      {pins.map((p) => (
+        <div key={p.id} className={selection.includes(p.id) ? 'pin-row active' : 'pin-row'} onPointerEnter={() => set({ layerHover: [p.id] })} onPointerLeave={() => set({ layerHover: [] })}>
+          <button className="mini-btn" title="Select this pin" onClick={() => select([p.id])}>
+            <Pin size={11} />
+          </button>
+          <PinName pin={p} dup={(names.get(pinId(p.ref)) ?? 0) > 1} />
+          <span className="pin-side muted small">{box ? inferSide(p.x - box.x, p.y - box.y, box.w, box.h) : ''}</span>
+          <button className="mini-btn" title="Delete this pin" onClick={() => mutate((d) => void delete d.items[p.id], S().selection.filter((id) => id !== p.id))}>
+            <Trash2 size={11} />
+          </button>
+        </div>
+      ))}
+      <button className="secondary-btn" onClick={() => A.startPlacing(PIN_SYMBOL)}>
+        <Pin size={13} /> Add pins
+      </button>
+      {!pins.length && <p className="muted small">No pins yet: a symbol without pins can’t be wired.</p>}
+    </div>
+  );
 }
-function safePorts(p: string, w: number, h: number): PortDef[] {
-  try {
-    return parsePorts(p, w, h);
-  } catch {
-    return [];
-  }
+
+function PinName({ pin, dup, focusKey }: { pin: ComponentItem; dup: boolean; focusKey?: string }) {
+  return (
+    <span className={dup ? 'pin-name dup' : 'pin-name'} title={dup ? 'Another pin has this name' : undefined}>
+      <TextInput value={pin.ref} focusKey={focusKey} onChange={(v) => renamePin(pin.id, v)} />
+    </span>
+  );
+}
+
+function renamePin(id: string, name: string) {
+  const v = name.trim();
+  if (!v) return;
+  mutate((d) => {
+    const c = d.items[id];
+    if (c?.type === 'component') c.ref = v;
+  });
+}
+
+/** Right panel for a selected pin. */
+export function PinPanel({ c }: { c: ComponentItem }) {
+  const doc = useStore((s) => s.doc);
+  const pins = useMemo(() => pagePins(doc), [doc]);
+  const dup = pins.filter((p) => pinId(p.ref) === pinId(c.ref)).length > 1;
+  const built = useMemo(() => {
+    try {
+      return pageToSymbol(doc);
+    } catch {
+      return null;
+    }
+  }, [doc]);
+  const side = built ? inferSide(c.x - built.origin.x, c.y - built.origin.y, built.w, built.h) : null;
+  return (
+    <div className="symbol-props">
+      <Section title="Pin" defaultOpen id="sym-pin">
+        <Field label="Name" hint="Wires connect to the pin by this name; double-click a pin to come back here">
+          <PinName pin={c} dup={dup} focusKey="value" />
+        </Field>
+        {dup && <div className="error-note">Another pin is called “{c.ref}”: each pin needs its own name.</div>}
+        <div className="muted small">
+          At {Math.round(c.x)}, {Math.round(c.y)}
+          {side && ` · wires leave it to the ${side}`}
+        </div>
+        <div className="btn-row">
+          <button className="secondary-btn" onClick={() => A.startPlacing(PIN_SYMBOL)}>
+            <Pin size={13} /> Add more pins
+          </button>
+        </div>
+        <p className="muted small">Drag pins to move them (arrow keys nudge). Pins sit where wires end, on the outline or anywhere on the drawing.</p>
+      </Section>
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */
 /* Chip builder                                                        */
 /* ------------------------------------------------------------------ */
 
-function ChipBuilder({ onBuild }: { onBuild: (b: { w: number; h: number; prims: Prim[]; ports: PortDef[] }) => void }) {
+export function ChipBuilder({ onBuild }: { onBuild: (b: { w: number; h: number; prims: Prim[]; ports: PortDef[] }) => void }) {
   const [left, setLeft] = useState('VCC\nIN1\nIN2\nGND');
   const [right, setRight] = useState('OUT1\nOUT2');
   const [top, setTop] = useState('');
@@ -644,7 +533,7 @@ function ChipBuilder({ onBuild }: { onBuild: (b: { w: number; h: number; prims: 
 /* SVG import                                                          */
 /* ------------------------------------------------------------------ */
 
-function SvgImport({ onImport }: { onImport: (p: Prim[], w: number, h: number) => void }) {
+export function SvgImport({ onImport }: { onImport: (p: Prim[], w: number, h: number) => void }) {
   const [text, setText] = useState('');
   const [size, setSize] = useState(80);
   const [err, setErr] = useState<string | null>(null);
@@ -689,7 +578,7 @@ function SvgImport({ onImport }: { onImport: (p: Prim[], w: number, h: number) =
 /* Code pane                                                           */
 /* ------------------------------------------------------------------ */
 
-function CodePane({ src, onApply }: { src: SymbolSource; onApply: (draw: string, ports: string) => void }) {
+export function CodePane({ src, onApply }: { src: { draw: string; ports: string }; onApply: (draw: string, ports: string) => void }) {
   const [draw, setDraw] = useState(src.draw);
   const [ports, setPorts] = useState(src.ports);
   return (

@@ -15,6 +15,7 @@ import { pageCrossRefs } from '../model/pageRefs';
 import type { CircuitDoc, Endpoint, Item, Point, Prim, Rect, ShapeItem, WireItem } from '../model/types';
 import { endpointInfo, wirePolyline, wireStyle } from '../model/wires';
 import { withoutFrames } from '../model/presentation';
+import { joinTouches } from '../model/touches';
 import { shapeOutline } from '../model/path';
 
 /** The editor's colours (styles/app.css) as plain values, so an export looks like the canvas in that theme; the light page is pure white rather than the canvas's warm off-white, since exports land on white pages. */
@@ -152,6 +153,8 @@ export function exportSvg(doc: CircuitDoc, opts: SvgOptions): { svg: string; bou
     d = { ...d, settings: { ...d.settings, titleBlock: false } };
   }
   if (opts.clip) d = clipAreaDoc(d, opts.clip);
+  // an older file can hold touches nothing has recorded yet: they are connections all the same, so they get their dots
+  d = joinTouches(d);
   const box = exportBox(d, opts);
   const data = computeSceneData(d);
   // a document's own page colour wins over the theme for part interiors, labels and ink
@@ -343,6 +346,8 @@ function primPolylines(p: Prim): { pts: number[]; closed: boolean }[] {
 }
 
 export function exportDxf(doc: CircuitDoc): string {
+  // touches nothing has recorded yet are connections all the same (see exportSvg)
+  doc = joinTouches(doc);
   const out: string[] = [];
   const g = (code: number, v: string | number) => out.push(String(code), typeof v === 'number' ? (+v.toFixed(4)).toString() : v);
   const Y = (y: number) => -y;

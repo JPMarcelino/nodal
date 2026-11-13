@@ -1,7 +1,7 @@
 import { current, isDraft } from 'immer';
 import { withContents } from './containers';
 import { connectorsOf, detachConnector, fromLocal, isConnector, isFixed, resolveConnector, targetFrame, toLocal } from './connectors';
-import { attachedWires, docBounds, drawOrder, groupChain, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
+import { attachedWires, docBounds, drawOrder, groupChain, groupMembers, itemBounds, migrateShapeLayers, nextRef, refersTo, uid } from './doc';
 import { componentBounds, eq, pointInRect, projectOnSegment, rectsIntersect, rotate, segmentIntersectsRect, simplify, snap, unionRects } from './geometry';
 import { routeLeg, routeObstacles } from './route';
 import { inkPoints, packInk } from './ink';
@@ -95,27 +95,41 @@ export function splitWire(doc: CircuitDoc, wireId: string, seg: number, pt: Poin
 }
 
 /**
- * Solders wires together where they cross: each wire is split at `pt` and
- * all pieces meet at one shared junction. Returns the junction id, or null
- * when fewer than two of the wires actually pass through the point.
+ * Solders wires together where they cross: every wire passing through `pt`
+ * is split there and all pieces meet at one shared junction. A wire that
+ * loops back over itself passes through twice and is split at both passes.
+ * Returns the junction id, or null when fewer than two passes go through.
  */
 export function solderWires(doc: CircuitDoc, wireIds: string[], pt: Point): string | null {
-  const hits: { id: string; seg: number }[] = [];
-  for (const id of wireIds) {
-    const w = doc.items[id];
-    if (!w || w.type !== 'wire') continue;
-    const full = wirePolyline(doc, w);
-    for (let i = 0; i < full.length - 1; i++) {
-      if (projectOnSegment(pt, full[i], full[i + 1]).d < 0.5) {
-        hits.push({ id, seg: i });
-        break;
-      }
-    }
-  }
-  if (hits.length < 2) return null;
+  const ids = [...new Set(wireIds)];
+  if (ids.reduce((n, id) => n + passesAt(doc, id, pt).length, 0) < 2) return null;
   const jid = uid('j');
-  for (const h of hits) splitWire(doc, h.id, h.seg, pt, jid);
+  const queue = [...ids];
+  while (queue.length) {
+    const id = queue.pop()!;
+    const seg = passesAt(doc, id, pt)[0];
+    if (seg === undefined) continue;
+    const before = new Set(Object.keys(doc.items));
+    splitWire(doc, id, seg, pt, jid);
+    // the far half may pass through the point again (a wire looping over itself)
+    queue.push(id, ...Object.keys(doc.items).filter((k) => !before.has(k) && doc.items[k].type === 'wire'));
+  }
   return jid;
+}
+
+/** Segments where wire `id` runs through `pt` (ending on the point is not running through it). */
+function passesAt(doc: CircuitDoc, id: string, pt: Point): number[] {
+  const w = doc.items[id];
+  if (!w || w.type !== 'wire') return [];
+  const full = wirePolyline(doc, w);
+  const out: number[] = [];
+  for (let i = 0; i < full.length - 1; i++) {
+    if (projectOnSegment(pt, full[i], full[i + 1]).d >= 0.5) continue;
+    // a bend is counted once, on the segment leaving it
+    if (eq(full[i + 1], pt) || (i === 0 && eq(full[0], pt))) continue;
+    out.push(i);
+  }
+  return out;
 }
 
 /** Connects a loose wire end to whatever it is touching (see TouchTarget). Returns false if nothing changed. */
@@ -149,10 +163,14 @@ export function solderTouch(doc: CircuitDoc, wireId: string, end: 'a' | 'b', tar
       const o = doc.items[target.wire];
       if (!o || o.type !== 'wire') return false;
       // re-find the segment: the stored index may be stale
-      const full = wirePolyline(doc, o);
-      const seg = full.findIndex((q, i) => i < full.length - 1 && projectOnSegment(pt, q, full[i + 1]).d < 0.5);
-      if (seg < 0) return false;
-      w[end] = { kind: 'junction', id: splitWire(doc, o.id, seg, pt) };
+      const seg = passesAt(doc, o.id, pt)[0];
+      if (seg === undefined) return false;
+      const before = new Set(Object.keys(doc.items));
+      const jid = splitWire(doc, o.id, seg, pt);
+      // landing on its own route: the loose end may now belong to the split-off half
+      const holder = w[end].kind === 'free' ? w : Object.keys(doc.items).filter((k) => !before.has(k)).map((k) => doc.items[k]).find((it): it is WireItem => it.type === 'wire' && it[end].kind === 'free' && eq(endpointInfo(doc, it[end])!.pt, pt));
+      if (!holder) return false;
+      holder[end] = { kind: 'junction', id: jid };
       return true;
     }
   }
@@ -160,36 +178,38 @@ export function solderTouch(doc: CircuitDoc, wireId: string, end: 'a' | 'b', tar
 
 /**
  * Undoes a solder junction: wires that run straight through it become one
- * wire again (crossing, so they hop), any other branch is detached and left
- * as a loose end touching the point.
+ * wire again (crossing, so they hop), and every other branch is pulled back
+ * a grid step, leaving a loose end clear of the point (an end still touching
+ * would still be connected).
  */
 export function unsolderJunction(doc: CircuitDoc, jid: string): { through: number; detached: number } | null {
   const j = doc.items[jid];
   if (!j || j.type !== 'junction') return null;
-  const r = detachEnds(doc, (ep) => refersTo(ep, jid), { x: j.x, y: j.y }, j.group);
+  const r = detachEnds(doc, (ep) => refersTo(ep, jid), { x: j.x, y: j.y }, j.group, true);
   delete doc.items[jid];
   cleanup(doc);
   return r;
 }
 
-/** Same as unsolderJunction, for a component pin: everything on the pin is disconnected. */
+/** Same as unsolderJunction, for a component pin: every wire on the pin is pulled back off it (a wire running across a pin would still touch it). */
 export function unsolderPort(doc: CircuitDoc, comp: string, port: string): { through: number; detached: number } | null {
   const c = doc.items[comp];
   if (!c || c.type !== 'component') return null;
   const at = endpointInfo(doc, { kind: 'port', comp, port });
   if (!at) return null;
-  const r = detachEnds(doc, (ep) => ep.kind === 'port' && ep.comp === comp && ep.port === port, at.pt, c.group);
+  const r = detachEnds(doc, (ep) => ep.kind === 'port' && ep.comp === comp && ep.port === port, at.pt, c.group, false);
   cleanup(doc);
   return r;
 }
 
 /**
- * Detaches every wire end matching `isHere` (all at point `pt`). Ends leaving
- * in opposite directions are paired and rejoined into one straight-through
- * wire; the rest become free ends at `pt`.
+ * Detaches every wire end matching `isHere` (all at point `pt`). With
+ * `through`, ends leaving in opposite directions are paired and rejoined into
+ * one straight-through wire; the rest are pulled back along their wire by a
+ * grid step (at most half their first segment) and left loose.
  */
-function detachEnds(doc: CircuitDoc, isHere: (ep: Endpoint) => boolean, pt: Point, group?: string): { through: number; detached: number } {
-  const ends: { w: WireItem; end: 'a' | 'b'; dir: Point }[] = [];
+function detachEnds(doc: CircuitDoc, isHere: (ep: Endpoint) => boolean, pt: Point, group: string | undefined, through: boolean): { through: number; detached: number } {
+  const ends: { w: WireItem; end: 'a' | 'b'; dir: Point; len: number }[] = [];
   for (const it of Object.values(doc.items)) {
     if (it.type !== 'wire') continue;
     const full = wirePolyline(doc, it);
@@ -197,15 +217,15 @@ function detachEnds(doc: CircuitDoc, isHere: (ep: Endpoint) => boolean, pt: Poin
     for (const end of ['a', 'b'] as const) {
       if (!isHere(it[end])) continue;
       const [p, q] = end === 'a' ? [full[0], full[1]] : [full[full.length - 1], full[full.length - 2]];
-      const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
-      ends.push({ w: it, end, dir: { x: (q.x - p.x) / len, y: (q.y - p.y) / len } });
+      const len = Math.hypot(q.x - p.x, q.y - p.y);
+      ends.push({ w: it, end, dir: { x: (q.x - p.x) / (len || 1), y: (q.y - p.y) / (len || 1) }, len });
     }
   }
   // keep every route exactly as drawn while the ends change
   for (const e of ends) e.w.pts = wirePolyline(doc, e.w).slice(1, -1);
   const used = new Set<number>();
-  let through = 0;
-  for (let i = 0; i < ends.length; i++) {
+  let joined = 0;
+  for (let i = 0; i < ends.length && through; i++) {
     if (used.has(i)) continue;
     const k = ends.findIndex((e, n) => n > i && !used.has(n) && e.w !== ends[i].w && e.dir.x * ends[i].dir.x + e.dir.y * ends[i].dir.y < -0.99);
     if (k < 0) continue;
@@ -215,15 +235,27 @@ function detachEnds(doc: CircuitDoc, isHere: (ep: Endpoint) => boolean, pt: Poin
     doc.items[nj] = { id: nj, type: 'junction', x: pt.x, y: pt.y, group };
     ends[i].w[ends[i].end] = { kind: 'junction', id: nj };
     ends[k].w[ends[k].end] = { kind: 'junction', id: nj };
-    through++;
+    joined++;
   }
   let detached = 0;
+  const step = doc.settings.grid || 10;
   ends.forEach((e, i) => {
     if (used.has(i)) return;
-    e.w[e.end] = { kind: 'free', x: pt.x, y: pt.y };
+    const back = Math.min(step, e.len / 2);
+    e.w[e.end] = { kind: 'free', x: pt.x + e.dir.x * back, y: pt.y + e.dir.y * back };
     detached++;
   });
-  return { through, detached };
+  return { through: joined, detached };
+}
+
+/** Connects a junction dot that lies on the run of a wire: the wire is split at the dot and both halves end on it. */
+export function solderDotToWire(doc: CircuitDoc, jid: string, wireId: string): boolean {
+  const j = doc.items[jid];
+  if (!j || j.type !== 'junction') return false;
+  const seg = passesAt(doc, wireId, { x: j.x, y: j.y })[0];
+  if (seg === undefined) return false;
+  splitWire(doc, wireId, seg, { x: j.x, y: j.y }, jid);
+  return true;
 }
 
 /** Connects a pin that lies on a wire: the wire is split there and both halves attach to the pin. */
@@ -436,6 +468,8 @@ function collapseWire(doc: CircuitDoc, w: WireItem): boolean {
   return true;
 }
 
+const sub = (a: Point, b: Point): Point => ({ x: a.x - b.x, y: a.y - b.y });
+
 function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: string): boolean {
   const w1 = doc.items[w1id] as WireItem;
   const w2 = doc.items[w2id] as WireItem;
@@ -460,6 +494,12 @@ function mergeAtJunction(doc: CircuitDoc, jid: string, w1id: string, w2id: strin
   if (refersTo(w2.b, jid)) {
     p2 = p2.reverse();
     b2 = w2.a;
+  }
+  // wires folding back over each other stay two: one wire retracing its route would lose the stretch it doubles over
+  if (p1.length >= 2 && p2.length >= 2) {
+    const u = sub(p1[p1.length - 2], p1[p1.length - 1]);
+    const v = sub(p2[1], p2[0]);
+    if (Math.abs(u.x * v.y - u.y * v.x) < 1e-9 && u.x * v.x + u.y * v.y > 0) return false;
   }
   w1.a = a1;
   w1.b = b2;
@@ -889,6 +929,30 @@ function endpointNow(doc: CircuitDoc, ep: Endpoint, fallback: Point): Point {
 
 export function translateItems(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, dx: number, dy: number) {
   transformItems(base, doc, ids, (p) => ({ x: p.x + dx, y: p.y + dy }));
+  releaseGroupGlue(base, doc, ids, dx, dy);
+}
+
+/**
+ * A group carries its members as one body. A connector in a fully selected
+ * group therefore moves with it even when an end was glued to something
+ * outside the group: the glue is released and the end keeps the spot it had
+ * when the move began, carried along by the group.
+ */
+function releaseGroupGlue(base: CircuitDoc, doc: CircuitDoc, ids: Set<string>, dx: number, dy: number) {
+  for (const b of Object.values(base.items)) {
+    if (!isConnector(b) || b.locked || !b.group || (!b.from && !b.to)) continue;
+    const members = groupMembers(base, b.group);
+    if (!members.length || !members.every((id) => ids.has(id))) continue;
+    const s = doc.items[b.id] as ShapeItem | undefined;
+    if (!s) continue;
+    const p = resolveConnector(base, b);
+    s.x = p.start.x + dx;
+    s.y = p.start.y + dy;
+    s.w = p.end.x - p.start.x;
+    s.h = p.end.y - p.start.y;
+    delete s.from;
+    delete s.to;
+  }
 }
 
 /**

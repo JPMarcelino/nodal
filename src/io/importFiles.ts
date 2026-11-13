@@ -1,9 +1,11 @@
 import { normalizeDoc } from '../model/doc';
 import { snap } from '../model/geometry';
+import { previewGridFit, snapDrawing } from '../model/gridFit';
 import { docPages, pageItemIds, viewDoc } from '../model/pages';
 import { insertSvgDrawing, type SvgImportOptions } from '../model/svgDrawing';
 import type { CircuitDoc, Point, Rect } from '../model/types';
-import { S, mutate, readOnly, readOnlyNotice, toast } from '../store/store';
+import { S, mergeUserSymbols, mutate, readOnly, readOnlyNotice, toast } from '../store/store';
+import { kicadToSymbols } from './kicadSymbols';
 import { askSvgImport } from '../ui/SvgImportDialog';
 import { openAnyFile, parseJsonText } from './files';
 import { insertPictures, isPdf, isRaster, pdfToPictures, rasterToPicture } from './imageImport';
@@ -82,7 +84,7 @@ function scenePageHint(name: string, text: string): string | undefined {
 
 /** Everything "Import file…" and drag & drop understand. */
 export const IMPORT_FILTER = [
-  { name: 'Nodal files, SVG, PDF and images', extensions: ['nodal', 'json', 'svg', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'] },
+  { name: 'Nodal files, KiCad symbols, SVG, PDF and images', extensions: ['nodal', 'json', 'kicad_sym', 'svg', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'] },
 ];
 
 export const viewCentre = (): Point => {
@@ -106,6 +108,17 @@ export async function importFileText(name: string, text: string, at?: Point, svg
       toast(`Inserted ${ids.length} item${ids.length === 1 ? '' : 's'} copied from Nodal`, 'success');
       return;
     }
+    // a KiCad symbol library: its parts join My symbols
+    if (/\.kicad_sym$/i.test(name) || trimmed.startsWith('(kicad_symbol_lib')) {
+      const lib = baseName(name.replace(/\.kicad_sym$/i, ''));
+      const defs = kicadToSymbols(text, lib, 'My symbols').map((d) => ({ ...d, custom: true }));
+      if (!defs.length) throw new Error('This KiCad file has no symbols');
+      const fresh = Object.fromEntries(defs.filter((d) => !S().userLibrary[d.id]).map((d) => [d.id, d]));
+      const n = Object.values(fresh).filter((d) => !d.variantOf).length;
+      if (n) mergeUserSymbols(fresh);
+      toast(n ? `Added ${n} KiCad symbol${n > 1 ? 's' : ''} from “${lib}” to My symbols` : 'These KiCad symbols are already in My symbols', n ? 'success' : 'info');
+      return;
+    }
     // an SVG exported with its circuit inside is that circuit, not a drawing
     const embedded = sceneFromSvgText(text);
     if (!embedded && (/\.svg$/i.test(name) || (trimmed.startsWith('<') && /<svg[\s>]/i.test(text)))) {
@@ -120,7 +133,7 @@ export async function importFileText(name: string, text: string, at?: Point, svg
     try {
       data = parseJsonText(embedded ?? text);
     } catch {
-      throw new Error('Nodal can import circuits (.nodal), symbol libraries, templates, SVG, PDF and images');
+      throw new Error('Nodal can import circuits (.nodal), symbol libraries (Nodal or KiCad), templates, SVG, PDF and images');
     }
     switch (data?.format) {
       case 'nodal': {
@@ -154,16 +167,29 @@ export async function importFileText(name: string, text: string, at?: Point, svg
   }
 }
 
-/** Adds an SVG as editable items (grouped), centred on `at`, in one undo step; asks how unless `opts` is given. */
+/** Grid pitch as shown to people: no float noise. */
+const fmtGrid = (g: number) => `${+g.toFixed(4)} px`;
+
+/**
+ * Adds an SVG as editable items (grouped), centred on `at`, in one undo step;
+ * asks how unless `opts` is given. Every point of the drawing ends up on the
+ * grid: either the grid is refined until it does (and still holds whatever is
+ * on the page), or the points are moved onto the current grid.
+ */
 async function importSvgDrawing(fileName: string, text: string, at: Point, opts?: SvgImportOptions) {
   const drawing = svgToDrawing(text);
   const name = fileName.replace(/\.svg$/i, '').trim() || 'Imported SVG';
-  const how = opts ?? (await askSvgImport(name, drawing));
-  if (!how) return;
   const g = S().doc.settings.grid;
+  const place = { x: snap(at.x, g), y: snap(at.y, g) };
+  const fit = previewGridFit(drawing, g, Object.keys(S().doc.items).length > 0, place);
+  const how = opts ?? (await askSvgImport(name, drawing, fit));
+  if (!how) return;
+  const pitch = how.grid === 'snap' ? g : fit.refined;
+  const fitted = snapDrawing(drawing, pitch, place).drawing;
   const ids: string[] = [];
   const ok = mutate((d) => {
-    ids.push(...insertSvgDrawing(d as CircuitDoc, drawing, { x: snap(at.x, g), y: snap(at.y, g) }, S().scope, name, how));
+    if (pitch !== g) d.settings.grid = pitch;
+    ids.push(...insertSvgDrawing(d as CircuitDoc, fitted, place, S().scope, name, how));
   }, ids);
   if (!ok) return;
   const count = (type: string) => ids.filter((id) => S().doc.items[id]?.type === type).length;
@@ -171,7 +197,8 @@ async function importSvgDrawing(fileName: string, text: string, at: Point, opts?
   const [parts, wires] = [count('component'), count('wire')];
   const rest = ids.length - parts - wires;
   const what = [parts && n(parts, 'part'), wires && n(wires, 'wire'), rest && n(rest, wires || parts ? 'other item' : 'item')].filter(Boolean).join(', ');
-  toast(`Imported “${name}” — ${what || 'nothing'} (grouped; double-click to edit inside)`, 'success');
+  const grid = pitch !== g ? `; grid ${fmtGrid(g)} → ${fmtGrid(pitch)}` : '';
+  toast(`Imported “${name}” — ${what || 'nothing'}${grid} (grouped; double-click to edit inside)`, 'success');
 }
 
 /** Imports one file of any supported kind; text formats go through `importFileText`. */

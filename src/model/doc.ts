@@ -17,6 +17,9 @@ export function uid(prefix = 'i'): string {
 export const GRID_STYLES: GridStyle[] = ['dots', 'lines', 'crosses', 'major'];
 export const GRID_STYLE_NAMES: Record<GridStyle, string> = { dots: 'Dots', lines: 'Lines', crosses: 'Crosses', major: 'Major lines' };
 
+/** Grid steps offered as one-click presets; any value between 0.01 and 100 px is allowed. */
+export const GRID_SIZES = [1, 2, 2.5, 5, 10, 20, 25, 50];
+
 export const DEFAULT_SETTINGS: DocSettings = {
   grid: 10,
   showGrid: true,

@@ -111,7 +111,11 @@ export interface Crossing {
   b: CrossSide;
 }
 
-/** Every point where two different wires cross (touching at an end or corner is a connection, not a crossing). */
+/**
+ * Every point where two wires cross, or one wire crosses itself (a loop that
+ * comes back over its own route). Touching at an end or corner is a
+ * connection, not a crossing.
+ */
 export function wireCrossings(polys: Map<string, Point[]>): Crossing[] {
   const segs = wireSegs(polys);
   segs.sort((s, t) => s.minX - t.minX);
@@ -145,6 +149,15 @@ export function wireCrossingsChanged(polys: Map<string, Point[]>, changed: Set<s
   const out: Crossing[] = [];
   for (const w of targets) {
     const a = byWire.get(w) ?? [];
+    // the wire crossing its own route
+    for (let i = 0; i < a.length; i++)
+      for (let j = i + 1; j < a.length; j++) {
+        const s = a[i];
+        const t = a[j];
+        if (s.maxX < t.minX || t.maxX < s.minX || s.maxY < t.minY || t.maxY < s.minY) continue;
+        const c = pairCrossing(s, t);
+        if (c) out.push(c);
+      }
     for (const v of ids) {
       if (v === w) continue;
       if (changed.has(v) && v < w) continue;
@@ -184,7 +197,8 @@ function wireSegs(polys: Map<string, Point[]>): Seg[] {
 }
 
 function pairCrossing(s: Seg, t: Seg): Crossing | null {
-  if (s.wire === t.wire) return null;
+  // neighbouring segments of one wire only meet at their shared bend
+  if (s.wire === t.wire && Math.abs(s.idx - t.idx) < 2) return null;
   const hit = segmentIntersection(s.a, s.b, t.a, t.b);
   if (!hit) return null;
   const margin = 0.5;
@@ -206,10 +220,13 @@ function pairCrossing(s: Seg, t: Seg): Crossing | null {
  * segment hops over the more vertical one, then the wire id decides.
  * This is a strict total order, so a stack of wires always sorts cleanly.
  */
-export function hopsOver(s: { wire: string; horiz: boolean }, t: { wire: string; horiz: boolean }, layers?: Map<string, number>): boolean {
+export function hopsOver(s: { wire: string; horiz: boolean; seg?: number }, t: { wire: string; horiz: boolean; seg?: number }, layers?: Map<string, number>): boolean {
   const ls = layers?.get(s.wire) ?? 0;
   const lt = layers?.get(t.wire) ?? 0;
-  return ls !== lt ? ls > lt : s.horiz !== t.horiz ? s.horiz : s.wire > t.wire;
+  if (ls !== lt) return ls > lt;
+  if (s.horiz !== t.horiz) return s.horiz;
+  // a wire crossing itself: the later stretch goes over
+  return s.wire !== t.wire ? s.wire > t.wire : (s.seg ?? 0) > (t.seg ?? 0);
 }
 
 /** Hop arcs for a set of crossings; the wire that hops over gets the arc. */

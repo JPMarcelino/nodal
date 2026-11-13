@@ -983,6 +983,8 @@ export class EqEditor {
 
   /** Letters before the caret that spell a function name become one upright name. */
   private tryFunction() {
+    // a selection is about to be wrapped or replaced by openDelim() / script(): leave it whole
+    if (this.selection) return false;
     const row = this.row;
     let k = this.pos;
     while (k > 0) {

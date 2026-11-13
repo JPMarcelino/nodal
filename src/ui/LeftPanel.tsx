@@ -1,4 +1,5 @@
-import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, History, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
+import { Boxes, ChevronDown, ChevronRight, Eye, EyeOff, Filter, History, Lock, LockOpen, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react';
+import { openSymbolEditor } from '../store/symbolSession';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFold } from './controls';
 import { keysFor, prettyKey } from '../store/commands';
@@ -23,8 +24,9 @@ import { SymbolPopup, anchorOf, type SymbolPopupState } from './SymbolHover';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
 import { useSettledDoc } from './useSettledDoc';
 import { libraryDrag } from './dragState';
+import { KicadBrowser, KicadResults, useKicadEpoch, useRestoreKicad } from './KicadLibrary';
 
-function Tile({ def }: { def: SymbolDef }) {
+export function Tile({ def }: { def: SymbolDef }) {
   const fav = useStore((s) => s.favorites.includes(def.id));
   const placing = useStore((s) => s.placing?.symbol === def.id);
   const docSymbols = useStore((s) => s.doc.symbols);
@@ -83,7 +85,10 @@ function Tile({ def }: { def: SymbolDef }) {
           clearClose();
           if (!variants.length) return A.startPlacing(def.id);
           const anchor = anchorOf(e.currentTarget);
-          setPop((p) => (p?.pinned ? null : { def, variants, anchor, pinned: true }));
+          // pinning puts a backdrop over the tile, which would swallow the second click of a
+          // double-click (place at centre): wait out the double-click before pinning
+          if (e.detail > 1) return;
+          timer.current = setTimeout(() => setPop((p) => (p?.pinned ? null : { def, variants, anchor, pinned: true })), 250);
         }}
         onDoubleClick={(e) => {
           e.stopPropagation();
@@ -119,7 +124,7 @@ function Tile({ def }: { def: SymbolDef }) {
             title="Edit symbol"
             onClick={(e) => {
               e.stopPropagation();
-              set({ dialog: 'symbol-editor', editingSymbol: def.id });
+              openSymbolEditor({ editing: def.id });
             }}
           >
             <Pencil size={11} />
@@ -265,6 +270,9 @@ function Library() {
       .map((r) => r.d);
   }, [all, query, extras]);
   const shapeResults = useMemo(() => searchPresets(query), [query]);
+  // KiCad parts kept in favourites and recently used are fetched again after a reload
+  useKicadEpoch();
+  useRestoreKicad(useMemo(() => [...favorites, ...recent], [favorites, recent]));
   const lookup = (id: string) => getSymbol(S().doc, id);
   const byCat = useMemo(() => {
     const m = new Map<string, SymbolDef[]>();
@@ -303,23 +311,26 @@ function Library() {
       </div>
       <div className="lib-scroll">
         {query ? (
-          results.length || shapeResults.length ? (
-            <div className="tiles">
-              {results.map((d) => (
-                <Tile key={d.id} def={d} />
-              ))}
-              {shapeResults.map((p) => (
-                <ShapeTile key={p.id} preset={p} />
-              ))}
-            </div>
-          ) : (
-            <div className="empty-note">
-              No symbol or shape matches “{q}”.
-              <button className="link-btn" onClick={() => set({ dialog: 'symbol-editor', editingSymbol: null })}>
-                Create one →
-              </button>
-            </div>
-          )
+          <>
+            {results.length || shapeResults.length ? (
+              <div className="tiles">
+                {results.map((d) => (
+                  <Tile key={d.id} def={d} />
+                ))}
+                {shapeResults.map((p) => (
+                  <ShapeTile key={p.id} preset={p} />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-note">
+                No built-in symbol or shape matches “{q}”.
+                <button className="link-btn" onClick={() => openSymbolEditor()}>
+                  Create one →
+                </button>
+              </div>
+            )}
+            <KicadResults query={query} />
+          </>
         ) : (
           <>
             <Category name="Favourites" defs={favorites.map(lookup).filter((d) => d.id !== '__missing')} />
@@ -328,7 +339,7 @@ function Library() {
               <div className="lib-cat-head static">
                 <span>My symbols</span>
                 <span className="count">{mine.length}</span>
-                <button className="mini-btn" onClick={() => set({ dialog: 'symbol-editor', editingSymbol: null })} title="Create a new symbol (Ctrl+Shift+N)">
+                <button className="mini-btn" onClick={() => openSymbolEditor()} title="Create a new symbol (Ctrl+Shift+N)">
                   <Plus size={12} /> New
                 </button>
               </div>
@@ -345,6 +356,7 @@ function Library() {
             {CATEGORY_ORDER.map((c) => (
               <Category key={c} name={c} defs={byCat.get(c) ?? []} defaultOpen={c === 'Passive' || c === 'Semiconductors' || c === 'Power & Sources'} />
             ))}
+            <KicadBrowser />
             {PRESET_CATEGORIES.map((c) => (
               <ShapeCategory key={c.id} name={c.label} presets={SHAPE_PRESETS.filter((p) => p.category === c.id)} />
             ))}
@@ -391,6 +403,16 @@ function Layers() {
   const [vis, setVis] = useState<VisFilter>('any');
   const [lock, setLock] = useState<LockFilter>('any');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // runs of wires on one net are folded into a single row unless opened
+  const [openRuns, setOpenRuns] = useState<Set<string>>(new Set());
+  const [filterMenu, setFilterMenu] = useState(false);
+  const filterRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!filterMenu) return;
+    const away = (e: PointerEvent) => !filterRef.current?.contains(e.target as Node) && setFilterMenu(false);
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, [filterMenu]);
   const [renaming, setRenaming] = useState<string | null>(null);
   // row dragging (pointer based): which row, where it would drop, and whether it actually moved
   const [drag, setDrag] = useState<{ id: string; startY: number; moved: boolean } | null>(null);
@@ -500,6 +522,81 @@ function Layers() {
     );
   };
 
+  /** Three or more wires of one net in a row (in draw order) show as one foldable row. */
+  const list = (its: Item[], depth: number) => {
+    const out: JSX.Element[] = [];
+    for (let i = 0; i < its.length; ) {
+      const it = its[i];
+      const net = it.type === 'wire' ? netByWire.get(it.id) : undefined;
+      let j = i + 1;
+      if (net !== undefined) while (j < its.length && its[j].type === 'wire' && netByWire.get(its[j].id) === net) j++;
+      if (net === undefined || j - i < 3) {
+        out.push(row(it, depth));
+        i++;
+        continue;
+      }
+      const run = its.slice(i, j);
+      out.push(runNode(`${net}:${run[0].id}`, net, run, depth));
+      i = j;
+    }
+    return out;
+  };
+
+  const runNode = (key: string, net: string, run: Item[], depth: number) => {
+    const ids = run.map((w) => w.id);
+    const someSel = ids.some((id) => sel.has(id));
+    const allSel = ids.every((id) => sel.has(id));
+    // a wire picked on the canvas opens its run so its row is there to see
+    const open = openRuns.has(key) || (someSel && !allSel);
+    const allHidden = run.every((w) => w.hidden);
+    const allLocked = run.every((w) => w.locked);
+    return (
+      <div key={key}>
+        <div
+          className={`layer-row run${allSel ? ' selected' : ''}${allHidden ? ' is-hidden' : ''}`}
+          style={{ paddingLeft: 6 + depth * 14 }}
+          onPointerEnter={() => !drag && hover(ids)}
+          onPointerLeave={() => !drag && hover([])}
+          onClick={() => set({ selection: ids })}
+          onDoubleClick={() => A.glideFit(ids)}
+          title="Wires of one net, next to each other in the drawing order. Open to reorder them one by one"
+        >
+          <button
+            className="layer-caret"
+            onClick={(e) => {
+              e.stopPropagation();
+              const next = new Set(openRuns);
+              if (openRuns.has(key)) next.delete(key);
+              else next.add(key);
+              setOpenRuns(next);
+            }}
+          >
+            {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </button>
+          <span className="layer-icon wire" />
+          <span className="layer-name">
+            Wires · {net}
+            <span className="layer-count">{run.length}</span>
+          </span>
+          <button className={allHidden ? 'layer-act on' : 'layer-act'} title={allHidden ? 'Show all' : 'Hide all'} onClick={(e) => (e.stopPropagation(), A.toggleHidden(ids))}>
+            {allHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+          </button>
+          <button
+            className={allLocked ? 'layer-act locked' : 'layer-act'}
+            title={allLocked ? 'Unlock all' : 'Lock all'}
+            onClick={(e) => {
+              e.stopPropagation();
+              mutate((d) => ids.forEach((id) => void (d.items[id].locked = !allLocked)));
+            }}
+          >
+            {allLocked ? <Lock size={12} /> : <LockOpen size={12} />}
+          </button>
+        </div>
+        {open && run.map((w) => row(w, depth + 1))}
+      </div>
+    );
+  };
+
   const groupNode = (gid: string, depth: number): JSX.Element | null => {
     const g = doc.groups[gid];
     if (filtering && !groupHasItems(gid)) return null;
@@ -548,7 +645,7 @@ function Layers() {
         {open && (
           <>
             {ch.groups.map((sg) => groupNode(sg.id, depth + 1))}
-            {ch.items.map((it) => row(it, depth + 1))}
+            {list(ch.items, depth + 1)}
           </>
         )}
       </div>
@@ -571,17 +668,41 @@ function Layers() {
             {f === 'all' ? 'All' : f === 'component' ? 'Parts' : f === 'wire' ? 'Wires' : 'Shapes'}
           </button>
         ))}
+        <span className="layer-filter-more" ref={filterRef}>
+          <button
+            className={vis !== 'any' || lock !== 'any' ? 'filter-btn on' : 'filter-btn'}
+            title="Filter by shown, hidden, locked"
+            aria-expanded={filterMenu}
+            onClick={() => setFilterMenu((o) => !o)}
+          >
+            <Filter size={12} />
+            {(vis !== 'any' || lock !== 'any') && <span className="filter-dot" />}
+          </button>
+          {filterMenu && (
+            <div className="layer-filter-pop">
+              <div className="layer-filter secondary">
+                {chip(vis, setVis, 'shown', <Eye size={11} />, 'Shown')}
+                {chip(vis, setVis, 'hidden', <EyeOff size={11} />, 'Hidden')}
+              </div>
+              <div className="layer-filter secondary">
+                {chip(lock, setLock, 'locked', <Lock size={11} />, 'Locked')}
+                {chip(lock, setLock, 'unlocked', <LockOpen size={11} />, 'Unlocked')}
+              </div>
+            </div>
+          )}
+        </span>
       </div>
-      <div className="layer-filter secondary">
-        {chip(vis, setVis, 'shown', <Eye size={11} />, 'Shown')}
-        {chip(vis, setVis, 'hidden', <EyeOff size={11} />, 'Hidden')}
-        <span className="layer-filter-sep" />
-        {chip(lock, setLock, 'locked', <Lock size={11} />, 'Locked')}
-        {chip(lock, setLock, 'unlocked', <LockOpen size={11} />, 'Unlocked')}
-      </div>
+      {(vis !== 'any' || lock !== 'any') && (
+        <div className="layer-active-filters small muted">
+          Only {[vis !== 'any' && vis, lock !== 'any' && lock].filter(Boolean).join(' and ')} items
+          <button className="link-btn" onClick={() => (setVis('any'), setLock('any'))}>
+            Clear
+          </button>
+        </div>
+      )}
       <div className="lib-scroll" onPointerLeave={() => !drag && hover([])}>
         {root.groups.map((g) => groupNode(g.id, 0))}
-        {root.items.map((it) => row(it, 0))}
+        {list(root.items, 0)}
         {!items.length && <div className="empty-note">{filtering ? 'Nothing matches these filters.' : 'Nothing here yet.'}</div>}
       </div>
       <div className="layer-foot muted small">Top of the list is in front · drag rows to reorder</div>

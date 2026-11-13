@@ -4,6 +4,8 @@ import { createDoc, groupMembers, normalizeDoc, topGroup, type ShapeTool, type S
 import { setUserLibrary, usedSymbols } from '../model/registry';
 import { sampleDoc } from '../model/sample';
 import type { SelectionDrawing } from '../model/fromSelection';
+import type { SymbolSource } from '../model/symbols/dsl';
+import type { SymbolDraft } from './symbolSession';
 import type { CircuitDoc, Dash, Item, Point, Rect, SymbolDef, Tool, WireAngle } from '../model/types';
 import { settleEdit } from '../model/settle';
 import { editPage, itemPage, mergeView, multiPage, normalizePages, resolvePage, viewDoc } from '../model/pages';
@@ -23,6 +25,8 @@ export interface ExportAreaJob {
 export interface ExportScope {
   ids?: string[];
   clip?: Rect;
+  /** The Export dialog opens on "All pages" (a picture of every page, in one .zip). */
+  allPages?: boolean;
 }
 
 export interface Placing {
@@ -84,6 +88,8 @@ export interface Prefs {
   exportScene?: boolean;
   /** Theme of every image export (unset = the app's theme). */
   exportTheme?: 'light' | 'dark';
+  /** The drawing format the Export dialog has picked (unset = PNG). */
+  exportFormat?: 'png' | 'svg' | 'dxf';
   /** Tool lock: placing a part keeps the part armed instead of returning to Select. */
   toolLock: boolean;
   /** The quiet hint line at the bottom of the canvas: the next useful action for the tool in hand. */
@@ -94,6 +100,24 @@ export interface Prefs {
   wireMatchStart?: boolean;
 }
 
+
+/** The symbol editor page in use (see store/symbolSession): the circuit is set aside meanwhile. */
+export interface SymbolSession {
+  /** Symbol being edited; null = a new one. */
+  editing: string | null;
+  /** The symbol's own fields (name, prefix, value…); its drawing and pins come from the page when saved. */
+  meta: SymbolSource;
+  /** Items of the circuit the page was made from; saving swaps them for one instance of the symbol. */
+  seedIds: string[] | null;
+  /** Editing a built-in symbol: saving makes a custom copy (swapped in for selected parts using it). */
+  customising: boolean;
+  /** The fields were changed. */
+  metaDirty: boolean;
+  /** Unsaved work kept from an earlier visit, offered for restoring. */
+  draft: SymbolDraft | null;
+  /** The circuit as it was when the page opened, with its history and view. */
+  stash: Pick<AppState, 'doc' | 'page' | 'past' | 'future' | 'dirty' | 'filePath' | 'view' | 'selection' | 'scope'>;
+}
 
 export interface Toast {
   id: number;
@@ -129,6 +153,8 @@ export interface AppState {
   contextMenu: ContextMenuState | null;
   dialog: Dialog;
   editingSymbol: string | null;
+  /** The symbol editor page is open in place of the circuit. */
+  symbolSession: SymbolSession | null;
   /** Drawing made from a selection, opened in the symbol editor; saving replaces those items with the new symbol. */
   symbolSeed: (SelectionDrawing & { ids: string[] }) | null;
   leftPanel: boolean;
@@ -251,6 +277,7 @@ export const useStore = create<AppState>(() => ({
   contextMenu: null,
   dialog: null,
   editingSymbol: null,
+  symbolSession: null,
   symbolSeed: null,
   leftPanel: true,
   rightPanel: true,
@@ -293,6 +320,9 @@ export function readOnlyNotice() {
   const k = viewModeKey.label();
   toast(`View mode: the circuit can’t be changed${k ? ` (${k} to edit)` : ''}`, 'info');
 }
+
+/** The circuit itself, also while the symbol editor page stands in for it (live sessions share this one). */
+export const sharedDoc = (s: Pick<AppState, 'doc' | 'symbolSession'> = S()) => s.symbolSession?.stash.doc ?? s.doc;
 
 /** The document as the canvas sees it: only the active page's items (see model/pages). */
 export const vdoc = () => viewDoc(S().doc, S().page);
@@ -353,6 +383,21 @@ export function setPage(page: string): boolean {
 /* ------------------------------------------------------------------ */
 
 const HISTORY_LIMIT = 300;
+
+/**
+ * Set by agent/guard: why a local edit from `before` to `after` may not go
+ * ahead (it would change work an AI agent is still doing), or null. Checked by
+ * every local edit path; the agent's own changes come in through applyExternal.
+ */
+export const editGuard: { check?: (before: CircuitDoc, after: CircuitDoc) => string | null; notice?: (why: string) => void } = {};
+
+function guarded(before: CircuitDoc, after: CircuitDoc): boolean {
+  if (before === after || !editGuard.check) return false;
+  const why = editGuard.check(before, after);
+  if (why) editGuard.notice?.(why);
+  return !!why;
+}
+
 let gestureBase: CircuitDoc | null = null;
 let allowGestureMutate = false;
 
@@ -399,6 +444,7 @@ export function mutate(recipe: (d: Draft<CircuitDoc>) => void, selection?: strin
     if (selection) set({ selection });
     return true;
   }
+  if (guarded(s.doc, next)) return false;
   set({
     doc: next,
     past: gestureBase ? s.past : [...s.past.slice(-HISTORY_LIMIT), s.doc],
@@ -427,7 +473,9 @@ export function rebaseGesture() {
 export function gestureUpdate(recipe: (d: Draft<CircuitDoc>, base: CircuitDoc) => void) {
   if (!gestureBase || readOnly()) return;
   const base = gestureBase;
-  set({ doc: editPage(base, S().page, recipe) });
+  const next = editPage(base, S().page, recipe);
+  if (guarded(base, next)) return;
+  set({ doc: next });
 }
 
 /** Settles a committed gesture on the active page (see settleEdit). */
@@ -447,7 +495,13 @@ export function endGesture(commit = true) {
     set({ doc: base });
     return;
   }
-  if (s.doc !== base) set({ doc: settlePage(base, s.doc), past: [...s.past.slice(-HISTORY_LIMIT), base], future: [], dirty: true });
+  if (s.doc === base) return;
+  const settled = settlePage(base, s.doc);
+  if (guarded(base, settled)) {
+    set({ doc: base });
+    return;
+  }
+  set({ doc: settled, past: [...s.past.slice(-HISTORY_LIMIT), base], future: [], dirty: true });
 }
 
 export const inGesture = () => gestureBase !== null;
@@ -477,6 +531,7 @@ export function undo() {
   const s = S();
   if (!s.past.length || readOnly(s)) return;
   const prev = s.past[s.past.length - 1];
+  if (guarded(s.doc, prev)) return;
   set({ doc: prev, past: s.past.slice(0, -1), future: [s.doc, ...s.future], dirty: true, selection: s.selection.filter((id) => prev.items[id]), wirePart: null, scope: liveScope(s.scope, prev) });
   followChange(s.doc, prev);
 }
@@ -486,6 +541,7 @@ export function redo() {
   const s = S();
   if (!s.future.length || readOnly(s)) return;
   const next = s.future[0];
+  if (guarded(s.doc, next)) return;
   set({ doc: next, future: s.future.slice(1), past: [...s.past, s.doc], dirty: true, selection: s.selection.filter((id) => next.items[id]), wirePart: null, scope: liveScope(s.scope, next) });
   followChange(s.doc, next);
 }
@@ -497,6 +553,14 @@ export function redo() {
  */
 export function applyExternal(patch: (doc: CircuitDoc) => CircuitDoc) {
   const s = S();
+  const sym = s.symbolSession;
+  if (sym) {
+    // the symbol page is open: the change goes to the circuit set aside behind it
+    const st = sym.stash;
+    const doc = patch(st.doc);
+    set({ symbolSession: { ...sym, stash: { ...st, doc, past: st.past.map(patch), future: st.future.map(patch), selection: st.selection.filter((id) => doc.items[id]), scope: liveScope(st.scope, doc) } } });
+    return;
+  }
   if (gestureBase) {
     const same = gestureUndo === gestureBase;
     gestureBase = patch(gestureBase);
@@ -518,7 +582,8 @@ export function replaceDoc(doc: CircuitDoc, filePath: string | null = null) {
   // the incoming document has nothing to do with a running drag: drop the
   // gesture instead of letting its next update clobber the new document
   if (inGesture()) endGesture(false);
-  set({ doc, page: lastPage(doc), past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null, exportArea: null, exportScope: null });
+  if (S().symbolSession) toast('Closed the symbol editor without saving', 'info');
+  set({ symbolSession: null, placing: null, doc, page: lastPage(doc), past: [], future: [], selection: [], scope: undefined, dirty: false, filePath, highlight: null, wirePart: null, exportArea: null, exportScope: null });
 }
 
 export function newDoc() {
@@ -679,14 +744,19 @@ export function pushRecent(id: string) {
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((s, prev) => {
-  if (s.doc === prev.doc || !s.prefs.autosave || autosavePaused) return;
+  // the symbol editor page keeps its own draft (store/symbolSession); the circuit set aside is unchanged
+  if (s.symbolSession && prev.symbolSession && s.doc !== prev.doc) symbolDraftHook.run?.();
+  if (sharedDoc(s) === sharedDoc(prev) || !s.prefs.autosave || autosavePaused) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(autosaveNow, 600);
 });
 
+/** Set by store/symbolSession (which imports this module) to keep the page's draft. */
+export const symbolDraftHook: { run?: () => void } = {};
+
 function autosaveNow() {
   saveTimer = undefined;
-  const doc = S().doc;
+  const doc = sharedDoc();
   // never overwrite the last good autosave with something that isn't a circuit
   if (!doc || typeof doc !== 'object' || doc.format !== 'nodal' || typeof doc.items !== 'object' || !doc.settings) return;
   try {
@@ -706,6 +776,7 @@ if (typeof window !== 'undefined') {
   // leaving with changes that exist nowhere else (autosave off, or not yet saved to the open file)
   window.addEventListener('beforeunload', (e) => {
     const s = S();
+    if (s.symbolSession) return;
     if (!s.dirty || !Object.keys(s.doc.items).length || (s.prefs.autosave && !s.filePath && !autosaveFailed)) return;
     e.preventDefault();
     e.returnValue = '';

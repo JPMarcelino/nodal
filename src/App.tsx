@@ -9,7 +9,7 @@ import { Inspector } from './ui/Inspector';
 import { LeftPanel } from './ui/LeftPanel';
 import { StatusBar, Toasts } from './ui/Overlays';
 import { ContextMenu } from './ui/ContextMenu';
-import { SymbolEditor } from './ui/SymbolEditor';
+import { SymbolBar } from './ui/SymbolEditor';
 import { ToolRail, TopBar } from './ui/TopBar';
 import { Presenter } from './ui/Presenter';
 import { Timeline } from './ui/Timeline';
@@ -18,6 +18,7 @@ import { useExplain } from './store/explain';
 import { AskHost } from './ui/Ask';
 import { SvgImportHost } from './ui/SvgImportDialog';
 import { StatsPanel } from './ui/StatsPanel';
+import { AgentPanel } from './agent/AgentPanel';
 import { Tooltips } from './ui/Tooltips';
 import { usePanelWidth } from './ui/PanelResizer';
 import { EquationHost } from './ui/EquationZone';
@@ -35,9 +36,8 @@ export function App() {
   const uiScale = useStore((s) => s.prefs.uiScale);
   const left = useStore((s) => s.leftPanel);
   const right = useStore((s) => s.rightPanel);
-  const dialog = useStore((s) => s.dialog);
   const showTimeline = useExplain((s) => s.timelineOpen && s.presenting === null);
-  const editingSymbol = useStore((s) => s.editingSymbol);
+  const symbolMode = useStore((s) => !!s.symbolSession);
   const name = useStore((s) => s.doc.name);
   const dirty = useStore((s) => s.dirty);
   // where the panels float over the canvas (narrow windows), the stage's own overlays keep clear of them
@@ -126,19 +126,20 @@ export function App() {
       <TopBar />
       <div className="workspace" style={{ '--lw': `${leftW}px`, '--rw': `${rightW}px` } as CSSProperties}>
         {left && <LeftPanel />}
-        <main className={showTimeline ? 'stage with-timeline' : 'stage'}>
+        <main className={`${showTimeline ? 'stage with-timeline' : 'stage'}${symbolMode ? ' symbol-mode' : ''}`}>
+          {symbolMode && <SymbolBar />}
           <ToolRail />
           <Canvas />
           <StatsPanel />
+          <AgentPanel />
           {showTimeline && <Timeline />}
-          <PageBar />
+          {!symbolMode && <PageBar />}
         </main>
         {right && <Inspector />}
       </div>
       <StatusBar />
       <ContextMenu />
       <Dialogs />
-      {dialog === 'symbol-editor' && <SymbolEditor key={editingSymbol ?? 'new'} />}
       <Presenter />
       <Toasts />
       <AskHost />

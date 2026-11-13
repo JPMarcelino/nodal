@@ -132,6 +132,8 @@ function mimeOf(name: string) {
       return 'application/json';
     case 'csv':
       return 'text/csv';
+    case 'zip':
+      return 'application/zip';
     default:
       return 'text/plain';
   }

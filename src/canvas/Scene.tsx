@@ -178,9 +178,13 @@ export function updateSceneData(prevDoc: CircuitDoc, prev: SceneData, doc: Circu
     }
   }
   const layers = wiresSame ? prev.layers : hopLayerMap(Object.values(items));
+  // the incremental pass tests each changed wire against every other: past a few changed wires
+  // (an undo, a paste, select-all-and-move) one full sweep is far cheaper
   const crossings = polysSame
     ? prev.crossings
-    : [...prev.crossings.filter((c) => !changed.has(c.a.wire) && !changed.has(c.b.wire)), ...wireCrossingsChanged(polys, changed)];
+    : changed.size * 16 > polys.size
+      ? wireCrossings(polys)
+      : [...prev.crossings.filter((c) => !changed.has(c.a.wire) && !changed.has(c.b.wire)), ...wireCrossingsChanged(polys, changed)];
   const hops = polysSame ? prev.hops : doc.settings.hops === 'none' ? new Map<string, Hop[]>() : hopsFromCrossings(crossings, doc.settings.hopSize, layers);
   const touch = refreshTouching(prevDoc, prev.touchCells, prev.touching, doc, moved);
   if (wiresSame && polysSame && touch.same) return prev;

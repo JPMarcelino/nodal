@@ -196,11 +196,15 @@ export interface SpaceGap {
   from: number;
   to: number;
   at: number;
+  /** A gap beside the moving box (the rest are the matching gaps elsewhere). */
+  own?: boolean;
 }
 
-/** Equal gaps along one axis: the moving box sits as far from its neighbour as the neighbours sit from each other. */
+/** Equal gaps along one axis: the moving box sits as far from its neighbour as other neighbours sit from each other. */
 export interface SpaceGuide {
   axis: 'x' | 'y';
+  /** The shared gap. */
+  gap: number;
   gaps: SpaceGap[];
 }
 
@@ -213,14 +217,51 @@ function across(a: Rect, b: Rect): number {
   return lo <= hi ? hi : (a.y + a.h / 2 + b.y + b.h / 2) / 2;
 }
 
+const right = (r: Rect) => r.x + r.w;
+const sharesRow = (a: Rect, b: Rect) => a.y < b.y + b.h && a.y + a.h > b.y;
+
+/** Two neighbours along x with nothing between them, and the gap. */
+interface Pair {
+  a: Rect;
+  b: Rect;
+  gap: number;
+}
+
+/** Every pair of side-by-side neighbours along x among `rs` (each box with the nearest one to its right in its row). */
+function neighbourPairs(rs: Rect[]): Pair[] {
+  const out: Pair[] = [];
+  for (const a of rs) {
+    let b: Rect | null = null;
+    for (const o of rs) if (o !== a && o.x >= right(a) && sharesRow(a, o) && (!b || o.x < b.x)) b = o;
+    if (b && b.x - right(a) > 0.5) out.push({ a, b, gap: b.x - right(a) });
+  }
+  return out;
+}
+
+/** Neighbour pairs per axis, worked out once per set of static boxes (they don't change during a drag). */
+const pairCache = new WeakMap<Rect[], { flipped: Rect[]; x: Pair[]; y: Pair[] }>();
+function pairsOf(others: Rect[]): { flipped: Rect[]; x: Pair[]; y: Pair[] } {
+  let p = pairCache.get(others);
+  if (!p) {
+    const flipped = others.map(flipRect);
+    p = { flipped, x: neighbourPairs(others), y: neighbourPairs(flipped) };
+    pairCache.set(others, p);
+  }
+  return p;
+}
+
+/** How many matching gaps elsewhere are marked at most (the nearest ones). */
+const MAX_ECHOES = 12;
+
 /**
  * Equal spacing along x for box `m` among `others` (y is the cross axis; the
- * caller swaps axes for y). Candidates: centred between its two neighbours, or
- * one more step of the gap between a neighbour and the item beyond it.
+ * caller swaps axes for y). Candidates: centred between its two neighbours,
+ * or as far from either neighbour as any pair of neighbours anywhere sits
+ * apart. Every pair with that same gap is marked, so a whole run of evenly
+ * spaced items shows, not just the nearest two.
  */
-function spaceX(m: Rect, others: Rect[], tol: number): { delta: number; gaps: (x: number) => SpaceGap[] } | null {
-  const row = others.filter((r) => r.y < m.y + m.h && r.y + r.h > m.y);
-  const right = (r: Rect) => r.x + r.w;
+function spaceX(m: Rect, others: Rect[], pairs: Pair[], tol: number): { delta: number; gap: number; gaps: (x: number) => SpaceGap[] } | null {
+  const row = others.filter((r) => sharesRow(r, m));
   const mid = m.x + m.w / 2;
   let L: Rect | null = null;
   let R: Rect | null = null;
@@ -228,40 +269,54 @@ function spaceX(m: Rect, others: Rect[], tol: number): { delta: number; gaps: (x
     if (right(r) <= m.x + tol && r.x + r.w / 2 < mid && (!L || right(r) > right(L))) L = r;
     if (r.x >= right(m) - tol && r.x + r.w / 2 > mid && (!R || r.x < R.x)) R = r;
   }
-  const cands: { x: number; gaps: (x: number) => SpaceGap[] }[] = [];
+  if (!L && !R) return null;
   const at = (x: number): Rect => ({ ...m, x });
+  // a pair the box sits between isn't really a pair while it's there
+  const real = pairs.filter((p) => !(p.a === L && p.b === R));
+  const cands: { x: number; gap: number }[] = [];
   if (L && R) {
-    const l = L;
-    const r = R;
-    const x = (right(l) + r.x - m.w) / 2;
-    if (x >= right(l)) cands.push({ x, gaps: (x) => [{ from: right(l), to: x, at: across(l, at(x)) }, { from: x + m.w, to: r.x, at: across(at(x), r) }] });
+    const x = (right(L) + R.x - m.w) / 2;
+    if (x >= right(L)) cands.push({ x, gap: x - right(L) });
   }
-  if (L) {
-    const l = L;
-    let L2: Rect | null = null;
-    for (const r of row) if (r !== l && right(r) <= l.x && (!L2 || right(r) > right(L2))) L2 = r;
-    const l2 = L2;
-    if (l2 && l.x - right(l2) > 0.5) {
-      const g = l.x - right(l2);
-      cands.push({ x: right(l) + g, gaps: (x) => [{ from: right(l2), to: l.x, at: across(l2, l) }, { from: right(l), to: x, at: across(l, at(x)) }] });
+  const seen = new Set<number>();
+  for (const p of real) {
+    const g = Math.round(p.gap * 100) / 100;
+    if (seen.has(g)) continue;
+    seen.add(g);
+    if (L) {
+      const x = right(L) + g;
+      if (!R || x + m.w <= R.x + 0.01) cands.push({ x, gap: g });
+    }
+    if (R) {
+      const x = R.x - g - m.w;
+      if (!L || x >= right(L) - 0.01) cands.push({ x, gap: g });
     }
   }
-  if (R) {
-    const r = R;
-    let R2: Rect | null = null;
-    for (const o of row) if (o !== r && o.x >= right(r) && (!R2 || o.x < R2.x)) R2 = o;
-    const r2 = R2;
-    if (r2 && r2.x - right(r) > 0.5) {
-      const g = r2.x - right(r);
-      cands.push({ x: r.x - g - m.w, gaps: (x) => [{ from: x + m.w, to: r.x, at: across(at(x), r) }, { from: right(r), to: r2.x, at: across(r, r2) }] });
-    }
-  }
-  let best: { delta: number; gaps: (x: number) => SpaceGap[] } | null = null;
-  for (const c of cands) {
-    const delta = c.x - m.x;
-    if (Math.abs(delta) <= tol && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { delta, gaps: c.gaps };
-  }
-  return best;
+  let best: { x: number; gap: number } | null = null;
+  for (const c of cands) if (Math.abs(c.x - m.x) <= tol && (!best || Math.abs(c.x - m.x) < Math.abs(best.x - m.x))) best = c;
+  if (!best) return null;
+  const { gap } = best;
+  const l = L;
+  const r = R;
+  return {
+    delta: best.x - m.x,
+    gap,
+    gaps: (x) => {
+      const box = at(x);
+      const own: SpaceGap[] = [];
+      if (l && Math.abs(x - right(l) - gap) < 0.5) own.push({ from: right(l), to: x, at: across(l, box), own: true });
+      if (r && Math.abs(r.x - x - m.w - gap) < 0.5) own.push({ from: x + m.w, to: r.x, at: across(box, r), own: true });
+      const cx = x + m.w / 2;
+      const cy = m.y + m.h / 2;
+      const echoes = real
+        .filter((p) => Math.abs(p.gap - gap) < 0.5)
+        .map((p) => ({ p, d: Math.hypot((right(p.a) + p.b.x) / 2 - cx, across(p.a, p.b) - cy) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, MAX_ECHOES)
+        .map(({ p }) => ({ from: right(p.a), to: p.b.x, at: across(p.a, p.b) }));
+      return [...own, ...echoes];
+    },
+  };
 }
 
 /**
@@ -279,19 +334,20 @@ export function spaceMove(
   hold: { x?: boolean; y?: boolean } = {},
 ): { dx: number; dy: number; guides: SpaceGuide[] } {
   if (!box) return { dx, dy, guides: [] };
+  const pairs = pairsOf(others);
   const guides: SpaceGuide[] = [];
   const exact = 0.01;
   const m = { ...box, x: box.x + dx, y: box.y + dy };
-  const sx = spaceX(m, others, magnet && !hold.x ? tol : exact);
+  const sx = spaceX(m, others, pairs.x, magnet && !hold.x ? tol : exact);
   if (sx) {
     dx += sx.delta;
-    guides.push({ axis: 'x', gaps: sx.gaps(box.x + dx) });
+    guides.push({ axis: 'x', gap: sx.gap, gaps: sx.gaps(box.x + dx) });
   }
   const my = flipRect({ ...box, x: box.x + dx, y: box.y + dy });
-  const sy = spaceX(my, others.map(flipRect), magnet && !hold.y ? tol : exact);
+  const sy = spaceX(my, pairs.flipped, pairs.y, magnet && !hold.y ? tol : exact);
   if (sy) {
     dy += sy.delta;
-    guides.push({ axis: 'y', gaps: sy.gaps(box.y + dy) });
+    guides.push({ axis: 'y', gap: sy.gap, gaps: sy.gaps(box.y + dy) });
   }
   return { dx, dy, guides };
 }

@@ -1,3 +1,4 @@
+import type { SymbolPage } from '../symbolPage';
 import type { Fill, FieldDef, PortDef, Prim, PrimStyle, Side, SymbolDef, VariantRef } from '../types';
 
 const COLOUR = /^(#[0-9a-f]{3,8}|[a-z]+)$/i;
@@ -222,6 +223,8 @@ export interface SymbolSource {
   variantName?: string;
   /** Alternative drawings offered for this symbol. */
   variants?: VariantRef[];
+  /** The editor page the symbol was drawn on, so it reopens as it was left (see model/symbolPage). */
+  page?: SymbolPage;
 }
 
 export function compileSource(src: SymbolSource): SymbolDef {

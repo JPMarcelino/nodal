@@ -1,9 +1,10 @@
-import { CircleHelp, ClipboardPaste, Copy, Cpu, Eye, FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, Files, Film, FolderUp, History, Layers3, LayoutGrid, LayoutTemplate, Pencil, Printer, RotateCcw, Scan, Search, Shapes, Share2, Spline, Users, Wrench, X, type LucideIcon } from 'lucide-react';
+import { CircleHelp, ClipboardPaste, Copy, Cpu, Download, Eye, FileCode2, FileImage, FileJson, FileSpreadsheet, FileText, Files, Film, FolderUp, History, Layers3, LayoutGrid, LayoutTemplate, Pencil, Printer, RotateCcw, Search, Shapes, Share2, Spline, Users, Wrench, X, type LucideIcon } from 'lucide-react';
 import { isValidElement, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { importFile } from '../io/importFiles';
-import { copyScope, doClipExport, doExport, filePrint, scopeSvgOptions, startAreaExport } from '../io/fileActions';
-import { clipAreaDoc, exportSvg, selectionDoc } from '../io/export';
+import { copyScope, doClipExport, doExport, exportAllPages, exportablePages, filePrint, scopeSvgOptions, startAreaExport } from '../io/fileActions';
+import { clipAreaDoc, exportSvg, selectionDoc, type SvgOptions } from '../io/export';
+import { docPages } from '../model/pages';
 import { prepareMath } from '../model/latex';
 import { withoutFrames } from '../model/presentation';
 import {
@@ -24,7 +25,7 @@ import { isDesktop } from '../io/files';
 import { PUBLIC_APP_URL } from '../collab/session';
 import { librarySymbols, variantDefs } from '../model/registry';
 import { BUILTIN_SYMBOLS } from '../model/symbols';
-import type { SymbolDef } from '../model/types';
+import type { CircuitDoc, SymbolDef } from '../model/types';
 import * as A from '../store/actions';
 import { COMMANDS, activeKeymap, eventToCombo, keysFor, prettyKey, setActiveKeymap, type Command } from '../store/commands';
 import { readOnly, set, setPrefs, setTheme, toast, useStore, vdoc, type ExportScope } from '../store/store';
@@ -59,8 +60,22 @@ export function Modal({
   /** Name for a dialog with no visible title. */
   ariaLabel?: string;
 }) {
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
+      // Tab cycles inside the dialog rather than wandering off to the app behind it
+      if (e.key === 'Tab' && box.current) {
+        const all = [...box.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
+          (el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null,
+        );
+        if (!all.length) return;
+        const first = all[0];
+        const last = all[all.length - 1];
+        const inside = box.current.contains(document.activeElement);
+        if (e.shiftKey && (document.activeElement === first || !inside)) (e.preventDefault(), last.focus());
+        else if (!e.shiftKey && (document.activeElement === last || !inside)) (e.preventDefault(), first.focus());
+        return;
+      }
       if (e.key === 'Escape') {
         e.stopPropagation();
         const t = e.target as HTMLElement;
@@ -73,9 +88,16 @@ export function Modal({
     window.addEventListener('keydown', k, true);
     return () => window.removeEventListener('keydown', k, true);
   }, [onClose, onEscape]);
+  // focus goes back to whatever had it before the dialog opened
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    return () => {
+      if (opener?.isConnected && opener !== document.body) opener.focus();
+    };
+  }, []);
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${className ?? ''}`} style={{ width }} role="dialog" aria-modal="true" aria-label={ariaLabel ?? (typeof title === 'string' ? title : undefined)}>
+      <div ref={box} className={`modal ${className ?? ''}`} style={{ width }} role="dialog" aria-modal="true" aria-label={ariaLabel ?? (typeof title === 'string' ? title : undefined)}>
         {title && (
           <header className="modal-head">
             <h2>{title}</h2>
@@ -680,7 +702,7 @@ export function SettingsDialog() {
 /* Export                                                              */
 /* ------------------------------------------------------------------ */
 
-/** Live picture of what the export will look like: colours, background (checkered when transparent) and extent. */
+/** True when the scope has nothing to draw, narrowed the way exportSvg narrows it. */
 function scopeIsEmpty(scope: ExportScope): boolean {
   const view = vdoc();
   let d = withoutFrames(view);
@@ -691,25 +713,21 @@ function scopeIsEmpty(scope: ExportScope): boolean {
   return !Object.values(d.items).some((it) => !it.hidden);
 }
 
-function ExportPreview({ scope, theme, background, scale }: { scope: ExportScope; theme: 'light' | 'dark'; background: boolean; scale: number }) {
-  const doc = useStore((s) => s.doc);
-  const page = useStore((s) => s.page);
+/** An SVG of `view` as a blob URL, rendered once formulas are ready; revoked when the inputs change. */
+function useShot(view: CircuitDoc | null, opts: SvgOptions | null, deps: unknown[]) {
   const [shot, setShot] = useState<{ url: string; w: number; h: number } | null>(null);
   const [error, setError] = useState('');
-  // narrowed the way exportSvg narrows it, so an empty scope says so instead of showing a blank picture
-  const empty = useMemo(() => scopeIsEmpty(scope), [doc, page, scope]);
   useEffect(() => {
-    if (empty) return;
+    if (!view || !opts) return setShot(null);
     let url = '';
     let live = true;
-    const view = vdoc();
     // formulas render asynchronously; the export waits for them, so the preview does too
     prepareMath(view)
       .catch(() => undefined)
       .then(() => {
         if (!live) return;
         try {
-          const { svg, bounds } = exportSvg(view, scopeSvgOptions(scope, 'png', { theme, background }));
+          const { svg, bounds } = exportSvg(view, opts);
           url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
           setShot({ url, w: Math.ceil(bounds.w), h: Math.ceil(bounds.h) });
           setError('');
@@ -721,9 +739,18 @@ function ExportPreview({ scope, theme, background, scale }: { scope: ExportScope
       live = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [doc, page, scope, theme, background, empty]);
+  }, deps);
+  return { shot, error };
+}
+
+/** Live picture of what the export will look like: colours, background (checkered when transparent) and extent. */
+function ExportPreview({ scope, theme, background, format, scale }: { scope: ExportScope; theme: 'light' | 'dark'; background: boolean; format: ExportFormat; scale: number }) {
+  const doc = useStore((s) => s.doc);
+  const page = useStore((s) => s.page);
+  const empty = useMemo(() => scopeIsEmpty(scope), [doc, page, scope]);
+  const { shot, error } = useShot(empty ? null : vdoc(), empty ? null : scopeSvgOptions(scope, 'png', { theme, background }), [doc, page, scope, theme, background, empty]);
   const clip = scope.clip;
-  const num = (n: number) => String(Math.round(n)).replace('-', '\u2212');
+  const num = (n: number) => String(Math.round(n)).replace('-', '−');
   return (
     <div className="export-preview-wrap">
       <div className={`export-preview${background || empty ? '' : ' transparent'}`}>
@@ -737,48 +764,102 @@ function ExportPreview({ scope, theme, background, scale }: { scope: ExportScope
           <span className="muted small">Rendering preview…</span>
         )}
       </div>
-      {shot && !empty && (
-        <span className="muted small">
-          {clip && `Area ${num(clip.x)}, ${num(clip.y)} · ${num(clip.w)} × ${num(clip.h)} px · `}
-          {shot.w} × {shot.h} px · PNG at {scale}×: {shot.w * scale} × {shot.h * scale} px{background ? '' : ' · transparent background'}
-        </span>
-      )}
+      <span className="muted small export-caption">
+        {shot && !empty
+          ? [
+              clip && `Area ${num(clip.x)}, ${num(clip.y)} · ${num(clip.w)} × ${num(clip.h)}`,
+              format === 'png' ? `${shot.w * scale} × ${shot.h * scale} px (${scale}×)` : format === 'svg' ? `${shot.w} × ${shot.h} vector` : 'Layered CAD entities',
+              format !== 'dxf' && !background && 'transparent',
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          : ' '}
+      </span>
     </div>
   );
 }
 
+/** One page of an all-pages export, as a small picture with its name. */
+function PageThumb({ view, n, name, theme, background }: { view: CircuitDoc; n: number; name: string; theme: 'light' | 'dark'; background: boolean }) {
+  const { shot, error } = useShot(view, { theme, background, padding: 20 }, [view, theme, background]);
+  return (
+    <figure className="export-thumb">
+      <div className={`export-thumb-pic${background ? '' : ' transparent'}`}>{shot ? <img src={shot.url} alt="" /> : <span className="muted small">{error ? '!' : '…'}</span>}</div>
+      <figcaption title={name}>
+        <span className="muted">{n}</span> {name}
+      </figcaption>
+    </figure>
+  );
+}
+
+function AllPagesPreview({ theme, background, format }: { theme: 'light' | 'dark'; background: boolean; format: ExportFormat }) {
+  const doc = useStore((s) => s.doc);
+  const pages = useMemo(() => exportablePages(doc), [doc]);
+  const total = docPages(doc).length;
+  const skipped = total - pages.length;
+  return (
+    <div className="export-preview-wrap">
+      <div className="export-preview export-pages">
+        {pages.length ? (
+          pages.map((p, i) => <PageThumb key={p.id} view={p.view} n={i + 1} name={p.name || `Page ${i + 1}`} theme={theme} background={background} />)
+        ) : (
+          <span className="muted small">Every page is empty</span>
+        )}
+      </div>
+      <span className="muted small export-caption">
+        {pages.length > 1 ? `${pages.length} ${format.toUpperCase()} files, one per page, in a single .zip` : pages.length ? `One ${format.toUpperCase()} file` : ' '}
+        {skipped > 0 && ` · ${skipped} empty page${skipped > 1 ? 's' : ''} left out`}
+      </span>
+    </div>
+  );
+}
+
+type ExportFormat = 'png' | 'svg' | 'dxf';
+type ScopeKind = 'page' | 'selection' | 'all' | 'area';
+
 export function ExportDialog() {
   // theme, background and resolution are prefs, so menus, shortcuts and copying export the same picture
   const theme = useStore((s) => s.prefs.exportTheme ?? s.prefs.theme);
-  const setTheme = (exportTheme: 'light' | 'dark') => setPrefs({ exportTheme });
   const bg = useStore((s) => s.prefs.exportBackground ?? true);
   const scale = useStore((s) => s.prefs.exportScale ?? 3);
-  const setBg = (exportBackground: boolean) => setPrefs({ exportBackground });
-  const setScale = (exportScale: number) => setPrefs({ exportScale });
   const withScene = useStore((s) => s.prefs.exportScene ?? true);
-  const setWithScene = (exportScene: boolean) => setPrefs({ exportScene });
+  const savedFormat = useStore((s) => s.prefs.exportFormat);
   const given = useStore((s) => s.exportScope);
   const doc = useStore((s) => s.doc);
   const page = useStore((s) => s.page);
-  const clip = given?.clip;
   const selection = useStore((s) => s.selection);
+  const clip = given?.clip;
   // items handed in (right-click on a selection) or the current selection
   const pick = given?.ids?.length ? given.ids : selection;
-  const [onlySel, setOnlySel] = useState(() => !!given?.ids?.length);
-  const ids = !clip && onlySel && pick.length ? pick : undefined;
-  const scope = useMemo<ExportScope>(() => (clip ? { clip } : { ids }), [clip, ids?.join()]);
-  const empty = useMemo(() => scopeIsEmpty(scope), [doc, page, scope]);
+  const pageCount = docPages(doc).length;
+  const [kind, setKind] = useState<ScopeKind>(() => (clip ? 'area' : given?.ids?.length ? 'selection' : given?.allPages && pageCount > 1 ? 'all' : 'page'));
+  const picked: ExportFormat = savedFormat === 'svg' || savedFormat === 'dxf' ? savedFormat : 'png';
+  // DXF has no cropped form: an area is always a picture
+  const format: ExportFormat = kind === 'area' && picked === 'dxf' ? 'png' : picked;
+  const ids = kind === 'selection' && pick.length ? pick : undefined;
+  const scope = useMemo<ExportScope>(() => (kind === 'area' && clip ? { clip } : { ids }), [kind, clip, ids?.join()]);
+  const all = kind === 'all';
+  const pagesOut = useMemo(() => (all ? exportablePages(doc).length : 0), [doc, all]);
+  const empty = useMemo(() => (all ? !pagesOut : scopeIsEmpty(scope)), [doc, page, scope, all, pagesOut]);
   const done = () => set({ dialog: null, exportScope: null });
-  const Card = ({ icon, title, desc, onClick, disabled }: { icon: ReactNode; title: string; desc: string; onClick: () => void; disabled?: boolean }) => (
-    <button
-      className="export-card"
-      disabled={disabled}
-      title={disabled ? 'Nothing to export in this scope' : undefined}
-      onClick={() => {
-        done();
-        onClick();
-      }}
-    >
+  const run = (fn: () => unknown) => () => {
+    done();
+    fn();
+  };
+  const pickScope = (k: ScopeKind) => {
+    // an area is drawn on the canvas first; the dialog comes back with it
+    if (k === 'area' && (!clip || kind === 'area')) return startAreaExport('png');
+    setKind(k);
+  };
+  const save = () => {
+    const look = { theme, background: bg, scale };
+    if (all) return exportAllPages(format, look);
+    if (kind === 'area' && clip) return doClipExport(format as 'png' | 'svg', clip, { ...scopeSvgOptions(scope, format as 'png' | 'svg', look), scale });
+    return format === 'dxf' ? doExport('dxf', { ids }) : doExport(format, { ...look, ids });
+  };
+  const what = all ? `${pagesOut} page${pagesOut === 1 ? '' : 's'}` : kind === 'area' ? 'area' : ids ? `${ids.length} item${ids.length > 1 ? 's' : ''}` : pageCount > 1 ? 'this page' : 'drawing';
+  const Item = ({ icon, title, desc, onClick }: { icon: ReactNode; title: string; desc: string; onClick: () => void }) => (
+    <button className="export-card" title={desc} onClick={run(onClick)}>
       <span className="export-icon">{icon}</span>
       <span>
         <b>{title}</b>
@@ -786,89 +867,110 @@ export function ExportDialog() {
       </span>
     </button>
   );
-  const image = (kind: 'png' | 'svg') => () =>
-    clip ? doClipExport(kind, clip, { ...scopeSvgOptions(scope, kind, { theme, background: bg }), scale }) : doExport(kind, { theme, background: bg, scale, ids });
+  const image = format !== 'dxf';
   return (
-    <Modal title={clip ? 'Export area' : ids ? `Export ${ids.length} item${ids.length > 1 ? 's' : ''}` : 'Export'} onClose={done} width={680} className="export-modal">
-      <ExportPreview scope={scope} theme={theme} background={bg} scale={scale} />
-      <div className="export-opts">
-        <Field label="Image theme" hint="Every image export uses it; a page colour set in Inspector → Background wins over it">
-          <Segmented
-            value={theme}
+    <Modal title="Export" onClose={done} width={780} className="export-modal">
+      <div className="export-main">
+        <div className="export-left">
+          <Segmented<ScopeKind>
+            className="export-scope"
+            value={kind}
+            onChange={pickScope}
             options={[
-              { value: 'light', label: 'Light' },
-              { value: 'dark', label: 'Dark' },
+              { value: 'page', label: pageCount > 1 ? 'This page' : 'Drawing', title: 'Everything on the page you are looking at' },
+              ...(pick.length ? [{ value: 'selection' as const, label: `Selection (${pick.length})`, title: 'Only the selected items, and the wires between them' }] : []),
+              ...(pageCount > 1 ? [{ value: 'all' as const, label: `All pages (${pageCount})`, title: 'Every page as its own file, together in one .zip' }] : []),
+              { value: 'area', label: kind === 'area' ? 'Area · redraw' : 'Area…', title: 'Drag a rectangle on the canvas; wires crossing its edge are cut' },
             ]}
-            onChange={setTheme}
           />
-        </Field>
-        <Field label="Background" hint="Paint the canvas colour behind the drawing; off leaves it transparent">
-          <Toggle checked={bg} onChange={setBg} />
-        </Field>
-        <Field label="PNG resolution" hint="PNG only; SVG stays vector">
-          <Segmented
-            value={scale}
-            options={[
-              { value: 1, label: '1×' },
-              { value: 2, label: '2×' },
-              { value: 3, label: '3×' },
-              { value: 4, label: '4×' },
-            ]}
-            onChange={setScale}
-          />
-        </Field>
-        <Field label="Include circuit (re-editable)" hint="PNG and SVG files carry the circuit: open, import or drop them into Nodal to edit it again">
-          <Toggle checked={withScene} onChange={setWithScene} />
-        </Field>
-        {!clip && pick.length > 0 && (
-          <Field label={`Only selection (${pick.length})`}>
-            <Toggle checked={onlySel} onChange={setOnlySel} />
-          </Field>
-        )}
-        {clip && (
-          <Field label="Area">
-            <button className="secondary-btn" onClick={() => startAreaExport('png')}>
-              Draw another area
+          {all ? <AllPagesPreview theme={theme} background={bg} format={format} /> : <ExportPreview scope={scope} theme={theme} background={bg} format={format} scale={scale} />}
+        </div>
+        <div className="export-side">
+          <div className="export-label">Format</div>
+          <div className="export-formats" role="radiogroup" aria-label="Format">
+            {(
+              [
+                ['png', <FileImage size={18} />, 'PNG', 'Image for docs & chat'],
+                ['svg', <FileCode2 size={18} />, 'SVG', 'Scalable vector'],
+                ['dxf', <Layers3 size={18} />, 'DXF', 'For CAD tools'],
+              ] as const
+            ).map(([f, icon, name, desc]) => (
+              <button
+                key={f}
+                role="radio"
+                aria-checked={format === f}
+                className={format === f ? 'export-format active' : 'export-format'}
+                disabled={f === 'dxf' && kind === 'area'}
+                title={f === 'dxf' && kind === 'area' ? 'An area exports as a picture only' : desc}
+                onClick={() => setPrefs({ exportFormat: f })}
+              >
+                {icon}
+                <b>{name}</b>
+                <small>{desc}</small>
+              </button>
+            ))}
+          </div>
+          <div className="export-label">Look</div>
+          <div className="export-settings">
+            <Field label="Theme" hint={image ? 'A page colour set in Inspector → Background wins over it' : 'DXF carries no colours'}>
+              <Segmented
+                value={theme}
+                options={[
+                  { value: 'light', label: 'Light' },
+                  { value: 'dark', label: 'Dark' },
+                ]}
+                onChange={(exportTheme) => setPrefs({ exportTheme })}
+              />
+            </Field>
+            {image && (
+              <Field label="Background" hint="Paint the page colour behind the drawing; off leaves it transparent">
+                <Toggle checked={bg} onChange={(exportBackground) => setPrefs({ exportBackground })} />
+              </Field>
+            )}
+            {format === 'png' && (
+              <Field label="Resolution">
+                <Segmented
+                  value={scale}
+                  options={[1, 2, 3, 4].map((n) => ({ value: n, label: `${n}×` }))}
+                  onChange={(exportScale) => setPrefs({ exportScale })}
+                />
+              </Field>
+            )}
+            {image && (
+              <Field label="Re-editable" hint="The file carries the circuit: open, import or drop it into Nodal to edit it again">
+                <Toggle checked={withScene} onChange={(exportScene) => setPrefs({ exportScene })} />
+              </Field>
+            )}
+          </div>
+          <div className="export-actions">
+            <button className="primary-btn" disabled={empty} onClick={run(save)} title={empty ? 'Nothing to export' : undefined}>
+              <Download size={16} /> Export {format.toUpperCase()}
+              <span className="export-what">· {what}{all && pagesOut > 1 ? ' (.zip)' : ''}</span>
             </button>
-          </Field>
-        )}
-        <p className="muted small" style={{ gridColumn: '1 / -1', margin: 0 }}>
-          Theme, background and resolution set here also apply to copying and to exports from the menus, shortcuts and right-click.
-        </p>
+            {!all && (
+              <button className="secondary-btn" disabled={empty} onClick={run(() => copyScope(scope, { theme, background: bg, scale }))} title="Copy the picture to paste into any app, or back into Nodal">
+                <Copy size={16} /> Copy image
+              </button>
+            )}
+          </div>
+          <p className="muted small export-note">These settings also apply to copying and to quick exports from menus and shortcuts.</p>
+        </div>
       </div>
-      <div className="export-group">Drawing · {clip ? 'this area' : ids ? 'selected items' : 'this page'}</div>
-      <div className="export-grid">
-        <Card icon={<FileImage size={20} />} title="PNG image" desc="High-resolution bitmap for documents & chat" onClick={image('png')} disabled={empty} />
-        <Card icon={<FileCode2 size={20} />} title="SVG vector" desc="Crisp, editable in Inkscape / Illustrator / Figma" onClick={image('svg')} disabled={empty} />
-        <Card icon={<Copy size={20} />} title="Copy to clipboard" desc="The picture above, to paste into any app (or back into Nodal)" onClick={() => copyScope(scope, { theme, background: bg, scale })} disabled={empty} />
-        {!clip && <Card icon={<Layers3 size={20} />} title="DXF (CAD)" desc={`${ids ? 'The selection' : 'This page'} as layered CAD entities for AutoCAD, LibreCAD, BricsCAD`} onClick={() => doExport('dxf', { ids })} disabled={empty} />}
-        {!clip && <Card icon={<Scan size={20} />} title="Area…" desc="Drag a rectangle on the canvas, then preview it here; wires crossing its edge are cut" onClick={() => startAreaExport('png')} />}
+      <div className="export-more">
+        <div className="export-label">
+          More formats <span className="export-label-note">· {ids ? 'selected items only' : 'whole circuit, every page'}</span>
+        </div>
+        <div className="export-grid">
+          <Item icon={<Printer size={18} />} title="Print / PDF" desc="Every page, or “Save as PDF”" onClick={filePrint} />
+          <Item icon={<Film size={18} />} title="Video" desc="Your presentation frames as MP4 / WebM" onClick={() => set({ dialog: 'video' })} />
+          <Item icon={<FileText size={18} />} title="SPICE netlist" desc="Simulate in LTspice / ngspice" onClick={() => doExport('spice', { ids })} />
+          <Item icon={<FileText size={18} />} title="KiCad netlist" desc="Parts, footprints and nets for PCB layout" onClick={() => doExport('kicad', { ids })} />
+          <Item icon={<FileSpreadsheet size={18} />} title="Bill of materials" desc="CSV with footprints, part numbers, DNP" onClick={() => doExport('bom', { ids })} />
+          <Item icon={<FileJson size={18} />} title="JSON" desc="Full circuit data for scripts & tools" onClick={() => doExport('json', { ids })} />
+          {ids && <Item icon={<LayoutTemplate size={18} />} title="Template" desc="The selection as a reusable block for Import" onClick={() => exportTemplateFile(ids)} />}
+          <Item icon={<Shapes size={18} />} title="Symbol library" desc="My symbols, to import into another library" onClick={exportLibraryFile} />
+        </div>
       </div>
-      {!clip && !ids && (
-        <>
-          <div className="export-group">Print &amp; video · every page</div>
-          <div className="export-grid">
-            <Card icon={<Printer size={20} />} title="Print / PDF" desc="Every page; use “Save as PDF” in the print dialog (always light, for paper)" onClick={filePrint} />
-            <Card icon={<Film size={20} />} title="Presentation video" desc="Your presentation frames as an MP4 / WebM" onClick={() => set({ dialog: 'video' })} />
-          </div>
-        </>
-      )}
-      {!clip && (
-        <>
-          <div className="export-group">Data · {ids ? 'selected items only' : 'all pages'}</div>
-          <div className="export-grid">
-            <Card icon={<FileText size={20} />} title="SPICE netlist" desc="Simulate in LTspice / ngspice" onClick={() => doExport('spice', { ids })} />
-            <Card icon={<FileText size={20} />} title="KiCad netlist" desc="Parts, footprints and nets for PCB layout" onClick={() => doExport('kicad', { ids })} />
-            <Card icon={<FileSpreadsheet size={20} />} title="Bill of materials" desc="CSV with footprints, part numbers and DNP" onClick={() => doExport('bom', { ids })} />
-            <Card icon={<FileJson size={20} />} title="JSON" desc="Full circuit data for scripts & tools" onClick={() => doExport('json', { ids })} />
-          </div>
-          <div className="export-group">Share with other Nodal users</div>
-          <div className="export-grid">
-            {ids && <Card icon={<LayoutTemplate size={20} />} title="Template" desc="The selected items as a reusable block; Import inserts it" onClick={() => exportTemplateFile(ids)} />}
-            <Card icon={<Shapes size={20} />} title="Symbol library" desc="Your own symbols (My symbols); Import adds them to another library" onClick={exportLibraryFile} />
-          </div>
-        </>
-      )}
     </Modal>
   );
 }

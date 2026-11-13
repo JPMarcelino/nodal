@@ -64,6 +64,39 @@ export function pointInRect(p: Point, r: Rect, pad = 0) {
   return p.x >= r.x - pad && p.x <= r.x + r.w + pad && p.y >= r.y - pad && p.y <= r.y + r.h + pad;
 }
 
+/** Whether `p` is inside the ellipse inscribed in `r`. */
+export function pointInEllipse(p: Point, r: Rect): boolean {
+  const rx = r.w / 2;
+  const ry = r.h / 2;
+  if (rx <= 0 || ry <= 0) return false;
+  const dx = (p.x - (r.x + rx)) / rx;
+  const dy = (p.y - (r.y + ry)) / ry;
+  return dx * dx + dy * dy <= 1;
+}
+
+/**
+ * Whether `p` lies on the ellipse inscribed in `r` within `tol` pixels. The
+ * outline is sampled finely (the same shape the canvas draws), so elongated
+ * ovals read as reliably as circles.
+ */
+export function nearEllipse(p: Point, r: Rect, tol: number): boolean {
+  const rx = r.w / 2;
+  const ry = r.h / 2;
+  if (rx <= 0 || ry <= 0) return false;
+  if (!pointInRect(p, r, tol)) return false;
+  const cx = r.x + rx;
+  const cy = r.y + ry;
+  const n = 96;
+  let prev = { x: cx + rx, y: cy };
+  for (let i = 1; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const cur = { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) };
+    if (projectOnSegment(p, prev, cur).d <= tol) return true;
+    prev = cur;
+  }
+  return false;
+}
+
 export function unionRects(rects: Rect[]): Rect | null {
   if (!rects.length) return null;
   let x1 = Infinity,

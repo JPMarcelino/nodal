@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
-import { ChevronRight, Pipette } from 'lucide-react';
+import { ChevronRight, MoreHorizontal, Pipette } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { keysFor, prettyKey } from '../store/commands';
 
@@ -105,6 +105,8 @@ export function NumberInput({
   const [v, setV] = useState(fmt(value));
   useEffect(() => setV(fmt(value)), [value]);
   const commit = (raw = v) => {
+    // untouched: keep the exact value (the box only shows it to two decimals)
+    if (raw === fmt(value)) return;
     let n = parseFloat(raw);
     if (!Number.isFinite(n)) return setV(fmt(value));
     if (min !== undefined) n = Math.max(min, n);
@@ -208,10 +210,24 @@ export function EyedropperButton({ onPick, onBefore }: { onPick: (hex: string) =
   );
 }
 
-export function ColorInput({ value, onChange, allowNone }: { value: string; onChange: (v: string) => void; allowNone?: boolean }) {
+export function ColorInput({
+  value,
+  onChange,
+  allowNone,
+  mixed,
+  noneTitle = 'Automatic',
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  allowNone?: boolean;
+  /** The selection has several colours: show none of them. */
+  mixed?: boolean;
+  /** What "no colour" means here, e.g. "No fill". */
+  noneTitle?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [rev, setRev] = useState(0);
-  const isNone = !value || value === 'none';
+  const isNone = !mixed && (!value || value === 'none');
   const ref = useRef<HTMLSpanElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<CSSProperties>({ visibility: 'hidden' });
@@ -234,7 +250,7 @@ export function ColorInput({ value, onChange, allowNone }: { value: string; onCh
       const p = popRef.current;
       if (!a || !p) return;
       const m = 8;
-      const width = Math.min(Math.max(a.width, 150), window.innerWidth - 2 * m);
+      const width = Math.min(Math.max(a.width, 212), window.innerWidth - 2 * m);
       p.style.width = `${width}px`;
       const h = p.offsetHeight;
       let top = a.bottom + 6;
@@ -254,10 +270,17 @@ export function ColorInput({ value, onChange, allowNone }: { value: string; onCh
   }, [open]);
   return (
     <span className="color-input" ref={ref}>
-      <button type="button" className={isNone ? 'swatch none' : 'swatch'} style={{ background: isNone ? undefined : swatchBg(value) }} title={isNone ? 'Automatic' : swatchTitle(value)} onClick={() => setOpen(!open)} />
+      <button
+        type="button"
+        className={mixed ? 'swatch mixed' : isNone ? 'swatch none' : 'swatch'}
+        style={{ background: isNone || mixed ? undefined : swatchBg(value) }}
+        title={mixed ? 'Mixed colours' : isNone ? noneTitle : swatchTitle(value)}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      />
       <TextInput
-        key={rev}
-        value={isNone ? '' : isInk(value) ? 'ink' : value}
+        key={`${rev}${mixed ? 'm' : ''}`}
+        value={mixed || isNone ? '' : isInk(value) ? 'ink' : value}
         onChange={(raw) => {
           const v = raw.trim();
           if (!v) return onChange(allowNone ? '' : value);
@@ -267,7 +290,7 @@ export function ColorInput({ value, onChange, allowNone }: { value: string; onCh
           if (CSS.supports('color', c)) onChange(c.toLowerCase());
           else setRev((r) => r + 1);
         }}
-        placeholder={allowNone ? 'auto' : ''}
+        placeholder={mixed ? 'mixed' : allowNone ? (noneTitle === 'Automatic' ? 'auto' : noneTitle.toLowerCase()) : ''}
         mono
       />
       {open &&
@@ -275,8 +298,8 @@ export function ColorInput({ value, onChange, allowNone }: { value: string; onCh
           <div className="swatch-pop" ref={popRef} style={pos}>
             {allowNone && (
               <button
-                className="swatch none"
-                title="Automatic"
+                className={isNone ? 'swatch none picked' : 'swatch none'}
+                title={noneTitle}
                 onClick={() => {
                   onChange('');
                   setOpen(false);
@@ -286,7 +309,7 @@ export function ColorInput({ value, onChange, allowNone }: { value: string; onCh
             {SWATCHES.map((c) => (
               <button
                 key={c}
-                className="swatch"
+                className={!mixed && value.toLowerCase() === c ? 'swatch picked' : 'swatch'}
                 style={{ background: swatchBg(c) }}
                 title={swatchTitle(c)}
                 onClick={() => {
@@ -312,13 +335,15 @@ export function Segmented<T extends string | number>({
   value,
   options,
   onChange,
+  className,
 }: {
   value: T;
   options: { value: T; label: ReactNode; title?: string }[];
   onChange: (v: T) => void;
+  className?: string;
 }) {
   return (
-    <span className="segmented">
+    <span className={className ? `segmented ${className}` : 'segmented'}>
       {options.map((o) => (
         <button key={String(o.value)} type="button" title={o.title ?? (typeof o.label === 'string' ? o.label : undefined)} className={o.value === value ? 'active' : ''} onClick={() => onChange(o.value)}>
           {o.label}
@@ -374,10 +399,72 @@ export function useFold(id: string, defaultOpen: boolean): [boolean, (open: bool
   return [open, (v) => setFolds({ [id]: v })];
 }
 
+/** One entry of an overflow (⋯) menu. */
+export interface MenuItem {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  hint?: string;
+  /** Draws a line above this entry. */
+  divider?: boolean;
+}
+
+/**
+ * A ⋯ button with a short list of actions: where the less frequent buttons of
+ * a section live, so they don't take a full row each.
+ */
+export function OverflowMenu({ items, title = 'More actions' }: { items: (MenuItem | false | null | undefined)[]; title?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('pointerdown', away, true);
+    window.addEventListener('keydown', esc, true);
+    return () => {
+      window.removeEventListener('pointerdown', away, true);
+      window.removeEventListener('keydown', esc, true);
+    };
+  }, [open]);
+  const list = items.filter(Boolean) as MenuItem[];
+  if (!list.length) return null;
+  return (
+    <span className="overflow" ref={ref}>
+      <button type="button" className={open ? 'icon-btn overflow-btn open' : 'icon-btn overflow-btn'} title={title} aria-label={title} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <MoreHorizontal size={14} />
+      </button>
+      {open && (
+        <div className="overflow-menu" role="menu">
+          {list.map((m) => (
+            <button
+              key={m.label}
+              type="button"
+              role="menuitem"
+              className={m.divider ? 'overflow-item divided' : 'overflow-item'}
+              disabled={m.disabled}
+              title={m.hint}
+              onClick={() => {
+                setOpen(false);
+                m.onClick();
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function Section({
   title,
   children,
   actions,
+  menu,
   id = title.replace(/\s*\(.*\)$/, ''),
   defaultOpen = false,
   summary,
@@ -390,6 +477,8 @@ export function Section({
   defaultOpen?: boolean;
   /** Short state shown in the header while folded, e.g. "A4 · landscape". */
   summary?: ReactNode;
+  /** Less frequent actions, behind a ⋯ button that stays in the header even while folded. */
+  menu?: (MenuItem | false | null | undefined)[];
 }) {
   const [open, setOpen] = useFold(`s:${id}`, defaultOpen);
   return (
@@ -401,6 +490,7 @@ export function Section({
           {!open && summary && <span className="section-summary">{summary}</span>}
         </button>
         {open && actions}
+        {menu && <OverflowMenu items={menu} title={`${title} actions`} />}
       </header>
       {open && <div className="section-body">{children}</div>}
     </section>

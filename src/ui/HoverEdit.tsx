@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { SWATCHES, swatchBg, swatchTitle } from './controls';
 import { restyle } from './StyleSection';
-import { lookKeys, lookOf } from '../model/style';
-import { useStore } from '../store/store';
-import type { ShapeItem } from '../model/types';
+import { lookKeys, lookOf, strokeNoun } from '../model/style';
+import { DASH_OPTIONS, dashArray } from '../model/dash';
+import { select, set as setState, useStore } from '../store/store';
+import type { Dash, ShapeItem } from '../model/types';
 
 /**
  * The small card that follows a hovered object and offers its most useful
- * style edits: a part's fill and line, a wire's colour and thickness, a text's
- * size and colour. Keeping the pointer on the card holds it open; leaving both
+ * style edits: a part's fill and line, a wire's colour, thickness and dashes,
+ * a text's size, colour and emphasis, a shape's corners and opacity, plus a
+ * shortcut to the full side panel. Keeping the pointer on the card holds it open; leaving both
  * the object and the card closes it.
  */
 
@@ -33,6 +35,18 @@ const SHAPE_NAMES: Record<ShapeItem['kind'], string> = {
 
 type ColourKind = 'fill' | 'line' | 'text';
 
+/** Closes a popover when the pointer goes down anywhere outside `ref`. */
+function useDismiss(open: boolean, close: () => void, ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) close();
+    };
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, [open, close, ref]);
+}
+
 /**
  * A colour dot that opens the palette. The dot itself shows what it paints:
  * a filled chip for a fill, a ring for a line, an "A" for text.
@@ -54,14 +68,7 @@ export function QuickColor({
   const ref = useRef<HTMLSpanElement>(null);
   const shown = value || fallback || '';
   // close when clicking anywhere outside this control (its palette included)
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('pointerdown', away, true);
-    return () => window.removeEventListener('pointerdown', away, true);
-  }, [open]);
+  useDismiss(open, () => setOpen(false), ref);
   return (
     <span className="qe-colour" ref={ref}>
       <button
@@ -127,6 +134,7 @@ export function QuickNumber({
   onChange,
   title,
   suffix,
+  icon,
 }: {
   value: number;
   min: number;
@@ -135,6 +143,8 @@ export function QuickNumber({
   onChange: (v: number) => void;
   title: string;
   suffix?: string;
+  /** A glyph before the value, for numbers a unit doesn't explain. */
+  icon?: string;
 }) {
   const set = (v: number) => onChange(Math.min(max, Math.max(min, +v.toFixed(2))));
   const label = `${+value.toFixed(2)}${suffix ?? ''}`;
@@ -144,6 +154,7 @@ export function QuickNumber({
         −
       </button>
       <span className="qe-step-value">
+        {icon && <b className="qe-step-icon">{icon}</b>}
         {+value.toFixed(2)}
         {suffix && <i>{suffix}</i>}
       </span>
@@ -152,6 +163,67 @@ export function QuickNumber({
       </button>
       <span className="sr-only">{label}</span>
     </span>
+  );
+}
+
+/** A tiny drawing of a line style. */
+function DashLine({ dash }: { dash: Dash }) {
+  return (
+    <svg className="qe-dash-line" width="22" height="8" viewBox="0 0 22 8" aria-hidden>
+      <line x1="2" y1="4" x2="20" y2="4" strokeDasharray={dashArray(dash, 1.1)} />
+    </svg>
+  );
+}
+
+/** The line style as a picture, opening a short list of the others. */
+export function QuickDash({ value, onChange, noun = 'Line' }: { value: Dash; onChange: (d: Dash) => void; noun?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useDismiss(open, () => setOpen(false), ref);
+  const label = DASH_OPTIONS.find((o) => o.value === value)?.label ?? 'Solid';
+  return (
+    <span className="qe-colour" ref={ref}>
+      <button
+        type="button"
+        className="qe-btn qe-dash"
+        title={`${noun} style: ${label}`}
+        aria-label={`${noun} style: ${label}`}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <DashLine dash={value} />
+      </button>
+      {open && (
+        <div className="qe-palette qe-dash-menu" role="listbox" aria-label={`${noun} style`}>
+          {DASH_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              className={o.value === value ? 'qe-dash-opt picked' : 'qe-dash-opt'}
+              title={o.label}
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+            >
+              <DashLine dash={o.value} />
+              <span>{o.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/** An on/off button showing a letter, for bold, italic and underline. */
+function QuickToggle({ on, onChange, title, children, className }: { on: boolean; onChange: (v: boolean) => void; title: string; children: React.ReactNode; className?: string }) {
+  return (
+    <button type="button" className={`qe-btn qe-toggle${on ? ' on' : ''}${className ? ` ${className}` : ''}`} title={title} aria-label={title} aria-pressed={on} onClick={() => onChange(!on)}>
+      {children}
+    </button>
   );
 }
 
@@ -207,11 +279,12 @@ export function HoverEdit({
   const look = lookOf(doc, it);
   const keys = new Set(lookKeys(it));
   const set = (p: Parameters<typeof restyle>[1]) => restyle([id], p);
+  const noun = strokeNoun(it);
 
   // what this object is, in a word or two
   let name = '';
   let colour: { value: string; title: string; kind: ColourKind; patch: (v: string) => Parameters<typeof restyle>[1] }[] = [];
-  let sizes: { value: number; min: number; max: number; step: number; title: string; suffix: string; set: (v: number) => void }[] = [];
+  let sizes: { value: number; min: number; max: number; step: number; title: string; suffix: string; icon?: string; set: (v: number) => void }[] = [];
   if (it.type === 'component') {
     name = it.ref || it.value || 'Part';
     colour = [
@@ -231,10 +304,30 @@ export function HoverEdit({
       sizes = [{ value: look.size ?? 16, min: 4, max: 200, step: 1, title: 'Text size', suffix: 'px', set: (size) => set({ size }) }];
     } else {
       if (keys.has('fill')) colour.push({ value: it.fill === 'none' || it.fillOpacity === 0 ? '' : (look.fill ?? ''), title: 'Fill colour', kind: 'fill' as const, patch: (fill: string) => ({ fill }) });
-      if (keys.has('line')) colour.push({ value: look.line ?? '', title: 'Line colour', kind: 'line' as const, patch: (line: string) => ({ line }) });
-      if (keys.has('width')) sizes.push({ value: look.width ?? 2, min: 0, max: 40, step: 0.5, title: 'Line width', suffix: 'px', set: (width) => set({ width }) });
+      if (keys.has('line')) colour.push({ value: look.line ?? '', title: `${noun} colour`, kind: 'line' as const, patch: (line: string) => ({ line }) });
+      if (keys.has('width')) sizes.push({ value: look.width ?? 2, min: 0, max: 40, step: 0.5, title: `${noun} width`, suffix: 'px', set: (width) => set({ width }) });
     }
   }
+
+  // line style, wherever there is a line to dash (free text has none)
+  const dash = keys.has('dash') && !(it.type === 'shape' && it.kind === 'text') ? (look.dash ?? 'solid') : null;
+  // emphasis for free text
+  const emphasis =
+    it.type === 'shape' && it.kind === 'text'
+      ? [
+          { key: 'bold' as const, on: !!look.bold, title: 'Bold', glyph: 'B' },
+          { key: 'italic' as const, on: !!look.italic, title: 'Italic', glyph: 'I' },
+          { key: 'underline' as const, on: !!look.underline, title: 'Underline', glyph: 'U' },
+        ]
+      : [];
+  if (keys.has('radius')) sizes.push({ value: look.radius ?? 0, min: 0, max: 80, step: 2, title: 'Corner radius', suffix: '', icon: '╭', set: (radius) => set({ radius }) });
+  if (keys.has('opacity'))
+    sizes.push({ value: Math.round((look.opacity ?? 1) * 100), min: 10, max: 100, step: 10, title: 'Opacity', suffix: '%', set: (v) => set({ opacity: v / 100 }) });
+
+  const more = () => {
+    select([id]);
+    setState({ rightPanel: true });
+  };
 
   return (
     <div
@@ -254,9 +347,23 @@ export function HoverEdit({
       {colour.map((c) => (
         <QuickColor key={c.title} value={c.value} title={c.title} kind={c.kind} onChange={(v) => set(c.patch(v))} />
       ))}
+      {dash && <QuickDash value={dash} noun={noun} onChange={(d) => set({ dash: d })} />}
+      {emphasis.length > 0 && (
+        <span className="qe-group">
+          {emphasis.map((e) => (
+            <QuickToggle key={e.key} on={e.on} title={e.title} className={e.key} onChange={(v) => set({ [e.key]: v })}>
+              {e.glyph}
+            </QuickToggle>
+          ))}
+        </span>
+      )}
       {sizes.map((s) => (
-        <QuickNumber key={s.title} value={s.value} min={s.min} max={s.max} step={s.step} title={s.title} suffix={s.suffix} onChange={s.set} />
+        <QuickNumber key={s.title} value={s.value} min={s.min} max={s.max} step={s.step} title={s.title} suffix={s.suffix} icon={s.icon} onChange={s.set} />
       ))}
+      <span className="he-divider" />
+      <button type="button" className="qe-btn qe-more" title="All settings (selects it and opens the side panel)" aria-label="All settings" onClick={more}>
+        ⋯
+      </button>
     </div>
   );
 }

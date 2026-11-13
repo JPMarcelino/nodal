@@ -1,4 +1,7 @@
 import { sheetNumber, viewDoc } from '../model/pages';
+import { PinPanel, SymbolProps } from './SymbolEditor';
+import { isPin } from '../model/symbolPage';
+import { openSymbolEditor } from '../store/symbolSession';
 import {
   AlignCenterHorizontal,
   ChevronsDownUp,
@@ -49,7 +52,7 @@ import * as A from '../store/actions';
 import { S, goToItems, mutate, readOnly, select, set, setPrefs, toast, useStore } from '../store/store';
 import { ColorInput, Field, More, NumberInput, Section, Segmented, Slider, TextInput, Toggle, setFolds } from './controls';
 import { ExplainShapePanel, FramePanel } from './ExplainInspector';
-import { DashSelect, Row, StyleSection, SwatchRow, TextFormatRows, restyle, type TextFormat } from './StyleSection';
+import { DashSelect, Row, StyleSection, TextFormatRows, restyle, type TextFormat } from './StyleSection';
 import { TEXT_KEYS, commonLook, mergeLabelStyle } from '../model/style';
 import { PanelResizer, usePanelWidth } from './PanelResizer';
 import { useSettledDoc } from './useSettledDoc';
@@ -203,7 +206,20 @@ function SheetSection() {
     d.settings.sheet = { ...sheetOf(d), ...centredSheet(d.settings, docBounds(d)) };
   };
   return (
-    <Section title="Drawing frame" defaultOpen={false} summary={on ? `${sheet.size} · ${sheet.orientation}` : 'off'}>
+    <Section
+      title="Drawing frame"
+      defaultOpen={false}
+      summary={on ? `${sheet.size} · ${sheet.orientation}` : 'off'}
+      menu={[
+        on && {
+          label: 'Centre the sheet on the circuit',
+          onClick: () => {
+            mutate((d) => centre(d as CircuitDoc));
+            setTimeout(() => A.fitView(), 0);
+          },
+        },
+      ]}
+    >
       <Field label="Frame & title block" hint="Sheet border with zone markers and a title block, used for printing and export">
         <Toggle
           checked={on}
@@ -261,15 +277,6 @@ function SheetSection() {
               <NumberInput value={sheet.y} step={10} suffix="y" onChange={(y) => setSheet({ y })} />
             </span>
           </Field>
-          <button
-            className="secondary-btn full"
-            onClick={() => {
-              mutate((d) => centre(d as CircuitDoc));
-              setTimeout(() => A.fitView(), 0);
-            }}
-          >
-            Centre the sheet on the circuit
-          </button>
         </>
       )}
     </Section>
@@ -292,7 +299,7 @@ function DocumentPanel() {
     <>
       <Section title="Circuit">
         <Field label="Name">
-          <TextInput value={name} onChange={(v) => mutate((d) => void (d.name = v || 'Untitled circuit'))} />
+          <TextInput value={name} onChange={(v) => mutate((d) => void (d.name = v.trim() || 'Untitled circuit'))} />
         </Field>
         <Field label="Author">
           <TextInput value={settings.author} onChange={(v) => upd((s) => (s.author = v))} placeholder="Your name" />
@@ -315,7 +322,20 @@ function DocumentPanel() {
           </span>
         </div>
       </Section>
-      <Section title="Default wire style" defaultOpen={false} summary={`${settings.wire.width}px · ${settings.hops === 'arc' ? 'hops' : settings.hops === 'gap' ? 'gaps' : 'no crossings'}`}>
+      <Section
+        title="Default wire style"
+        defaultOpen={false}
+        menu={[
+          {
+            label: 'Reset all wires to this style',
+            hint: 'Drop the own style of every wire, on every page',
+            onClick: () => {
+              mutate((d) => Object.values(d.items).forEach((i) => i.type === 'wire' && !i.locked && delete (i as WireItem).style), undefined, { allPages: true });
+              toast('Wires now use the default style');
+            },
+          },
+        ]}
+        summary={`${settings.wire.width}px · ${settings.hops === 'arc' ? 'hops' : settings.hops === 'gap' ? 'gaps' : 'no crossings'}`}>
         {brush && (
           <div className="btn-row">
             <span className="small">New wires use a picked style</span>
@@ -344,15 +364,6 @@ function DocumentPanel() {
         <Field label="Junction dot size">
           <NumberInput value={settings.junctionSize} min={1} max={12} step={0.5} suffix="px" onChange={(v) => upd((s) => (s.junctionSize = v))} />
         </Field>
-        <button
-          className="secondary-btn full"
-          onClick={() => {
-            mutate((d) => Object.values(d.items).forEach((i) => i.type === 'wire' && !i.locked && delete (i as WireItem).style), undefined, { allPages: true });
-            toast('Wires now use the default style');
-          }}
-        >
-          Reset all wires to default style
-        </button>
       </Section>
       <Section
         title="Show"
@@ -370,15 +381,16 @@ function DocumentPanel() {
         </Field>
       </Section>
       <SheetSection />
-      <Section title="Canvas" defaultOpen={false} summary={`${settings.grid}px grid${settings.snap ? ' · snap' : ''}`}>
-        <Field label="Grid">
-          <NumberInput value={settings.grid} min={2} max={100} suffix="px" onChange={(v) => upd((s) => (s.grid = v))} />
+      <Section title="Grid & canvas" id="canvas" defaultOpen={false} summary={`${+settings.grid.toFixed(4)}px grid${settings.snap ? ' · snap' : ''}`}>
+        <Field label="Grid size" hint="Spacing of the grid and of one snap step (0.01–100 px)">
+          <NumberInput value={settings.grid} min={0.01} max={100} suffix="px" onChange={(v) => upd((s) => (s.grid = v))} />
         </Field>
         <Field label="Show grid">
           <Toggle checked={settings.showGrid} onChange={(v) => upd((s) => (s.showGrid = v))} />
         </Field>
         <Field label="Grid style">
           <Segmented
+            className="even"
             value={settings.gridStyle ?? 'dots'}
             options={GRID_STYLES.map((v) => ({ value: v, label: v === 'major' ? 'Major' : GRID_STYLE_NAMES[v], title: GRID_STYLE_NAMES[v] }))}
             onChange={(v) => upd((s) => (s.gridStyle = v))}
@@ -452,11 +464,60 @@ function DidYouKnow() {
 }
 
 /** Footprint, sourcing, DNP and the user's own fields of a part. */
+/** "+ Add detail": a short menu of the standard fields not shown yet, and a custom one. */
+function AddDetail({ options, onCustom }: { options: { label: string; onClick: () => void }[]; onCustom: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, [open]);
+  return (
+    <span className="add-detail" ref={ref}>
+      <button className="link-btn add-field" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Plus size={12} /> Add detail
+      </button>
+      {open && (
+        <span className="add-detail-chips">
+          {options.map((o) => (
+            <button
+              key={o.label}
+              type="button"
+              className="chip"
+              onClick={() => {
+                o.onClick();
+                setOpen(false);
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="chip custom"
+            onClick={() => {
+              onCustom();
+              setOpen(false);
+            }}
+          >
+            Custom…
+          </button>
+        </span>
+      )}
+    </span>
+  );
+}
+
 function PartDetails({ c }: { c: ComponentItem }) {
   const doc = useStore((s) => s.doc);
   const def = getSymbol(doc, c.symbol);
   const upd = (fn: (c: ComponentItem) => void) => A.updateItems([c.id], (it) => fn(it as ComponentItem));
   const [adding, setAdding] = useState(false);
+  // standard fields show once they have a value, or once picked from "Add detail" (kept for this part while it stays selected)
+  const [picked, setPicked] = useState<string[]>([]);
+  useEffect(() => setPicked([]), [c.id]);
   const custom = customFieldKeys(c, def);
   const setProp = (k: string, v: string) =>
     upd((x) => {
@@ -471,10 +532,12 @@ function PartDetails({ c }: { c: ComponentItem }) {
     upd((x) => (x.props[k] = ''));
   };
   const datasheet = c.props.datasheet?.trim();
+  const shownStd = PART_FIELDS.filter((f) => c.props[f.key]?.trim() || picked.includes(f.key));
+  const missing = PART_FIELDS.filter((f) => !shownStd.includes(f));
   const filled = PART_FIELDS.filter((f) => c.props[f.key]?.trim()).length + custom.filter((k) => c.props[k]?.trim()).length;
   return (
     <Section title="Part details" defaultOpen={false} summary={[filled ? `${filled} filled` : 'empty', isDnp(c) && 'DNP'].filter(Boolean).join(' · ')}>
-      {PART_FIELDS.map((f) => (
+      {shownStd.map((f) => (
         <Field key={f.key} label={f.label}>
           <TextInput value={c.props[f.key] ?? ''} placeholder={f.placeholder} onChange={(v) => setProp(f.key, v)} />
           {f.key === 'datasheet' && datasheet && /^(https?:\/\/|www\.)/i.test(datasheet) && (
@@ -506,9 +569,10 @@ function PartDetails({ c }: { c: ComponentItem }) {
           />
         </Field>
       ) : (
-        <button className="link-btn add-field" onClick={() => setAdding(true)}>
-          <Plus size={12} /> Add field
-        </button>
+        <AddDetail
+          options={missing.map((f) => ({ label: f.label, onClick: () => setPicked((p) => [...p, f.key]) }))}
+          onCustom={() => setAdding(true)}
+        />
       )}
       <Field label="Do not populate" hint="Keep the part in the drawing but leave it off the board and out of the BOM quantities">
         <Toggle checked={isDnp(c)} onChange={(v) => upd((x) => (v ? (x.props[DNP] = '1') : delete x.props[DNP]))} />
@@ -580,21 +644,17 @@ function LabelSection({ c, def }: { c: ComponentItem; def: SymbolDef }) {
     <Section
       title="Labels"
       summary={def.valueIsLabel ? shownNames : `${shownNames} · ${spotName.toLowerCase()}`}
-      actions={
-        (c.refStyle || c.valueStyle || moved || c.labelSpot) && (
-          <button
-            className="link-btn"
-            title="Put both labels back in their default spots with the default look"
-            onClick={() =>
-              upd((x) => {
-                for (const k of ['refStyle', 'valueStyle', 'labelSpot', 'labelDx', 'labelDy', 'valueDx', 'valueDy'] as const) delete x[k];
-              })
-            }
-          >
-            <RotateCcw size={11} /> Reset
-          </button>
-        )
-      }
+      menu={[
+        {
+          label: 'Reset both labels',
+          hint: 'Put both labels back in their default spots with the default look',
+          disabled: !(c.refStyle || c.valueStyle || moved || c.labelSpot),
+          onClick: () =>
+            upd((x) => {
+              for (const k of ['refStyle', 'valueStyle', 'labelSpot', 'labelDx', 'labelDy', 'valueDx', 'valueDy'] as const) delete x[k];
+            }),
+        },
+      ]}
     >
       {def.valueIsLabel ? (
         <Field label="Show name" hint="Hide the name on the canvas; the label still joins the net">
@@ -696,13 +756,13 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
         <div>
           <div className="comp-title">{def.valueIsLabel ? c.value : c.ref}</div>
           <div className="comp-sub">{def.name}</div>
-          <button className="link-btn" onClick={() => set({ dialog: 'symbol-editor', editingSymbol: def.id })}>
+          <button className="link-btn" onClick={() => openSymbolEditor({ editing: def.id })}>
             <Pencil size={11} /> {def.custom ? 'Edit symbol' : 'Customise symbol'}
           </button>
         </div>
       </div>
       <ArrangeBar count={1} />
-      <Section title="Properties" summary={[!def.valueIsLabel && c.ref, c.value].filter(Boolean).join(' · ')}>
+      <Section title="Properties" defaultOpen summary={[!def.valueIsLabel && c.ref, c.value].filter(Boolean).join(' · ')}>
         {!def.valueIsLabel && (
           <Field label="Name">
             <TextInput value={c.ref} onChange={(v) => upd((x) => (x.ref = v))} />
@@ -722,6 +782,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
           </Field>
         )}
       </Section>
+      <StyleSection ids={[c.id]} noText />
       <LabelSection c={c} def={def} />
       <Section title="Transform" summary={`${c.rot}°${c.flipX ? ' · flipped' : ''}${c.scale && c.scale !== 1 ? ` · ×${c.scale}` : ''}`}>
         <Field label="Rotation">
@@ -742,8 +803,6 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
           </span>
         </Field>
       </Section>
-      <StyleSection ids={[c.id]} noText />
-      {hasPartFields(def) && <PartDetails c={c} />}
       {def.ports.length > 0 && (
         <Section
           title={`Pins (${def.ports.length})`}
@@ -765,6 +824,7 @@ function ComponentPanel({ c }: { c: ComponentItem }) {
           </div>
         </Section>
       )}
+      {hasPartFields(def) && <PartDetails c={c} />}
     </>
   );
 }
@@ -792,7 +852,48 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
         {wires.length > 1 ? `${wires.length} wires` : 'Wire'}
         {net && <span className="net-chip">net {net.name}</span>}
       </div>
-      <Section title="Style">
+      <Section
+        title="Style"
+        id="Wire style"
+        defaultOpen
+        summary={`${+style.width.toFixed(2)}px${style.dash !== 'solid' ? ` · ${style.dash}` : ''}${first.style ? ' · own style' : ''}`}
+        menu={[
+          {
+            label: 'Use the default style',
+            hint: "Drop this wire's own style and follow the circuit's default",
+            disabled: !wires.some((w) => w.style),
+            onClick: () =>
+              A.updateItems(ids, (it) => {
+                if (it.type === 'wire') delete it.style;
+              }),
+          },
+          {
+            label: brush ? 'Stop using for new wires' : 'Use for new wires',
+            hint: 'New wires will be drawn with this style',
+            onClick: () => {
+              set({ wireBrush: brush ? null : { ...first.style } });
+              toast(brush ? 'New wires use the default style' : 'New wires will use this style');
+            },
+          },
+          {
+            label: 'Apply to the whole net',
+            divider: true,
+            disabled: !net,
+            onClick: () => {
+              if (!net) return;
+              const targets = net.wires.filter((id) => !doc.items[id]?.locked);
+              A.updateItems(
+                targets,
+                (it) => {
+                  if (it.type === 'wire') it.style = { ...first.style };
+                },
+                { allPages: true },
+              );
+              toast(`Applied to ${targets.length} of ${net.wires.length} wires of net ${net.name}`);
+            },
+          },
+        ]}
+      >
         <WireStyleEditor style={style} onChange={upd} />
         <Field label="At crossings" hint="Which wire hops over at crossings. For a single crossing, rest the pointer on it to choose, or to solder it">
           <Segmented
@@ -816,41 +917,11 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
             }
           />
         </Field>
-        <div className="btn-row">
-          <button className="secondary-btn" onClick={() => A.updateItems(ids, (it) => {
-            if (it.type === 'wire') delete it.style;
-          })}>
-            Use default
-          </button>
-          <button
-            className={brush ? 'secondary-btn active' : 'secondary-btn'}
-            title="New wires will be drawn with this style"
-            onClick={() => {
-              set({ wireBrush: brush ? null : { ...first.style } });
-              toast(brush ? 'New wires use the default style' : 'New wires will use this style');
-            }}
-          >
-            {brush ? 'Stop using for new wires' : 'Use for new wires'}
-          </button>
-        </div>
-        <button
-          className="secondary-btn full"
-          onClick={() => {
-            if (!net) return;
-            const targets = net.wires.filter((id) => !doc.items[id]?.locked);
-            A.updateItems(targets, (it) => {
-              if (it.type === 'wire') it.style = { ...first.style };
-            }, { allPages: true });
-            toast(`Applied to ${targets.length} of ${net.wires.length} wires of net ${net.name}`);
-          }}
-        >
-          Apply style to whole net
-        </button>
       </Section>
       {wires.length === 1 && (
         <Section title="Label">
           <Field label="Text" hint="Supports maths, e.g. $V_{CC}$">
-            <TextInput value={first.label ?? ''} math focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => updLabel((w) => (w.label = v || undefined))} />
+            <TextInput value={first.label ?? ''} math focusKey="value" placeholder="e.g. SDA, 5V, CLK" onChange={(v) => updLabel((w) => (w.label = v.trim() || undefined))} />
           </Field>
           {first.label && (
             <>
@@ -891,7 +962,7 @@ function WirePanel({ wires }: { wires: WireItem[] }) {
         </Section>
       )}
       {wires.length > 1 && wires.some((w) => w.label) && (
-        <Section title="Labels">
+        <Section title="Labels" id="Wire labels">
           <LabelTextRows ids={wires.filter((w) => w.label).map((w) => w.id)} />
         </Section>
       )}
@@ -942,7 +1013,22 @@ function JunctionPanel({ junctions }: { junctions: JunctionItem[] }) {
         Solder{junctions.length > 1 ? ` · ${junctions.length} joints` : ''}
         <span className="net-chip">{junctions.length > 1 ? 'dots' : 'dot'}</span>
       </div>
-      <Section title="Dot" summary={`${size}px${color ? '' : ' · follows the wires'}`}>
+      <Section
+        title="Dot"
+        summary={`${size}px${color ? '' : ' · follows the wires'}`}
+        defaultOpen
+        menu={[
+          {
+            label: "Back to the circuit's look",
+            disabled: !touched,
+            onClick: () =>
+              upd((j) => {
+                delete j.color;
+                delete j.size;
+              }),
+          },
+        ]}
+      >
         <Field label="Colour" hint="Unset follows the first wire soldered here, and changes with it">
           <ColorInput
             value={color}
@@ -969,18 +1055,6 @@ function JunctionPanel({ junctions }: { junctions: JunctionItem[] }) {
             }
           />
         </Field>
-        <button
-          className="secondary-btn full"
-          disabled={!touched}
-          onClick={() =>
-            upd((j) => {
-              delete j.color;
-              delete j.size;
-            })
-          }
-        >
-          Back to the circuit's look
-        </button>
         <div className="section-note">A solder appears where three or more conductors meet.</div>
       </Section>
     </>
@@ -1049,7 +1123,7 @@ function ShapePanel({ shapes }: { shapes: ShapeItem[] }) {
               <Field label="Head size">
                 <NumberInput value={first.headSize ?? defaultHeadSize(first.strokeWidth)} min={2} max={80} suffix="px" onChange={(v) => upd((s) => (s.headSize = v))} />
               </Field>
-              <Field label="Route" hint="Elbow: square corners, routed round the ends' sides. Drag the + on a stretch to add a bend; double-click a bend to remove it">
+              <Field label="Route" hint="Elbow: square corners, routed round the ends' sides. Curved: a smooth arch. Drag the + on a plain line to bow it (Alt: sharp corner); Shift-click or double-click a point to remove it">
                 <Segmented
                   value={first.route ?? 'straight'}
                   options={ROUTE_OPTIONS}
@@ -1490,18 +1564,22 @@ function WireToolPanel() {
     <>
       <div className="panel-title">Wire tool</div>
       <p className="tool-note">For the next wires you draw.</p>
-      <Section title="Next wire">
+      <Section
+        title="Next wire"
+        defaultOpen
+        summary={brush ? 'your own style' : 'default style'}
+        menu={[
+          {
+            label: "Use the circuit's default",
+            onClick: () => set({ wireBrush: null }),
+            disabled: !brush,
+          },
+        ]}
+      >
         <WireStyleEditor style={style} onChange={(p) => set({ wireBrush: { ...brush, ...p } })} />
-        <div className="btn-row">
-          <span className="small">{brush ? 'Your own style' : "The circuit's default style"}</span>
-          {brush && (
-            <button className="secondary-btn" onClick={() => set({ wireBrush: null })}>
-              Use the default
-            </button>
-          )}
-        </div>
+        <p className="tool-note">{brush ? 'Your own style for the next wires.' : "The circuit's default style."}</p>
       </Section>
-      <Section title="Matching">
+      <Section title="Matching" defaultOpen summary={match ? 'on' : 'off'}>
         <Field label="Match the wire I start from" hint="A wire started on another wire, its end or junction, or a pin it is on takes that wire's colour, width, corners and line style">
           <Toggle checked={match} onChange={(wireMatchStart) => setPrefs({ wireMatchStart })} />
         </Field>
@@ -1526,6 +1604,8 @@ function ShapeToolPanel({ tool }: { tool: ShapeTool }) {
   const isText = tool === 'text';
   const isLine = tool === 'line' || tool === 'arrow';
   const isZone = tool === 'zone';
+  // lines and paths are the stroke itself; rectangles, ellipses and polygons get an outline
+  const stroke = isLine || tool === 'path' ? 'Line' : 'Outline';
   const fmt: Partial<TextFormat> = {
     font: v.font ?? '',
     size: v.fontSize ?? (isText ? 16 : 13),
@@ -1550,18 +1630,24 @@ function ShapeToolPanel({ tool }: { tool: ShapeTool }) {
       <div className="panel-title">{TOOL_NAMES[tool]} tool</div>
       <p className="tool-note">For the next {isText ? 'texts' : 'shapes'} you draw with it.</p>
       {!isText && (
-        <Section title={isZone ? 'Colour' : 'Line'}>
-          <Row label={isZone ? 'Colour' : 'Colour'}>
-            <SwatchRow
+        <Section
+          title={isZone ? 'Colour' : stroke}
+          id={isZone ? 'tool:Colour' : 'tool:Line'}
+          defaultOpen
+          menu={[{ label: 'Reset to defaults', onClick: reset, disabled: !preset }]}
+        >
+          <Row label="Colour">
+            <ColorInput
               value={isZone ? (preset?.fill ?? '') : v.stroke === 'none' ? '' : (v.stroke ?? '')}
+              allowNone
               onChange={(c) => (isZone ? upd(c ? { fill: c, stroke: c } : { fill: undefined, stroke: undefined }) : upd({ stroke: c || 'none' }))}
-              noneTitle={isZone ? 'A new colour for each zone' : 'No outline'}
+              noneTitle={isZone ? 'New colour each' : `No ${stroke.toLowerCase()}`}
             />
           </Row>
           <Field label="Width">
             <NumberInput value={v.strokeWidth ?? 2} min={0} max={40} step={0.5} suffix="px" onChange={(strokeWidth) => upd({ strokeWidth })} />
           </Field>
-          <Field label="Line style">
+          <Field label={`${stroke} style`}>
             <DashSelect value={v.dash ?? 'solid'} onChange={(dash) => upd({ dash })} />
           </Field>
           {(tool === 'rect' || isZone) && (
@@ -1582,10 +1668,11 @@ function ShapeToolPanel({ tool }: { tool: ShapeTool }) {
         </Section>
       )}
       {!isText && !isLine && (
-        <Section title="Fill">
+        <Section title="Fill" id="tool:Fill" defaultOpen>
           {!isZone && (
             <Row label="Colour">
-              <SwatchRow
+              <ColorInput
+                allowNone
                 value={(v.fillOpacity ?? 0) > 0 && v.fill !== 'none' ? (v.fill ?? '') : ''}
                 // a colour picked while the fill is see-through makes it solid
                 onChange={(c) => upd(c ? { fill: c, fillOpacity: (v.fillOpacity ?? 0) > 0 ? v.fillOpacity : 1 } : { fillOpacity: 0 })}
@@ -1594,18 +1681,21 @@ function ShapeToolPanel({ tool }: { tool: ShapeTool }) {
             </Row>
           )}
           <Field label="Opacity">
-            <Slider value={v.fillOpacity ?? 0} min={0} max={1} onChange={(fillOpacity) => upd({ fillOpacity })} />
+            <span className="row-gap">
+              <Slider value={v.fillOpacity ?? 0} min={0} max={1} onChange={(fillOpacity) => upd({ fillOpacity })} />
+              <span className="mono small">{Math.round((v.fillOpacity ?? 0) * 100)}%</span>
+            </span>
           </Field>
         </Section>
       )}
-      <Section title={isText ? 'Text' : 'Title text'}>
+      <Section
+        title={isText ? 'Text' : 'Title text'}
+        id="tool:Text"
+        defaultOpen={isText}
+        menu={isText ? [{ label: 'Reset to defaults', onClick: reset, disabled: !preset }] : undefined}
+      >
         <TextFormatRows value={fmt} onChange={setFmt} />
       </Section>
-      <div className="btn-row">
-        <button className="secondary-btn" disabled={!preset} onClick={reset}>
-          Reset to defaults
-        </button>
-      </div>
     </>
   );
 }
@@ -1617,14 +1707,18 @@ export function Inspector() {
   const width = usePanelWidth('right', useStore((s) => s.prefs.rightWidth));
   const scrollRef = useRef<HTMLDivElement>(null);
   const locked = useStore(readOnly);
+  const symbolMode = useStore((st) => !!st.symbolSession);
   // with nothing selected, a drawing tool shows its settings for the next thing it adds
   const tool = useStore((s) => s.tool);
   const toolPanel = !items.length && hasToolPanel(tool);
+  // the Document tab can be peeked at over a tool or a selection; a new tool or selection comes back to its own tab
   const [docTab, setDocTab] = useState(false);
-  useEffect(() => setDocTab(false), [tool]);
+  useEffect(() => setDocTab(false), [tool, selection]);
+  const ownTab = toolPanel ? `${TOOL_NAMES[tool]} tool` : items.length ? 'Properties' : null;
   let body: JSX.Element;
-  if (toolPanel && !docTab) body = tool === 'wire' ? <WireToolPanel /> : <ShapeToolPanel tool={tool as ShapeTool} />;
-  else if (!items.length) body = <DocumentPanel />;
+  if (docTab || !ownTab) body = symbolMode ? <SymbolProps /> : <DocumentPanel />;
+  else if (items.length === 1 && isPin(items[0])) body = <PinPanel c={items[0]} />;
+  else if (toolPanel) body = tool === 'wire' ? <WireToolPanel /> : <ShapeToolPanel tool={tool as ShapeTool} />;
   else if (items.length === 1 && items[0].type === 'component') body = <ComponentPanel c={items[0]} />;
   else if (items.every((i) => i.type === 'wire' || i.type === 'junction') && items.some((i) => i.type === 'wire'))
     body = <WirePanel wires={items.filter((i): i is WireItem => i.type === 'wire')} />;
@@ -1637,18 +1731,14 @@ export function Inspector() {
     <aside className={locked ? 'panel right-panel read-only' : 'panel right-panel'} style={{ width }}>
       <PanelResizer side="right" />
       <div className="tabs">
-        {toolPanel ? (
-          <>
-            <button className={docTab ? '' : 'active'} onClick={() => setDocTab(false)}>
-              {TOOL_NAMES[tool]} tool
-            </button>
-            <button className={docTab ? 'active' : ''} onClick={() => setDocTab(true)}>
-              Document
-            </button>
-          </>
-        ) : (
-          <button className="active">{items.length ? 'Properties' : 'Document'}</button>
+        {ownTab && (
+          <button className={docTab ? '' : 'active'} onClick={() => setDocTab(false)}>
+            {ownTab}
+          </button>
         )}
+        <button className={docTab || !ownTab ? 'active' : ''} onClick={() => setDocTab(true)}>
+          {symbolMode ? 'Symbol' : 'Document'}
+        </button>
       </div>
       <SectionNav scrollRef={scrollRef} />
       <div className="inspector-scroll" ref={scrollRef}>

@@ -27,8 +27,10 @@ const onPart = (ep: Endpoint, comp: string) => ep.kind === 'port' && ep.comp ===
  * left running between two pins of the same part (a part dropped onto a wire)
  * is removed, so the part sits in series instead of being shorted.
  *
- * Wires that are dragged over pins are left alone: only the part that moves
- * connects. Returns `next` unchanged when nothing connects.
+ * Wires dragged over pins connect too, once the edit settles (see
+ * joinTouches); this only handles the parts that moved, which is where a
+ * shorting piece can be taken out. Returns `next` unchanged when nothing
+ * connects.
  */
 export function attachLandedPins(prev: CircuitDoc, next: CircuitDoc): CircuitDoc {
   const parts = landedParts(prev, next);

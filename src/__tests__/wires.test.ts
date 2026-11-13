@@ -3,8 +3,9 @@ import { createDoc, drawOrder, makeComponent, makeShape, normalizeDoc, uid } fro
 import { clampTitleOffset, labelLayout, shapeTitle } from '../canvas/Scene';
 import { getSymbol } from '../model/registry';
 import { clipPolylineToRect, simplify } from '../model/geometry';
-import { cleanup, deleteItems, deleteWirePart, extractFragment, groupItems, insertFragment, reorderItem, rotateItems, solderPinToWire, translateDetached, translateItems, solderTouch, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
-import { computeHotSpots } from '../model/hotspots';
+import { cleanup, deleteItems, deleteWirePart, extractFragment, groupItems, insertFragment, reorderItem, rotateItems, solderPinToWire, translateDetached, translateItems, solderWires, splitWire, ungroupItems, unsolderJunction, unsolderPort } from '../model/ops';
+import { computeHotSpots, findTouches } from '../model/hotspots';
+import { joinTouches } from '../model/touches';
 import { computeNets } from '../model/netlist';
 import type { CircuitDoc, JunctionItem, WireItem } from '../model/types';
 import { buildWirePath, computeHops, endpointInfo, crossingStack, hopLayerMap, moveWireNode, orthogonalize, restack, wireCrossings, wirePolyline } from '../model/wires';
@@ -316,24 +317,25 @@ describe('solder / unsolder cycle', () => {
     expect(solderWires(doc, wires.map((w) => w.id), { x: 50, y: 50 })).toBeTruthy();
   });
 
-  it('a wire ending on another wire is a touch that can be soldered, then unsoldered back to a touch', () => {
+  it('a wire ending on another wire is connected; unsoldering pulls the branch clear', () => {
     const doc = createDoc();
-    const top = freeWire(doc, 0, 0, 200, 0);
+    freeWire(doc, 0, 0, 200, 0);
     const branch = freeWire(doc, 50, 0, 50, 100);
-    const touch = () => computeHotSpots(doc, new Map(Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire').map((w) => [w.id, wirePolyline(doc, w)])), []).find((h) => h.kind === 'touch');
-    const t = touch();
-    expect(t).toBeTruthy();
-    expect(t!.kind === 'touch' && t!.target.kind).toBe('wire');
-    if (t?.kind !== 'touch') return;
-    expect(solderTouch(doc, t.wire, t.end, t.target)).toBe(true);
-    cleanup(doc);
+    // touching is connecting, before anything records it
     expect(computeNets(doc)).toHaveLength(1);
-    const j = Object.values(doc.items).find((i) => i.type === 'junction')!;
-    expect(unsolderJunction(doc, j.id)).toEqual({ through: 1, detached: 1 });
-    expect(computeNets(doc)).toHaveLength(2);
-    expect(touch()).toBeTruthy();
-    void top;
-    void branch;
+    const t = findTouches(doc, new Map(Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire').map((w) => [w.id, wirePolyline(doc, w)])));
+    expect(t).toHaveLength(1);
+    expect(t[0].kind === 'end' && t[0].wire).toBe(branch.id);
+    const joined = joinTouches(doc);
+    expect(computeNets(joined)).toHaveLength(1);
+    const j = Object.values(joined.items).find((i) => i.type === 'junction')!;
+    const out = JSON.parse(JSON.stringify(joined)) as CircuitDoc;
+    expect(unsolderJunction(out, j.id)).toEqual({ through: 1, detached: 1 });
+    expect(computeNets(out)).toHaveLength(2);
+    // the branch now stops a grid step short of the run
+    const stub = out.items[branch.id] as WireItem;
+    expect(stub.a).toEqual({ kind: 'free', x: 50, y: out.settings.grid });
+    expect(joinTouches(out)).toBe(out);
   });
 
   it('a loose end resting on hidden wires or junctions stays a plain end', () => {
@@ -344,32 +346,30 @@ describe('solder / unsolder cycle', () => {
     const hw = freeWire(doc, 100, 0, 200, 0);
     hw.hidden = true;
     const spots = computeHotSpots(doc, new Map(Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire').map((x) => [x.id, wirePolyline(doc, x)])), []);
-    expect(spots.some((h) => h.kind === 'touch')).toBe(false);
     expect(spots.some((h) => h.kind === 'end' && h.wire === w.id && h.end === 'b')).toBe(true);
   });
 });
 
 describe('pins on wires', () => {
-  it('solders a pin that lies on a wire, then unsolders it back', () => {
+  it('a pin lying on a wire is connected; unsoldering pulls both halves off it', () => {
     const doc = createDoc();
     const c = makeComponent(doc, 'resistor', 100, 100);
     doc.items[c.id] = c;
-    const def = c.symbol;
-    void def;
     const pin = endpointInfo(doc, { kind: 'port', comp: c.id, port: '1' })!.pt;
     // a vertical wire running straight through pin 1
     const w = freeWire(doc, pin.x, pin.y - 100, pin.x, pin.y + 100);
     const spots = () => computeHotSpots(doc, new Map([...Object.values(doc.items)].filter((i): i is WireItem => i.type === 'wire').map((x) => [x.id, wirePolyline(doc, x)])), []);
-    expect(spots().some((h) => h.kind === 'pinTouch')).toBe(true);
+    const pinNet = () => computeNets(doc).find((n) => n.pins.some((p) => p.comp === c.id && p.port === '1'))!;
+    expect(pinNet().wires).toEqual([w.id]);
     expect(solderPinToWire(doc, c.id, '1', w.id)).toBe(true);
     cleanup(doc);
     const attached = Object.values(doc.items).filter((i): i is WireItem => i.type === 'wire' && [i.a, i.b].some((ep) => ep.kind === 'port' && ep.comp === c.id && ep.port === '1'));
     expect(attached).toHaveLength(2);
     expect(spots().some((h) => h.kind === 'pin')).toBe(true);
-    // unsolder: the two halves run straight through, so they rejoin into one wire over the pin
-    expect(unsolderPort(doc, c.id, '1')).toEqual({ through: 1, detached: 0 });
-    expect(Object.values(doc.items).filter((i) => i.type === 'wire')).toHaveLength(1);
-    expect(spots().some((h) => h.kind === 'pinTouch')).toBe(true);
+    // unsolder: a wire running across the pin would still touch it, so both halves let go
+    expect(unsolderPort(doc, c.id, '1')).toEqual({ through: 0, detached: 2 });
+    expect(Object.values(doc.items).filter((i) => i.type === 'wire')).toHaveLength(2);
+    expect(pinNet().wires).toEqual([]);
   });
 });
 

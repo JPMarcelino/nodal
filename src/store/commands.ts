@@ -2,8 +2,9 @@ import { copyAsPng, copyAsSvg, exportSelection, fileNew, fileOpen, filePrint, fi
 import { importFile } from '../io/importFiles';
 import { exportLibraryFile, exportTemplateFile } from '../io/sharing';
 import { selectionToDrawing } from '../model/fromSelection';
-import { GRID_STYLES, GRID_STYLE_NAMES, selectedGroup } from '../model/doc';
+import { GRID_SIZES, GRID_STYLES, GRID_STYLE_NAMES, selectedGroup } from '../model/doc';
 import { computeNets, netOfWire } from '../model/netlist';
+import { isConnector } from '../model/connectors';
 import * as A from './actions';
 import { clearExplainOverlays } from './explain';
 import { startPresenting } from '../ui/Presenter';
@@ -14,6 +15,9 @@ import { docPages, pageIndex } from '../model/pages';
 import { canvasActions } from './canvasActions';
 import { copyStyle, pasteStyle } from '../ui/StyleSection';
 import { setFolds } from '../ui/controls';
+import { PIN_SYMBOL, openSymbolEditor, saveSymbolEditor } from './symbolSession';
+import { setAgentLink } from '../agent/link';
+import { A as agentState } from '../agent/state';
 
 export interface Command {
   id: string;
@@ -50,9 +54,11 @@ export const COMMANDS: Command[] = [
   { id: 'file.copySvg', label: 'Copy selection as SVG', category: 'File', keys: ['Mod+Alt+C'], run: copyAsSvg },
   { id: 'file.copyPng', label: 'Copy selection as image (PNG)', category: 'File', keys: ['Mod+Alt+Shift+P'], run: copyAsPng },
   { id: 'file.exportSelection', label: 'Export selection…', category: 'File', keys: ['Mod+Alt+E'], run: () => exportSelection(), when: hasSel },
+  { id: 'file.exportAllPages', label: 'Export all pages…', category: 'File', keys: [], run: () => openExport({ allPages: true }), when: () => docPages(S().doc).length > 1, keywords: 'png svg dxf zip every pages sheets images' },
   { id: 'file.exportArea', label: 'Export canvas area…', category: 'File', keys: ['Mod+Alt+A'], run: () => startAreaExport('png') },
   { id: 'file.print', label: 'Print…', category: 'File', keys: ['Mod+P'], run: filePrint },
   { id: 'collab.share', label: 'Share & collaborate…', category: 'File', keys: ['Mod+Alt+S'], run: () => set({ dialog: 'share' }) },
+  { id: 'agent.link', label: 'AI agent link', category: 'File', keys: [], run: () => setAgentLink(!agentState().enabled), checked: () => agentState().enabled, keywords: 'ai agent mcp claude automation api bridge llm' },
   { id: 'collab.exportLib', label: 'Export my symbol library', category: 'File', keys: [], run: exportLibraryFile },
   { id: 'collab.exportTemplate', label: 'Export selection as a template', category: 'File', keys: [], run: () => exportTemplateFile(S().selection), when: hasSel },
 
@@ -99,7 +105,7 @@ export const COMMANDS: Command[] = [
   { id: 'tool.altMove', label: 'Alt move (only the selection moves; wires to it are left behind)', category: 'Tools', keys: ['Shift+M'], run: () => A.setAltMove() },
   { id: 'tool.node', label: 'Edit points tool (drag wire bends & ends, shape nodes & handles)', category: 'Tools', keys: ['E'], run: () => A.setTool('node') },
   { id: 'tool.solder', label: 'Solder tool (click crossings / pins to solder, junctions to unsolder)', category: 'Tools', keys: ['S'], run: () => A.setTool('solder') },
-  { id: 'tool.wire', label: 'Wire tool (again: cycle 90° / 45° / any)', category: 'Tools', keys: ['W'], cadence: ['W', 'Shift+W'], run: () => (S().tool === 'wire' ? A.setWireAngle() : A.setTool('wire')) },
+  { id: 'tool.wire', label: 'Wire tool', category: 'Tools', keys: ['W'], cadence: ['W'], run: () => A.setTool('wire') },
   { id: 'tool.rect', label: 'Rectangle (outline)', category: 'Tools', keys: ['B'], run: () => A.setTool('rect') },
   { id: 'tool.zone', label: 'Filled zone', category: 'Tools', keys: ['Z'], run: () => A.setTool('zone') },
   { id: 'tool.ellipse', label: 'Ellipse', category: 'Tools', keys: ['O'], run: () => A.setTool('ellipse') },
@@ -137,10 +143,10 @@ export const COMMANDS: Command[] = [
   { id: 'tool.junction', label: 'Place no-connect flag', category: 'Tools', keys: ['Shift+X'], run: () => A.startPlacing('no-connect') },
 
   // Arrange
-  { id: 'arrange.rotateCw', label: 'Rotate 90° clockwise', category: 'Arrange', keys: ['R'], run: () => A.rotateSelection(90) },
-  { id: 'arrange.rotateCcw', label: 'Rotate 90° counter-clockwise', category: 'Arrange', keys: ['Alt+R'], run: () => A.rotateSelection(-90) },
-  { id: 'arrange.flipH', label: 'Flip horizontally', category: 'Arrange', keys: ['X'], cadence: ['Shift+R'], run: () => A.flipSelection('x') },
-  { id: 'arrange.flipV', label: 'Flip vertically', category: 'Arrange', keys: ['Y'], run: () => A.flipSelection('y') },
+  { id: 'arrange.rotateCw', label: 'Rotate 90° clockwise', category: 'Arrange', keys: ['R'], run: () => (S().placing || hasSel() ? A.rotateSelection(90) : toast('Select something to rotate first')) },
+  { id: 'arrange.rotateCcw', label: 'Rotate 90° counter-clockwise', category: 'Arrange', keys: ['Alt+R'], run: () => (S().placing || hasSel() ? A.rotateSelection(-90) : toast('Select something to rotate first')) },
+  { id: 'arrange.flipH', label: 'Flip horizontally', category: 'Arrange', keys: ['X'], cadence: ['Shift+R'], run: () => (S().placing || hasSel() ? A.flipSelection('x') : toast('Select something to flip first')) },
+  { id: 'arrange.flipV', label: 'Flip vertically', category: 'Arrange', keys: ['Y'], run: () => (S().placing || hasSel() ? A.flipSelection('y') : toast('Select something to flip first')) },
   { id: 'arrange.group', label: 'Group', category: 'Arrange', keys: ['Mod+G'], run: A.groupSelection },
   { id: 'arrange.renameGroup', label: 'Rename group', category: 'Arrange', keys: [], run: renameGroupCmd, when: () => !!(selectedGroup(vdoc(), S().selection, S().scope) ?? S().scope) },
   { id: 'arrange.ungroup', label: 'Ungroup', category: 'Arrange', keys: ['Mod+Shift+G'], run: A.ungroupSelection },
@@ -160,6 +166,15 @@ export const COMMANDS: Command[] = [
   { id: 'arrange.sameHeight', label: 'Make same height', category: 'Arrange', keys: [], run: () => A.matchSize('height') },
   { id: 'arrange.sameSize', label: 'Make same size', category: 'Arrange', keys: [], run: () => A.matchSize('both') },
   { id: 'arrange.toPath', label: 'Convert to path', category: 'Arrange', keys: [], run: A.convertSelectionToPath, when: hasSel },
+  {
+    id: 'connector.curve',
+    label: 'Curve / straighten selected lines and arrows',
+    category: 'Arrange',
+    keys: [],
+    run: toggleConnectorCurve,
+    when: () => S().selection.some((id) => isConnector(vdoc().items[id])),
+    keywords: 'curve arc arch bow bend rounded smooth straighten line arrow',
+  },
   { id: 'arrange.enterGroup', label: 'Enter group', category: 'Arrange', keys: ['Mod+Enter'], cadence: ['E', 'Shift+E', 'Mod+Enter'], run: () => S().selection[0] && A.enterGroup(S().selection[0]) },
   { id: 'arrange.exitGroup', label: 'Return from group', category: 'Arrange', keys: [], cadence: ['Shift+B'], run: () => void A.exitGroup() },
 
@@ -194,6 +209,9 @@ export const COMMANDS: Command[] = [
   { id: 'view.labelGuides', label: 'Guides for part names and values', category: 'View', keys: ['Alt+Shift+N'], run: () => togglePref('labelGuides', 'Label guides'), checked: () => S().prefs.labelGuides, keywords: 'text label ref value align' },
   { id: 'view.grid', label: 'Toggle grid', category: 'View', keys: ['G'], run: () => mutateSettings((s) => (s.showGrid = !s.showGrid)), checked: () => vdoc().settings.showGrid },
   { id: 'view.gridStyle', label: 'Grid style: dots → lines → crosses → major lines', category: 'View', keys: [], run: () => cycleGridStyle(), keywords: 'grid dots lines crosses major look' },
+  { id: 'view.gridSize', label: 'Grid size…', category: 'View', keys: [], run: () => openGridSizeMenu(), keywords: 'grid spacing step pixels snap size finer coarser' },
+  { id: 'view.gridSizeSmaller', label: 'Smaller grid step', category: 'View', keys: ['['], run: () => stepGridSize(-1), keywords: 'grid size spacing finer smaller increase density' },
+  { id: 'view.gridSizeBigger', label: 'Larger grid step', category: 'View', keys: [']'], run: () => stepGridSize(1), keywords: 'grid size spacing coarser larger decrease density' },
   { id: 'view.snap', label: 'Toggle snap to grid', category: 'View', keys: ["Mod+'"], run: () => mutateSettings((s) => (s.snap = !s.snap)), checked: () => vdoc().settings.snap },
   { id: 'view.library', label: 'Toggle library panel', category: 'View', keys: ['Mod+B'], run: () => set((s) => ({ leftPanel: !s.leftPanel })), checked: () => S().leftPanel },
   { id: 'view.inspector', label: 'Toggle properties panel', category: 'View', keys: ['Mod+I'], run: () => set((s) => ({ rightPanel: !s.rightPanel })), checked: () => S().rightPanel },
@@ -208,7 +226,7 @@ export const COMMANDS: Command[] = [
   { id: 'view.checkSave', label: 'Check and save', category: 'File', keys: [], cadence: ['Shift+X'], run: checkAndSave },
 
   // Symbols
-  { id: 'symbols.new', label: 'Create new symbol…', category: 'Symbols', keys: ['Mod+Shift+N'], run: () => set({ dialog: 'symbol-editor', editingSymbol: null }) },
+  { id: 'symbols.new', label: 'Create new symbol…', category: 'Symbols', keys: ['Mod+Shift+N'], run: () => void openSymbolEditor() },
   {
     id: 'symbols.edit',
     label: 'Edit symbol of selected component…',
@@ -217,7 +235,7 @@ export const COMMANDS: Command[] = [
     run: () => {
       const def = A.symbolOfSelection();
       if (!def) return toast('Select a component first');
-      set({ dialog: 'symbol-editor', editingSymbol: def.id });
+      openSymbolEditor({ editing: def.id });
     },
   },
 
@@ -230,7 +248,7 @@ export const COMMANDS: Command[] = [
       const ids = S().selection;
       const drawing = ids.length ? selectionToDrawing(vdoc(), ids) : null;
       if (!drawing) return toast('Select the parts, wires or shapes to turn into a symbol');
-      set({ dialog: 'symbol-editor', editingSymbol: null, symbolSeed: { ...drawing, ids: [...ids] } });
+      openSymbolEditor({ fromSelection: [...ids] });
     },
   },
 
@@ -263,7 +281,7 @@ export const EDIT_COMMANDS: ReadonlySet<string> = new Set([
   'page.new', 'page.rename', 'page.duplicate', 'page.delete', 'page.moveLeft', 'page.moveRight',
   'wire.reroute', 'wire.hops', 'wire.corners',
   // these are stored in the circuit, so they are edits too
-  'view.refs', 'view.values', 'view.wireLabels', 'view.grid', 'view.snap',
+  'view.refs', 'view.values', 'view.wireLabels', 'view.grid', 'view.gridSize', 'view.gridSizeSmaller', 'view.gridSizeBigger', 'view.snap',
   'symbols.edit', 'symbols.fromSelection',
 ]);
 
@@ -274,12 +292,36 @@ for (const c of COMMANDS) {
   c.when = () => !readOnly() && (!when || when());
 }
 
+/*
+ * While the symbol editor page stands in for the circuit, Save saves the
+ * symbol, and commands about the circuit's file or pages wait until it closes.
+ */
+const SYMBOL_PAGE_OK = new Set(['file.import', 'file.export', 'file.print', 'file.copyPng', 'file.copySvg', 'file.exportSelection', 'file.exportArea', 'file.exportAllPages']);
+for (const c of COMMANDS) {
+  const run = c.run;
+  if (c.id === 'wire.highlightNet') {
+    // on the symbol page N arms the pin tool (as the old editor's Pin tool key did)
+    c.run = () => {
+      if (!S().symbolSession) return run();
+      if (S().placing?.symbol === PIN_SYMBOL) set({ placing: null });
+      else A.startPlacing(PIN_SYMBOL);
+    };
+  } else if (c.id === 'file.save') {
+    c.run = () => {
+      if (!S().symbolSession) return run();
+      const err = saveSymbolEditor();
+      if (err) toast(err, 'error');
+    };
+  } else if ((c.category === 'File' || c.category === 'Page') && !SYMBOL_PAGE_OK.has(c.id)) {
+    c.run = () => (S().symbolSession ? toast('Save or cancel the symbol first (top of the canvas)', 'info') : run());
+  }
+}
+
 export const COMMAND_MAP = new Map(COMMANDS.map((c) => [c.id, c]));
 
 function mutateSettings(fn: (s: import('../model/types').DocSettings) => void) {
-  mutate((d) => fn(d.settings));
+  return mutate((d) => fn(d.settings));
 }
-
 
 function cycleGridStyle() {
   const cur = vdoc().settings.gridStyle ?? 'dots';
@@ -289,6 +331,43 @@ function cycleGridStyle() {
     s.showGrid = true;
   });
   toast(`Grid: ${GRID_STYLE_NAMES[next].toLowerCase()}`);
+}
+
+function toggleConnectorCurve() {
+  const shapes = S().selection.map((id) => vdoc().items[id]).filter(isConnector);
+  if (!shapes.length) return;
+  const straighten = shapes.every((s) => s.route === 'curved');
+  mutate((d) => {
+    for (const s of shapes) {
+      const cur = d.items[s.id];
+      if (!isConnector(cur) || cur.locked) continue;
+      if (straighten) delete cur.route;
+      else cur.route = 'curved';
+    }
+  });
+  toast(straighten ? 'Lines straightened' : 'Lines curved');
+}
+
+/** Sets the grid / snap step, clamped to the range the document accepts. */
+export function setGridSize(size: number) {
+  if (readOnly()) return A.readOnlyNotice();
+  if (!Number.isFinite(size)) return;
+  const next = +Math.min(100, Math.max(0.01, size)).toFixed(4);
+  if (Math.abs(next - vdoc().settings.grid) < 1e-9) return;
+  if (!mutateSettings((s) => (s.grid = next))) return;
+  toast(`Grid size: ${next} px`);
+}
+
+/** Steps to the next preset grid size (or halves / doubles a custom one). */
+export function stepGridSize(dir: -1 | 1) {
+  const cur = vdoc().settings.grid;
+  const next = (dir > 0 ? GRID_SIZES : [...GRID_SIZES].reverse()).find((v) => (dir > 0 ? v > cur + 1e-9 : v < cur - 1e-9));
+  setGridSize(next ?? (dir > 0 ? cur * 2 : cur / 2));
+}
+
+/** Opens the grid-size menu in the status bar (from the View menu or the command palette). */
+export function openGridSizeMenu() {
+  window.dispatchEvent(new Event('nodal:grid-size'));
 }
 
 function togglePref(key: 'spacingGuides' | 'labelGuides', what: string) {
@@ -340,7 +419,12 @@ function focusMode() {
 
 function focusSearch() {
   set({ leftPanel: true, leftTab: 'library' });
-  setTimeout(() => (document.getElementById('library-search') as HTMLInputElement | null)?.focus(), 30);
+  // the old query is selected, so typing starts a new search
+  setTimeout(() => {
+    const el = document.getElementById('library-search') as HTMLInputElement | null;
+    el?.focus();
+    el?.select();
+  }, 30);
 }
 
 /** Renames the selected group (or the one being edited) in place on the canvas. */
@@ -358,7 +442,8 @@ function focusValue() {
 function valueSectionId(): string | null {
   const it = vdoc().items[S().selection[0]];
   if (!it) return null;
-  if (it.type === 'component') return 'Properties';
+  // a pin's name field lives in the symbol editor's own section, not the part's Properties
+  if (it.type === 'component') return it.symbol === PIN_SYMBOL ? 'sym-pin' : 'Properties';
   if (it.type === 'wire') return 'Label';
   if (it.type === 'shape') {
     if (it.kind === 'callout') return 'Note';
@@ -407,7 +492,12 @@ export function cancel() {
   if (s.highlight) return set({ highlight: null });
   if (clearExplainOverlays()) return;
   if (s.wirePart) return set({ wirePart: null });
-  if (s.selection.length) return set({ selection: [] });
+  if (s.selection.length) {
+    set({ selection: [] });
+    // a shape just drawn stays selected; one Escape should still get back to the select tool
+    if (s.tool !== 'select' && !s.prefs.toolLock) A.setTool('select');
+    return;
+  }
   if (A.exitGroup()) return;
   if (s.tool !== 'select') return A.setTool('select');
 }

@@ -5,7 +5,7 @@ import { attachedWires, drawOrderCached, groupMembers, groupTags, itemBounds, la
 import { withContents } from '../model/containers';
 import { getPreset, makePresetShape } from '../model/shapePresets';
 import { PresetShape } from './PresetShape';
-import { componentBounds, dist, eq, measureText, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
+import { componentBounds, dist, eq, measureText, nearEllipse, pointInEllipse, pointInRect, projectOnSegment, rectFromPoints, snap, toWorld } from '../model/geometry';
 import { cleanup, deleteWirePart, followParts, rotateShapeBy, scaleItems, selectionPivot, translateDetached, translateItems } from '../model/ops';
 import { dragRotation, fromShapeFrame, HANDLE_ROT_KINDS, rectCentre, resizeInFrame, rotateDeg, shapeBox, shapeRot, shapeTransform, toShapeFrame } from '../model/rotation';
 import { getSymbol, instanceSymbol } from '../model/registry';
@@ -27,13 +27,15 @@ import { ArrowHeadEl, ComponentView, EDITOR_PALETTE, Scene, clampTitleOffset, da
 import { Minimap } from './Minimap';
 import { ExplainLayer } from './ExplainLayer';
 import { inkHit } from '../model/ink';
-import { constrain45, packPoly, polyHit } from '../model/polygon';
+import { constrain45, constrainAngle, packPoly, polyHit } from '../model/polygon';
 import { cubicAt, dragHandle, insertNode, isSmooth, minNodes, moveNode, nearestOnPath, pathD, pathNodes, pathSegs, setNodeKind, setPathNodes, type PathNode } from '../model/path';
 import { X, setX, useExplain } from '../store/explain';
 import { FollowFrame, RemotePresence } from './RemotePresence';
+import { AgentPresence } from '../agent/AgentPresence';
 import { useErcIssues } from '../ui/CheckPanel';
 import { HotSpotMenu } from './HotSpotMenu';
 import { HoverEdit } from '../ui/HoverEdit';
+import { onWayToPopup, popupBox } from './hoverPath';
 import { GroupCrumbs, HintBar, IntroCard, WelcomeScreen } from '../ui/CanvasGuides';
 import { marqueeHits } from '../model/marquee';
 import { gestureSlots, hitSlop, useTouchInput } from './touch';
@@ -46,6 +48,8 @@ import { focusValueField } from '../store/commands';
 import { pulseAt, usePulses } from './pulses';
 import { openEquation } from '../ui/EquationZone';
 import { useFitHeight } from './fitHeight';
+import { PIN_SYMBOL, nextPinName, snapPin } from '../model/symbolPage';
+import { SymbolOutline } from './SymbolOutline';
 
 /* ------------------------------------------------------------------ */
 /* Targets                                                             */
@@ -188,8 +192,11 @@ export function Canvas() {
   const wirePart = useStore((s) => s.wirePart);
   const tool = useStore((s) => s.tool);
   const placing = useStore((s) => s.placing);
+  /** The symbol editor page is open (its outline and pins get guides). */
+  const symbolMode = useStore((s) => !!s.symbolSession);
   const highlight = useStore((s) => s.highlight);
   const presenting = useExplain((s) => s.presenting !== null);
+  const pointerOnCanvas = useStore((s) => s.pointerOnCanvas);
   const prefs = useStore((s) => s.prefs);
   const scope = useStore((s) => s.scope);
   const exportAreaJob = useStore((s) => s.exportArea);
@@ -205,7 +212,11 @@ export function Canvas() {
   const moveRef = useRef<((e: React.PointerEvent) => void) | null>(null);
   const [gesture, setGestureState] = useState<Gesture | null>(null);
   const [hover, setHover] = useState<{ item: string | null; port: PortInfo | null }>({ item: null, port: null });
+  const hoverNow = useRef(hover);
+  hoverNow.current = hover;
   const [cursor, setCursor] = useState<Point>({ x: 0, y: 0 });
+  /** Where the solder tool last clicked: no preview there until the pointer moves off, so the result shows (not a "do it again" dot). */
+  const [solderedAt, setSolderedAt] = useState<Point | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [spaceGuides, setSpaceGuides] = useState<SpaceGuide[]>([]);
   /** Alignment anchors of the running move (or label drag), keyed by its id set (or gesture). */
@@ -229,6 +240,8 @@ export function Canvas() {
   const [quickId, setQuickId] = useState<string | null>(null);
   const quickHold = useRef(false);
   const quickTimers = useRef<{ hide?: number; show?: number }>({});
+  /** Where (on screen) the pointer last was on the card's object: the way to the card starts there. */
+  const quickFrom = useRef<Point | null>(null);
   const cancelQuickHide = () => {
     window.clearTimeout(quickTimers.current.hide);
     quickTimers.current.hide = undefined;
@@ -259,6 +272,12 @@ export function Canvas() {
   }, [setGesture]);
 
   const HOT_DWELL = 550;
+  /** How close the pointer has to come to a hot spot (solder dots: their own size plus a margin). */
+  const hotReach = (h: HotSpot, z: number) => {
+    if (h.kind === 'crossing') return Math.max(9 / z, doc.settings.hopSize + 2);
+    if (h.kind === 'junction') return Math.max(((doc.items[h.id] as { size?: number } | undefined)?.size ?? doc.settings.junctionSize) + 4 / z, 10 / z);
+    return 9 / z;
+  };
   const clearHotTimer = (k: 'open' | 'close') => {
     window.clearTimeout(hotTimers.current[k]);
     hotTimers.current[k] = undefined;
@@ -272,7 +291,7 @@ export function Canvas() {
   };
   const scheduleHotClose = () => {
     if (hotHold.current) return;
-    if (hotTimers.current.close === undefined) hotTimers.current.close = window.setTimeout(closeHotMenu, 300);
+    if (hotTimers.current.close === undefined) hotTimers.current.close = window.setTimeout(closeHotMenu, 450);
   };
   useEffect(() => () => closeHotMenu(), []);
 
@@ -287,14 +306,19 @@ export function Canvas() {
         cancelQuickHide();
         quickTimers.current.hide = window.setTimeout(() => {
           if (!quickHold.current) setQuickId(null);
-        }, 280);
+        }, 450);
       }
       return;
     }
     cancelQuickHide();
     if (quickId === quickCandidate) return;
     if (quickId) setQuickId(null);
-    quickTimers.current.show = window.setTimeout(() => setQuickId(quickCandidate), 420);
+    quickFrom.current = null;
+    quickTimers.current.show = window.setTimeout(() => {
+      const { cursor, view: v } = S();
+      quickFrom.current = { x: v.x + cursor.x * v.zoom, y: v.y + cursor.y * v.zoom };
+      setQuickId(quickCandidate);
+    }, 420);
     return () => window.clearTimeout(quickTimers.current.show);
   }, [quickCandidate, quickId]);
   useEffect(
@@ -313,7 +337,7 @@ export function Canvas() {
     let best: HotSpot | null = null;
     let bd = Infinity;
     for (const h of hotSpots) {
-      const tol = h.kind === 'crossing' ? Math.max(8 / z, doc.settings.hopSize + 2) : 7 / z;
+      const tol = hotReach(h, z);
       const d = dist(h.pt, w);
       if (d < tol && d < bd) {
         best = h;
@@ -325,7 +349,12 @@ export function Canvas() {
 
   /** Tracks the pointer resting on a hot spot (only while idle in the select / edit points tools). */
   const trackHotSpot = (w: Point) => {
-    const h = (tool === 'select' || tool === 'node') && !readOnly() ? hotSpotAt(w) : null;
+    const live = (tool === 'select' || tool === 'node') && !readOnly();
+    // the spot already filling (or open) holds on a little further out than it takes to start,
+    // so a wobbling hand doesn't restart the fill
+    const held = hotMenu ?? (hotPending ? hotSpots.find((s) => hotSpotKey(s) === hotPending) : undefined);
+    const z = S().view.zoom;
+    const h = !live ? null : held && dist(held.pt, w) < hotReach(held, z) * 1.8 ? held : hotSpotAt(w);
     if (!h) {
       clearHotTimer('open');
       setHotPending(null);
@@ -521,6 +550,13 @@ export function Canvas() {
         if (s.kind === 'text' || s.kind === 'image' || s.kind === 'callout') return pointInRect(p, r, 4) && 'strong';
         if (s.kind === 'ink') return inkHit(s, p, t) && (s.highlighter ? 'weak' : 'strong');
         const seeThrough = s.fillOpacity < 0.5;
+        if (s.kind === 'ellipse') {
+          // hit the drawn oval, not its bounding box: the invisible corners stay free for what is behind it
+          const onEdge = nearEllipse(p, r, t + s.strokeWidth / 2);
+          if (!onEdge && !pointInEllipse(p, r)) return false;
+          if (onEdge) return 'strong';
+          return s.fillOpacity > 0 && (seeThrough ? 'weak' : 'strong');
+        }
         if (s.kind === 'polygon') {
           if (!polyHit(s, p, t)) return false;
           // inside the outline only through the fill: see-through fills are weak
@@ -1387,7 +1423,8 @@ export function Canvas() {
     }
 
     if (placing) {
-      const p = sp(w);
+      // pins land on the ends of the drawing's leads when dropped near one
+      const p = placing.symbol === PIN_SYMBOL ? snapPin(vdoc(), w, sp(w), 10 / S().view.zoom) : sp(w);
       // one part, then back to Select; Shift, the tool lock or the Cadence scheme keep placing copies until Esc
       A.placeArmed(p.x, p.y, e.shiftKey);
       return;
@@ -1399,6 +1436,21 @@ export function Canvas() {
       return;
     }
     if (tool === 'text') {
+      // clicking a box that holds text edits it rather than dropping a new text on top
+      const top = hitItems(w)[0];
+      const under = top ? vdoc().items[top] : undefined;
+      if (under?.type === 'shape' && !under.locked) {
+        if (under.kind === 'text' || under.kind === 'rect' || under.kind === 'ellipse' || under.kind === 'polygon') {
+          select([under.id]);
+          setEditingText(under.id);
+          return;
+        }
+        if (under.kind === 'callout') {
+          select([under.id]);
+          setX({ editing: under.id });
+          return;
+        }
+      }
       const p = sp(w);
       let id = '';
       mutate((d) => {
@@ -1427,7 +1479,10 @@ export function Canvas() {
         err = applySolder(d as CircuitDoc, h, data);
       });
       if (err) toast(err, 'error');
-      else pulseAt(h.pt.x, h.pt.y, 'solder');
+      else {
+        pulseAt(h.pt.x, h.pt.y, 'solder');
+        setSolderedAt(h.pt);
+      }
       return;
     }
     if (tool === 'polygon') {
@@ -1494,21 +1549,28 @@ export function Canvas() {
     const ch = singleShape && !singleShape.locked && isConnector(singleShape) ? connHandleAt(singleShape, w) : null;
     if (singleShape && ch) {
       const id = singleShape.id;
-      if (ch.part === 'bend' && isDouble) {
-        // double-click a bend removes it
+      if (ch.part === 'bend' && (isDouble || e.shiftKey)) {
+        // double-click or Shift-click a bend removes it
         mutate((d) => {
           const s = d.items[id] as ShapeItem;
           s.pts?.splice(ch.idx, 1);
-          if (!s.pts?.length) delete s.pts;
+          if (!s.pts?.length) {
+            delete s.pts;
+            // a bend that turned a plain line into an arch takes the arch with it
+            if (s.route === 'curved') delete s.route;
+          }
         });
         return;
       }
       beginGesture();
       if (ch.part === 'mid') {
-        // a new bend in the middle of the stretch, dragged straight away
+        // a new bend in the middle of the stretch, dragged straight away; on a
+        // plain line that first bend makes an arch (Alt keeps a sharp corner)
+        const bow = !e.altKey && !singleShape.pts?.length && (singleShape.route ?? 'straight') === 'straight';
         gestureUpdate((d) => {
           const s = d.items[id] as ShapeItem;
           s.pts = [...(s.pts ?? []).slice(0, ch.idx), { x: Math.round(ch.p.x), y: Math.round(ch.p.y) }, ...(s.pts ?? []).slice(ch.idx)];
+          if (bow) s.route = 'curved';
         });
         setGesture({ kind: 'conn', id, part: 'bend', idx: ch.idx, moved: true, glue: null });
         return;
@@ -1535,12 +1597,18 @@ export function Canvas() {
         }
       }
     }
-    // drag from a port starts a wire
+    // the move tool moves: pressing a pin grabs its part; Alt-drag from a pin draws a wire (as Alt-drag on a wire branches)
     const pi = findPort(w);
-    if (pi && !e.shiftKey) {
+    if (pi && !e.shiftKey && !e.ctrlKey && !e.metaKey && !isDouble) {
       const portItem = vdoc().items[pi.comp];
       if (portItem && !portItem.locked) {
-        startWire({ kind: 'port', comp: pi.comp, port: pi.port, pt: pi.pt, dir: portDir(pi) }, true, client);
+        if (e.altKey) {
+          startWire({ kind: 'port', comp: pi.comp, port: pi.port, pt: pi.pt, dir: portDir(pi) }, true, client);
+          return;
+        }
+        if (!selSet.has(pi.comp)) select([pi.comp]);
+        beginGesture();
+        setGesture(moveGesture(S().selection, w, client));
         return;
       }
     }
@@ -1685,11 +1753,36 @@ export function Canvas() {
   const hoverRef = useRef((_w: Point) => {});
   hoverRef.current = (w: Point) => {
     setCursor(w);
+    if (solderedAt && dist(w, solderedAt) > 10 / S().view.zoom) setSolderedAt(null);
     const g = gRef.current;
     if (g && g.kind !== 'arm') return;
+    const v = S().view;
+    const sp = { x: v.x + w.x * v.zoom, y: v.y + w.y * v.zoom };
+    if (!g) {
+      // on the way to an open hot spot menu: keep it, and don't light up or start anything passed over
+      if (hotMenu) {
+        const box = popupBox(wrapRef.current, '.cross-pop');
+        if (box && onWayToPopup(sp, { x: v.x + hotMenu.pt.x * v.zoom, y: v.y + hotMenu.pt.y * v.zoom }, box, 14)) {
+          clearHotTimer('close');
+          clearHotTimer('open');
+          if (hotPending) setHotPending(null);
+          if (hover.item || hover.port) setHover({ item: null, port: null });
+          return;
+        }
+      }
+      // on the way to the style card: it stays on its object, whatever lies in between
+      if (quickId && quickFrom.current) {
+        const box = popupBox(wrapRef.current, '.hover-edit');
+        if (box && onWayToPopup(sp, quickFrom.current, box)) {
+          if (hover.item !== quickId || hover.port) setHover({ item: quickId, port: null });
+          return;
+        }
+      }
+    }
     if (tool === 'select' || tool === 'wire' || tool === 'node' || g) {
       const pi = findPort(w);
       const item = pi ? null : hitItem(w);
+      if (item && item === quickId) quickFrom.current = sp;
       if (pi?.comp !== hover.port?.comp || pi?.port !== hover.port?.port || item !== hover.item) setHover({ port: pi, item });
     }
     if (!placing && !S().exportArea && !g) trackHotSpot(w);
@@ -1822,7 +1915,9 @@ export function Canvas() {
         if (g.shape === 'line' || g.shape === 'arrow') {
           // over a shape or part the end glues to it: onto a connection point, or floating on its outline
           const glueB = glueAt(w, e.altKey);
-          const cur = glueB && isFixed(glueB.attach) ? glueB.pt : e.altKey ? w : sp(w);
+          const p = glueB && isFixed(glueB.attach) ? glueB.pt : e.altKey ? w : sp(w);
+          // Shift offers 15° steps, so 30°, 60° and the like are still within reach
+          const cur = e.shiftKey && !glueB ? constrainAngle(g.start, p, 15) : p;
           setGesture({ ...g, cur, glueB });
           break;
         }
@@ -2106,7 +2201,14 @@ export function Canvas() {
         break;
       }
       case 'move':
-        if (!g.floating) finishMove(g);
+        if (g.floating) break;
+        // let go over a side panel or dialog: the part would land hidden behind it, so put it back
+        if (g.moved && droppedOffCanvas(wrapRef.current, e.clientX, e.clientY)) {
+          abortGesture();
+          toast('Dropped outside the canvas · move cancelled');
+          break;
+        }
+        finishMove(g);
         break;
       case 'scale':
       case 'groupScale':
@@ -2317,7 +2419,10 @@ export function Canvas() {
   const z = view.zoom;
   const gs = grid * z;
   const showGrid = doc.settings.showGrid;
-  const majorEvery = 5;
+  // zoomed far out, major marks every 5 cells would be a few pixels apart and drown the drawing
+  // in noise: step them out by further fives until they are a readable distance apart
+  let majorEvery = 5;
+  while (gs > 0 && gs * majorEvery < 14) majorEvery *= 5;
   const dotGrid = gs >= 7;
   const gridStyle = doc.settings.gridStyle ?? 'dots';
 
@@ -2356,25 +2461,24 @@ export function Canvas() {
             ? badgeCursor(tool === 'select' ? 'plus' : tool, prefs.theme) ?? 'crosshair'
             : g?.kind === 'wire'
               ? badgeCursor(tool, prefs.theme) ?? 'crosshair'
-              : hover.port
-                ? 'crosshair'
-                : hover.item
+              : hover.item || hover.port
                   ? 'pointer'
                   : tool === 'select' && !g && selectionBounds && pointInRect(cursor, selectionBounds, 4 / z)
                     ? 'move'
                     : 'default';
 
   const ghostOf = placing ?? (dragSym ? { symbol: dragSym, rot: 0 as const, flipX: false } : null);
+  const ghostAt = ghostOf?.symbol === PIN_SYMBOL ? snapPin(doc, cursor, sp(cursor), 10 / z) : sp(cursor);
   const ghost: ComponentItem | null = ghostOf
     ? {
         id: '__ghost',
         type: 'component',
         symbol: ghostOf.symbol,
-        x: sp(cursor).x,
-        y: sp(cursor).y,
+        x: ghostAt.x,
+        y: ghostAt.y,
         rot: ghostOf.rot,
         flipX: ghostOf.flipX,
-        ref: getSymbol(doc, ghostOf.symbol).prefix + '?',
+        ref: ghostOf.symbol === PIN_SYMBOL ? nextPinName(doc) : getSymbol(doc, ghostOf.symbol).prefix + '?',
         value: getSymbol(doc, ghostOf.symbol).value ?? '',
         props: {},
         showRef: !getSymbol(doc, ghostOf.symbol).hideLabels,
@@ -2453,6 +2557,7 @@ export function Canvas() {
           {scopeBounds && (
             <rect x={scopeBounds.x - 16} y={scopeBounds.y - 16} width={scopeBounds.w + 32} height={scopeBounds.h + 32} rx={10} className="scope-box" strokeWidth={1.5 / z} />
           )}
+          {symbolMode && <SymbolOutline doc={doc} z={z} />}
           <Scene doc={doc} data={data} palette={EDITOR_PALETTE} highlight={highlight} frames={!presenting} xrefs={xrefs} />
 
           {/* unconnected port markers */}
@@ -2482,7 +2587,10 @@ export function Canvas() {
           })}
 
           {/* hover */}
-          {hover.item && !selSet.has(hover.item) && !g && <HoverOutline doc={doc} id={hover.item} polys={data.polys} z={z} />}
+          {/* (a solder dot whose ring is filling or open already shows it is hovered: no square box over the ring) */}
+          {hover.item && !selSet.has(hover.item) && !g && !(doc.items[hover.item]?.type === 'junction' && (hotPending || hotMenu)) && (
+            <HoverOutline doc={doc} id={hover.item} polys={data.polys} z={z} />
+          )}
           {/* items hovered in the layers panel */}
           {layerHover.map((id) => (
             <HoverOutline key={`lh-${id}`} doc={doc} id={id} polys={data.polys} z={z} />
@@ -2671,10 +2779,10 @@ export function Canvas() {
             })()}
 
           {/* hover-menu hints: faint rings on nearby hot spots; the one being rested on fills up */}
-          {tool === 'solder' && !g && !placing && (() => {
+          {tool === 'solder' && !g && !placing && pointerOnCanvas && (() => {
             const h = hotSpotAt(cursor);
             const act = h && solderActionFor(h);
-            if (!h || !act) return null;
+            if (!h || !act || (solderedAt && dist(h.pt, solderedAt) < 0.5)) return null;
             const jr = h.kind === 'junction' ? (doc.items[h.id] as { size?: number } | undefined)?.size : undefined;
             const r = Math.max(jr ?? doc.settings.junctionSize, 3);
             return act === 'solder' ? (
@@ -2696,7 +2804,13 @@ export function Canvas() {
                 ? Math.max(((doc.items[h.id] as { size?: number } | undefined)?.size ?? doc.settings.junctionSize) + 3, 6 / z)
                 : h.kind === 'end' ? 5 / z : 7 / z;
               return (
-                <g key={key} className={open ? 'hot-ring open' : pending ? 'hot-ring pending' : 'hot-ring'} style={{ opacity: open || pending ? 1 : 0.55 * (1 - d / reach) }}>
+                <g
+                  key={key}
+                  className={open ? 'hot-ring open' : pending ? 'hot-ring pending' : 'hot-ring'}
+                  style={{ opacity: open || pending ? 1 : 0.55 * (1 - d / reach), ['--hot-dwell' as string]: `${HOT_DWELL}ms` }}
+                >
+                  {/* a soft disc swells inside the ring as it fills, and stays while the menu is open */}
+                  {(pending || open) && <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-disc" />}
                   <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-base" strokeWidth={1.2 / z} />
                   {(pending || open) && (
                     <circle
@@ -2714,7 +2828,7 @@ export function Canvas() {
             })}
 
           {/* hovered port */}
-          {hover.port && (!g || g.kind === 'wire') && <circle cx={hover.port.pt.x} cy={hover.port.pt.y} r={6 / z + 2} className="port-hover" strokeWidth={2 / z} />}
+          {hover.port && (g ? g.kind === 'wire' : tool !== 'select') && <circle cx={hover.port.pt.x} cy={hover.port.pt.y} r={6 / z + 2} className="port-hover" strokeWidth={2 / z} />}
 
           {/* gestures */}
           {g?.kind === 'marquee' && (() => {
@@ -2744,7 +2858,18 @@ export function Canvas() {
                   sg.axis === 'x'
                     ? `M${gp.from} ${at}H${gp.to}M${gp.from} ${at - t}v${2 * t}M${gp.to} ${at - t}v${2 * t}`
                     : `M${at} ${gp.from}V${gp.to}M${at - t} ${gp.from}h${2 * t}M${at - t} ${gp.to}h${2 * t}`;
-                return <path key={`s${sg.axis}${n}`} d={d} className="space-guide" strokeWidth={1.25 / z} />;
+                // the gaps beside the moving box carry their size; matching gaps elsewhere are marked more lightly
+                const mx = (gp.from + gp.to) / 2;
+                return (
+                  <g key={`s${sg.axis}${n}`}>
+                    <path d={d} className={gp.own ? 'space-guide' : 'space-guide echo'} strokeWidth={1.25 / z} />
+                    {gp.own && (
+                      <text x={sg.axis === 'x' ? mx : at + 4 / z} y={sg.axis === 'x' ? at + 12 / z : mx} className="space-guide-label" fontSize={10 / z} textAnchor={sg.axis === 'x' ? 'middle' : 'start'} dominantBaseline={sg.axis === 'x' ? 'auto' : 'middle'}>
+                        {Math.round(sg.gap * 10) / 10}
+                      </text>
+                    )}
+                  </g>
+                );
               }),
             )}
           {g?.kind === 'wire' && (() => {
@@ -2779,6 +2904,7 @@ export function Canvas() {
             </g>
           )}
           <RemotePresence doc={doc} polys={data.polys} z={z} />
+          <AgentPresence doc={doc} z={z} />
         </g>
       </svg>
       {quickItem && quickBounds && !quickItem.locked && quickId && (
@@ -2793,7 +2919,10 @@ export function Canvas() {
           onLeave={() => {
             quickHold.current = false;
             cancelQuickHide();
-            quickTimers.current.hide = window.setTimeout(() => setQuickId(null), 240);
+            // back on its object (or on the way there) keeps it; anywhere else closes it after a grace
+            quickTimers.current.hide = window.setTimeout(() => {
+              if (hoverNow.current.item !== quickId) setQuickId(null);
+            }, 450);
           }}
         />
       )}
@@ -2829,8 +2958,8 @@ export function Canvas() {
           Drag a rectangle over the region to export · <kbd>Esc</kbd>/<kbd>right-click</kbd> cancel
         </div>
       )}
-      <WelcomeScreen />
-      <IntroCard />
+      {!symbolMode && <WelcomeScreen />}
+      {!symbolMode && <IntroCard />}
       <HintBar
         gesture={!g ? null : g.kind === 'wire' || g.kind === 'polygon' || g.kind === 'path' ? g.kind : g.kind === 'shape' && (g.shape === 'line' || g.shape === 'arrow') ? 'connector' : 'other'}
         editingText={!!editingText}
@@ -2970,13 +3099,17 @@ function GlueMarkers({ doc, glue, z }: { doc: CircuitDoc; glue: GlueHit; z: numb
   const turned = it.type === 'shape' && shapeRot(it) ? it : null;
   const b = turned ? shapeBox(turned) : itemBounds(doc, it);
   const a = glue.attach;
+  const spots = attachSpots(doc, it);
+  const onSpot = (s: { fx: number; fy: number }) => isFixed(a) && Math.abs(s.fx - a.fx!) < 1e-3 && Math.abs(s.fy - a.fy!) < 1e-3;
   return (
     <g pointerEvents="none">
       {b && <rect x={b.x - 3} y={b.y - 3} width={b.w + 6} height={b.h + 6} rx={4} className="glue-outline" strokeWidth={1.5 / z} transform={turned ? shapeTransform(turned) : undefined} />}
-      {attachSpots(doc, it).map((s, i) => {
-        const on = isFixed(a) && Math.abs(s.fx - a.fx!) < 1e-3 && Math.abs(s.fy - a.fy!) < 1e-3;
+      {spots.map((s, i) => {
+        const on = onSpot(s);
         return <circle key={i} cx={s.pt.x} cy={s.pt.y} r={(on ? 4.5 : 3) / z} className={on ? 'glue-spot active' : 'glue-spot'} strokeWidth={1.2 / z} />;
       })}
+      {/* pinned somewhere along the edge, between the offered points */}
+      {isFixed(a) && !spots.some(onSpot) && <circle cx={glue.pt.x} cy={glue.pt.y} r={4 / z} className="glue-spot active" strokeWidth={1.2 / z} />}
     </g>
   );
 }
@@ -3009,6 +3142,10 @@ function HoverOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; poly
   const turned = it.type === 'shape' && shapeRot(it) ? it : null;
   const b = turned ? shapeBox(turned) : itemBounds(doc, it);
   if (!b) return null;
+  // an oval shows its own outline: a rectangle round it would say the corners were clickable
+  if (it.type === 'shape' && it.kind === 'ellipse') {
+    return <ellipse cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2 + 4} ry={b.h / 2 + 4} className="hover-box" strokeWidth={1 / z} transform={turned ? shapeTransform(turned) : undefined} />;
+  }
   return <rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} rx={4} className="hover-box" strokeWidth={1 / z} transform={turned ? shapeTransform(turned) : undefined} />;
 }
 
@@ -3034,7 +3171,7 @@ function LockBadge({ r }: { r: Rect }) {
   );
 }
 
-function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; polys: Map<string, Point[]>; z: number }) {
+const SelectionOutline = memo(function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; polys: Map<string, Point[]>; z: number }) {
   const it = doc.items[id];
   if (!it) return null;
   if (it.type === 'wire') {
@@ -3060,6 +3197,14 @@ function SelectionOutline({ doc, id, polys, z }: { doc: CircuitDoc; id: string; 
       transform={turned ? shapeTransform(turned) : undefined}
     />
   );
+});
+
+/** Let go outside the canvas, or over a side panel floating on it (the toolbar and other overlays still count as canvas). */
+function droppedOffCanvas(wrap: HTMLElement | null, x: number, y: number): boolean {
+  if (!wrap) return false;
+  const r = wrap.getBoundingClientRect();
+  if (x < r.left || x > r.right || y < r.top || y > r.bottom) return true;
+  return !!document.elementFromPoint(x, y)?.closest('.panel, .dialog, [role="dialog"]');
 }
 
 /** A new text whose editor should open straight into the math zone. */

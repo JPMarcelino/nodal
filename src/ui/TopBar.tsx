@@ -32,7 +32,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { isExplainTool, useExplain } from '../store/explain';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Tool } from '../model/types';
 import * as A from '../store/actions';
 import { openExport } from '../io/fileActions';
@@ -46,7 +46,7 @@ import { WireAngleButton } from './WireAngleButton';
 const MENUS: { label: string; items: (string | '-')[] }[] = [
   {
     label: 'File',
-    items: ['file.new', 'file.open', 'file.import', '-', 'file.save', 'file.saveAs', '-', 'file.export', 'file.exportSelection', 'file.print', '-', 'collab.share'],
+    items: ['file.new', 'file.open', 'file.import', '-', 'file.save', 'file.saveAs', '-', 'file.export', 'file.exportSelection', 'file.print', '-', 'collab.share', 'agent.link'],
   },
   {
     label: 'Edit',
@@ -60,7 +60,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
     label: 'Arrange',
     items: [
       'arrange.rotateCw', 'arrange.rotateCcw', 'arrange.flipH', 'arrange.flipV', '-',
-      'arrange.group', 'arrange.ungroup', 'arrange.enterGroup', 'arrange.exitGroup', 'arrange.toPath', '-',
+      'arrange.group', 'arrange.ungroup', 'arrange.enterGroup', 'arrange.exitGroup', 'arrange.toPath', 'connector.curve', '-',
       'arrange.alignLeft', 'arrange.alignHCenter', 'arrange.alignRight', 'arrange.alignTop', 'arrange.alignVCenter', 'arrange.alignBottom', 'arrange.distH', 'arrange.distV', '-',
       'arrange.sameWidth', 'arrange.sameHeight', 'arrange.sameSize', '-',
       'arrange.front', 'arrange.forward', 'arrange.backward', 'arrange.back',
@@ -74,7 +74,7 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
   },
   {
     label: 'View',
-    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.viewMode', 'view.stats', '-', 'view.grid', 'view.gridStyle', 'view.snap', 'view.minimap', 'view.alignGuides', 'view.spacingGuides', 'view.labelGuides', '-', 'view.refs', 'view.values', 'view.wireLabels', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
+    items: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.fitSel', 'view.100', '-', 'view.viewMode', 'view.stats', '-', 'view.grid', 'view.gridStyle', 'view.gridSize', 'view.snap', 'view.minimap', 'view.alignGuides', 'view.spacingGuides', 'view.labelGuides', '-', 'view.refs', 'view.values', 'view.wireLabels', '-', 'view.library', 'view.layers', 'view.check', 'view.inspector', 'view.focus', '-', 'view.theme'],
   },
   { label: 'Help', items: ['help.palette', 'help.shortcuts', '-', 'help.about'] },
 ];
@@ -82,11 +82,50 @@ const MENUS: { label: string; items: (string | '-')[] }[] = [
 function MenuBar() {
   const [open, setOpen] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const dialog = useStore((s) => s.dialog);
   useEffect(() => {
     if (open === null) return;
     const close = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(null);
+    // keys reach the menu before the app's shortcuts: Esc closes, arrows walk the items and the menus
+    const onKey = (e: KeyboardEvent) => {
+      const items = [...(ref.current?.querySelectorAll<HTMLButtonElement>('.dropdown-item:not(:disabled)') ?? [])];
+      const at = items.indexOf(document.activeElement as HTMLButtonElement);
+      const stop = () => (e.preventDefault(), e.stopPropagation());
+      if (e.key === 'Escape') {
+        stop();
+        setOpen(null);
+        ref.current?.querySelectorAll<HTMLButtonElement>('.menu-btn')[open]?.focus();
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        stop();
+        const d = e.key === 'ArrowDown' ? 1 : -1;
+        items[at < 0 ? (d > 0 ? 0 : items.length - 1) : (at + d + items.length) % items.length]?.focus();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        stop();
+        setOpen((open + (e.key === 'ArrowRight' ? 1 : -1) + MENUS.length) % MENUS.length);
+      } else if (e.key === 'Home' || e.key === 'End') {
+        stop();
+        items[e.key === 'Home' ? 0 : items.length - 1]?.focus();
+      } else if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Tab' && !['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+        // any other shortcut acts as usual, and the menu gets out of its way
+        setOpen(null);
+      }
+    };
     window.addEventListener('pointerdown', close);
-    return () => window.removeEventListener('pointerdown', close);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+  // a dialog opening (from a menu item or a shortcut) closes the menu under it
+  useEffect(() => setOpen(null), [dialog]);
+  // a menu near the right edge of a narrow window slides left to stay on screen
+  useLayoutEffect(() => {
+    const d = ref.current?.querySelector<HTMLElement>('.dropdown');
+    if (!d) return;
+    d.style.left = '';
+    const over = d.getBoundingClientRect().right - (window.innerWidth - 8);
+    if (over > 0) d.style.left = `${-over}px`;
   }, [open]);
   return (
     <div className="menubar" ref={ref}>
@@ -323,8 +362,8 @@ const TOOLS: { tool: Tool; icon: JSX.Element; label: string; cmd: string; alt?: 
   { tool: 'ellipse', icon: <Circle size={17} />, label: 'Ellipse', cmd: 'tool.ellipse', desc: 'Drag to draw an ellipse' },
   { tool: 'polygon', icon: <Pentagon size={17} />, label: 'Polygon', cmd: 'tool.polygon', desc: 'Click for corners · click the first one to close' },
   { tool: 'path', icon: <Route size={17} />, label: 'Path', cmd: 'tool.path', desc: 'Click for corners, drag for curves' },
-  { tool: 'line', icon: <Minus size={17} style={{ transform: 'rotate(-45deg)' }} />, label: 'Line', cmd: 'tool.line', desc: 'Ends attach to shapes and parts · Shift for 45°' },
-  { tool: 'arrow', icon: <ArrowUpRight size={17} />, label: 'Arrow', cmd: 'tool.arrow', desc: 'Ends attach to shapes and parts · Shift for 45°' },
+  { tool: 'line', icon: <Minus size={17} style={{ transform: 'rotate(-45deg)' }} />, label: 'Line', cmd: 'tool.line', desc: 'Ends attach to shapes and parts · Shift for 15° steps · drag the + to bow it' },
+  { tool: 'arrow', icon: <ArrowUpRight size={17} />, label: 'Arrow', cmd: 'tool.arrow', desc: 'Ends attach to shapes and parts · Shift for 15° steps · drag the + to bow it' },
   { tool: 'text', icon: <Type size={17} />, label: 'Text', cmd: 'tool.text', desc: 'Click to place text · $…$ typesets maths' },
   { tool: 'frame', icon: <Frame size={17} />, label: 'Presentation frame', cmd: 'tool.frame', desc: 'Drag an area to show as a step when presenting' },
 ];

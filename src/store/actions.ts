@@ -1,4 +1,5 @@
 import { current } from 'immer';
+import { PIN_SYMBOL } from '../model/symbols';
 import { docBounds, groupChain, itemBounds, makeComponent, makeShape, topGroup } from '../model/doc';
 import { pulseAt } from '../canvas/pulses';
 import { inkAverageWidth, inkPoints, packInk, recognizeShape, shapePoints } from '../model/ink';
@@ -35,7 +36,7 @@ import {
   type Fragment,
   type StackMove,
 } from '../model/ops';
-import { getSymbol } from '../model/registry';
+import { adoptKicadSymbol, getSymbol } from '../model/registry';
 import { incrementLabels } from '../model/increment';
 import { deletePolyCorner } from '../model/polygon';
 import { canConvertToPath, convertToPath, hasHeads, pathNodes, setNodeKind, setPathNodes } from '../model/path';
@@ -153,8 +154,9 @@ export function addPresetShape(id: string, at: Point, size: { w: number; h: numb
 
 export function startPlacing(symbol: string) {
   if (readOnly()) return readOnlyNotice();
+  // the part joins "Recently used" when it is placed: adding it now would push a new row in
+  // above the tile just clicked, moving the tile out from under a double-click
   set({ placing: { symbol, rot: 0, flipX: false, repeat: true }, tool: 'select', contextMenu: null });
-  pushRecent(symbol);
 }
 
 /**
@@ -172,7 +174,8 @@ export function placeArmed(x: number, y: number, shift = false): string | null {
   const pl = S().placing;
   if (!pl) return null;
   const id = placeComponent(pl.symbol, x, y, pl.rot, pl.flipX);
-  if (!keepsPlacing(shift)) set({ placing: null });
+  // pins come in sets: the pin tool stays armed until Esc
+  if (!keepsPlacing(shift) && pl.symbol !== PIN_SYMBOL) set({ placing: null });
   return id;
 }
 
@@ -194,13 +197,15 @@ export function placeComponent(symbol: string, x: number, y: number, rot: 0 | 90
     if (placed?.variantOf && userLibrary[placed.variantOf] && !d.symbols[placed.variantOf]) {
       d.symbols[placed.variantOf] = userLibrary[placed.variantOf];
     }
+    // a KiCad part brings its drawing and all its units along
+    adoptKicadSymbol(d as CircuitDoc, symbol);
     const c = makeComponent(d as CircuitDoc, symbol, x, y, rot, flipX);
     c.group = scope;
     d.items[c.id] = c;
     id = c.id;
   });
   set({ selection: [id] });
-  pushRecent(symbol);
+  if (symbol !== PIN_SYMBOL) pushRecent(symbol);
   const placed = vdoc().items[id];
   const b = placed && itemBounds(vdoc(), placed);
   if (b) pulseAt(b.x + b.w / 2, b.y + b.h / 2, 'place');
@@ -952,8 +957,9 @@ export function rawInk(ids: string[]): string[] {
 }
 
 /**
- * Cleans finished ink strokes up into the line, ellipse or box each looks
- * like (as holding the pen still does while drawing), keeping their weight.
+ * Cleans finished ink strokes up into the line, arrow, arc, ellipse, box or
+ * polygon each looks like (as holding the pen still does while drawing),
+ * keeping their weight.
  */
 export function snapInkToShapes(ids = S().selection) {
   if (readOnly()) return readOnlyNotice();

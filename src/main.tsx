@@ -1,6 +1,7 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { startAgentLink } from './agent/link';
 import { joinFromUrl } from './collab/session';
 import { isDesktop } from './io/files';
 import { addLibraryFromLocation } from './io/sharing';
@@ -19,6 +20,7 @@ if (!showGallery) {
   joinFromUrl();
   addLibraryFromLocation();
   startVersionHistory();
+  startAgentLink();
 }
 
 // installable, offline-capable web app (the desktop app ships its files itself)

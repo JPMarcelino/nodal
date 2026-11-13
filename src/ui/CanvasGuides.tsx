@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Command, Cpu, FilePlus2, LogOut, FileText, FolderOpen, MousePointerClick, Radio, Search, Sparkles, Spline, Upload, X } from 'lucide-react';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
 import { exportSvg } from '../io/export';
@@ -10,7 +10,7 @@ import type { CircuitDoc, Item } from '../model/types';
 import { fileNew, openExample, openFromHistory } from '../io/fileActions';
 import { COMMAND_MAP, keysFor, prettyKey } from '../store/commands';
 import { isExplainTool, useExplain } from '../store/explain';
-import { firstVisit, readOnly, set, useStore } from '../store/store';
+import { firstVisit, readOnly, S, set, useStore } from '../store/store';
 import { viewDoc } from '../model/pages';
 import { hintFor, type HintGesture, type HintSel } from './hints';
 import { Logo } from './Logo';
@@ -27,6 +27,7 @@ function selKind(doc: CircuitDoc, it: Item | undefined): HintSel {
   }
   if (it.type === 'shape') {
     if (it.kind === 'text') return 'text';
+    if (it.kind === 'line' || it.kind === 'arrow') return 'connector';
     if (it.kind === 'rect' || it.kind === 'zone' || it.kind === 'ellipse' || it.kind === 'polygon') return 'shape';
   }
   return 'other';
@@ -288,7 +289,9 @@ export function IntroCard() {
       return true;
     }
   });
-  const edited = useStore((s) => s.past.length > 0);
+  // edited, or another drawing opened over the example: either way the card is no longer true
+  const firstDoc = useRef(S().doc);
+  const edited = useStore((s) => s.past.length > 0 || s.doc !== firstDoc.current);
   const presenting = useExplain((s) => s.presenting !== null);
   const blocked = useStore((s) => readOnly(s));
   const dismiss = () => {

@@ -93,6 +93,13 @@ describe('equation editor typing', () => {
     f.type('^');
     expect(f.toTex()).toBe('{}^{}');
   });
+  it('wraps a selected function name in brackets instead of folding it first', () => {
+    const e = new EqEditor();
+    e.typeText('sin');
+    e.home(true);
+    e.type('(');
+    expect(e.toTex()).toBe('\\left(sin\\right)');
+  });
   it('undo restores the previous state', () => {
     const e = new EqEditor();
     e.type('x');

@@ -265,6 +265,26 @@ export function mergeLabelStyle(st: LabelStyle | undefined, patch: Partial<Label
   return Object.keys(next).length ? next : undefined;
 }
 
+/**
+ * What an item's stroke is called. A line is the stroke itself (wires, connectors,
+ * open paths, ink and the strokes of parts); an outline is the edge around a closed
+ * shape, with a fill inside it.
+ */
+export type StrokeNoun = 'Line' | 'Outline';
+
+export function strokeNoun(it: Item): StrokeNoun {
+  if (it.type !== 'shape') return 'Line';
+  if (it.kind === 'line' || it.kind === 'arrow' || it.kind === 'ink') return 'Line';
+  if (it.kind === 'polygon' && it.open) return 'Line';
+  return 'Outline';
+}
+
+/** The stroke's name for a selection: "Line", "Outline", or both when it holds some of each. */
+export function strokeNounOf(items: Item[]): string {
+  const nouns = new Set(items.map(strokeNoun));
+  return nouns.size === 1 ? [...nouns][0] : 'Line & outline';
+}
+
 /** The shared value of a property across items, or undefined when they differ (or none has it). */
 export function commonLook(doc: CircuitDoc, items: Item[]): { value: Partial<Look>; keys: Set<LookKey>; mixed: Set<LookKey> } {
   const value: Partial<Look> = {};
