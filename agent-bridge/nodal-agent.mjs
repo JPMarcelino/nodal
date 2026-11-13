@@ -21,7 +21,7 @@
  *
  * No dependencies; Node 18+.
  */
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync, chmodSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { homedir } from 'node:os';
@@ -365,7 +365,10 @@ class Bridge {
   authed(req, url) {
     const h = req.headers.authorization || '';
     const t = h.startsWith('Bearer ') ? h.slice(7) : url.searchParams.get('token');
-    return t === this.token;
+    if (typeof t !== 'string') return false;
+    const a = createHash('sha256').update(t).digest();
+    const b = createHash('sha256').update(this.token).digest();
+    return timingSafeEqual(a, b);
   }
 
   async http(req, res) {

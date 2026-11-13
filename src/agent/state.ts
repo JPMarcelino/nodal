@@ -1,3 +1,4 @@
+import { isLoopbackAgentUrl } from './url';
 import { create } from 'zustand';
 import type { Point } from '../model/types';
 
@@ -99,7 +100,8 @@ const saved = typeof localStorage !== 'undefined' ? loadSaved() : {};
 
 export const useAgent = create<AgentState>(() => ({
   enabled: saved.enabled ?? false,
-  url: saved.url || DEFAULT_AGENT_URL,
+  // a remote URL saved by an older version (e.g. from a crafted #agent= link) is dropped
+  url: saved.url && isLoopbackAgentUrl(saved.url) ? saved.url : DEFAULT_AGENT_URL,
   connected: false,
   linkError: null,
   clients: 0,

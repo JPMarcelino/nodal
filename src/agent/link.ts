@@ -3,6 +3,9 @@ import { sharedDoc } from '../store/store';
 import { installGuard } from './guard';
 import { runCall } from './run';
 import { A, logAgent, setAgent, useAgent } from './state';
+import { isLoopbackAgentUrl } from './url';
+
+export { isLoopbackAgentUrl };
 
 /**
  * The app's end of the agent link: a WebSocket to the agent bridge
@@ -31,6 +34,10 @@ function connect() {
   clearTimeout(retry);
   const { url, enabled } = A();
   if (!enabled || ws) return;
+  if (!isLoopbackAgentUrl(url)) {
+    setAgent({ linkError: `Refused ${url}: the agent bridge must run on this computer (ws://127.0.0.1)` });
+    return;
+  }
   let sock: WebSocket;
   try {
     sock = new WebSocket(url);
@@ -128,7 +135,7 @@ export function startAgentLink() {
     const fromHash = /(?:^#|[&#])agent(?:=([^&]*))?/.exec(location.hash);
     if (q.has('agent') || fromHash) {
       const raw = q.get('agent') || (fromHash?.[1] ? decodeURIComponent(fromHash[1]) : '');
-      setAgent({ enabled: true, ...(raw && /^wss?:\/\//.test(raw) ? { url: raw } : /^\d+$/.test(raw) ? { url: `ws://127.0.0.1:${raw}/app` } : {}) });
+      setAgent({ enabled: true, ...(raw && /^wss?:\/\//.test(raw) && isLoopbackAgentUrl(raw) ? { url: raw } : /^\d+$/.test(raw) ? { url: `ws://127.0.0.1:${raw}/app` } : {}) });
     }
   } catch {
     /* no location (tests) */
