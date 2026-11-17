@@ -239,6 +239,8 @@ export function Canvas() {
   /* the small style card that follows a hovered object */
   const [quickId, setQuickId] = useState<string | null>(null);
   const quickHold = useRef(false);
+  /** A mouse button went down on the canvas and its release hasn't arrived yet. */
+  const mousePressed = useRef(false);
   const quickTimers = useRef<{ hide?: number; show?: number }>({});
   /** Where (on screen) the pointer last was on the card's object: the way to the card starts there. */
   const quickFrom = useRef<Point | null>(null);
@@ -443,12 +445,19 @@ export function Canvas() {
 
   useEffect(() => {
     const el = wrapRef.current!;
+    let last = el.getBoundingClientRect();
     const ro = new ResizeObserver(() => {
       const r = el.getBoundingClientRect();
-      set({ canvasSize: { w: r.width, h: r.height } });
+      // a side panel opening or closing moves the canvas's edge: shift the camera by as much,
+      // so the drawing stays where it was on screen instead of jumping sideways with the edge
+      const dx = last.left - r.left;
+      const dy = last.top - r.top;
+      last = r;
+      const v = S().view;
+      set(dx || dy ? { canvasSize: { w: r.width, h: r.height }, view: { ...v, x: v.x + dx, y: v.y + dy } } : { canvasSize: { w: r.width, h: r.height } });
     });
     ro.observe(el);
-    const r = el.getBoundingClientRect();
+    const r = last;
     set({ canvasSize: { w: r.width, h: r.height } });
     // first layout: fit the document
     requestAnimationFrame(() => A.fitView());
@@ -1307,6 +1316,7 @@ export function Canvas() {
     if (quickId) setQuickId(null);
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
+    if (e.pointerType === 'mouse') mousePressed.current = true;
     const w = toWorldPt(e.clientX, e.clientY);
     const client = { x: e.clientX, y: e.clientY };
     set({ contextMenu: null });
@@ -1789,6 +1799,13 @@ export function Canvas() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    // the button was let go where the canvas couldn't hear it (another window took focus mid-drag,
+    // a system dialog): finish the press as that release would have, rather than leave the drag
+    // stuck to a pointer with no button down
+    if (mousePressed.current && e.pointerType === 'mouse' && e.buttons === 0) {
+      mousePressed.current = false;
+      onPointerUp(e);
+    }
     lastMove.current = { clientX: e.clientX, clientY: e.clientY };
     const w = toWorldPt(e.clientX, e.clientY);
     set(S().pointerOnCanvas ? { cursor: w } : { cursor: w, pointerOnCanvas: true });
@@ -2181,6 +2198,7 @@ export function Canvas() {
   moveRef.current = onPointerMove;
 
   const onPointerUp = (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse') mousePressed.current = false;
     const g = gRef.current;
     if (!g) return;
     const w = toWorldPt(e.clientX, e.clientY);
@@ -2343,8 +2361,12 @@ export function Canvas() {
       const deltaY = e.deltaY * unit;
       const zoomMode = e.ctrlKey || e.metaKey || S().prefs.wheel === 'zoom';
       if (zoomMode && !e.shiftKey) {
-        const factor = Math.exp(-deltaY * (e.ctrlKey && Math.abs(deltaY) < 50 ? 0.01 : 0.0015));
-        A.zoomBy(factor, e.clientX - r.left, e.clientY - r.top);
+        // a trackpad pinch (or fine scroll) sends many small deltas: follow them exactly. A mouse
+        // wheel sends coarse notches: ease each one in, so the zoom doesn't jump a step per click
+        const fine = e.deltaMode === 0 && Math.abs(deltaY) < 50;
+        const factor = Math.exp(-deltaY * (e.ctrlKey && fine ? 0.01 : 0.0015));
+        if (fine) A.zoomBy(factor, e.clientX - r.left, e.clientY - r.top);
+        else A.zoomSmooth(factor, e.clientX - r.left, e.clientY - r.top);
       } else {
         const v = S().view;
         const dx = e.shiftKey && !deltaX ? deltaY : deltaX;
@@ -2502,7 +2524,10 @@ export function Canvas() {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={abortGesture}
+      onPointerCancel={() => {
+        mousePressed.current = false;
+        abortGesture();
+      }}
       onPointerLeave={() => {
         // a hover still queued for this frame would bring the outline back
         if (hoverFrame.current !== undefined) cancelAnimationFrame(hoverFrame.current);
@@ -3007,7 +3032,18 @@ function groupBounds(doc: CircuitDoc, gid: string): Rect | null {
   return unionBounds(doc, ids);
 }
 
+/** The last union worked out: render asks for the selection's box several times a frame, and per pointer move. */
+let unionMemo: { doc: CircuitDoc; ids: string[]; out: Rect | null } | null = null;
+
 function unionBounds(doc: CircuitDoc, ids: string[]): Rect | null {
+  // docs and selections are immutable, so the same pair of references has the same box
+  if (unionMemo && unionMemo.doc === doc && unionMemo.ids === ids) return unionMemo.out;
+  const out = unionBoundsOf(doc, ids);
+  unionMemo = { doc, ids, out };
+  return out;
+}
+
+function unionBoundsOf(doc: CircuitDoc, ids: string[]): Rect | null {
   const rects = ids.map((id) => doc.items[id] && itemBounds(doc, doc.items[id])).filter((r): r is Rect => !!r);
   if (!rects.length) return null;
   const x1 = Math.min(...rects.map((r) => r.x));

@@ -60,6 +60,53 @@ export function useTouchInput(wrapRef: RefObject<HTMLDivElement>) {
     let nav: { t0: number; most: number; travel: number; last: { c: Point; d: number } | null } | null = null;
     let before: Before | null = null;
     let press: { id: number; at: Point; timer: number } | null = null;
+    /** Recent positions of the touch centre, to carry a flick on after the fingers lift. */
+    let trail: { t: number; c: Point }[] = [];
+    /** The trail as it stood when a finger lifted while others stayed: fingers of a flick lift a few ms apart. */
+    let liftTrail: { t: number; trail: { t: number; c: Point }[] } | null = null;
+    let coast = 0;
+    const stopCoast = () => {
+      if (coast) cancelAnimationFrame(coast);
+      coast = 0;
+    };
+
+    /** Lets the paper glide on after a flick and slow to a stop, as touch screens do. */
+    const fling = () => {
+      let now = performance.now();
+      let recent = trail.filter((s) => now - s.t < 100);
+      if (recent.length < 2 && liftTrail && now - liftTrail.t < 80) {
+        // measure up to when the first finger lifted
+        now = liftTrail.t;
+        recent = liftTrail.trail.filter((s) => now - s.t < 100);
+      }
+      trail = [];
+      liftTrail = null;
+      // a finger that came to rest before lifting means "stop here"
+      if (recent.length < 2 || now - recent[recent.length - 1].t > 50) return;
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      const a = recent[0];
+      const b = recent[recent.length - 1];
+      const dt = Math.max(1, b.t - a.t);
+      let vx = (b.c.x - a.c.x) / dt;
+      let vy = (b.c.y - a.c.y) / dt;
+      if (Math.hypot(vx, vy) < 0.25) return; // px per ms: slower is a placed pan, not a flick
+      let last = performance.now();
+      let mine = S().view;
+      const step = (t: number) => {
+        // the user (or a camera move) took over
+        if (S().view !== mine) return void (coast = 0);
+        const ms = Math.min(48, t - last);
+        last = t;
+        const k = Math.exp(-ms / 320);
+        vx *= k;
+        vy *= k;
+        if (Math.hypot(vx, vy) < 0.02) return void (coast = 0);
+        mine = { ...mine, x: mine.x + vx * ms, y: mine.y + vy * ms };
+        set({ view: mine });
+        coast = requestAnimationFrame(step);
+      };
+      coast = requestAnimationFrame(step);
+    };
 
     const snapshot = (): Before => {
       const s = S();
@@ -94,6 +141,10 @@ export function useTouchInput(wrapRef: RefObject<HTMLDivElement>) {
       const now = centre();
       const last = nav.last;
       nav.last = now;
+      // the centre jumps when a finger joins or leaves: only a steady finger set measures speed
+      if (!last) trail = [];
+      trail.push({ t: performance.now(), c: now.c });
+      if (trail.length > 8) trail.shift();
       if (!last) return;
       const r = el.getBoundingClientRect();
       if (now.d && last.d) A.zoomBy(now.d / last.d, now.c.x - r.left, now.c.y - r.top);
@@ -121,6 +172,8 @@ export function useTouchInput(wrapRef: RefObject<HTMLDivElement>) {
     const down = (e: PointerEvent) => {
       lastPointer = e.pointerType;
       if (e.pointerType === 'pen') penSeen = true;
+      // any new press catches the gliding paper
+      stopCoast();
       if (e.pointerType !== 'touch') return;
       if ((e.target as Element).closest?.(OWN_INPUT)) return;
       const p = { x: e.clientX, y: e.clientY };
@@ -164,6 +217,7 @@ export function useTouchInput(wrapRef: RefObject<HTMLDivElement>) {
       }
       e.stopPropagation();
       if (fingers.size) {
+        liftTrail = { t: performance.now(), trail };
         if (nav) nav.last = null;
         navigate();
         return;
@@ -171,7 +225,12 @@ export function useTouchInput(wrapRef: RefObject<HTMLDivElement>) {
       const n = nav;
       nav = null;
       before = null;
-      if (!n || e.type === 'pointercancel' || inGesture()) return;
+      if (!n || e.type === 'pointercancel' || inGesture()) {
+        trail = [];
+        return;
+      }
+      if (n.travel >= TAP_TRAVEL) fling();
+      else trail = [];
       if (performance.now() - n.t0 < TAP_TIME && n.travel < TAP_TRAVEL) {
         if (n.most === 2 && gestureSlots.canvas?.get()) {
           // no Escape key on a tablet: a two-finger tap ends the wire being drawn first
@@ -207,6 +266,7 @@ export function useTouchInput(wrapRef: RefObject<HTMLDivElement>) {
     el.addEventListener('gesturechange', noPageZoom, opts);
     return () => {
       cancelPress();
+      stopCoast();
       el.removeEventListener('pointerdown', down, opts);
       el.removeEventListener('pointermove', move, opts);
       el.removeEventListener('pointerup', up, opts);

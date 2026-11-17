@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import type { CircuitDoc } from '../model/types';
 import { docBounds, itemBounds } from '../model/doc';
 import { shapeTransform } from '../model/rotation';
@@ -6,6 +6,7 @@ import { unionRects } from '../model/geometry';
 import { sheetRect } from '../model/sheet';
 import type { Rect } from '../model/types';
 import { S, set, useStore, useViewDoc } from '../store/store';
+import * as A from '../store/actions';
 import type { SceneData } from './Scene';
 
 const W = 200;
@@ -19,6 +20,7 @@ export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
   // the map frame is held still while dragging: it grows to include the viewport, and re-fitting it
   // under the pointer on every move would pan further each time (a runaway feedback loop)
   const held = useRef<{ box: Rect; k: number } | null>(null);
+  const [, refit] = useState(0);
   // panning and zooming only move the viewport box; the drawing is measured once per edit
   const b = useMemo(() => unionRects([docBounds(doc), sheetRect(doc.settings)].filter((r): r is Rect => !!r)), [doc]);
   // nothing to map on an empty page (the welcome screen is there instead)
@@ -36,7 +38,7 @@ export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
   const fit = { x: all.x - pad, y: all.y - pad, w: all.w + pad * 2, h: all.h + pad * 2 };
   const { box, k } = held.current ?? { box: fit, k: Math.min(W / fit.w, H / fit.h) };
 
-  const navigate = (clientX: number, clientY: number) => {
+  const navigate = (clientX: number, clientY: number, glide = false) => {
     const r = ref.current!.getBoundingClientRect();
     const ox = (W - box.w * k) / 2;
     const oy = (H - box.h * k) / 2;
@@ -44,7 +46,10 @@ export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
     const wx = (((clientX - r.left) * W) / r.width - ox) / k + box.x;
     const wy = (((clientY - r.top) * H) / r.height - oy) / k + box.y;
     const v = S().view;
-    set({ view: { ...v, x: size.w / 2 - wx * v.zoom, y: size.h / 2 - wy * v.zoom } });
+    const to = { ...v, x: size.w / 2 - wx * v.zoom, y: size.h / 2 - wy * v.zoom };
+    // a click travels there (so the eye can follow where it went); dragging the map tracks the pointer
+    if (glide) A.glideView(to, 220);
+    else set({ view: to });
   };
 
   return (
@@ -57,12 +62,13 @@ export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
         onPointerDown={(e) => {
           (e.target as Element).setPointerCapture(e.pointerId);
           held.current = { box, k };
-          navigate(e.clientX, e.clientY);
+          navigate(e.clientX, e.clientY, true);
         }}
         onPointerMove={(e) => e.buttons === 1 && navigate(e.clientX, e.clientY)}
         onPointerUp={() => {
           held.current = null;
-          set({ view: { ...S().view } });
+          // draw the map at its own fit again (without touching the view, so a click's glide runs on)
+          refit((n) => n + 1);
         }}
         onPointerCancel={() => (held.current = null)}
       >

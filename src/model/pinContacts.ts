@@ -43,9 +43,25 @@ export function attachLandedPins(prev: CircuitDoc, next: CircuitDoc): CircuitDoc
       if (at) pins.push({ comp: c.id, port: p.id, pt: at.pt });
     }
   }
-  const touches = (doc: CircuitDoc, w: WireItem, pt: Point) => wirePolyline(doc, w).some((q, i, all) => i > 0 && projectOnSegment(pt, all[i - 1], q).d < 0.01);
   const wires = Object.values(next.items).filter((i): i is WireItem => i.type === 'wire' && !i.hidden);
-  if (!pins.some((pin) => wires.some((w) => touches(next, w, pin.pt)))) return next;
+  // each wire's route (and its box) once, not once per pin: dropping a big selection would
+  // otherwise route every wire for every pin and stall the drop
+  const routes = wires.map((w) => {
+    const pts = wirePolyline(next, w);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const q of pts) {
+      if (q.x < x0) x0 = q.x;
+      if (q.x > x1) x1 = q.x;
+      if (q.y < y0) y0 = q.y;
+      if (q.y > y1) y1 = q.y;
+    }
+    return { pts, x0: x0 - 0.01, y0: y0 - 0.01, x1: x1 + 0.01, y1: y1 + 0.01 };
+  });
+  const touchesAny = (pt: Point) =>
+    routes.some((r) => pt.x >= r.x0 && pt.x <= r.x1 && pt.y >= r.y0 && pt.y <= r.y1 && r.pts.some((q, i, all) => i > 0 && projectOnSegment(pt, all[i - 1], q).d < 0.01));
+  // only pins on some wire can connect (splitting a wire keeps its pieces on the same path)
+  const landed = pins.filter((pin) => touchesAny(pin.pt));
+  if (!landed.length) return next;
 
   // wires already on a landed part before this settle (not the pieces split off here)
   const leads = new Set(wires.filter((w) => parts.some((c) => onPart(w.a, c.id) || onPart(w.b, c.id))).map((w) => w.id));
@@ -54,7 +70,7 @@ export function attachLandedPins(prev: CircuitDoc, next: CircuitDoc): CircuitDoc
     const doc = d as CircuitDoc;
     /** Wire pieces created here, to drop the ones that end up shorting a part. */
     const made = new Set<string>();
-    for (const pin of pins) {
+    for (const pin of landed) {
       const port: Endpoint = { kind: 'port', comp: pin.comp, port: pin.port };
       for (const w of Object.values(doc.items)) {
         if (w.type !== 'wire' || w.hidden || w.locked) continue;

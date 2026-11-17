@@ -2619,6 +2619,8 @@ select.input {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
   opacity: 0.92;
+  /* steps aside for the explain dock (and back) with the same ease both ways */
+  transition: bottom 0.2s ease;
 }
 
 .minimap svg {
@@ -2931,6 +2933,24 @@ select.input {
   from {
     opacity: 0;
     transform: translateY(10px) scale(0.96);
+  }
+}
+
+/* a dismissed toast fades down out of the stack instead of blinking away */
+.toast.leaving {
+  pointer-events: none;
+  animation: toast-out 0.16s ease-in forwards;
+}
+
+.toast.leaving .toast-timer {
+  animation: none;
+  transform: scaleX(0);
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
   }
 }
 
@@ -5405,7 +5425,6 @@ select.input {
 /* the minimap steps up out of the way of the explain dock and its hint */
 .canvas-wrap:has(.explain-dock-wrap) .minimap {
   bottom: 118px;
-  transition: bottom 0.2s ease;
 }
 
 .explain-dock-wrap > .explain-dock {

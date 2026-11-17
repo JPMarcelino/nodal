@@ -719,6 +719,8 @@ export function glideView(to: View, ms = 280) {
   glideFrame = 0;
   // only a zoom step's own glide may be built on by the next step
   stepTarget = null;
+  // a camera move replaces a wheel zoom still easing in
+  wheelGlide = null;
   const from = S().view;
   const { canvasSize } = S();
   const same = Math.abs(from.zoom - to.zoom) < 1e-4 && Math.abs(from.x - to.x) < 0.5 && Math.abs(from.y - to.y) < 0.5;
@@ -759,9 +761,55 @@ function zoomedView(factor: number, cx?: number, cy?: number): View {
   return { zoom, x: px - (px - view.x) * k, y: py - (py - view.y) * k };
 }
 
-/** Zooms about a point at once (wheel, pinch). */
+/** Zooms about a point at once (pinch, trackpad). */
 export function zoomBy(factor: number, cx?: number, cy?: number) {
+  wheelGlide = null;
   set({ view: zoomedView(factor, cx, cy) });
+}
+
+/** A mouse wheel's zoom on its way: the zoom the notches so far add up to, about the latest cursor. */
+let wheelGlide: { zoom: number; px: number; py: number; last: View; frame: number; t: number } | null = null;
+
+/**
+ * Zooms about a point for a mouse-wheel notch: rather than jumping a whole step
+ * per notch, the view chases the zoom the notches add up to, so spinning the
+ * wheel reads as one continuous zoom. Anything else moving the view stops it.
+ */
+export function zoomSmooth(factor: number, px: number, py: number) {
+  if (!canGlide()) return zoomBy(factor, px, py);
+  if (glideFrame) cancelAnimationFrame(glideFrame);
+  glideFrame = 0;
+  stepTarget = null;
+  const v = S().view;
+  const going = wheelGlide && wheelGlide.last === v ? wheelGlide : null;
+  const zoom = Math.min(8, Math.max(0.1, (going ? going.zoom : v.zoom) * factor));
+  if (going) {
+    Object.assign(going, { zoom, px, py });
+    return;
+  }
+  if (wheelGlide?.frame) cancelAnimationFrame(wheelGlide.frame);
+  const w = (wheelGlide = { zoom, px, py, last: v, frame: 0, t: performance.now() });
+  const step = (now: number) => {
+    const cur = S().view;
+    if (wheelGlide !== w || cur !== w.last) {
+      if (wheelGlide === w) wheelGlide = null;
+      return; // a pan, pinch or other camera move took over
+    }
+    // an exponential chase (about 70ms to cover most of the way), framerate-independent
+    const k = 1 - Math.exp(-Math.max(0, now - w.t) / 70);
+    w.t = now;
+    const l0 = Math.log(cur.zoom);
+    const l1 = Math.log(w.zoom);
+    const done = Math.abs(l1 - l0) < 0.003;
+    const zoom = done ? w.zoom : Math.exp(l0 + (l1 - l0) * k);
+    const r = zoom / cur.zoom;
+    const next = { zoom, x: w.px - (w.px - cur.x) * r, y: w.py - (w.py - cur.y) * r };
+    w.last = next;
+    set({ view: next });
+    if (done) wheelGlide = null;
+    else w.frame = requestAnimationFrame(step);
+  };
+  w.frame = requestAnimationFrame(step);
 }
 
 /** One zoom step from a key or button, eased; repeated presses build on where the glide is heading. */

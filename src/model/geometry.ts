@@ -227,6 +227,9 @@ export function clipPolylineToRect(pts: Point[], r: Rect): Point[][] {
 
 let measureCtx: CanvasRenderingContext2D | null | undefined;
 let measureFamily = '';
+const measureCache = new Map<string, number>();
+// a web font finishing its load changes the widths of text already measured in its fallback
+if (typeof document !== 'undefined') document.fonts?.addEventListener?.('loadingdone', () => measureCache.clear());
 
 /**
  * Size of a (possibly multi-line) text block as the canvas renders it. Uses the
@@ -243,7 +246,15 @@ export function measureText(text: string, fontSize: number, weight = 400, font?:
     const longest = Math.max(1, ...lines.map((l) => l.length));
     return { w: Math.ceil(longest * fontSize * (font === 'mono' ? 0.6 : weight >= 600 ? 0.62 : 0.58)), h };
   }
-  measureCtx.font = `${weight} ${fontSize}px ${font ? FONT_STACKS[font] : measureFamily}`;
-  const w = Math.max(fontSize * 0.5, ...lines.map((l) => measureCtx!.measureText(l).width));
-  return { w: Math.ceil(w), h };
+  const css = `${weight} ${fontSize}px ${font ? FONT_STACKS[font] : measureFamily}`;
+  // labels are laid out on every render of a part (and every frame of a drag); the same few
+  // strings come back again and again, so their widths are remembered
+  const key = css + '\u0000' + text;
+  const known = measureCache.get(key);
+  if (known !== undefined) return { w: known, h };
+  measureCtx.font = css;
+  const w = Math.ceil(Math.max(fontSize * 0.5, ...lines.map((l) => measureCtx!.measureText(l).width)));
+  if (measureCache.size >= 4000) measureCache.clear();
+  measureCache.set(key, w);
+  return { w, h };
 }

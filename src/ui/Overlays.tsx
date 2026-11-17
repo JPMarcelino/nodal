@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import type { GridStyle, Tool } from '../model/types';
 import { GRID_SIZES, GRID_STYLE_NAMES } from '../model/doc';
 import { COMMAND_MAP, keysFor, prettyKey, setGridSize } from '../store/commands';
-import { dismissToast, useStore } from '../store/store';
+import { dismissToast, useStore, type Toast } from '../store/store';
 import { isExplainTool } from '../store/explain';
 import { NumberInput } from './controls';
 
@@ -187,12 +187,36 @@ function SnapToggles() {
   );
 }
 
+/** How long a dismissed toast takes to fade away (matches .toast.leaving). */
+const TOAST_OUT_MS = 160;
+
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
+  // toasts that just left the store stay on screen a moment longer, fading out, in their place
+  const [leaving, setLeaving] = useState<Toast[]>([]);
+  const prev = useRef<Toast[]>(toasts);
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const ids = new Set(toasts.map((t) => t.id));
+    const texts = new Set(toasts.map((t) => t.text));
+    // a message shown again replaces its old toast outright: no fading copy beside the new one
+    const gone = prev.current.filter((t) => !ids.has(t.id) && !texts.has(t.text));
+    prev.current = toasts;
+    if (!gone.length) return;
+    setLeaving((l) => [...l.filter((t) => !texts.has(t.text)), ...gone]);
+    // not cleared by the next change: each batch finishes its own fade
+    timers.current.add(
+      setTimeout(() => {
+        setLeaving((l) => l.filter((t) => !gone.includes(t)));
+      }, TOAST_OUT_MS),
+    );
+  }, [toasts]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const shown = [...toasts.map((t) => ({ t, out: false })), ...leaving.filter((t) => !toasts.some((x) => x.text === t.text)).map((t) => ({ t, out: true }))].sort((a, b) => a.t.id - b.t.id);
   return (
     <div className="toasts" role="status" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className={`toast ${t.kind}`} onClick={() => dismissToast(t.id)} style={{ '--toast-ms': `${t.ms ?? 2600}ms` } as CSSProperties}>
+      {shown.map(({ t, out }) => (
+        <div key={t.id} className={`toast ${t.kind}${out ? ' leaving' : ''}`} onClick={() => dismissToast(t.id)} style={{ '--toast-ms': `${t.ms ?? 2600}ms` } as CSSProperties} aria-hidden={out || undefined}>
           {t.kind === 'success' ? <CheckCircle2 size={15} /> : t.kind === 'error' ? <XCircle size={15} /> : <Info size={15} />}
           {t.text}
           <span className="toast-timer" />

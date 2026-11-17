@@ -7,7 +7,7 @@ import { drawOrderCached } from '../model/doc';
 import { computeNets } from '../model/netlist';
 import { viewDoc } from '../model/pages';
 import { reorderItem } from '../model/ops';
-import { getSymbol, instanceSymbol, librarySymbols, variantDefs } from '../model/registry';
+import { getSymbol, instanceSymbol, librarySymbols, usedSymbols, variantDefs } from '../model/registry';
 import { CATEGORY_ORDER } from '../model/symbols';
 import type { CircuitDoc, Item, SymbolDef } from '../model/types';
 import { SymbolPreview } from '../canvas/SymbolGraphic';
@@ -236,6 +236,17 @@ function score(def: SymbolDef, q: string, extra = '') {
   return 0;
 }
 
+const usedKeyMemo = new WeakMap<object, { symbols: object; key: string }>();
+/** The circuit's own symbols that parts use, as a string that only changes when that set does. */
+function usedDocSymbolsKey(doc: Pick<CircuitDoc, 'symbols' | 'items'>): string {
+  const hit = usedKeyMemo.get(doc.items);
+  if (hit && hit.symbols === doc.symbols) return hit.key;
+  const used = usedSymbols(doc);
+  const key = Object.keys(doc.symbols).filter((id) => used.has(id)).sort().join('|');
+  usedKeyMemo.set(doc.items, { symbols: doc.symbols, key });
+  return key;
+}
+
 function Library() {
   const [q, setQ] = useState('');
   useStore((s) => s.prefs.keymap);
@@ -244,8 +255,10 @@ function Library() {
   const recent = useStore((s) => s.recent);
   const docSymbols = useStore((s) => s.doc.symbols);
   const userLibrary = useStore((s) => s.userLibrary);
-  const docItems = useStore((s) => s.doc.items);
-  const all = useMemo(() => librarySymbols({ symbols: docSymbols, items: docItems }), [docSymbols, docItems, userLibrary]);
+  // which of the circuit's own symbols are in use, as a key: the items change on every frame of a
+  // drag, and re-listing (and re-rendering) the whole library for that made dragging stutter
+  const usedKey = useStore((s) => usedDocSymbolsKey(s.doc));
+  const all = useMemo(() => librarySymbols({ symbols: docSymbols, items: S().doc.items }), [docSymbols, usedKey, userLibrary]);
   const extras = useMemo(() => {
     const m = new Map<string, string>();
     for (const d of all) {
