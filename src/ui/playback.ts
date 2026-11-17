@@ -44,7 +44,8 @@ let flight = 0;
 /** Glides the view to `to` (ease in-out). */
 export function flyTo(to: View, ms = 650) {
   const id = ++flight;
-  if (ms <= 0) {
+  // people who ask for less motion get the cut without the flight
+  if (ms <= 0 || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)) {
     set({ view: to });
     return;
   }

@@ -1316,7 +1316,7 @@ export function Canvas() {
     if (quickId) setQuickId(null);
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
-    if (e.pointerType === 'mouse') mousePressed.current = true;
+    if (e.pointerType !== 'touch') mousePressed.current = true;
     const w = toWorldPt(e.clientX, e.clientY);
     const client = { x: e.clientX, y: e.clientY };
     set({ contextMenu: null });
@@ -1346,7 +1346,7 @@ export function Canvas() {
       return;
     }
     const now = performance.now();
-    const isDouble = now - lastClick.current.t < 350 && dist(lastClick.current.p, client) < 6 * hitSlop() ** 2;
+    const isDouble = now - lastClick.current.t < 350 && dist(lastClick.current.p, client) < 6 * hitSlop();
     lastClick.current = { t: now, p: client };
 
     // export-area mode: any drag defines the export rectangle
@@ -1802,9 +1802,11 @@ export function Canvas() {
     // the button was let go where the canvas couldn't hear it (another window took focus mid-drag,
     // a system dialog): finish the press as that release would have, rather than leave the drag
     // stuck to a pointer with no button down
-    if (mousePressed.current && e.pointerType === 'mouse' && e.buttons === 0) {
+    if (mousePressed.current && e.pointerType !== 'touch' && e.buttons === 0) {
       mousePressed.current = false;
-      onPointerUp(e);
+      // ...where the pointer last was with the button down, not where it has wandered to since
+      const at = lastMove.current;
+      onPointerUp(at ? (Object.assign(Object.create(e), { clientX: at.clientX, clientY: at.clientY }) as React.PointerEvent) : e);
     }
     lastMove.current = { clientX: e.clientX, clientY: e.clientY };
     const w = toWorldPt(e.clientX, e.clientY);
@@ -2198,7 +2200,7 @@ export function Canvas() {
   moveRef.current = onPointerMove;
 
   const onPointerUp = (e: React.PointerEvent) => {
-    if (e.pointerType === 'mouse') mousePressed.current = false;
+    if (e.pointerType !== 'touch') mousePressed.current = false;
     const g = gRef.current;
     if (!g) return;
     const w = toWorldPt(e.clientX, e.clientY);
@@ -2352,7 +2354,9 @@ export function Canvas() {
     const onWheel = (e: WheelEvent) => {
       // HTML on top of the drawing (minimap, text editors, menus) keeps its own wheel behaviour
       // (the explain tools' input surface is the drawing, so it zooms and pans like it)
-      if (e.target instanceof HTMLElement && e.target !== el && !e.target.classList.contains('explain-input')) return;
+      // (an icon or the minimap's map is SVG, not HTML, so ask about the surface itself)
+      const t = e.target as Element;
+      if (t !== el && !t.closest?.('svg.canvas, svg.explain-svg, .explain-input')) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       // Firefox reports mouse wheels in lines (or pages); work in pixels
@@ -2522,6 +2526,8 @@ export function Canvas() {
       className={fileDrag ? 'canvas-wrap file-drop' : 'canvas-wrap'}
       style={{ cursor: cursorStyle }}
       onPointerDown={onPointerDown}
+      // a middle-button press pans the drawing: keep the browser's autoscroll from starting too
+      onMouseDown={(e) => e.button === 1 && e.preventDefault()}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => {

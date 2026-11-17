@@ -70,7 +70,10 @@ export const Minimap = memo(function Minimap({ data }: { data: SceneData }) {
           // draw the map at its own fit again (without touching the view, so a click's glide runs on)
           refit((n) => n + 1);
         }}
-        onPointerCancel={() => (held.current = null)}
+        onPointerCancel={() => {
+          held.current = null;
+          refit((n) => n + 1);
+        }}
       >
         <g transform={`translate(${(W - box.w * k) / 2} ${(H - box.h * k) / 2}) scale(${k}) translate(${-box.x} ${-box.y})`}>
           <MapContent doc={doc} data={data} k={k} />

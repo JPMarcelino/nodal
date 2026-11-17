@@ -317,7 +317,10 @@ function OrderList({ doc, data, wires, names, onHold }: { doc: CircuitDoc; data:
             }}
             onPointerUp={() => dragging && end(true)}
             onPointerCancel={() => dragging && end(false)}
-            onMouseEnter={() => !drag && set({ highlight: new Set([id]) })}
+            // capture lost some other way (the row re-rendered away, the window lost focus): let go too
+            onLostPointerCapture={() => dragging && end(false)}
+            // the same row again keeps the same highlight: a new set would repaint every wire
+            onMouseEnter={() => !drag && !(S().highlight?.size === 1 && S().highlight!.has(id)) && set({ highlight: new Set([id]) })}
           >
             <GripVertical size={13} className="cross-pop-grip" />
             <span className="cross-pop-swatch" style={{ background: color }} />

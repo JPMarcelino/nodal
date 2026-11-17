@@ -57,7 +57,8 @@ export function useTouchInput(wrapRef: RefObject<HTMLDivElement>) {
     const fingers = new Map<number, Point>();
     /** Touches handled here; the tools never see them. */
     const taken = new Set<number>();
-    let nav: { t0: number; most: number; travel: number; last: { c: Point; d: number } | null } | null = null;
+    /** `spread`: how far the fingers moved apart or together in all, so a quick small pinch isn't taken for a tap. */
+    let nav: { t0: number; most: number; travel: number; spread: number; last: { c: Point; d: number } | null } | null = null;
     let before: Before | null = null;
     let press: { id: number; at: Point; timer: number } | null = null;
     /** Recent positions of the touch centre, to carry a flick on after the fingers lift. */
@@ -151,10 +152,11 @@ export function useTouchInput(wrapRef: RefObject<HTMLDivElement>) {
       const v = S().view;
       set({ view: { ...v, x: v.x + now.c.x - last.c.x, y: v.y + now.c.y - last.c.y } });
       nav.travel += dist(now.c, last.c) + Math.abs(now.d - last.d);
+      if (now.d && last.d) nav.spread += Math.abs(now.d - last.d);
     };
 
     const startNav = () => {
-      nav = nav ?? { t0: performance.now(), most: 0, travel: 0, last: null };
+      nav = nav ?? { t0: performance.now(), most: 0, travel: 0, spread: 0, last: null };
       nav.most = Math.max(nav.most, fingers.size);
       nav.last = null; // the finger set changed: measure from here
       navigate();
@@ -231,7 +233,8 @@ export function useTouchInput(wrapRef: RefObject<HTMLDivElement>) {
       }
       if (n.travel >= TAP_TRAVEL) fling();
       else trail = [];
-      if (performance.now() - n.t0 < TAP_TIME && n.travel < TAP_TRAVEL) {
+      // a pinch, however small and quick, zoomed: it mustn't also undo
+      if (performance.now() - n.t0 < TAP_TIME && n.travel < TAP_TRAVEL && n.spread < 4) {
         if (n.most === 2 && gestureSlots.canvas?.get()) {
           // no Escape key on a tablet: a two-finger tap ends the wire being drawn first
           gestureSlots.canvas.restore(null);
