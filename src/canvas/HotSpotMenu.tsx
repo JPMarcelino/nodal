@@ -4,7 +4,7 @@ import type { HotSpot } from '../model/hotspots';
 import { computeNets, netOfWire } from '../model/netlist';
 import { attachedWires } from '../model/doc';
 import { deleteItems } from '../model/ops';
-import { applySolder } from './solder';
+import { applySolder, solderActionFor } from './solder';
 import { pulseAt } from './pulses';
 import { instanceSymbol } from '../model/registry';
 import type { CircuitDoc, WireItem } from '../model/types';
@@ -59,7 +59,8 @@ export function HotSpotMenu({
     mutate((dd) => {
       err = fn(dd as CircuitDoc);
     });
-    if (!err && pulse) pulseAt(spot.pt.x, spot.pt.y, 'solder');
+    // a joint made flashes a blob of solder; a joint broken, a ring that breaks up
+    if (!err && pulse) pulseAt(spot.pt.x, spot.pt.y, solderActionFor(spot) === 'unsolder' ? 'unsolder' : 'solder');
     toast(err ?? ok, err ? 'error' : 'success');
     onClose();
   };

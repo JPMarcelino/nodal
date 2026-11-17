@@ -4219,6 +4219,9 @@ select.input {
   fill: none;
   stroke: var(--text-dim);
   stroke-opacity: 0.7;
+  transition:
+    stroke 0.15s,
+    stroke-opacity 0.15s;
 }
 
 .hot-ring.pending .hot-ring-base,
@@ -4234,54 +4237,68 @@ select.input {
   /* the circumference comes from the ring's radius (see Canvas), so the fill
      animates in every engine rather than depending on pathLength support */
   stroke-dasharray: var(--hot-len, 1);
-  stroke-dashoffset: 0;
+  /* empty, and drains back quickly (from wherever it got to) when the pointer moves off */
+  stroke-dashoffset: var(--hot-len, 1);
+  opacity: 0;
+  transition:
+    stroke-dashoffset 0.18s cubic-bezier(0.3, 0, 0.2, 1),
+    opacity 0.18s ease-out 0.05s;
 }
 
-/* fills up while the pointer rests: the menu opens when the circle closes. Eased, so it
-   starts gently (passing over barely shows) and lands softly as the menu appears */
+/* fills up while the pointer rests: the menu opens as the circle closes. It starts gently
+   (passing over barely shows) and arrives still moving, so the ring closes at the moment the
+   menu appears instead of creeping along full-looking first */
 .hot-ring.pending .hot-ring-fill {
-  animation: hot-fill var(--hot-dwell, 0.55s) cubic-bezier(0.45, 0, 0.25, 1) forwards;
+  stroke-dashoffset: 0;
+  opacity: 1;
+  transition:
+    stroke-dashoffset var(--hot-dwell, 0.55s) cubic-bezier(0.5, 0, 0.75, 0.85),
+    opacity 0.08s;
+}
+
+.hot-ring.open .hot-ring-fill {
+  stroke-dashoffset: 0;
+  opacity: 1;
+  filter: drop-shadow(0 0 3px var(--accent));
 }
 
 .hot-ring-disc {
   fill: var(--accent);
   stroke: none;
   opacity: 0;
+  transform: scale(0.35);
   transform-box: fill-box;
   transform-origin: center;
+  transition:
+    opacity 0.18s ease-out,
+    transform 0.18s ease-out;
 }
 
 .hot-ring.pending .hot-ring-disc {
-  animation: hot-disc var(--hot-dwell, 0.55s) cubic-bezier(0.45, 0, 0.25, 1) forwards;
+  opacity: 0.2;
+  transform: scale(1);
+  transition:
+    opacity var(--hot-dwell, 0.55s) cubic-bezier(0.5, 0, 0.75, 0.85),
+    transform var(--hot-dwell, 0.55s) cubic-bezier(0.5, 0, 0.75, 0.85);
 }
 
 .hot-ring.open .hot-ring-disc {
   opacity: 0.2;
-  animation: hot-settle 0.32s ease-out;
+  transform: scale(1);
+  animation: hot-settle 0.34s cubic-bezier(0.3, 0, 0.3, 1);
 }
 
-.hot-ring.open .hot-ring-fill {
-  filter: drop-shadow(0 0 3px var(--accent));
-}
-
-@keyframes hot-disc {
-  from {
-    opacity: 0;
-    transform: scale(0.35);
-  }
-  to {
+/* the moment the menu opens: the disc swells out of where the fill left it and settles back */
+@keyframes hot-settle {
+  0% {
     opacity: 0.2;
     transform: scale(1);
   }
-}
-
-/* the moment the menu opens: a brief swell that settles back */
-@keyframes hot-settle {
-  from {
-    opacity: 0.36;
-    transform: scale(1.35);
+  35% {
+    opacity: 0.34;
+    transform: scale(1.3);
   }
-  to {
+  100% {
     opacity: 0.2;
     transform: scale(1);
   }
@@ -4290,15 +4307,6 @@ select.input {
 @media (prefers-reduced-motion: reduce) {
   .hot-ring.open .hot-ring-disc {
     animation: none;
-  }
-}
-
-@keyframes hot-fill {
-  from {
-    stroke-dashoffset: var(--hot-len, 1);
-  }
-  to {
-    stroke-dashoffset: 0;
   }
 }
 
@@ -8473,6 +8481,25 @@ button.crumb:hover {
 
 .pulse.solder {
   stroke-width: 2.5;
+}
+
+/* a joint broken: a red ring that breaks into dashes as it spreads, with no solder blob */
+.pulse.unsolder {
+  stroke: var(--danger);
+  stroke-width: 2;
+  stroke-dasharray: 3 2.4;
+  animation: unsolder-ring 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes unsolder-ring {
+  from {
+    opacity: 0.9;
+    transform: scale(0.6) rotate(0deg);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.5) rotate(40deg);
+  }
 }
 
 .pulse-core {

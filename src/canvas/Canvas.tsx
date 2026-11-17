@@ -1483,14 +1483,15 @@ export function Canvas() {
     }
     if (tool === 'solder') {
       const h = hotSpotAt(w);
-      if (!h || !solderActionFor(h)) return;
+      const act = h && solderActionFor(h);
+      if (!h || !act) return;
       let err: string | null = null;
       mutate((d) => {
         err = applySolder(d as CircuitDoc, h, data);
       });
       if (err) toast(err, 'error');
       else {
-        pulseAt(h.pt.x, h.pt.y, 'solder');
+        pulseAt(h.pt.x, h.pt.y, act);
         setSolderedAt(h.pt);
       }
       return;
@@ -2453,6 +2454,13 @@ export function Canvas() {
   const gridStyle = doc.settings.gridStyle ?? 'dots';
 
   const g = gesture;
+  /** The spot the solder tool would change with a click here (not the one it just changed). */
+  const solderPreview = (() => {
+    if (tool !== 'solder' || g || placing || !pointerOnCanvas) return null;
+    const h = hotSpotAt(cursor);
+    if (!h || !solderActionFor(h) || (solderedAt && dist(h.pt, solderedAt) < 0.5)) return null;
+    return h;
+  })();
   // a lone wire shows its box too: pressing anywhere inside moves the whole wire
   const selectionBounds = selection.length > 1 || doc.items[selection[0]]?.type === 'wire' ? unionBounds(doc, selection) : null;
   const overScale = g?.kind === 'scale' || g?.kind === 'groupScale' || (tool === 'select' && !g && !placing && groupHandles().some((h) => dist(h, cursor) < 7 / z)) || (tool === 'select' && !g && !placing && !!singleComp && !singleComp.locked && compHandles(singleComp).some((h) => dist(h, cursor) < 7 / z));
@@ -2810,10 +2818,9 @@ export function Canvas() {
             })()}
 
           {/* hover-menu hints: faint rings on nearby hot spots; the one being rested on fills up */}
-          {tool === 'solder' && !g && !placing && pointerOnCanvas && (() => {
-            const h = hotSpotAt(cursor);
-            const act = h && solderActionFor(h);
-            if (!h || !act || (solderedAt && dist(h.pt, solderedAt) < 0.5)) return null;
+          {solderPreview && (() => {
+            const h = solderPreview;
+            const act = solderActionFor(h);
             const jr = h.kind === 'junction' ? (doc.items[h.id] as { size?: number } | undefined)?.size : undefined;
             const r = Math.max(jr ?? doc.settings.junctionSize, 3);
             return act === 'solder' ? (
@@ -2828,6 +2835,8 @@ export function Canvas() {
               const reach = 90 / z;
               const d = dist(h.pt, cursor);
               const key = hotSpotKey(h);
+              // the solder tool's own preview stands in for the hint ring on the spot it would change
+              if (solderPreview && hotSpotKey(solderPreview) === key) return null;
               const open = hotMenu && hotSpotKey(hotMenu) === key;
               const pending = hotPending === key;
               if (d > reach && !open) return null;
@@ -2840,10 +2849,11 @@ export function Canvas() {
                   className={open ? 'hot-ring open' : pending ? 'hot-ring pending' : 'hot-ring'}
                   style={{ opacity: open || pending ? 1 : 0.55 * (1 - d / reach), ['--hot-dwell' as string]: `${HOT_DWELL}ms` }}
                 >
-                  {/* a soft disc swells inside the ring as it fills, and stays while the menu is open */}
-                  {(pending || open) && <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-disc" />}
+                  {/* a soft disc swells inside the ring as it fills, and stays while the menu is open. Both
+                      are always drawn (empty) so leaving mid-fill can drain them back instead of blinking out */}
+                  <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-disc" />
                   <circle cx={h.pt.x} cy={h.pt.y} r={r} className="hot-ring-base" strokeWidth={1.2 / z} />
-                  {(pending || open) && (
+                  {tool !== 'solder' && (
                     <circle
                       cx={h.pt.x}
                       cy={h.pt.y}
@@ -3012,7 +3022,7 @@ function Pulses({ z }: { z: number }) {
             <circle className="pulse-core" cx={p.x} cy={p.y} r={4.5 / z} />
           </g>
         ) : (
-          <circle key={p.id} className={`pulse ${p.kind}`} cx={p.x} cy={p.y} r={(p.kind === 'snap' ? 9 : 22) / z} />
+          <circle key={p.id} className={`pulse ${p.kind}`} cx={p.x} cy={p.y} r={(p.kind === 'snap' ? 9 : p.kind === 'unsolder' ? 12 : 22) / z} />
         ),
       )}
     </g>
