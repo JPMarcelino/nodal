@@ -2,11 +2,14 @@ import { DurableObject } from 'cloudflare:workers';
 import {
   EXPIRE_MS,
   MAX_MESSAGE,
+  type Bucket,
   gateMessage,
   isRoomFull,
   isWellFormedToken,
+  newBucket,
   resolveOwnership,
   shouldReapOnAlarm,
+  takePresence,
 } from './policy';
 
 /*
@@ -93,8 +96,19 @@ export class Room extends DurableObject<Env> {
     // Enforcement lives in policy.gateMessage (unit-tested); this only acts on its verdict.
     const decision = gateMessage(m.t, m.d, attachment(ws).edit);
     if (decision === 'end') return this.end();
+    if (decision === 'relay' && m.t === 'p' && !this.allowPresence(ws)) return;
     if (decision === 'relay') this.broadcast(JSON.stringify({ t: m.t, from: peerId(ws), d: m.d }), ws);
     else if (decision === 'save') await this.saveSnapshot(m.d as string);
+  }
+
+  // in memory only: a hibernation wake starts everyone with a full bucket, which is fine
+  private buckets = new WeakMap<WebSocket, Bucket>();
+
+  private allowPresence(ws: WebSocket): boolean {
+    const now = Date.now();
+    let b = this.buckets.get(ws);
+    if (!b) this.buckets.set(ws, (b = newBucket(now)));
+    return takePresence(b, now);
   }
 
   async webSocketClose(ws: WebSocket) {

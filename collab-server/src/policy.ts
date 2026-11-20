@@ -17,6 +17,12 @@ export const MAX_SNAPSHOT = 12 * 1024 * 1024;
 // pre-parse cap must clear the largest snapshot gateMessage allows —
 // otherwise saves between the two limits are silently dropped before gating.
 export const MAX_MESSAGE = MAX_SNAPSHOT + 64 * 1024;
+/** Presence is a cursor, view and at most 500 selected ids (sealed): far below this. */
+export const MAX_PRESENCE = 64 * 1024;
+/** Per-connection presence budget: the app sends ~15 a second, so bursts up to 60 then 30/s. */
+export const PRESENCE_BURST = 60;
+export const PRESENCE_PER_SEC = 30;
+
 /** Rooms nobody has saved to for this long are deleted (and an ended room's marker is forgotten). */
 export const EXPIRE_MS = 24 * 3600 * 1000;
 
@@ -45,14 +51,15 @@ export type RelayDecision = 'end' | 'relay' | 'save' | 'drop';
 
 /**
  * Which action a parsed client message gets. Mirrors Room.webSocketMessage:
- * 'end' from an editor closes the room; presence ('p') relays from anyone;
+ * 'end' from an editor closes the room; presence ('p') relays from anyone
+ * up to MAX_PRESENCE;
  * scene ('b') and 'save' need the edit token; anything else (unknown kind,
  * missing data, oversized snapshot, viewer's edit) is dropped.
  */
 export function gateMessage(t: unknown, d: unknown, isEditor: boolean): RelayDecision {
   if (t === 'end' && isEditor) return 'end';
   if (typeof d !== 'string') return 'drop';
-  if (t === 'p') return 'relay';
+  if (t === 'p') return d.length <= MAX_PRESENCE ? 'relay' : 'drop';
   if (!isEditor) return 'drop';
   if (t === 'b') return 'relay';
   if (t === 'save' && d.length <= MAX_SNAPSHOT) return 'save';
@@ -71,4 +78,25 @@ export function isRoomFull(peerCount: number): boolean {
  */
 export function shouldReapOnAlarm(ended: boolean, peerCount: number): boolean {
   return ended || peerCount === 0;
+}
+
+export interface Bucket {
+  tokens: number;
+  at: number;
+}
+
+/**
+ * Token bucket for presence, so a viewer (who needs no token) can't flood the
+ * room. Returns whether this message may go out; mutates `b`.
+ */
+export function takePresence(b: Bucket, now: number): boolean {
+  b.tokens = Math.min(PRESENCE_BURST, b.tokens + ((now - b.at) / 1000) * PRESENCE_PER_SEC);
+  b.at = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+
+export function newBucket(now: number): Bucket {
+  return { tokens: PRESENCE_BURST, at: now };
 }

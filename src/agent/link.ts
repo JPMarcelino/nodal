@@ -17,6 +17,7 @@ export { isLoopbackAgentUrl };
  *   bridge → app  { type: 'call', id, method, params }
  *   app → bridge  { type: 'result', id, result } | { type: 'result', id, error }
  *   app → bridge  { type: 'hello', … } on connect, { type: 'event', entry } for the activity feed
+ *   bridge → app  { type: 'cancel', id } the bridge timed the call out: skip it if it hasn't started
  *   bridge → app  { type: 'clients', count } agents connected; { type: 'standby' } another window took the link
  */
 
@@ -25,6 +26,8 @@ let retry: ReturnType<typeof setTimeout> | undefined;
 let backoff = 1000;
 /** Calls run one after another, in the order they came. */
 let queue: Promise<void> = Promise.resolve();
+/** Calls the bridge gave up on (timed out) before they started: skipped, not run late. */
+const cancelled = new Set<unknown>();
 
 function send(msg: unknown) {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -65,9 +68,14 @@ function connect() {
     if (msg.type === 'call' && typeof msg.method === 'string') {
       const { id, method, params } = msg;
       queue = queue.then(async () => {
+        if (cancelled.delete(id)) return;
         const res = await runCall(method, params ?? {});
         send({ type: 'result', id, ...res });
       });
+    } else if (msg.type === 'cancel') {
+      cancelled.add(msg.id);
+      // ids of calls that already finished would otherwise pile up
+      if (cancelled.size > 1000) cancelled.clear();
     } else if (msg.type === 'clients') {
       setAgent({ clients: msg.count ?? 0 });
     } else if (msg.type === 'standby') {

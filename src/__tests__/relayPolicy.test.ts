@@ -3,7 +3,12 @@ import {
   EXPIRE_MS,
   MAX_MESSAGE,
   MAX_PEERS,
+  MAX_PRESENCE,
   MAX_SNAPSHOT,
+  PRESENCE_BURST,
+  PRESENCE_PER_SEC,
+  newBucket,
+  takePresence,
   gateMessage,
   isRoomFull,
   isWellFormedToken,
@@ -86,5 +91,28 @@ describe('relayPolicy', () => {
     expect(shouldReapOnAlarm(false, 0)).toBe(true);
     expect(shouldReapOnAlarm(true, 0)).toBe(true);
     expect(shouldReapOnAlarm(true, 2)).toBe(true);
+  });
+});
+
+describe('relayPolicy presence limits', () => {
+  it('drops oversized presence, even from editors', () => {
+    expect(gateMessage('p', 'x'.repeat(MAX_PRESENCE), false)).toBe('relay');
+    expect(gateMessage('p', 'x'.repeat(MAX_PRESENCE + 1), false)).toBe('drop');
+    expect(gateMessage('p', 'x'.repeat(MAX_PRESENCE + 1), true)).toBe('drop');
+  });
+
+  it('rate-limits presence per connection and refills over time', () => {
+    const b = newBucket(0);
+    let sent = 0;
+    for (let i = 0; i < 1000; i++) if (takePresence(b, 0)) sent++;
+    expect(sent).toBe(PRESENCE_BURST);
+    expect(takePresence(b, 0)).toBe(false);
+    // one second later the budget allows PRESENCE_PER_SEC more
+    sent = 0;
+    for (let i = 0; i < 1000; i++) if (takePresence(b, 1000)) sent++;
+    expect(sent).toBe(PRESENCE_PER_SEC);
+    // the app's normal pace (one every 66 ms) is never throttled
+    const c = newBucket(0);
+    for (let t = 0; t < 60_000; t += 66) expect(takePresence(c, t)).toBe(true);
   });
 });

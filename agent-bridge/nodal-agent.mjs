@@ -34,7 +34,7 @@ const PORT = Number(process.env.NODAL_AGENT_PORT || argValue('--port') || 47821)
 const HOST = '127.0.0.1';
 const CONFIG_DIR = process.env.NODAL_AGENT_HOME || join(homedir(), '.config', 'nodal-agent');
 const TOKEN_FILE = join(CONFIG_DIR, 'token');
-const CALL_TIMEOUT = 120_000;
+const CALL_TIMEOUT = Number(process.env.NODAL_AGENT_CALL_TIMEOUT_MS) || 120_000;
 const MAX_BODY = 64 * 1024 * 1024;
 const VERSION = '1.0.0';
 
@@ -254,6 +254,8 @@ class Bridge {
     if (this.app) {
       this.app.send(JSON.stringify({ type: 'standby' }));
       this.app.close();
+      // calls already sent to the old window will never be answered there
+      this.failPending('app_gone', 'Another Nodal window took the agent link before this call was answered');
     }
     this.app = conn;
     log('Nodal connected');
@@ -266,12 +268,16 @@ class Bridge {
     this.app = null;
     this.appInfo = null;
     log('Nodal disconnected');
+    this.failPending('app_gone', 'Nodal disconnected before answering');
+    this.emit({ kind: 'system', text: 'Nodal disconnected' });
+  }
+
+  failPending(code, message) {
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer);
-      p.resolve({ error: { code: 'app_gone', message: 'Nodal disconnected before answering' } });
+      p.resolve({ error: { code, message } });
       this.pending.delete(id);
     }
-    this.emit({ kind: 'system', text: 'Nodal disconnected' });
   }
 
   onAppMessage(text) {
@@ -319,9 +325,12 @@ class Bridge {
     const id = this.nextId++;
     const ms = method === 'session.waitForUser' ? Math.min(610000, Number(params?.timeoutMs ?? 120000) + 10000) : CALL_TIMEOUT;
     return new Promise((resolve) => {
+      const app = this.app;
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        resolve({ error: { code: 'timeout', message: `${method} got no answer from Nodal within ${ms / 1000}s` } });
+        // a call still waiting in the app's queue is skipped, so a retry can't run it twice
+        app.send(JSON.stringify({ type: 'cancel', id }));
+        resolve({ error: { code: 'timeout', message: `${method} got no answer from Nodal within ${ms / 1000}s. If it had not started yet it was cancelled; if it was already running it may still have taken effect, so check before retrying.` } });
       }, ms);
       this.pending.set(id, { resolve, timer });
       this.app.send(JSON.stringify({ type: 'call', id, method, params }));
@@ -345,8 +354,11 @@ class Bridge {
   upgrade(req, socket) {
     const url = new URL(req.url, 'http://x');
     const origin = req.headers.origin;
-    if (url.pathname !== '/app' || req.headers.upgrade?.toLowerCase() !== 'websocket' || (origin && !ORIGINS.some((o) => o.test(origin)))) {
-      if (origin && !ORIGINS.some((o) => o.test(origin))) log(`refused app connection from ${origin} (add it to NODAL_AGENT_ORIGINS to allow)`);
+    // Browsers and the desktop webview always send Origin on a WebSocket; a
+    // connection without one is some other program trying to pose as the app.
+    const allowed = typeof origin === 'string' && ORIGINS.some((o) => o.test(origin));
+    if (url.pathname !== '/app' || req.headers.upgrade?.toLowerCase() !== 'websocket' || !allowed) {
+      if (url.pathname === '/app' && !allowed) log(origin ? `refused app connection from ${origin} (add it to NODAL_AGENT_ORIGINS to allow)` : 'refused app connection with no Origin (only Nodal itself may connect as the app)');
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
       return;
     }

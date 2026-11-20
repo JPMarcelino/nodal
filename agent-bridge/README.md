@@ -81,7 +81,7 @@ There are no dependencies. It needs Node 18 or newer.
 
 **batch** `{calls: [{method, params}], label?}` runs many calls as one step. Strings like `"$0.id"` or `"$1.pins.0.x"` refer to earlier results. If any call fails, the whole batch is rolled back.
 
-Errors come back as `{"error": {"code", "message"}}`. The codes are `bad_params`, `not_found`, `read_only`, `conflict`, `no_app`, `timeout`, `unknown_method` and `degenerate`.
+Errors come back as `{"error": {"code", "message"}}`. The codes are `bad_params`, `not_found`, `read_only`, `conflict`, `no_app`, `app_gone`, `timeout`, `unknown_method` and `degenerate`. On `timeout`, a call that hadn't started in Nodal yet is cancelled; one that was already running may still have taken effect, so check before retrying.
 
 ### Example: an RC low-pass filter
 
@@ -110,7 +110,7 @@ The server listens on `127.0.0.1` only.
 | `POST /rpc` `{method, params}` | yes | `{result}` or `{error}` |
 | `GET /events` | yes | server-sent events: the activity feed (the user marking work done, blocked edits, connects) |
 
-The token is created on first run in `~/.config/nodal-agent/token` (mode 600). Send it as `Authorization: Bearer <token>`. Requests from web pages whose origin isn't allowed are refused, so a website can't drive Nodal through the bridge.
+The token is created on first run in `~/.config/nodal-agent/token` (mode 600). Send it as `Authorization: Bearer <token>`. Requests from web pages whose origin isn't allowed are refused, so a website can't drive Nodal through the bridge. The app socket (`/app`) only accepts Nodal itself: a connection with no `Origin` header, or one that isn't allowed, is refused.
 
 ## Configuration
 
@@ -127,7 +127,7 @@ The published web app reaches the bridge at `ws://127.0.0.1`. Browsers treat tha
 
 ## Wire protocol (bridge ↔ app)
 
-The app sends `{type:"hello", version, doc}` when it connects. The bridge sends `{type:"call", id, method, params}`, and the app answers `{type:"result", id, result | error}`. The app also sends `{type:"event", entry}` for the activity feed. The bridge sends `{type:"clients", count}` and, when another window takes the link, `{type:"standby"}`. Calls are run one at a time, in order.
+The app sends `{type:"hello", version, doc}` when it connects. The bridge sends `{type:"call", id, method, params}`, and the app answers `{type:"result", id, result | error}`. The app also sends `{type:"event", entry}` for the activity feed. The bridge sends `{type:"clients", count}` and, when another window takes the link, `{type:"standby"}` (calls still waiting on the old window then fail with `app_gone`). When a call times out the bridge sends `{type:"cancel", id}`, and the app skips it if it hasn't started. Calls are run one at a time, in order.
 
 The app side lives in `src/agent/`:
 
